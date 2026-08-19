@@ -574,5 +574,42 @@ class MalformedDocumentTests(QualityGateTestCase):
         self.assertTrue(any("reviewed_on must be a non-empty string" in item for item in errors))
 
 
+class DependencyAuditHookTests(QualityGateTestCase):
+    def audit_repository(self) -> tuple[Path, Path, dict[str, str]]:
+        repository = self.temporary_repository()
+        (repository / "pyproject.toml").write_text(
+            '[project]\nname = "example"\n', encoding="utf-8"
+        )
+        (repository / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        arguments_file, environment = self.install_argument_recorder(
+            repository,
+            "uv",
+            "uv-arguments.txt",
+        )
+        return repository, arguments_file, environment
+
+    def test_the_audit_requests_machine_readable_findings(self) -> None:
+        # Arrange
+        repository, arguments_file, environment = self.audit_repository()
+
+        # Act
+        result = self.run_hook("dependency-audit.sh", repository, environment=environment)
+
+        # Assert
+        self.assert_hook_succeeded(result)
+        self.assertIn("--format json", arguments_file.read_text(encoding="utf-8"))
+
+    def test_the_audit_adjudicates_its_findings_against_the_waiver_registry(self) -> None:
+        # Arrange
+        repository, arguments_file, environment = self.audit_repository()
+
+        # Act
+        result = self.run_hook("dependency-audit.sh", repository, environment=environment)
+
+        # Assert
+        self.assert_hook_succeeded(result)
+        self.assertIn("tools.dependency_waiver_gate", arguments_file.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

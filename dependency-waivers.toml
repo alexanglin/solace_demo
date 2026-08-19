@@ -1,0 +1,22 @@
+# Time-bounded human review of a known upstream advisory that cannot yet be fixed by a
+# safe upgrade. AGENTS.md section 6 requires a safe upgrade, an upstream fix, or a
+# waiver of this kind before release; tools/dependency_waiver_gate.py enforces it.
+#
+# A waiver is keyed on domain, package, exact version, and advisory, so any version
+# bump invalidates it. It must name reachability and a compensating control, and it
+# expires. A waiver that matches no reported advisory is an error, so this registry
+# cannot accumulate reviews that no longer describe anything.
+#
+# [[waivers]]
+# domain = "agent-mesh"
+# package = "starlette"
+# version = "0.49.1"
+# advisory = "PYSEC-0000-000"
+# reason = "Why this advisory cannot be resolved by upgrading right now."
+# reachability = "Whether the vulnerable code path is reachable in this deployment."
+# compensating_control = "What limits the exposure until the upgrade lands."
+# reviewed_by = "Name"
+# reviewed_on = "2026-08-19"
+# expires_on = "2026-09-18"
+
+format = 1
