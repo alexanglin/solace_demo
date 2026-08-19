@@ -92,13 +92,45 @@ requests remain subject to Host validation. The complete rationale is in
 
 ## Canonical serialization
 
-The approval proposal digest, the replay determinism hash, and evidence hashing all reduce to Python and
-TypeScript producing identical bytes for the same logical value. That serialization is a contract in its
-own right and is **not yet defined** — it is tracked as an open question in
-[adr/README.md](adr/README.md) and must be settled by an ADR before any component computes a digest.
+The approval proposal digest, the replay determinism hash, evidence hashing, and the idempotency record's
+hash of a canonicalized request body all reduce to Python and TypeScript producing identical bytes for the
+same logical value. The rules below are that contract. They are stated so either language can be written
+from this section alone, without reading the other's source
+([ADR-0027](adr/0027-integer-only-canonical-serialization.md)). Every bound they refer to lives in
+[operating-parameters.md](operating-parameters.md#canonical-serialization-bounds).
 
-Until it is settled, no component may compute or compare a digest, because two components hashing
-differently would break the approval gate silently rather than loudly.
+**Value space.** A digest-covered payload contains only objects, arrays, strings, integers, booleans, and
+null. **No floating-point value is representable**, including one that is numerically integral: a real
+number reaching the boundary is rejected, never coerced. This is what makes the representation injective,
+so two distinct coordinates cannot collapse onto one digest before hashing.
+
+**Integers** are serialized as the shortest decimal form, with `-` for negatives, no `+`, no leading zero
+except for `0` itself, and no exponent. Negative zero is not representable; it is the integer `0`.
+
+**Domain quantities.** Latitude and longitude are integer microdegrees. The evidence score is integer
+hundredths, carried beside its named ordinal band and its score version. An instant is an RFC 3339 UTC
+string of the exact form `YYYY-MM-DDTHH:MM:SS.sssZ` — always millisecond precision, always the literal
+`Z`, never a numeric offset — so one instant has exactly one spelling.
+
+**Object keys** match `^[a-z][a-zA-Z0-9]*$` and are emitted in ascending order of their UTF-8 byte
+sequence. A repeated key in inbound JSON text is a rejection, not a last-value-wins merge.
+
+**Strings** contain only Unicode scalar values; an unpaired surrogate is rejected. Every string is
+normalized to NFC before serialization. Escaping is minimal: `"` becomes `\"`, `\` becomes `\\`, and
+U+0008, U+000C, U+000A, U+000D, and U+0009 become `\b`, `\f`, `\n`, `\r`, and `\t`. Any remaining C0
+control becomes `\u00xx` with lowercase hexadecimal. Nothing else is escaped — `/` and every non-ASCII
+character are emitted raw as UTF-8.
+
+**Byte form.** UTF-8 with no whitespace anywhere: `{`, key, `:`, value, `,`, `}` for objects and `[`,
+value, `,`, `]` for arrays. Array order is semantic and is preserved. `true`, `false`, and `null` are
+lowercase.
+
+**Digest.** A top-level `digest` member is removed before serialization; a nested `digest` is ordinary
+data. The payload carries `canonicalizationVersion` inside the hashed bytes, so a downgrade fails rather
+than passing. The hash input is the byte string `aerial-rescue/canonical/v1`, a newline, the consuming
+context, a newline, and the canonical bytes. The context is one of `proposal-digest`, `replay-state`,
+`evidence`, or `idempotency-body`, which stops bytes valid for one purpose being replayed as another. The
+digest is SHA-256 rendered as lowercase hexadecimal.
 
 ## Delivery and failure semantics
 

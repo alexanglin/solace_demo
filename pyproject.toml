@@ -150,7 +150,12 @@ warn_unreachable = true
 # agent-mesh/ runs on 3.13 and is checked by its own invocation. Without this,
 # scripts/hooks/mypy-full.sh's `mypy .` type-checks it a second time under the wrong
 # interpreter, contradicting the routing invariant CONTRIBUTING.md describes.
-exclude = ["^agent-mesh/", "^\\.venv/"]
+# `mutants/` holds mutmut's generated copy of a tier-one member, including a second
+# copy of its package, which mypy reports as a duplicate module. It is gitignored
+# execution evidence rather than owned source (CONTRIBUTING.md), and Ruff already
+# skips it because Ruff honours .gitignore while mypy does not. Without this, every
+# type check after the first mutation run fails.
+exclude = ["^agent-mesh/", "^\\.venv/", "/mutants/"]
 
 # ------------------------------------------------------------------------ pytest ---
 [tool.pytest.ini_options]
@@ -158,6 +163,23 @@ minversion = "8.0"
 # Without testpaths, the bare `pytest` in scripts/hooks/pytest-full.sh collects
 # agent-mesh/ under the wrong interpreter and trips on duplicate module basenames.
 testpaths = ["tests", "tools", "packages", "services"]
+# Same reason as the mypy exclusion above: mutmut copies each tier-one member's
+# tests into `mutants/`, and collecting that copy runs every member test twice.
+# Setting this REPLACES pytest's defaults rather than extending them, so the whole
+# default list is restated; dropping ".*" alone makes pytest descend into
+# .hypothesis and .venv.
+norecursedirs = [
+    "*.egg",
+    ".*",
+    "_darcs",
+    "build",
+    "CVS",
+    "dist",
+    "node_modules",
+    "venv",
+    "{arch}",
+    "mutants",
+]
 addopts = [
     "--strict-markers",
     "--strict-config",

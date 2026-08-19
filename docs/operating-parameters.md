@@ -40,6 +40,28 @@ integer arithmetic; display rounding never changes a verdict.
 | Dependency waiver reason | At least 20 Unicode characters | `dependency-waivers.toml` validation |
 | Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON |
 
+## Canonical serialization bounds
+
+The bounds a digest-covered payload must satisfy. The rules that use them are in
+[CONTRACTS.md](CONTRACTS.md#canonical-serialization) and the decision is
+[ADR-0027](adr/0027-integer-only-canonical-serialization.md). Every row is enforced twice: by the
+`packages/contracts` canonicalizer, which rejects a violating value, and by the versioned JSON Schemas,
+which the offline contract-artifact gate validates against positive and negative golden fixtures.
+
+| Parameter | Limit | Instrument |
+| --- | --- | --- |
+| Admissible numeric type | Integer only; no floating-point value is representable | `packages/contracts` canonicalizer |
+| Integer magnitude | At most 9007199254740991, that is 2^53 - 1, so a TypeScript `number` is exact | `packages/contracts` canonicalizer |
+| Latitude | -90000000 to 90000000 microdegrees | JSON Schema plus canonicalizer |
+| Longitude | -180000000 to 180000000 microdegrees | JSON Schema plus canonicalizer |
+| Coordinate resolution | 1 microdegree, which is 0.111 m at the equator | Fixed by the microdegree unit |
+| Evidence score | 0 to 100 hundredths | JSON Schema plus canonicalizer |
+| Instant precision | Exactly 3 fractional-second digits, UTC, literal `Z` | JSON Schema plus canonicalizer |
+| Object key form | `^[a-z][a-zA-Z0-9]*$`, 1 to 64 characters | `packages/contracts` canonicalizer |
+| String value length | At most 4096 bytes when UTF-8 encoded | `packages/contracts` canonicalizer |
+| Canonicalization version | Integer 1, carried inside the hashed bytes | `packages/contracts` digest function |
+| Digest | SHA-256 rendered as 64 lowercase hexadecimal characters | `packages/contracts` digest function |
+
 ## Workload and service-level profile
 
 Use a versioned acceptance workload so performance and delivery claims are reproducible. These are initial release targets; changing them requires measured evidence and a recorded decision.

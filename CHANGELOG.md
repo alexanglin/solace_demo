@@ -48,6 +48,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- ADR-0027 and the canonical serialization contract, discharging the open question ADR-0006 left and
+  unblocking every digest in the system. Digest-covered payloads use an integer-only JSON profile in
+  which no floating-point value is representable: coordinates are integer microdegrees and the evidence
+  score is integer hundredths, so bypass case B14 becomes impossible by construction rather than defended
+  against. RFC 8785 was rejected because its ECMAScript number formatting is defined over IEEE-754
+  doubles, which makes formatting deterministic while leaving distinct coordinates free to alias.
+
 - ADR-0026, `dependency-waivers.toml`, and `tools/dependency_waiver_gate.py`, making the
   time-bounded waiver `AGENTS.md` already required actually executable. The dependency audit now
   adjudicates pip-audit's JSON report rather than trusting its exit status, and enforces the

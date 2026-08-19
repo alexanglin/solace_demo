@@ -40,7 +40,7 @@ requires an ADR. `Status` is the state of the test, not of the threat.
 | --- | --- | --- | --- |
 | B12 | Alter an action parameter after approval, keeping the proposal ID | Refused on digest mismatch | to build |
 | B13 | Add a field to the proposal outside the digest's covered field set | Impossible: the proposal schema sets `additionalProperties: false` | to build |
-| B14 | Exploit alternate coordinate representations or float formatting to alias two different coordinates before hashing | Digest implementation remains forbidden until a canonical-serialization ADR defines unambiguous bytes; that contract must prevent distinct coordinate values from aliasing before hashing ([CONTRACTS.md](../CONTRACTS.md#canonical-serialization)) | blocked by serialization ADR |
+| B14 | Exploit alternate coordinate representations or float formatting to alias two different coordinates before hashing | Impossible: no floating-point value is representable in a digest-covered payload and coordinates are integer microdegrees, so distinct coordinates cannot share a canonical form. A real number at the boundary is rejected, never coerced ([ADR-0027](../adr/0027-integer-only-canonical-serialization.md), [CONTRACTS.md](../CONTRACTS.md#canonical-serialization)) | to build |
 | B15 | Present an approval for mission A against a proposal in mission B | Refused; the binding includes the mission ID | to build |
 | B16 | Present an approval whose `scoreVersion` differs from the candidate's | Refused; the score version is inside the digest | to build |
 
