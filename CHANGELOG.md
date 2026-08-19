@@ -41,6 +41,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Offline, fail-closed gates for contract-artifact ownership, per-member statement and branch coverage,
+  and domain import boundaries; active members fail on missing manifests, fixtures, schemas, tiers, or
+  measurable source.
 - A fail-closed, whole-tree Arrange-Act-Assert checker for Python, JavaScript, TypeScript, Vitest, and
   Playwright tests, with conformance coverage for nested Python assertions, dynamic registrations,
   syntax-based imports, and bare `expect(...)` assertions.
