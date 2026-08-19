@@ -1,0 +1,102 @@
+digraph AerialRescueMesh {
+  graph [
+    rankdir=LR,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.42",
+    ranksep="0.80",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=20,
+    label="Aerial Rescue Mesh — open-source Solace-first architecture",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F7F9FC",
+    fontname="Helvetica",
+    fontsize=10,
+    margin="0.16,0.11"
+  ];
+
+  edge [
+    color="#52657A",
+    fontcolor="#314158",
+    fontname="Helvetica",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  subgraph cluster_operator {
+    label="Operator browser — loopback only";
+    color="#B7C3D0";
+    style="rounded,dashed";
+    dashboard [label="Aerial Rescue dashboard\nmap • evidence • approval • audit", fillcolor="#E8F7F1"];
+    sam_ui [label="Agent Mesh Web UI :8000\nActivity • Agents • tasks", fillcolor="#E8F7F1"];
+    broker_ui [label="PubSub+ Broker Manager\nclients • queues • Try Me", fillcolor="#E8F7F1"];
+  }
+
+  subgraph cluster_mac {
+    label="Apple Silicon reference workstation — 64 GB";
+    color="#8193A6";
+    style="rounded";
+
+    subgraph cluster_app {
+      label="Application project — Python 3.14.7 — root .venv";
+      color="#6B86A5";
+      style="rounded";
+      api [label="FastAPI dashboard API\nSSE + scenario control"];
+      app_core [label="SAR application services\n23-drone simulator • mission state\nevidence scoring • recorder/replay"];
+      command [label="Deterministic command gateway\npolicy • approval • idempotency", fillcolor="#FFF2CC", color="#B58900"];
+      app_adapter [label="Solace PubSub+ Python API\ndirect + guaranteed + request/reply", fillcolor="#DFF7EE", color="#008F6B"];
+
+      api -> app_core [dir=both];
+      app_core -> command [label="proposals"];
+      app_core -> app_adapter [dir=both];
+      command -> app_adapter [label="authorized commands", color="#B58900", fontcolor="#8A6500"];
+    }
+
+    subgraph cluster_sam {
+      label="Agent Mesh project — Python 3.13.15 — agent-mesh/.venv";
+      color="#00A67D";
+      style="rounded";
+      sam_gateways [label="Official gateways and tool\nHTTP/SSE • Event Mesh Gateway 1.1.0\nEvent Mesh Tool 0.1.1", fillcolor="#DFF7EE", color="#008F6B"];
+      sam_runtime [label="Solace Agent Mesh 1.28.7\nA2A discovery • tasks • artifacts • evals", fillcolor="#DFF7EE", color="#008F6B"];
+      sam_logic [label="Orchestrator + Mission Response workflow\nMission Coordinator • Evidence Fusion\n3 independent A2A edge agents"];
+
+      sam_gateways -> sam_runtime [label="A2A", dir=both];
+      sam_runtime -> sam_logic [label="discover / delegate", dir=both];
+    }
+
+    ollama [label="Ollama :11434\npinned local models", shape=cylinder, fillcolor="#F0E9FF", color="#7050A0"];
+    local_broker [label="Local PubSub+ container\ndeterministic test profile", shape=cylinder, fillcolor="#EEF2F6", style="dashed,filled"];
+
+    sam_logic -> ollama [label="local inference", dir=both];
+    app_adapter -> local_broker [label="integration profile", style=dashed, dir=both];
+    sam_runtime -> local_broker [style=dashed, dir=both];
+  }
+
+  subgraph cluster_cloud {
+    label="Solace Cloud PubSub+";
+    color="#00A67D";
+    style="rounded";
+    a2a [label="A2A control plane\ndedicated namespace + identities", shape=cylinder, fillcolor="#DFF7EE", color="#008F6B"];
+    app_plane [label="Application data plane\ndirect telemetry + guaranteed queues", shape=cylinder, fillcolor="#DFF7EE", color="#008F6B"];
+  }
+
+  dashboard -> api [label="HTTPS / SSE", dir=both];
+  sam_ui -> sam_gateways [label="HTTP / SSE", dir=both];
+  broker_ui -> a2a [label="observe", dir=both];
+  broker_ui -> app_plane [dir=both];
+
+  sam_runtime -> a2a [label="A2A over Solace", dir=both];
+  sam_gateways -> app_plane [label="salient events + tool request/reply", dir=both];
+  app_adapter -> app_plane [label="CloudEvents + commands", dir=both];
+
+  sam_gateways -> command [label="proposals only", color="#B58900", fontcolor="#8A6500", style=dashed];
+}
