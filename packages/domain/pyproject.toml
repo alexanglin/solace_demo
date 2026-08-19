@@ -1,0 +1,34 @@
+[project]
+name = "aerial-rescue-domain"
+version = "0.0.0"
+description = "Pure typed domain rules, state machines, and the spend guardrail."
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aerial_rescue_domain"]
+
+[tool.aerial-rescue]
+# Risk tier per docs/adr/0017-mutation-tool-score-and-risk-tiers.md. A member with no
+# declared tier fails the gate rather than defaulting to the weakest one.
+risk-tier = 1
+
+# Mechanical layering enforcement, per docs/adr/0011:18: packages/domain cannot import
+# Solace, FastAPI, SQLAlchemy, asyncpg, or Ollama clients. This converts the "pure typed
+# domain functions" rule from an aspiration into a build failure. Scoped here rather than
+# at the root because packages/store and packages/broker legitimately need these.
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"solace".msg = "packages/domain must stay transport-free (ADR-0011); use a port."
+"solace.messaging".msg = "packages/domain must stay transport-free (ADR-0011); use a port."
+"fastapi".msg = "packages/domain must stay framework-free (ADR-0011)."
+"sqlalchemy".msg = "packages/domain must stay persistence-free (ADR-0011); use a port."
+"asyncpg".msg = "packages/domain must stay persistence-free (ADR-0011); use a port."
+"ollama".msg = "packages/domain must stay model-client-free (ADR-0011); use a port."
+"httpx".msg = "packages/domain must not perform I/O (ADR-0011); use a port."

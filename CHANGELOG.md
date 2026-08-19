@@ -10,6 +10,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Kept deterministic evidence scoring and fleet state machines in Tier 1 domain code; the evidence and
+  fleet services remain Tier 2 coordination and adapter boundaries.
 - Standardized the decision metric as an evidence score across the architecture, testing, limitations,
   and security documentation.
 - Split the normative documentation set so every fact has one home, per ADR-0016
@@ -39,6 +41,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- A Python 3.14.7 uv application workspace with five typed library packages, six typed service packages,
+  explicit per-member risk tiers, and one lock resolved for macOS arm64 and Linux aarch64; Agent Mesh
+  remains isolated behind its Python 3.13.15 interpreter pin.
 - ADR-0024 defining the exact single-operator local API boundary: loopback-only binding, Host validation
   on every request, browser-Origin validation for mutations, and a fresh per-runtime bearer for the three
   state-changing endpoints. Canonical digest serialization remains blocked on its own future ADR.

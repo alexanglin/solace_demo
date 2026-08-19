@@ -114,8 +114,10 @@ documents conflict, the stricter statement governs until an ADR resolves it.
 
 ## 5. Repository shape
 
-The repository structure is below. Entries marked `(exists)` are already in place; the rest are planned.
-Each `packages/` and `services/` member carries its own `pyproject.toml` declaring its risk tier
+The repository structure is below. Entries marked `(exists)` are already in place; entries marked
+`(scaffold)` contain a manifest and typed import package only, with runtime behavior and tests still
+planned. The rest are planned. Each `packages/` and `services/` member carries its own `pyproject.toml`
+declaring its risk tier
 ([ADR-0010](adr/0010-uv-workspace-and-toolchain.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md)).
 
 ```text
@@ -131,18 +133,20 @@ justfile                       (exists)
 .pre-commit-config.yaml        (exists)
 .github/workflows/             (exists)
 scripts/                       (exists)  hooks/, diagrams.sh, fix.sh
-pyproject.toml                           uv workspace root, declares members
-uv.lock
+.python-version                (exists)  application Python 3.14.7 pin
+tools/                         (scaffold) root repository-tooling package marker
+pyproject.toml                 (exists)  uv workspace root, declares members
+uv.lock                        (exists)  macOS arm64 and Linux aarch64 resolution
 apps/
   dashboard/
-services/
+services/                      (scaffold) six typed service package shells
   dashboard_api/
   fleet_simulator/
   command_gateway/
   scenario_service/
   evidence_service/
   recorder/
-packages/
+packages/                      (scaffold) five typed library package shells
   broker/
   contracts/
   domain/
@@ -152,7 +156,7 @@ migrations/                              Alembic revisions for the durable store
 deploy/
   docker-compose.yml                     PubSub+ container and Postgres
 agent-mesh/                              separate non-member uv project
-  .python-version
+  .python-version              (exists)  Agent Mesh Python 3.13.15 pin
   pyproject.toml
   uv.lock
   configs/
@@ -176,14 +180,14 @@ docs/
   IMPLEMENTATION_PLAN.md       (exists)  sequenced delivery, risks, release criteria
   adr/                         (exists)  authoritative decision log
   architecture/                (exists)  editable diagram sources plus generated PNGs
-  ARCHITECTURE.md                        component responsibilities
-  CONTRACTS.md                           event envelope, topics, HTTP API
-  SAFETY.md                              approval protocol and safety invariants
-  TESTING.md                             test classes, stages, coverage tiers
-  LIMITATIONS.md                         what is and is not modelled
-  operating-parameters.md                every number, with its instrument
+  ARCHITECTURE.md              (exists)  component responsibilities
+  CONTRACTS.md                 (exists)  event envelope, topics, HTTP API
+  SAFETY.md                    (exists)  approval protocol and safety invariants
+  TESTING.md                   (exists)  test classes, stages, coverage tiers
+  LIMITATIONS.md               (exists)  what is and is not modelled
+  operating-parameters.md      (exists)  every number, with its instrument
   runbooks/
-  security/                              threat model, approval-bypass catalogue
+  security/                    (exists)  threat model, approval-bypass catalogue
 ```
 
 Prefer shared packages over copied logic, but do not create abstractions until at least two real consumers require them.

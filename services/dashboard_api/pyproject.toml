@@ -1,0 +1,18 @@
+[project]
+name = "aerial-rescue-dashboard-api"
+version = "0.0.0"
+description = "FastAPI scenario control, approvals, health, readiness, and SSE."
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aerial_rescue_dashboard_api"]
+
+[tool.aerial-rescue]
+# Risk tier per docs/adr/0017-mutation-tool-score-and-risk-tiers.md. A member with no
+# declared tier fails the gate rather than defaulting to the weakest one.
+risk-tier = 2
