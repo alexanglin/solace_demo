@@ -41,6 +41,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- A fail-closed, whole-tree Arrange-Act-Assert checker for Python, JavaScript, TypeScript, Vitest, and
+  Playwright tests, with conformance coverage for nested Python assertions, dynamic registrations,
+  syntax-based imports, and bare `expect(...)` assertions.
 - A Python 3.14.7 uv application workspace with five typed library packages, six typed service packages,
   explicit per-member risk tiers, and one lock resolved for macOS arm64 and Linux aarch64; Agent Mesh
   remains isolated behind its Python 3.13.15 interpreter pin.
