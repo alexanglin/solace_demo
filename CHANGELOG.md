@@ -10,6 +10,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Excluded mutmut's generated `mutants/` tree from type checking and test collection. Ruff honours
+  `.gitignore` and mypy and pytest do not, so after any mutation run mypy reported the member's package
+  as a duplicate module and pytest collected a second copy of every tier-one test. The failure was
+  order-dependent: `mypy-full` and `pytest-full` run before `mutation-full`, so the first pre-push pass
+  succeeded and every later one failed.
+
 - Repaired the quality-gate test fixtures, which inherited `GIT_DIR` and `GIT_INDEX_FILE` from the
   process running them. Inside a git hook that aimed every fixture command at the repository
   running the hook, so `pytest-unit-fast` failed whenever a Python file was staged while passing
