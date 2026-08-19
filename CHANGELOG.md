@@ -10,6 +10,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Repaired the quality-gate test fixtures, which inherited `GIT_DIR` and `GIT_INDEX_FILE` from the
+  process running them. Inside a git hook that aimed every fixture command at the repository
+  running the hook, so `pytest-unit-fast` failed whenever a Python file was staged while passing
+  when the suite was run by hand.
+
 - Replaced global and broad-test Ruff `S603`/`S607` ignores with ADR-0025's exact four-file `S603`
   allowlist, removed every `S607` waiver, and made required Git execution absolute and fail closed.
 - Kept deterministic evidence scoring and fleet state machines in Tier 1 domain code; the evidence and
@@ -42,6 +47,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Added
+
+- ADR-0026, `dependency-waivers.toml`, and `tools/dependency_waiver_gate.py`, making the
+  time-bounded waiver `AGENTS.md` already required actually executable. The dependency audit now
+  adjudicates pip-audit's JSON report rather than trusting its exit status, and enforces the
+  contract in both directions: no advisory may go unwaived, and no waiver may outlive the advisory
+  it was written for. Without this, pinning Agent Mesh 1.28.7 would have failed the audit
+  permanently, leaving `--no-verify` as the only way to commit.
 
 - ADR-0023 and blocking pre-push/CI gates for cognitive complexity, multi-language duplication, and
   independent Tier 1 mutation runs. Mutation results are scored per module; the survivor registry is

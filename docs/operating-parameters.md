@@ -36,6 +36,9 @@ integer arithmetic; display rounding never changes a verdict.
 | Mutation concurrency | At most 4 child processes | `mutmut run --max-children 4` |
 | Survivor review lifetime | More than 0 and at most 30 calendar days | `mutation-survivors.toml` validation |
 | Survivor reason | At least 20 Unicode characters | `mutation-survivors.toml` validation |
+| Dependency waiver lifetime | More than 0 and at most 30 calendar days | `dependency-waivers.toml` validation |
+| Dependency waiver reason | At least 20 Unicode characters | `dependency-waivers.toml` validation |
+| Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON |
 
 ## Workload and service-level profile
 

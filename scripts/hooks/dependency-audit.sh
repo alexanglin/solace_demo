@@ -48,9 +48,11 @@ fi
 audit_dir=$(mktemp -d "${TMPDIR:-/tmp}/aerial-rescue-audit.XXXXXX")
 trap 'rm -rf "$audit_dir"' 0 1 2 15
 
-# pip-audit exits 1 when it reports advisories, which is not by itself a failure: the
-# reviewed waiver registry decides that. Any other non-zero status means the audit did
-# not complete, and an incomplete audit must never be mistaken for a clean one.
+# pip-audit exits 1 both when it reports advisories and when it rejects its own
+# invocation, so the exit status alone cannot tell those apart. The written report is
+# the oracle instead: the waiver gate fails closed when it is absent or unparsable, so
+# an audit that never ran cannot be mistaken for a clean one. A status above 1 means
+# pip-audit did not start and is refused here.
 adjudicate() {
 	audit_domain=$1
 	audit_report=$2

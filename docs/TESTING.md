@@ -171,7 +171,11 @@ Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, s
 ([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md),
 [ADR-0023](adr/0023-executable-deep-quality-gates.md)). Bandit ignores inline suppression comments
 and blocks medium-or-higher findings at medium-or-higher confidence; dependency auditing operates on
-hashed exports of every active uv lock. TypeScript quality gates use Vitest, Testing Library, ESLint,
+hashed exports of every active uv lock. A reported advisory is adjudicated against
+`dependency-waivers.toml`, which binds each review to an exact domain, package, version, and
+advisory with a reason, reachability statement, compensating control, reviewer, review date, and
+expiry ([ADR-0026](adr/0026-expiring-dependency-waivers.md)). An unwaived advisory, an expired or
+out-of-window waiver, and a waiver matching no reported advisory each fail. TypeScript quality gates use Vitest, Testing Library, ESLint,
 TypeScript strict mode, and Playwright. jscpd 5.0.14 provides the multi-language duplication scan. The
 cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
