@@ -103,16 +103,11 @@ select = [
     "SIM", "RET", "ARG", "PTH", "ERA", "TRY", "EM", "N", "D",
 ]
 ignore = [
-    "D203",  # conflicts with D211
-    "D213",  # conflicts with D212
-    # S603/S607 fire on every subprocess call with a list argument -- which is the
-    # safe form -- and cannot distinguish it from shell=True. Bandit runs separately
-    # over non-test source, so these two only generate noise on deliberate tooling.
-    "S603",
-    "S607",
+    "D203",  # conflicts with D211; ADR-0025 records the Google-style choice
+    "D213",  # conflicts with D212; ADR-0025 records the Google-style choice
     # This repository writes tests as unittest.TestCase subclasses, which the AAA gate
-    # in tools/aaa_checker explicitly supports. PT009 would demand bare asserts and
-    # fight the established convention, so it is off by decision, not by oversight.
+    # in tools/aaa_checker explicitly supports. ADR-0025 records why PT009 would fight
+    # that established convention.
     "PT009",
 ]
 
@@ -132,13 +127,19 @@ max-bool-expr = 4
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# Test modules may assert (S101), need no docstrings, and legitimately shell out to
-# subprocesses to exercise the hook scripts (S603, S607). Matched by filename as well
-# as directory, because not every suite lives under a directory called "tests".
-"tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201", "S603", "S607"]
-"**/tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201", "S603", "S607"]
-"**/test_*.py" = ["S101", "D100", "D101", "D102", "D103", "ANN201", "S603", "S607"]
-"**/*_tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201", "S603", "S607"]
+# Test modules may assert (S101) and need no public docstrings. Matched by filename as
+# well as directory, because not every suite lives under a directory called "tests".
+"tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201"]
+"**/tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201"]
+"**/test_*.py" = ["S101", "D100", "D101", "D102", "D103", "ANN201"]
+"**/*_tests/**" = ["S101", "D100", "D101", "D102", "D103", "ANN201"]
+
+# ADR-0025 permits S603 only for these reviewed subprocess owners. Every executable is
+# absolute before launch; there is no S607 waiver anywhere in the repository.
+"tools/aaa_checker/checker.py" = ["S603"]
+"tools/coverage_gate.py" = ["S603"]
+"tools/quality_gate_tests/support.py" = ["S603"]
+"tools/quality_gate_tests/test_diagram_integrity.py" = ["S603"]
 
 # -------------------------------------------------------------------------- mypy ---
 [tool.mypy]

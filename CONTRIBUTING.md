@@ -139,6 +139,11 @@ blocking the Git operation, and the next commit or push gate remains authoritati
 
 Per [ADR-0011](docs/adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), blanket `# type: ignore`, bare `# noqa`, and `eslint-disable` are prohibited. If you genuinely need one, record it as an ADR with the justification and the condition under which it can be removed. Unused ignores are themselves errors, so a waiver cannot silently outlive its cause.
 
+[ADR-0025](docs/adr/0025-narrow-ruff-subprocess-waivers.md) records the existing Ruff convention choices
+for `D203`, `D213`, and `PT009`, plus the exact four-file `S603` subprocess allowlist. `S603` is not
+ignored globally or through test globs, `S607` has no waiver, and required Git commands resolve to an
+absolute executable before launch or fail closed.
+
 ## Updating pinned hooks
 
 Every hook revision is pinned to an exact upstream tag.

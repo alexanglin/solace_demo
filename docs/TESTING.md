@@ -179,3 +179,8 @@ checks include the AAA conformance scan, domain import contracts, secret scannin
 message validation, and pushed-range `git diff --check`.
 Contract artifacts are inventoried through `schemas/contract-manifest.toml` and validated against an
 offline in-memory Draft 2020-12 registry at both blocking stages ([ADR-0021](adr/0021-contract-artifact-manifest.md)).
+
+Ruff's subprocess boundary has no global or broad test-glob waiver. `S603` is permitted only for the four
+reviewed subprocess owners named by [ADR-0025](adr/0025-narrow-ruff-subprocess-waivers.md), and `S607` is
+never waived. Git callers resolve an absolute executable and fail closed when it is absent; a policy test
+parses the Ruff configuration and rejects any expansion of that exact scope.

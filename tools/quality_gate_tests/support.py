@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.executable_resolution import required_executable
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIRECTORY = REPOSITORY_ROOT / "scripts" / "hooks"
 
@@ -38,8 +40,9 @@ class QualityGateTestCase(unittest.TestCase):
 
     @staticmethod
     def git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+        git_executable = required_executable("git")
         return subprocess.run(
-            ("git", "-C", str(repository), *arguments),
+            (git_executable, "-C", str(repository), *arguments),
             check=True,
             capture_output=True,
             text=True,

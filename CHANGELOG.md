@@ -10,6 +10,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Replaced global and broad-test Ruff `S603`/`S607` ignores with ADR-0025's exact four-file `S603`
+  allowlist, removed every `S607` waiver, and made required Git execution absolute and fail closed.
 - Kept deterministic evidence scoring and fleet state machines in Tier 1 domain code; the evidence and
   fleet services remain Tier 2 coordination and adapter boundaries.
 - Standardized the decision metric as an evidence score across the architecture, testing, limitations,

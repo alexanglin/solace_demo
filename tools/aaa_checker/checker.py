@@ -20,6 +20,8 @@ from pathlib import Path, PurePath
 import tree_sitter_typescript
 from tree_sitter import Language, Node, Parser
 
+from tools.executable_resolution import required_executable
+
 PYTHON_PHASE_MARKERS = ("# Arrange", "# Act", "# Assert")
 STATE_MACHINE_DECORATORS = frozenset({"rule", "invariant"})
 FUSED_ASSERTION_METHODS = frozenset(
@@ -101,9 +103,10 @@ def check_paths(paths: Iterable[Path]) -> tuple[Diagnostic, ...]:
 
 def repository_source_paths(root: Path) -> tuple[Path, ...]:
     """Every tracked or unignored Python and JavaScript-family source file under root."""
+    git_executable = required_executable("git")
     result = subprocess.run(
         (
-            "git",
+            git_executable,
             "-C",
             str(root),
             "ls-files",
