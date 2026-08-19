@@ -152,8 +152,8 @@ services/                      (scaffold) six typed service package shells
   recorder/
 packages/                      (scaffold) five typed library package shells
   broker/
-  contracts/
-    tests/                               member-local mutation tests
+  contracts/                   (exists)  canonical serialization, digest, and topic contracts
+    tests/                     (exists)  member-local mutation tests
   domain/
     tests/                               member-local mutation tests
   store/

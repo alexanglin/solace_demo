@@ -54,6 +54,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- The first production code in the repository: `packages/contracts` now canonicalizes, parses, and
+  digests digest-covered payloads, at 100% statement and branch coverage with a 100% mutation score and
+  no reviewed survivors. Two mutants were equivalent rather than untested and were removed at the source:
+  a codec name normalizes so `"utf-8"` and `"UTF-8"` cannot be told apart, and a surrogate bound written
+  as a character literal is the same character in either hexadecimal case.
+
 - ADR-0027 and the canonical serialization contract, discharging the open question ADR-0006 left and
   unblocking every digest in the system. Digest-covered payloads use an integer-only JSON profile in
   which no floating-point value is representable: coordinates are integer microdegrees and the evidence

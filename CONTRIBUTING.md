@@ -163,6 +163,7 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   directly.
 - The Agent Mesh semantic-configuration validator remains required but is not yet executable. It must land
   before the first owned Agent Mesh configuration.
-- The Tier 1 package scaffolds contain no mutation-eligible behavior or co-located tests yet. The mutation and
-  coverage entry points are executable and intentionally fail closed until those packages gain tested
-  behavior.
+- `packages/domain` and `services/command_gateway` contain no mutation-eligible behavior or co-located
+  tests yet, and neither do the Tier 2 members. The mutation and coverage entry points are executable and
+  intentionally fail closed until those packages gain tested behavior, so the pre-push tier stays red
+  until they do. `packages/contracts` is the first member to pass both.
