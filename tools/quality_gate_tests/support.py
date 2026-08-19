@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -122,3 +123,69 @@ class QualityGateTestCase(unittest.TestCase):
         for hook_name, result in zip(hook_names, results, strict=True):
             with self.subTest(hook=hook_name):
                 self.assertEqual(0, result.returncode, result.stderr)
+
+
+class MutationGateTestCase(QualityGateTestCase):
+    """Fixture writers shared by mutation-result and survivor-registry tests."""
+
+    @staticmethod
+    def mutation_statuses(*, killed: int, survived: int) -> dict[str, int | None]:
+        statuses: dict[str, int | None] = {
+            f"src.example.x_rule__mutmut_{index}": 1 for index in range(1, killed + 1)
+        }
+        statuses.update(
+            {
+                f"src.example.x_rule__mutmut_{index}": 0
+                for index in range(killed + 1, killed + survived + 1)
+            }
+        )
+        return statuses
+
+    @staticmethod
+    def write_mutation_metadata(
+        root: Path,
+        member: str,
+        statuses: dict[str, int | None],
+        *,
+        module: str = "example",
+    ) -> None:
+        metadata = root / member / "mutants" / "src" / f"{module}.py.meta"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text(
+            json.dumps(
+                {
+                    "exit_code_by_key": statuses,
+                    "hash_by_function_name": {},
+                    "type_check_error_by_key": {},
+                    "durations_by_key": {},
+                    "estimated_durations_by_key": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def write_survivor_registry(
+        root: Path,
+        *,
+        records: tuple[tuple[str, str], ...] = (),
+        expires_on: str = "2026-09-18",
+    ) -> None:
+        lines = ["format = 1"]
+        for member, mutant in records:
+            lines.extend(
+                (
+                    "",
+                    "[[survivors]]",
+                    f"member = {json.dumps(member)}",
+                    f"mutant = {json.dumps(mutant)}",
+                    'reason = "Equivalent boundary-preserving mutation reviewed manually."',
+                    'reviewed_by = "Alex Anglin"',
+                    'reviewed_on = "2026-08-19"',
+                    f"expires_on = {json.dumps(expires_on)}",
+                )
+            )
+        (root / "mutation-survivors.toml").write_text(
+            "\n".join(lines) + "\n",
+            encoding="utf-8",
+        )

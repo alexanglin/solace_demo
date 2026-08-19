@@ -31,6 +31,16 @@ check-aaa:
 check-contracts:
     pre-commit run --all-files --hook-stage pre-commit contract-artifacts
 
+# Enforce Ruff complexity, cognitive complexity, and multi-language duplication.
+check-complexity:
+    pre-commit run --all-files --hook-stage pre-push python-quality-full
+    pre-commit run --all-files --hook-stage pre-push cognitive-complexity-full
+    pre-commit run --all-files --hook-stage pre-push duplication-full
+
+# Run independent mutation tests and score every tier-one module.
+check-mutation:
+    pre-commit run --all-files --hook-stage pre-push mutation-full
+
 # Apply every automatic fix. The only thing here that modifies files.
 fix:
     scripts/fix.sh

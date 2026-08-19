@@ -41,6 +41,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- ADR-0023 and blocking pre-push/CI gates for cognitive complexity, multi-language duplication, and
+  independent Tier 1 mutation runs. Mutation results are scored per module; the survivor registry is
+  exact, expiring, and cannot remove survivors from the score denominator.
 - Check-only hooks for the commit, commit-message, push, checkout, merge, and pre-merge stages; GitHub
   Actions re-runs the same fail-closed entry points, with shared fixtures covering hook activation,
   revision ranges, environment hygiene, diagram integrity, and dependency synchronization.

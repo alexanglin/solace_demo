@@ -49,7 +49,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, hygiene, secret scan, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
@@ -64,6 +64,8 @@ just check-push        # the thorough tier
 just check             # both, exactly as CI runs them
 just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures
+just check-complexity  # Ruff, cognitive complexity, and multi-language duplication
+just check-mutation    # independent Tier 1 mutation runs and per-module scoring
 ```
 
 `just` is a convenience wrapper. The hooks and CI invoke the scripts under [`scripts/`](scripts/) directly, so nothing breaks if you do not have `just` installed.
@@ -77,9 +79,12 @@ both `pre-commit` and `pre-push`, and CI runs the same hook. There is no suppres
 extend the checker and its conformance suite before introducing another test language or registration
 dialect.
 
-## Hooks never modify your files
+## Hooks never rewrite tracked source
 
-Every hook is **check-only**. A hook tells you what is wrong; it does not rewrite what you staged. This is deliberate: the commit contains exactly what you reviewed.
+Every hook is **check-only with respect to tracked source and tests**. A hook tells you what is wrong; it
+does not rewrite what you staged. The mutation hook creates ignored `mutants/` result caches inside Tier 1
+members; those caches are execution evidence, never staged content. The commit therefore contains exactly
+what you reviewed.
 
 To apply fixes, ask for them explicitly:
 
@@ -115,7 +120,10 @@ Per [ADR-0004](docs/adr/0004-split-python-runtimes.md), Python lives in two isol
 - Application services on **3.14.x** in the root `uv` workspace
 - Agent Mesh and its plugins on **3.13.x** in `agent-mesh/`, because upstream declares `>=3.10.16,<3.14`
 
-Hooks route files to the correct environment by path. A change under `agent-mesh/` is checked by the 3.13 environment; everything else by 3.14. Nothing is checked twice, and a commit touching only one side pays for only one environment.
+Runtime-dependent hooks route files to the correct environment by path. A change under `agent-mesh/` is
+executed and type-checked by the 3.13 environment; application code uses 3.14. Repository-level static
+parsers may inspect both trees from the root tool environment because they do not import or execute the
+Agent Mesh project.
 
 Never combine the two lockfiles or install either globally.
 
@@ -148,6 +156,8 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   `(provisional -- confirm in Phase 0)` rather than left vague. The check skips `docs/adr/` (immutable by
   policy) and this file (it documents the words it bans). Run `just lint-docs-strict` to invoke it
   directly.
-- Cognitive-complexity, cross-language duplication, mutation, and Agent Mesh
-  semantic-configuration entry points remain required by accepted decisions but are not yet executable.
-  They must land before the first production behavior that depends on them.
+- The Agent Mesh semantic-configuration validator remains required but is not yet executable. It must land
+  before the first owned Agent Mesh configuration.
+- The Tier 1 package scaffolds contain no mutation-eligible behavior or co-located tests yet. The mutation and
+  coverage entry points are executable and intentionally fail closed until those packages gain tested
+  behavior.

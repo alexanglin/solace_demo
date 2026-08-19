@@ -4,9 +4,38 @@
 > `AGENTS.md` reference it and must not restate it ([ADR-0016](adr/0016-documentation-set-split.md)).
 > Where this document and an `Accepted` ADR disagree, the ADR governs.
 >
-> **Related:** [ADR-0015](adr/0015-tiered-quality-gates.md) and [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) (coverage and mutation thresholds). `scripts/hooks/check-docs-strict.sh` rejects a threshold stated without a number, and this document is the home it names.
+> **Related:** [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), and [ADR-0023](adr/0023-executable-deep-quality-gates.md) (coverage, maintainability, and mutation thresholds). `scripts/hooks/check-docs-strict.sh` rejects a threshold stated without a number, and this document is the home it names.
 
 A parameter that gates safety behaviour may not be changed without an ADR ([adr/README.md](adr/README.md)). A value still to be determined carries the marker `(provisional -- confirm in Phase 0)` so the strict documentation check can distinguish an open question from an omission.
+
+## Code-quality gates
+
+These limits apply to project-owned source, tests, fixtures, and scripts. The tools run through the
+blocking hook and CI entry points documented in [TESTING.md](TESTING.md). Percentages are compared with
+integer arithmetic; display rounding never changes a verdict.
+
+| Parameter | Limit | Instrument |
+| --- | --- | --- |
+| Python Tier 1 statement coverage | 100% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
+| Python Tier 1 branch coverage | 100% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
+| Python Tier 2 statement coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
+| Python Tier 2 branch coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
+| Python Tier 3 test inventory | At least 1 smoke test and 1 failure-path test per module | Tier inventory gate; Tier 3 fails until this inventory is executable |
+| TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest coverage thresholds |
+| Cyclomatic complexity | At most 8 per function | Ruff `C901` |
+| Cognitive complexity | At most 15 per function | Complexipy 7.0.1 |
+| Function arguments | At most 5 | Ruff `PLR0913` and `PLR0917` |
+| Function branches | At most 10 | Ruff `PLR0912` |
+| Function returns | At most 6 | Ruff `PLR0911` |
+| Function statements | At most 30 | Ruff `PLR0915` |
+| Function locals | At most 12 | Ruff `PLR0914` |
+| Nested blocks | At most 3 | Ruff `PLR1702` |
+| Boolean expressions | At most 4 operands | Ruff `PLR0916` |
+| Duplicated source | At most 3% repository-wide; clone minimum 8 lines and 50 tokens; strict mode | jscpd 5.0.14 |
+| Mutation score | At least 90% killed per mutated Tier 1 Python module | `tools/mutation_gate.py` over mutmut 3.7.0 metadata |
+| Mutation concurrency | At most 4 child processes | `mutmut run --max-children 4` |
+| Survivor review lifetime | More than 0 and at most 30 calendar days | `mutation-survivors.toml` validation |
+| Survivor reason | At least 20 Unicode characters | `mutation-survivors.toml` validation |
 
 ## Workload and service-level profile
 

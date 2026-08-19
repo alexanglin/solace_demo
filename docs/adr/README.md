@@ -40,6 +40,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0020](0020-pin-uv-version.md) | Pin uv 0.12.5 across local development and CI | Accepted |
 | [0021](0021-contract-artifact-manifest.md) | Validate contract artifacts through one offline manifest | Accepted |
 | [0022](0022-recursive-diagram-integrity.md) | Verify recursive diagram source and PNG integrity | Accepted |
+| [0023](0023-executable-deep-quality-gates.md) | Make complexity, duplication, and mutation gates executable | Accepted |
 | [0024](0024-local-operator-api-boundary.md) | Protect local mutations with loopback, Host, Origin, and a per-runtime bearer | Accepted |
 
 ## Decisions still open

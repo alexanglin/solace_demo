@@ -51,12 +51,16 @@ SAC YAML, agent cards, prompts, inline Ollama model dictionaries, gateway/tool c
 
 ## Local Python components
 
-- **Fleet simulator:** Runs the deterministic scenario, advances drone state, injects failures, publishes telemetry, and consumes commands.
+- **Fleet simulator:** Adapts the deterministic scenario to broker and clock ports, drives the pure Tier 1
+  drone and mission state machines, injects failures, publishes telemetry, and consumes commands.
 - **Command gateway:** Owns deterministic mission-command policy, idempotency, proposal-bound approval checks, durable outbox state, and executable command publication. Agent credentials cannot bypass it.
 - **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable store for mission state, inbox/outbox records, proposals, approvals, idempotency results, evidence provenance, and audit records. Access is through async SQLAlchemy 2.x with `asyncpg`, and schema is managed with Alembic migrations. Broker acknowledgement occurs only after the related durable transaction commits. An append-only audit table with a monotonic ordinal is the ordering authority for the mission timeline. See [ADR-0003](adr/0003-postgres-durable-mission-store.md).
 - **Broker adapter:** Wraps the Solace PubSub+ Messaging API for Python 1.11 (or an explicitly reviewed compatible patch) in the Python 3.14 application environment and isolates connection, publishing, subscription, acknowledgement, retry, and shutdown behavior. Agent Mesh keeps the separate PubSub+ client version resolved by its own lockfile.
 - **Scenario service:** Loads versioned scenario definitions, applies a deterministic random seed, and exposes lifecycle operations.
-- **Evidence service:** Validates model observations, attaches provenance and hashes, and calculates a deterministic, versioned evidence score. In a live simulation, model failure produces an explicit abstention or manual-review outcome; recorded evidence is never substituted.
+- **Evidence service:** Validates model observations, attaches provenance and hashes, delegates score
+  calculation to pure Tier 1 domain logic, and publishes the resulting versioned evidence decision. In a
+  live simulation, model failure produces an explicit abstention or manual-review outcome; recorded
+  evidence is never substituted.
 - **Recorder/replayer:** Writes sanitized CloudEvents to NDJSON and replays the same events through the dashboard-facing interface.
 - **Dashboard API:** FastAPI service providing scenario control, operator approval, health, readiness, and server-sent events.
 
@@ -93,7 +97,8 @@ The browser dashboard contains:
 - A MapLibre map with the search polygon, sectors, trails, candidate locations, and rescue marker.
 - A fleet panel showing agent type, connectivity, battery, assignment, model, and status.
 - A mission timeline containing domain events, commands, retries, approvals, and Agent Mesh responses.
-- An evidence panel showing image provenance, model observations, evidence score, corroboration, and rejection reasons.
+- An evidence panel showing image provenance, model observations, evidence-score contributors,
+  corroboration, abstention, and rejection reasons.
 - An operator command area for mission creation and approved actions.
 - A prominent human-approval gate for rescue escalation.
 - A live-simulation/degraded-live-simulation/replay badge that cannot be hidden or confused.

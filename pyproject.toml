@@ -62,7 +62,14 @@ dev = [
     "jsonschema==4.26.0",
     "referencing==0.37.0",
     "types-jsonschema==4.26.0.20260518",
+    "complexipy==7.0.1",
+    "mutmut==3.7.0",
 ]
+
+[tool.complexipy]
+max-complexity-allowed = 15
+check-script = true
+no-ignore = true
 
 [tool.uv.sources]
 aerial-rescue-domain = { workspace = true }

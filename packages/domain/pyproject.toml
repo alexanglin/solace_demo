@@ -17,6 +17,21 @@ packages = ["src/aerial_rescue_domain"]
 # declared tier fails the gate rather than defaulting to the weakest one.
 risk-tier = 1
 
+[tool.mutmut]
+source_paths = ["src"]
+pytest_add_cli_args_test_selection = ["tests"]
+on_dependency_change = "rerun"
+cache_invalidation_files = [
+    "tests/**/*.py",
+    "pyproject.toml",
+    "../../pyproject.toml",
+    "../../uv.lock",
+    "../../packages/*/pyproject.toml",
+    "../../packages/*/src/**/*.py",
+    "../../services/*/pyproject.toml",
+    "../../services/*/src/**/*.py",
+]
+
 # Mechanical layering enforcement, per docs/adr/0011:18: packages/domain cannot import
 # Solace, FastAPI, SQLAlchemy, asyncpg, or Ollama clients. This converts the "pure typed
 # domain functions" rule from an aspiration into a build failure. Scoped here rather than

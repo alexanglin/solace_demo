@@ -160,6 +160,7 @@ repos:
       - id: shellcheck
         name: shellcheck
         entry: shellcheck
+        args: [-x]
         language: system
         types: [shell]
         require_serial: true
@@ -320,6 +321,25 @@ repos:
         always_run: true
         pass_filenames: false
 
+      - id: cognitive-complexity-full
+        name: Python cognitive complexity (whole owned tree)
+        entry: scripts/hooks/cognitive-complexity-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: duplication-full
+        name: cross-language duplication (whole owned tree)
+        entry: scripts/hooks/duplication-full.sh
+        language: node
+        language_version: "24.19.0"
+        additional_dependencies:
+          - jscpd@5.0.14
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: mypy-full
         name: mypy (whole project, both environments)
         entry: scripts/hooks/mypy-full.sh
@@ -331,6 +351,14 @@ repos:
       - id: pytest-full
         name: pytest (full suite, per-member coverage gates)
         entry: scripts/hooks/pytest-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: mutation-full
+        name: mutmut (tier-one members, per-module score)
+        entry: scripts/hooks/mutation-full.sh
         language: script
         stages: [pre-push]
         always_run: true

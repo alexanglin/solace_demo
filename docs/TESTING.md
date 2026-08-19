@@ -4,7 +4,7 @@
 > `AGENTS.md` reference it and must not restate it ([ADR-0016](adr/0016-documentation-set-split.md)).
 > Where this document and an `Accepted` ADR disagree, the ADR governs.
 >
-> **Related:** [ADR-0015](adr/0015-tiered-quality-gates.md) (risk tiers), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) (mutation tool, score, tier assignment), [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md) (lint, typecheck, complexity), [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) (hook stages, CI as authority), [ADR-0010](adr/0010-uv-workspace-and-toolchain.md) (per-member gates), [ADR-0018](adr/0018-enforced-arrange-act-assert.md) (mandatory AAA structure).
+> **Related:** [ADR-0015](adr/0015-tiered-quality-gates.md) (risk tiers), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) (mutation tool, score, tier assignment), [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md) (lint, typecheck, complexity), [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) (hook stages, CI as authority), [ADR-0010](adr/0010-uv-workspace-and-toolchain.md) (per-member gates), [ADR-0018](adr/0018-enforced-arrange-act-assert.md) (mandatory AAA structure), and [ADR-0023](adr/0023-executable-deep-quality-gates.md) (executable complexity, duplication, and mutation gates).
 
 ## The TDD workflow
 
@@ -94,17 +94,53 @@ production code; the red-green-refactor evidence required by `AGENTS.md` remains
 
 ## Coverage
 
-Coverage is enforced per language and per package, not as one global total, and is tiered by risk. See [ADR-0015](adr/0015-tiered-quality-gates.md); [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) carries the per-package tier assignment, the mutation tool, and the mutation score.
+Coverage is enforced per language and per package, not as one global total, and is tiered by risk. See
+[ADR-0015](adr/0015-tiered-quality-gates.md); [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md)
+carries the per-package tier assignment, the mutation tool, and the mutation score. The current numeric
+limits and their instruments live only in [operating-parameters.md](operating-parameters.md#code-quality-gates).
 
-- **Python:** statement coverage and branch coverage, each at least 95% and measured independently, per `uv` workspace member. `coverage.py` reports no function-coverage metric, and statements and lines are the same measurement, so those are not Python dimensions.
-- **TypeScript:** statements, branches, functions, and lines, each at least 95%, via Vitest `coverage.thresholds`.
-- **Safety-critical core** (approval authorization, command-gateway dispatch, domain state machines, idempotency and sequence rules, evidence scoring, `packages/contracts`): 100% statement and branch coverage, plus mandatory property-based, failure-injection, and mutation testing.
+- **Python:** statement coverage and branch coverage are measured independently per `uv` workspace
+  member at its declared risk tier. `coverage.py` reports no function-coverage metric, and statements and
+  lines are the same measurement, so those are not separate Python dimensions.
+- **TypeScript:** statements, branches, functions, and lines are enforced independently per production
+  package through Vitest.
+- **Safety-critical core:** approval authorization, command-gateway dispatch, domain state machines,
+  idempotency and sequence rules, evidence scoring, and `packages/contracts` carry the Tier 1 coverage,
+  property-based, failure-injection, and mutation obligations.
+- **Configuration and glue:** Tier 3 uses the smoke-and-failure-path inventory rather than borrowing the
+  Tier 2 percentage. Until that inventory gate exists, a Tier 3 member fails closed.
 
 Installed Agent Mesh, plugin, generated, and vendored code is excluded from owned-code coverage but remains subject to black-box compatibility, contract, integration, evaluation, and security tests. Configuration, owned adapters, error branches, and UI state logic are not exempt. Coverage is a gate, not a substitute for behavior-focused assertions.
 
 An active workspace member with no measurable production statements fails rather than passing vacuously.
 Coverage results are compared with integer arithmetic so display rounding cannot turn a value below a
 threshold into a pass ([ADR-0019](adr/0019-fail-closed-quality-gates.md)).
+
+## Maintainability and mutation gates
+
+Ruff enforces the cyclomatic, function-size, branch, return, local-variable, parameter, nesting, and
+Boolean-expression budgets over the complete owned Python tree. Complexipy independently enforces
+cognitive complexity. jscpd performs one multi-language strict duplication scan across owned source,
+tests, and scripts. Their values and instruments are in
+[operating-parameters.md](operating-parameters.md#code-quality-gates); `scripts/hooks/` contains the
+canonical fail-closed entry points. Static analyzers may parse both Python trees from the root tool
+environment because they do not import or execute the Agent Mesh project.
+
+Mutation runs independently from each Tier 1 workspace member. A Tier 1 member must contain its own
+`tests/` directory because mutmut executes from that member's working directory; root `tests/` remains
+the home for cross-component contract, integration, end-to-end, and acceptance coverage but cannot
+substitute for member-local mutation tests. Each member's configuration selects `src/`, selects its local
+tests, and invalidates cached results when tests, workspace source, manifests, or the lock change.
+
+The gate evaluates each mutated module separately. Reviewed survivors remain in the score denominator,
+and `mutation-survivors.toml` must bind each review to an exact current Tier 1 member and mutant with a
+reason, reviewer, review date, and expiry. Killed, missing, expired, or out-of-scope records fail. Missing
+metadata, zero generated mutants, duplicate identities, unreviewed survivors, incomplete runs, timeouts,
+skips, suspicious outcomes, type-check-only catches, and unknown statuses also fail.
+
+Mutmut 3.7.0 mutates function bodies only. The project does not claim mutation evidence for module-level
+declarations or other non-function constructs; coverage, property tests, failure injection, contracts,
+and review remain mandatory for those behaviors.
 
 ## Test classes
 
@@ -130,12 +166,14 @@ threshold into a pass ([ADR-0019](adr/0019-fail-closed-quality-gates.md)).
 
 ## Tooling
 
-Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, strict mypy, Bandit,
-pip-audit, and `mutmut` 3.7.0 at a minimum killed-mutant score of 90% over the safety-critical core
-([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md)). Bandit ignores inline suppression comments
+Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, strict mypy, Complexipy
+7.0.1, Bandit, pip-audit, and mutmut 3.7.0 with per-module scoring over the Tier 1 core
+([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md),
+[ADR-0023](adr/0023-executable-deep-quality-gates.md)). Bandit ignores inline suppression comments
 and blocks medium-or-higher findings at medium-or-higher confidence; dependency auditing operates on
 hashed exports of every active uv lock. TypeScript quality gates use Vitest, Testing Library, ESLint,
-TypeScript strict mode, and Playwright. The cross-language AAA gate uses Python's `ast` and `tokenize`
+TypeScript strict mode, and Playwright. jscpd 5.0.14 provides the multi-language duplication scan. The
+cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
 message validation, and pushed-range `git diff --check`.

@@ -63,7 +63,7 @@ decision has no ADR yet and one is owed.
 | Continuity | Clearly labeled degraded live simulation, and replay isolated by structural deny sinks rather than by credentials alone | [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) |
 | Deployment boundary | Solace Cloud plus the local workstation; no AWS deployment in the initial release | — |
 | Data | Search-and-rescue artifacts composited onto public-domain wilderness backgrounds; never photographs of real people | [ADR-0013](adr/0013-sar-artifact-imagery-policy.md) |
-| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity and layering budgets, validate contract artifacts offline, and tier coverage by risk with a named mutation tool and score | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md) |
+| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, and tier coverage by risk | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md) |
 | Verification authority | Staged git hooks give fast feedback; CI re-runs the identical hooks and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) |
 | Document precedence | Each normative fact has exactly one home; `AGENTS.md` keeps process rules and this plan keeps sequenced delivery | [ADR-0016](adr/0016-documentation-set-split.md) |
 | Version control | Never commit without explicit human approval | — |
@@ -83,7 +83,9 @@ The initial end-to-end scenario is:
 5. All 23 drones begin reporting telemetry. The dashboard renders the search pattern without sending high-frequency telemetry through an LLM.
 6. One drone loses connectivity. Its inbound commands remain in its durable broker queue, edge-created critical events remain in its local outbox, its sector is marked at risk, and Agent Mesh coordinates reassignment.
 7. A model-backed drone analyzes a prepared image while other drones report partial thermal and contextual evidence.
-8. The Evidence Fusion agent correlates the reports and proposes a candidate location. A deterministic evidence service validates provenance, computes the versioned evidence score, and publishes the decision-eligible candidate event.
+8. The Evidence Fusion agent correlates the reports and proposes a candidate location. The evidence
+   service validates provenance, delegates the versioned score to pure Tier 1 domain logic, and publishes
+   the decision-eligible candidate event.
 9. The system requests operator approval. Rescue escalation remains blocked until the operator approves it.
 10. The dashboard shows the completed mission and an ordered audit trail.
 
@@ -137,19 +139,23 @@ scripts/                       (exists)  hooks/, diagrams.sh, fix.sh
 tools/                         (scaffold) root repository-tooling package marker
 pyproject.toml                 (exists)  uv workspace root, declares members
 uv.lock                        (exists)  macOS arm64 and Linux aarch64 resolution
+mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 apps/
   dashboard/
 services/                      (scaffold) six typed service package shells
   dashboard_api/
   fleet_simulator/
   command_gateway/
+    tests/                               member-local mutation tests
   scenario_service/
   evidence_service/
   recorder/
 packages/                      (scaffold) five typed library package shells
   broker/
   contracts/
+    tests/                               member-local mutation tests
   domain/
+    tests/                               member-local mutation tests
   store/
   observability/
 migrations/                              Alembic revisions for the durable store
@@ -213,6 +219,8 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Enforce exactly one ordered Arrange-Act-Assert cycle in every project-owned executable test before the first production behavior lands.
 - Make every active quality gate fail on a missing tool, manifest, lockfile, test, or report; run the same
   full-tree entry points in CI.
+- Enforce Ruff complexity, cognitive complexity, multi-language duplication, and independent per-module
+  Tier 1 mutation scoring before production behavior lands.
 - Create the separate Python 3.14.7 application and Python 3.13.15 Agent Mesh environments and verify both lockfiles from a clean checkout.
 - Capture redacted, reproducible Agent Mesh YAML, agent cards, model parameters, and plugin metadata.
 
@@ -223,7 +231,8 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 ### Phase 3: Simulator and dashboard baseline
 
-- Implement the deterministic fleet and scenario state machine.
+- Implement Tier 1 fleet and scenario state machines, then drive them through the Tier 2 fleet-simulator
+  adapter.
 - Implement FastAPI, SSE, the initial map, fleet status, timeline, and record/replay path.
 
 ### Phase 4: Edge intelligence
@@ -242,9 +251,10 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 - Add connectivity loss, durable edge outboxes, guaranteed command handling, retries, proposal-bound approval enforcement, Solace Cloud broker/Agent Mesh/Ollama failure behavior, and replay isolation verification.
 
-### Phase 7: Quality and security
+### Phase 7: Release qualification and security
 
-- Reach all coverage gates.
+- Qualify every completed member against its declared coverage, complexity, duplication, mutation, and
+  test-inventory gates.
 - Complete integration, E2E, Playwright UAT, agent evaluations, performance checks, threat model, and dependency/secret scanning.
 
 ### Phase 8: Initial release readiness
@@ -269,7 +279,10 @@ The initial release is ready only when:
 - Human approval cannot be bypassed in unit, integration, or Playwright tests.
 - All schemas and cross-language contracts pass.
 - The whole-tree AAA conformance gate and its positive and negative self-tests pass with no exclusions or suppressions.
-- All project-owned production packages meet every 95% coverage threshold, and pinned upstream components pass their black-box gates.
+- Every project-owned member meets its declared risk-tier coverage and test-inventory requirements, and
+  pinned upstream components pass their black-box gates.
+- Ruff complexity, cognitive complexity, multi-language duplication, and per-module Tier 1 mutation gates
+  pass at the limits in `docs/operating-parameters.md`.
 - Linting, formatting, type checking, security scans, integration tests, E2E tests, and UAT pass without introduced warnings.
 - Broker disconnect and model-failure tests demonstrate recovery or safe degradation.
 - No secrets or improperly licensed assets exist in Git history or the working tree.

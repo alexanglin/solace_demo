@@ -16,3 +16,18 @@ packages = ["src/aerial_rescue_command_gateway"]
 # Risk tier per docs/adr/0017-mutation-tool-score-and-risk-tiers.md. A member with no
 # declared tier fails the gate rather than defaulting to the weakest one.
 risk-tier = 1
+
+[tool.mutmut]
+source_paths = ["src"]
+pytest_add_cli_args_test_selection = ["tests"]
+on_dependency_change = "rerun"
+cache_invalidation_files = [
+    "tests/**/*.py",
+    "pyproject.toml",
+    "../../pyproject.toml",
+    "../../uv.lock",
+    "../../packages/*/pyproject.toml",
+    "../../packages/*/src/**/*.py",
+    "../../services/*/pyproject.toml",
+    "../../services/*/src/**/*.py",
+]
