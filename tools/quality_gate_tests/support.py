@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,16 @@ from tools.executable_resolution import required_executable
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIRECTORY = REPOSITORY_ROOT / "scripts" / "hooks"
+
+
+def hermetic_git_environment() -> dict[str, str]:
+    """Return the ambient environment without the caller's inherited Git context.
+
+    Git exports ``GIT_DIR``, ``GIT_INDEX_FILE``, and related variables while it runs a
+    hook. Inheriting them aims a fixture command at the repository that invoked the hook
+    instead of the temporary repository under test, so they are removed here.
+    """
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
 class QualityGateTestCase(unittest.TestCase):
@@ -46,6 +57,7 @@ class QualityGateTestCase(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
+            env=hermetic_git_environment(),
         )
 
     @classmethod
