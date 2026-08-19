@@ -26,7 +26,11 @@ case "$changed" in
 	if command -v uv >/dev/null 2>&1; then
 		if [ -f pyproject.toml ]; then
 			printf 'Syncing root environment...\n'
-			uv sync --frozen || printf 'WARN: root uv sync failed\n' >&2
+			# --all-packages, matching .github/workflows/checks.yml. `uv sync` is exact by
+			# default, so without it every workspace member's editable install is pruned
+			# and a member test can no longer import its own package.
+			uv sync --all-packages --frozen ||
+				printf 'WARN: root uv sync failed\n' >&2
 		fi
 		if [ -f agent-mesh/pyproject.toml ]; then
 			printf 'Syncing agent-mesh environment...\n'

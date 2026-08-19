@@ -10,6 +10,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Synchronized the whole uv workspace from the post-checkout and post-merge hook. It ran a bare
+  `uv sync --frozen`, and because `uv sync` is exact by default that pruned every workspace member's
+  editable install on each checkout, merge, and pull. A member test could then no longer import its own
+  package, so `pytest-unit-fast` failed until someone re-ran the sync by hand. CI never saw this: it
+  syncs with `--all-packages` explicitly and runs no post-checkout hook.
+
 - Excluded mutmut's generated `mutants/` tree from type checking and test collection. Ruff honours
   `.gitignore` and mypy and pytest do not, so after any mutation run mypy reported the member's package
   as a duplicate module and pytest collected a second copy of every tier-one test. The failure was
