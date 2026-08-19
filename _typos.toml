@@ -1,0 +1,32 @@
+# Spellcheck. typos is identifier-aware and low-false-positive, which suits a
+# prose-heavy repository full of product names and technical jargon.
+[files]
+extend-exclude = [
+  "*.lock",
+  "uv.lock",
+  "pnpm-lock.yaml",
+  "node_modules/",
+  ".venv/",
+  "agent-mesh/.venv/",
+  "*.png",
+  "fixtures/golden/",
+]
+
+[default.extend-words]
+# Domain and product vocabulary that is not a typo.
+Solace = "Solace"
+PubSub = "PubSub"
+pubsub = "pubsub"
+CloudEvents = "CloudEvents"
+cloudevents = "cloudevents"
+Ollama = "Ollama"
+ollama = "ollama"
+qwen = "qwen"
+Pydantic = "Pydantic"
+asyncpg = "asyncpg"
+SAR = "SAR"
+sam = "sam"
+nd = "nd"
+# "PNGs" tokenizes to PN + Gs, and typos reports the PN token as a typo of
+# "ON". The key must be the offending token, not the full word.
+PN = "PN"

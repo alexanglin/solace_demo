@@ -1,0 +1,21 @@
+# Markdown rules. The repository is documentation-heavy and the docs are
+# normative, so readability rules matter more than cosmetic ones.
+config:
+  # Prose is wrapped by meaning, not by column.
+  MD013: false
+  # Duplicate headings are fine across different sections (e.g. "Consequences"
+  # appears in every ADR, and "Context"/"Decision" repeat by design).
+  MD024:
+    siblings_only: true
+  # Inline HTML is occasionally needed for tables and anchors.
+  MD033: false
+  # Bare URLs are acceptable in reference lists.
+  MD034: false
+  # MD009 (trailing spaces) and MD047 (single trailing newline) stay ENABLED --
+  # they are how we detect whitespace problems without a mutating fixer hook.
+globs:
+  - "**/*.md"
+ignores:
+  - node_modules/**
+  - .venv/**
+  - agent-mesh/.venv/**

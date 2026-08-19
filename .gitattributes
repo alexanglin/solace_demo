@@ -1,0 +1,34 @@
+# Normalize line endings. The reference environment is macOS; CI is Linux.
+* text=auto eol=lf
+
+# Binary assets — never diff or normalize.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.pdf  binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+
+# Lockfiles are generated but remain reviewable text. Dependency changes must never
+# be hidden behind binary-diff attributes.
+uv.lock            text eol=lf linguist-generated=true
+pnpm-lock.yaml     text eol=lf linguist-generated=true
+package-lock.json  text eol=lf linguist-generated=true
+
+# Generated contract code is committed for reproducibility but is not hand-authored.
+packages/contracts/generated/**  linguist-generated=true
+
+# Golden fixtures are data, not source. Exact bytes matter.
+fixtures/golden/**  -text linguist-generated=true
+
+# Recorded replay streams must survive byte-for-byte.
+*.ndjson  -text
+
+# Shell scripts must keep LF even if a contributor is on Windows.
+*.sh text eol=lf
+
+# Documentation and diagram sources.
+*.md  text diff=markdown
+*.dot text

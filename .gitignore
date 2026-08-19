@@ -1,0 +1,70 @@
+# Secrets — never commit. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Python — application workspace (3.14.x) and agent-mesh subproject (3.13.x)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+mutants/
+.mutmut-cache
+
+# Node / dashboard
+node_modules/
+.pnpm-store/
+apps/dashboard/dist/
+apps/dashboard/.vite/
+*.tsbuildinfo
+.eslintcache
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Local runtime state
+*.log
+logs/
+docker/data/
+postgres-data/
+recordings/local/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*~
+
+# Agent Mesh local runtime artifacts (configuration under agent-mesh/ IS tracked)
+agent-mesh/.venv/
+agent-mesh/tmp/
+agent-mesh/*.db
+agent-mesh/instance/

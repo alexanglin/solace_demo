@@ -1,0 +1,25 @@
+# YAML rules. This repository will carry a lot of Agent Mesh SAC configuration,
+# Docker Compose, and GitHub Actions workflows, so YAML quality is load-bearing.
+extends: default
+
+rules:
+  # Long lines are normal in SAC config and workflow `run:` blocks.
+  line-length: disable
+  # Force explicit truthiness. `on:` in GitHub workflows is the classic trap.
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  # These two replace the mutating trailing-whitespace / end-of-file-fixer hooks.
+  trailing-spaces: enable
+  new-line-at-end-of-file: enable
+
+ignore: |
+  .venv/
+  node_modules/
+  agent-mesh/.venv/

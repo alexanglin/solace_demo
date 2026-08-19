@@ -1,0 +1,13 @@
+# Secret scanning configuration.
+#
+# AGENTS.md §6 (Security and privacy hygiene): .env.example carries names and safe placeholders only; .env and
+# live values are never committed. No path or content allowlist is used: a broad
+# placeholder expression can suppress a real credential in an unrelated file.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "solace-broker-url-with-credentials"
+description = "Solace broker URL containing embedded credentials"
+regex = '''(?i)(tcps?|wss?|https?)://[^\s:/@]+:[^\s:/@]+@[^\s/]+'''
+tags = ["solace", "credentials"]
