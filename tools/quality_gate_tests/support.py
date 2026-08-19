@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+HOOKS_DIRECTORY = REPOSITORY_ROOT / "scripts" / "hooks"
+
+
+class QualityGateTestCase(unittest.TestCase):
+    """Shared process and temporary-repository fixtures for quality-gate tests."""
+
+    def temporary_directory(self) -> Path:
+        """Return a directory that remains available through the test's Assert phase."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        return Path(directory.name)
+
+    def temporary_repository(self) -> Path:
+        """Return an initialized repository with a deterministic test identity."""
+        repository = self.temporary_directory()
+        self.git(repository, "init", "--quiet")
+        self.git(repository, "config", "user.email", "tests@example.invalid")
+        self.git(repository, "config", "user.name", "Quality Gate Tests")
+        return repository
+
+    def temporary_file(self, name: str, content: str) -> Path:
+        path = self.temporary_directory() / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    @staticmethod
+    def read_repository_text(relative_path: str) -> str:
+        return (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+
+    @staticmethod
+    def git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ("git", "-C", str(repository), *arguments),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    @classmethod
+    def commit_all(cls, repository: Path, message: str) -> None:
+        cls.git(repository, "add", ".")
+        cls.git(repository, "commit", "--quiet", "-m", message)
+
+    @staticmethod
+    def run_hook(
+        hook_name: str,
+        repository: Path,
+        arguments: tuple[str, ...] = (),
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        hook_environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        if environment is not None:
+            hook_environment.update(environment)
+        return subprocess.run(
+            ("/bin/sh", str(HOOKS_DIRECTORY / hook_name), *arguments),
+            cwd=repository,
+            env=hook_environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    @staticmethod
+    def write_argument_recorder(path: Path) -> None:
+        path.write_text(
+            '#!/bin/sh\nprintf \'%s\\n\' "$*" >>"$QUALITY_ARGUMENTS_FILE"\n',
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    def install_argument_recorder(
+        self,
+        repository: Path,
+        executable_name: str,
+        output_name: str,
+    ) -> tuple[Path, dict[str, str]]:
+        executable_directory = repository / "bin"
+        executable_directory.mkdir(exist_ok=True)
+        self.write_argument_recorder(executable_directory / executable_name)
+        output = repository / output_name
+        environment = {
+            "PATH": f"{executable_directory}:/usr/bin:/bin",
+            "QUALITY_ARGUMENTS_FILE": str(output),
+        }
+        return output, environment
+
+    def assert_hooks_failed(
+        self,
+        hook_names: tuple[str, ...],
+        results: tuple[subprocess.CompletedProcess[str], ...],
+        expected_error: str,
+    ) -> None:
+        for hook_name, result in zip(hook_names, results, strict=True):
+            with self.subTest(hook=hook_name):
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected_error, result.stderr)
+
+    def assert_hook_failed(
+        self,
+        result: subprocess.CompletedProcess[str],
+        expected_error: str,
+    ) -> None:
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(expected_error, result.stderr)
+
+    def assert_hook_succeeded(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def assert_hooks_succeeded(
+        self,
+        hook_names: tuple[str, ...],
+        results: tuple[subprocess.CompletedProcess[str], ...],
+    ) -> None:
+        for hook_name, result in zip(hook_names, results, strict=True):
+            with self.subTest(hook=hook_name):
+                self.assertEqual(0, result.returncode, result.stderr)

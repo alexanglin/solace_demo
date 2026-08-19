@@ -41,6 +41,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Check-only hooks for the commit, commit-message, push, checkout, merge, and pre-merge stages; GitHub
+  Actions re-runs the same fail-closed entry points, with shared fixtures covering hook activation,
+  revision ranges, environment hygiene, diagram integrity, and dependency synchronization.
 - Offline, fail-closed gates for contract-artifact ownership, per-member statement and branch coverage,
   and domain import boundaries; active members fail on missing manifests, fixtures, schemas, tiers, or
   measurable source.

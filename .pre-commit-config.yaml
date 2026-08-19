@@ -1,0 +1,444 @@
+# Aerial Rescue Mesh -- git hook configuration
+#
+# See docs/adr/0012-git-hooks-with-ci-as-authority.md for the decision and
+# CONTRIBUTING.md for how to install and run these.
+#
+# Design notes that are easy to get wrong:
+#
+#  * Hooks are CHECK-ONLY. Nothing here rewrites a staged file, so the commit
+#    contains exactly what you reviewed. `just fix` applies fixes on request.
+#    This is why the mutating `trailing-whitespace` / `end-of-file-fixer` hooks
+#    are absent: ruff-format, prettier, markdownlint (MD009/MD047) and yamllint
+#    detect the same problems without modifying anything.
+#
+#  * A hook whose files/types match nothing is SKIPPED ENTIRELY. Language hooks
+#    activate when their owned files land; project-owned always-run gates enforce
+#    the fail-closed component rules recorded in ADR-0019.
+#
+#  * `pass_filenames: false` does NOT imply always-run. pre-commit computes the
+#    file list and decides to skip BEFORE consulting pass_filenames, so a hook
+#    that must run regardless needs BOTH `always_run: true` and
+#    `pass_filenames: false`.
+#
+#  * Python is checked by TWO environments (docs/adr/0004-split-python-runtimes.md):
+#    the root uv workspace on 3.14.x and the separate agent-mesh project on
+#    3.13.x. Hooks are routed by path with files:/exclude:.
+#
+# Revision policy: every rev is an exact upstream tag. Renovate's `pre-commit`
+# manager raises one reviewable PR per hook; it is disabled by default and must
+# be enabled explicitly.
+
+minimum_pre_commit_version: "4.5.0"
+
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - pre-push
+  - post-checkout
+  - post-merge
+  - pre-merge-commit
+
+# Without this, every hook would run at every installed stage.
+default_stages: [pre-commit]
+
+fail_fast: false
+
+repos:
+  # ---------------------------------------------------------------- hygiene --
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      # macOS is case-insensitive, Linux CI is not. This catches the collision
+      # before it becomes an unreproducible CI failure.
+      - id: check-case-conflict
+      - id: check-illegal-windows-names
+      # CLAUDE.md is a symlink to AGENTS.md. These two keep it intact.
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^agent-mesh/configs/.*\.ya?ml$
+      - id: check-toml
+      - id: check-json
+      - id: check-xml
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-vcs-permalinks
+      - id: detect-private-key
+      # detect-aws-credentials is deliberately NOT enabled: it reads the
+      # developer's real ~/.aws/credentials and greps files for those values,
+      # which both false-positives on common words and pulls a live credential
+      # store into the commit path. gitleaks covers this properly.
+      # docs/adr/0001 forbids vendoring Agent Mesh as a submodule.
+      - id: forbid-submodules
+      # AGENTS.md §9 (Version control): work in a branch.
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-ast
+      - id: debug-statements
+
+  # ---------------------------------------------------------------- secrets --
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # The stock hook hardcodes `--staged --pre-commit`, so it scans the staged
+      # diff only. Full-history scanning is a separate local hook at pre-push.
+      - id: gitleaks
+
+  # ----------------------------------------------------------------- python --
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      # `ruff-check`, not the legacy `ruff` alias. No --fix: check-only.
+      # Carries the C901 and PLR09xx complexity gates from docs/adr/0011.
+      - id: ruff-check
+      - id: ruff-format
+        args: [--check]
+
+  # ------------------------------------------------------------ yaml / toml --
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict, -c, .yamllint.yaml]
+
+  # ------------------------------------------------------------------- docs --
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        # Pin Node 24 LTS for this hook (ADR-0019 and CONTRIBUTING.md). pre-commit provisions it
+        # via nodeenv, so the hook is reproducible regardless of system Node --
+        # and it must be pinned: markdownlint's dependency tree rejects the
+        # Node 25 "Current" line outright.
+        language_version: "24.19.0"
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.49.0
+    hooks:
+      - id: typos
+        # Default args include --write-changes. Override for check-only.
+        args: [--force-exclude]
+
+  # --------------------------------------------------------- ci / container --
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.0 # upstream tags have no "v" prefix
+    hooks:
+      - id: check-github-workflows
+      - id: check-github-workflows-require-timeout
+      - id: check-dependabot
+      - id: check-compose-spec
+      - id: check-metaschema
+        files: ^schemas/.*\.schema\.json$
+
+  # hadolint-py runs hadolint as a Python package -- no Docker in the commit path.
+  - repo: https://github.com/AleksaC/hadolint-py
+    rev: v2.15.1
+    hooks:
+      - id: hadolint
+
+  # ------------------------------------------------------------------ shell --
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      - id: shfmt
+        args: [--diff] # check-only; default is --write
+
+  # ------------------------------------------------- project-owned checks ----
+  - repo: local
+    hooks:
+      # shellcheck via the system binary rather than the upstream hook, which is
+      # language: docker_image and would put Docker in the commit path.
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+        require_serial: true
+
+      # Every executable project-owned test must have one explicit, ordered,
+      # non-empty Arrange/Act/Assert cycle. This syntax-aware gate scans the
+      # whole tracked tree so moving or renaming a test cannot bypass it. Its
+      # conformance suite runs first and the gate fails closed if it breaks.
+      - id: test-aaa
+        name: tests use Arrange-Act-Assert
+        entry: python -m tools.aaa_checker.gate
+        language: python
+        language_version: python3.14
+        additional_dependencies:
+          - pytest==9.1.1
+          - tree-sitter==0.26.0
+          - tree-sitter-typescript==0.23.2
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+
+      - id: no-env-files
+        name: block .env files
+        entry: scripts/hooks/check-no-env.sh
+        language: script
+        # Must see every staged path, so it cannot be scoped by type.
+        always_run: true
+
+      - id: env-template-placeholders
+        name: environment templates contain placeholders only
+        entry: scripts/hooks/check-env-template.sh
+        language: script
+        files: (^|/)\.env\.example$
+
+      - id: import-contracts
+        name: domain import contracts
+        entry: python -m tools.import_contract_gate
+        language: python
+        language_version: python3.14
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: contract-artifacts
+        name: schemas and golden fixtures have one validated owner
+        entry: python -m tools.contract_gate
+        language: python
+        language_version: python3.14
+        additional_dependencies:
+          - jsonschema==4.26.0
+          - referencing==0.37.0
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: docs-facts-and-links
+        name: docs (facts, links, ADR index)
+        entry: scripts/hooks/check-docs.sh
+        language: script
+        types: [markdown]
+
+      - id: diagrams-fresh
+        name: diagrams regenerated
+        entry: scripts/hooks/check-diagrams.sh
+        language: script
+        files: ^docs/architecture/.*(\.dot|\.png|\.dot\.sha256)$
+
+      - id: uv-lock-root
+        name: uv.lock current (root, py3.14)
+        entry: uv lock --check
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+      - id: uv-lock-agent-mesh
+        name: uv.lock current (agent-mesh, py3.13)
+        entry: uv lock --check --project agent-mesh
+        language: system
+        files: ^agent-mesh/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+      # mypy runs through uv so it sees real project dependencies. The
+      # pre-commit/mirrors-mypy hook cannot: it builds an isolated env and bakes
+      # --ignore-missing-imports into its defaults, silently degrading every
+      # third-party import to Any. Whole-program checking runs at pre-push;
+      # these are the fast staged-file passes.
+      - id: mypy-root
+        name: mypy (root, py3.14)
+        entry: uv run --frozen mypy
+        language: system
+        types_or: [python, pyi]
+        exclude: ^agent-mesh/
+        require_serial: true
+
+      - id: mypy-agent-mesh
+        name: mypy (agent-mesh, py3.13)
+        entry: uv run --project agent-mesh --frozen mypy
+        language: system
+        types_or: [python, pyi]
+        files: ^agent-mesh/
+        require_serial: true
+
+      - id: eslint
+        name: eslint (dashboard)
+        entry: pre-commit hazmat cd apps/dashboard pnpm exec eslint --
+        language: system
+        files: ^apps/dashboard/.*\.(ts|tsx|js|jsx)$
+        require_serial: true
+
+      - id: tsc
+        name: tsc --noEmit (dashboard)
+        entry: pnpm --dir apps/dashboard exec tsc --noEmit
+        language: system
+        files: ^apps/dashboard/.*\.(ts|tsx)$
+        pass_filenames: false
+        require_serial: true
+
+      - id: prettier-check
+        name: prettier --check (dashboard)
+        entry: pre-commit hazmat cd apps/dashboard pnpm exec prettier --check --
+        language: system
+        files: ^apps/dashboard/.*\.(ts|tsx|css|json)$
+
+      # Related tests only, to hold the pre-commit stage inside its budget.
+      # `--run` is mandatory: vitest defaults to watch mode and would hang.
+      - id: vitest-related
+        name: vitest (related tests)
+        entry: pre-commit hazmat cd apps/dashboard pnpm exec vitest related --run --
+        language: system
+        files: ^apps/dashboard/.*\.(ts|tsx)$
+
+      - id: pytest-unit-fast
+        name: pytest (unit, related packages)
+        entry: scripts/hooks/pytest-related.sh
+        language: script
+        types_or: [python, pyi]
+        exclude: ^agent-mesh/
+        pass_filenames: true
+        require_serial: true
+
+  # -------------------------------------------------------------- commit-msg --
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict, feat, fix, docs, chore, test, refactor, perf, build, ci, revert]
+
+  # ---------------------------------------------------------------- pre-push --
+  - repo: local
+    hooks:
+      - id: python-quality-full
+        name: Python formatting and linting (whole tree)
+        entry: scripts/hooks/python-quality-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: mypy-full
+        name: mypy (whole project, both environments)
+        entry: scripts/hooks/mypy-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: pytest-full
+        name: pytest (full suite, per-member coverage gates)
+        entry: scripts/hooks/pytest-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      # The stock gitleaks hook hardcodes `--staged --pre-commit`, so it can
+      # only ever scan the staged diff. Full-history scanning needs its own
+      # entry. language: golang (not system) so pre-commit provisions the
+      # binary at the pinned version -- a security gate must never silently
+      # skip because a tool is missing from PATH.
+      - id: gitleaks-history
+        name: gitleaks (full history)
+        entry: gitleaks git --redact --verbose
+        language: golang
+        additional_dependencies:
+          # NOT a typo: the module still declares its legacy path
+          # github.com/zricethezav/gitleaks/v8, so `go install` rejects the
+          # github.com/gitleaks/... form with a version-constraint conflict.
+          - github.com/zricethezav/gitleaks/v8@v8.30.1
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: commit-range-whitespace
+        name: git diff --check (whitespace, pushed range)
+        entry: scripts/hooks/check-commit-range.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      # Finally wires scripts/hooks/check-locks.sh, which existed but was referenced by
+      # nothing -- so the changelog's three-domain lockfile claim was untrue.
+      - id: lockfiles-current
+        name: lockfiles current (root uv, agent-mesh uv, dashboard pnpm)
+        entry: scripts/hooks/check-locks.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: bandit-full
+        name: bandit (static security analysis)
+        entry: scripts/hooks/bandit-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dependency-audit
+        name: pip-audit (known advisories in the resolved environment)
+        entry: scripts/hooks/dependency-audit.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-test-full
+        name: vitest (dashboard, full suite)
+        entry: scripts/hooks/dashboard-test-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-build
+        name: vite build (dashboard production build)
+        entry: scripts/hooks/dashboard-build.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: commit-messages-current
+        name: commit messages (pushed range)
+        entry: scripts/hooks/check-commit-messages.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: diagrams-fresh-all
+        name: diagrams regenerated (all)
+        entry: scripts/hooks/check-diagrams-all.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+  # --------------------------------------------- post-checkout / post-merge --
+  - repo: local
+    hooks:
+      - id: sync-dependencies
+        name: sync dependencies if lockfiles changed
+        entry: scripts/hooks/sync-deps.sh
+        language: script
+        stages: [post-checkout, post-merge]
+        always_run: true
+        pass_filenames: false
+
+  # --------------------------------------------------------------- strict ---
+  - repo: local
+    hooks:
+      # Blocking since 2026-08-19: the planning-document backlog is cleared and
+      # this is green on the whole tree. The script skips docs/adr/* (immutable by
+      # policy) and CONTRIBUTING.md (documents the very words it bans).
+      - id: docs-strict
+        name: docs (no unquantified terms)
+        entry: scripts/hooks/check-docs-strict.sh
+        language: script
+        types: [markdown]

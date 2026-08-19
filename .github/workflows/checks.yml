@@ -1,0 +1,139 @@
+---
+name: checks
+
+# CI is the authority. Local git hooks are fast feedback and can be bypassed
+# with --no-verify; this workflow re-runs the identical hook configuration, so
+# nothing unverified can merge. See docs/adr/0012-git-hooks-with-ci-as-authority.md
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commit-stage:
+    name: commit-stage hooks
+    # Free and unlimited for public repositories, with Docker preinstalled.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Full history so the pre-push secret scan has something to scan.
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          # ADR-0019 and CONTRIBUTING.md pin Node 24 LTS.
+          node-version: "24.19.0"
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Enable pnpm for the dashboard hooks
+        run: |
+          corepack enable
+          if [ -f apps/dashboard/package.json ]; then
+            pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+          else
+            echo "apps/dashboard/package.json absent; nothing to install yet."
+          fi
+
+      - name: Synchronize locked Python dependencies
+        run: |
+          uv sync --all-packages --frozen
+          if [ -f agent-mesh/pyproject.toml ]; then
+            uv sync --project agent-mesh --frozen --python 3.13.15
+          fi
+
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        with:
+          extra_args: --all-files --hook-stage pre-commit
+
+      - name: Validate every commit message in the change
+        env:
+          QUALITY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          QUALITY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALITY_DIFF_REMOTE_NAME: origin
+        run: uv run --frozen scripts/hooks/check-commit-messages.sh
+
+  push-stage:
+    name: pre-push hooks
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24.19.0"
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Enable pnpm for the dashboard hooks
+        run: |
+          corepack enable
+          if [ -f apps/dashboard/package.json ]; then
+            pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+          else
+            echo "apps/dashboard/package.json absent; nothing to install yet."
+          fi
+
+      - name: Synchronize locked Python dependencies
+        run: |
+          uv sync --all-packages --frozen
+          if [ -f agent-mesh/pyproject.toml ]; then
+            uv sync --project agent-mesh --frozen --python 3.13.15
+          fi
+
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          QUALITY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          QUALITY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALITY_DIFF_REMOTE_NAME: origin
+        with:
+          extra_args: --all-files --hook-stage pre-push
+
+  no-credentials:
+    name: no credentials in CI
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      # AGENTS.md §6 (Security and privacy hygiene) and docs/adr/0002: CI must hold no broker credential and no
+      # model API key. This asserts the invariant rather than trusting it.
+      - name: Assert no secrets are configured for this workflow
+        env:
+          FORBIDDEN: >-
+            ${{ secrets.OPENAI_API_KEY }}${{ secrets.SOLACE_PASSWORD }}${{
+            secrets.SOLACE_URL }}${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$FORBIDDEN" ]; then
+            echo "::error::A credential is configured for this workflow. CI must run without broker or model credentials."
+            exit 1
+          fi
+          echo "No broker or model credentials are available to CI, as required."

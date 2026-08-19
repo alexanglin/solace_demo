@@ -1,0 +1,75 @@
+#!/usr/bin/env sh
+# Validate every commit message in the pushed/CI range with the canonical hook.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+command -v pre-commit >/dev/null 2>&1 || {
+	printf 'MISSING: pre-commit is required to validate commit messages\n' >&2
+	exit 1
+}
+
+if [ -n "${QUALITY_DIFF_BASE:-}" ] || [ -n "${QUALITY_DIFF_HEAD:-}" ]; then
+	base=${QUALITY_DIFF_BASE:-}
+	head=${QUALITY_DIFF_HEAD:-}
+	remote=${QUALITY_DIFF_REMOTE_NAME:-}
+else
+	base=${PRE_COMMIT_FROM_REF:-}
+	head=${PRE_COMMIT_TO_REF:-}
+	remote=${PRE_COMMIT_REMOTE_NAME:-}
+fi
+zero=0000000000000000000000000000000000000000
+
+if { [ -n "$base" ] && [ -z "$head" ]; } || { [ -z "$base" ] && [ -n "$head" ]; }; then
+	printf 'Both commit-message range endpoints must be set\n' >&2
+	exit 2
+fi
+
+if [ "$head" = "$zero" ]; then
+	exit 0
+fi
+
+if [ -z "$head" ]; then
+	head=HEAD
+fi
+
+git rev-parse --verify --quiet "$head^{commit}" >/dev/null || {
+	printf 'Invalid head revision for commit-message check: %s\n' "$head" >&2
+	exit 2
+}
+
+if [ -z "$base" ]; then
+	commits=$(git rev-list --max-count=1 "$head")
+elif [ "$base" = "$zero" ]; then
+	if [ -n "$remote" ] && git for-each-ref --format='%(refname)' "refs/remotes/$remote/" |
+		grep -q .; then
+		commits=$(git rev-list --reverse "$head" --not --remotes="$remote")
+	else
+		# With no target-remote history there is no sound way to distinguish new
+		# commits from inherited local history. Validate HEAD rather than silently
+		# accepting the complete ancestry or blocking on unrelated legacy commits.
+		commits=$(git rev-list --max-count=1 "$head")
+	fi
+else
+	git rev-parse --verify --quiet "$base^{commit}" >/dev/null || {
+		printf 'Invalid base revision for commit-message check: %s\n' "$base" >&2
+		exit 2
+	}
+	commits=$(git rev-list --reverse "$base..$head")
+fi
+
+message_dir=$(mktemp -d "${TMPDIR:-/tmp}/aerial-rescue-messages.XXXXXX")
+trap 'rm -rf "$message_dir"' 0 1 2 15
+status=0
+
+for commit in $commits; do
+	message_file="$message_dir/$commit.txt"
+	git show --no-patch --format=%B "$commit" >"$message_file"
+	if ! pre-commit run conventional-pre-commit --hook-stage commit-msg \
+		--commit-msg-filename "$message_file"; then
+		printf 'Invalid commit message in %s\n' "$commit" >&2
+		status=1
+	fi
+done
+
+exit "$status"

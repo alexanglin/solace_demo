@@ -4,9 +4,6 @@ This repository is a reference implementation, so the process is part of the art
 rules below are enforced mechanically; review remains responsible for semantic properties a static gate
 cannot prove.
 
-The repository-verification files named below are part of the pending foundation series. Until those
-files are present, the commands describe the required workflow rather than callable entry points.
-
 Read [`AGENTS.md`](AGENTS.md) for the full engineering rules and [`docs/adr/`](docs/adr/) for the decisions behind them.
 
 ## Setup
@@ -69,7 +66,7 @@ just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures
 ```
 
-`just` is a convenience wrapper. The hooks and CI invoke the scripts under `scripts/` directly, so nothing breaks if you do not have `just` installed.
+`just` is a convenience wrapper. The hooks and CI invoke the scripts under [`scripts/`](scripts/) directly, so nothing breaks if you do not have `just` installed.
 
 ## Test structure
 
@@ -151,6 +148,6 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   `(provisional -- confirm in Phase 0)` rather than left vague. The check skips `docs/adr/` (immutable by
   policy) and this file (it documents the words it bans). Run `just lint-docs-strict` to invoke it
   directly.
-- Cognitive-complexity, cross-language duplication, mutation, schema/golden-fixture drift, and Agent Mesh
+- Cognitive-complexity, cross-language duplication, mutation, and Agent Mesh
   semantic-configuration entry points remain required by accepted decisions but are not yet executable.
   They must land before the first production behavior that depends on them.
