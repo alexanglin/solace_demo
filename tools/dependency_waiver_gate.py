@@ -2,26 +2,50 @@
 
 ``AGENTS.md`` requires a safe upgrade, an upstream fix, or a time-bounded
 human-approved waiver before a known upstream advisory reaches a release. This gate
-makes that requirement executable. It reads a ``pip-audit`` JSON report and the waiver
-registry, then enforces both directions: no advisory may go unwaived, and no waiver may
-outlive the advisory it was written for.
+makes that requirement executable. It reads a ``pip-audit`` JSON report for a Python
+lock, or a Trivy JSON report for a container image or the deploy configuration
+(``docs/adr/0048``), and the waiver registry, then enforces both directions: no blocking
+advisory may go unwaived, and no waiver may outlive the advisory it was written for.
+
+A pip-audit finding always blocks. A Trivy finding blocks when its severity is HIGH or
+CRITICAL and a fixed version exists, or, for a Dockerfile check, when the check failed;
+every other Trivy finding is printed as an ``INFO:`` line and blocks nothing. Each loader
+refuses the other tool's report shape, so a report read with the wrong ``--source`` is an
+error rather than a clean run. This module is pure: it launches nothing.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Final
 
 REGISTRY_NAME = "dependency-waivers.toml"
 MAX_WAIVER_REVIEW_DAYS = 30
 MIN_WAIVER_REASON_CHARACTERS = 20
 DOMAINS = ("agent-mesh", "dashboard", "root")
+"""The Python lock domains pip-audit reports on."""
+
+PIP_AUDIT: Final = "pip-audit"
+TRIVY: Final = "trivy"
+SOURCES: Final = (PIP_AUDIT, TRIVY)
+CONFIG_DOMAIN: Final = "deploy-config"
+"""The domain for Dockerfile checks reported by ``trivy config``."""
+IMAGE_DOMAIN_PATTERN: Final = re.compile(r"^image:[a-z0-9][a-z0-9._/-]*$")
+"""An image domain names the repository without tag or digest; neither is representable."""
+TRIVY_SCHEMA_VERSION: Final = 2
+TRIVY_BLOCKING_SEVERITIES: Final = frozenset({"HIGH", "CRITICAL"})
+"""The severities that block when a fix exists (``docs/adr/0048``)."""
+MISCONFIGURATION_FAILED: Final = "FAIL"
+CONFIG_VERSION: Final = "config"
+"""The version a misconfiguration waiver is keyed on; a check has no installed version."""
 TEXT_FIELDS = (
     "domain",
     "package",
@@ -64,13 +88,19 @@ class WaiverRecord:
 
 @dataclass(frozen=True)
 class Finding:
-    """One advisory reported by pip-audit against an exact pinned version."""
+    """One advisory reported against an exact installed version.
+
+    A pip-audit finding always blocks. A Trivy finding carries its severity and blocks only
+    under the policy in ``docs/adr/0048``; the rest is informational.
+    """
 
     domain: str
     package: str
     version: str
     advisory: str
     fix_versions: tuple[str, ...]
+    severity: str = ""
+    blocking: bool = True
 
     @property
     def identity(self) -> tuple[str, str, str, str]:
@@ -115,11 +145,22 @@ def _date_field(context: str, entry: dict[str, object], key: str, errors: list[s
         return None
 
 
+def is_domain(name: str) -> bool:
+    """Return whether ``name`` is a Python lock domain, the deploy configuration, or an image."""
+    if name in DOMAINS or name == CONFIG_DOMAIN:
+        return True
+    return IMAGE_DOMAIN_PATTERN.fullmatch(name) is not None
+
+
+def _domain_description() -> str:
+    return f"{', '.join(DOMAINS)}, {CONFIG_DOMAIN}, or image:<repository>"
+
+
 def _content_errors(context: str, record: WaiverRecord) -> list[str]:
     """Return diagnostics for values that parse but are not admissible."""
     errors: list[str] = []
-    if record.domain not in DOMAINS:
-        errors.append(f"{context}.domain must be one of {', '.join(DOMAINS)}")
+    if not is_domain(record.domain):
+        errors.append(f"{context}.domain must be one of {_domain_description()}")
     if len(record.reason) < MIN_WAIVER_REASON_CHARACTERS:
         errors.append(
             f"{context}.reason must contain at least {MIN_WAIVER_REASON_CHARACTERS} characters"
@@ -198,17 +239,19 @@ def load_waivers(path: Path, errors: list[str]) -> tuple[WaiverRecord, ...]:
     return tuple(records)
 
 
-def _report_table(path: Path, errors: list[str]) -> dict[str, object] | None:
+def _report_table(
+    path: Path, errors: list[str], source: str = PIP_AUDIT
+) -> dict[str, object] | None:
     if not path.is_file():
-        errors.append(f"missing pip-audit report: {path.name}")
+        errors.append(f"missing {source} report: {path.name}")
         return None
     try:
         parsed: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        errors.append(f"{path.name}: cannot read the pip-audit report: {error}")
+        errors.append(f"{path.name}: cannot read the {source} report: {error}")
         return None
     if not isinstance(parsed, dict):
-        errors.append(f"{path.name}: the pip-audit report must be an object")
+        errors.append(f"{path.name}: the {source} report must be an object")
         return None
     return {str(key): value for key, value in parsed.items()}
 
@@ -252,7 +295,10 @@ def load_findings(path: Path, domain: str, errors: list[str]) -> tuple[Finding, 
     data = _report_table(path, errors)
     if data is None:
         return ()
-    raw_dependencies = data.get("dependencies", [])
+    raw_dependencies = data.get("dependencies")
+    if raw_dependencies is None:
+        errors.append(f"{path.name}: dependencies is required by a pip-audit report")
+        return ()
     if not isinstance(raw_dependencies, list):
         errors.append(f"{path.name}: dependencies must be an array")
         return ()
@@ -266,6 +312,127 @@ def load_findings(path: Path, domain: str, errors: list[str]) -> tuple[Finding, 
         for finding in _dependency_findings(context, domain, entry, errors):
             findings.setdefault(finding.identity, finding)
     return tuple(findings.values())
+
+
+def _fixed_versions(raw: object) -> tuple[str, ...]:
+    """Return Trivy's comma-separated fixed versions, or nothing when no fix exists."""
+    if not isinstance(raw, str):
+        return ()
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _blocks(severity: str, *, actionable: bool) -> bool:
+    return severity.upper() in TRIVY_BLOCKING_SEVERITIES and actionable
+
+
+def _vulnerability_finding(
+    context: str, domain: str, entry: dict[str, object], errors: list[str]
+) -> Finding | None:
+    advisory = _text(context, entry, "VulnerabilityID", errors)
+    package = _text(context, entry, "PkgName", errors)
+    version = _text(context, entry, "InstalledVersion", errors)
+    severity = _text(context, entry, "Severity", errors)
+    if advisory is None or package is None or version is None or severity is None:
+        return None
+    fixes = _fixed_versions(entry.get("FixedVersion"))
+    blocking = _blocks(severity, actionable=bool(fixes))
+    return Finding(domain, package, version, advisory, fixes, severity.upper(), blocking)
+
+
+def _misconfiguration_finding(
+    context: str, domain: str, target: str, entry: dict[str, object], errors: list[str]
+) -> Finding | None:
+    advisory = _text(context, entry, "ID", errors)
+    severity = _text(context, entry, "Severity", errors)
+    status = _text(context, entry, "Status", errors)
+    if advisory is None or severity is None or status is None:
+        return None
+    if status != MISCONFIGURATION_FAILED:
+        return None
+    blocking = _blocks(severity, actionable=True)
+    return Finding(domain, target, CONFIG_VERSION, advisory, (), severity.upper(), blocking)
+
+
+def _entries(
+    context: str, result: dict[str, object], key: str, errors: list[str]
+) -> list[tuple[str, dict[str, object]]]:
+    raw = result.get(key, [])
+    if not isinstance(raw, list):
+        errors.append(f"{context}.{key} must be an array")
+        return []
+    entries: list[tuple[str, dict[str, object]]] = []
+    for position, item in enumerate(raw, start=1):
+        item_context = f"{context}.{key}[{position}]"
+        if not isinstance(item, dict):
+            errors.append(f"{item_context} must be an object")
+            continue
+        entries.append((item_context, {str(key): value for key, value in item.items()}))
+    return entries
+
+
+def _result_findings(
+    context: str, domain: str, result: dict[str, object], errors: list[str]
+) -> list[Finding]:
+    target = _text(context, result, "Target", errors)
+    if target is None:
+        return []
+    findings: list[Finding] = []
+    for item_context, entry in _entries(context, result, "Vulnerabilities", errors):
+        finding = _vulnerability_finding(item_context, domain, entry, errors)
+        if finding is not None:
+            findings.append(finding)
+    for item_context, entry in _entries(context, result, "Misconfigurations", errors):
+        finding = _misconfiguration_finding(item_context, domain, target, entry, errors)
+        if finding is not None:
+            findings.append(finding)
+    return findings
+
+
+def load_trivy_findings(path: Path, domain: str, errors: list[str]) -> tuple[Finding, ...]:
+    """Return each distinct finding in a Trivy report, blocking or informational."""
+    data = _report_table(path, errors, TRIVY)
+    if data is None:
+        return ()
+    version = data.get("SchemaVersion")
+    if type(version) is not int or version != TRIVY_SCHEMA_VERSION:
+        errors.append(f"{path.name}: SchemaVersion must be integer {TRIVY_SCHEMA_VERSION}")
+        return ()
+    raw_results = data.get("Results", [])
+    if not isinstance(raw_results, list):
+        errors.append(f"{path.name}: Results must be an array")
+        return ()
+    findings: dict[tuple[str, str, str, str], Finding] = {}
+    for index, raw in enumerate(raw_results, start=1):
+        context = f"{path.name}: Results[{index}]"
+        if not isinstance(raw, dict):
+            errors.append(f"{context} must be an object")
+            continue
+        result = {str(key): value for key, value in raw.items()}
+        for finding in _result_findings(context, domain, result, errors):
+            findings.setdefault(finding.identity, finding)
+    return tuple(findings.values())
+
+
+LOADERS: Final[Mapping[str, Callable[[Path, str, list[str]], tuple[Finding, ...]]]] = {
+    PIP_AUDIT: load_findings,
+    TRIVY: load_trivy_findings,
+}
+
+
+def _informational_lines(findings: tuple[Finding, ...], domain: str) -> list[str]:
+    return [
+        f"INFO: {finding.severity} {'fixed' if finding.fix_versions else 'unfixed'}: "
+        f"{finding.label} in {domain}"
+        for finding in findings
+        if not finding.blocking
+    ]
+
+
+def _domain_argument(value: str) -> str:
+    if not is_domain(value):
+        message = f"domain must be one of {_domain_description()}"
+        raise argparse.ArgumentTypeError(message)
+    return value
 
 
 def _window_errors(waiver: WaiverRecord, *, today: date) -> list[str]:
@@ -317,9 +484,10 @@ def evaluate(
 def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="dependency-waiver-gate",
-        description="Adjudicate a pip-audit report against the reviewed waiver registry.",
+        description="Adjudicate a pip-audit or Trivy report against the reviewed waiver registry.",
     )
-    parser.add_argument("--domain", required=True, choices=DOMAINS)
+    parser.add_argument("--source", choices=SOURCES, default=PIP_AUDIT)
+    parser.add_argument("--domain", required=True, type=_domain_argument)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--registry", default=Path(REGISTRY_NAME), type=Path)
     parser.add_argument("--today", default=None, help="ISO-8601 date used for review windows.")
@@ -332,8 +500,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     today = date.fromisoformat(arguments.today) if arguments.today else date.today()
     errors: list[str] = []
     waivers = load_waivers(arguments.registry, errors)
-    findings = load_findings(arguments.report, arguments.domain, errors)
-    errors.extend(evaluate(waivers, findings, arguments.domain, today=today))
+    findings = LOADERS[arguments.source](arguments.report, arguments.domain, errors)
+    blocking = tuple(finding for finding in findings if finding.blocking)
+    errors.extend(evaluate(waivers, blocking, arguments.domain, today=today))
+    for note in sorted(_informational_lines(findings, arguments.domain)):
+        print(note)
     for error in sorted(set(errors)):
         print(f"DEPENDENCY: {error}", file=sys.stderr)
     return 1 if errors else 0

@@ -7,6 +7,11 @@
 # expires. A waiver that matches no reported advisory is an error, so this registry
 # cannot accumulate reviews that no longer describe anything.
 #
+# Domains are the Python locks ("root", "agent-mesh", "dashboard"), the Dockerfile checks
+# ("deploy-config"), and container images ("image:<repository>", without tag or digest).
+# Only a blocking Trivy finding -- HIGH or CRITICAL with a fixed version, or a failed
+# Dockerfile check -- needs a waiver; the rest is printed and never blocks (docs/adr/0048).
+#
 # [[waivers]]
 # domain = "agent-mesh"
 # package = "starlette"

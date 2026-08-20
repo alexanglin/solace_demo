@@ -611,5 +611,38 @@ class DependencyAuditHookTests(QualityGateTestCase):
         self.assertIn("tools.dependency_waiver_gate", arguments_file.read_text(encoding="utf-8"))
 
 
+class PipAuditSourceTests(QualityGateTestCase):
+    def test_every_pip_audit_finding_blocks_regardless_of_fix_availability(self) -> None:
+        # Arrange
+        path = self.temporary_directory() / "audit.json"
+        path.write_text(
+            json.dumps(
+                {"dependencies": [{"name": "pkg", "version": "1.0", "vulns": [{"id": "PYSEC-1"}]}]}
+            ),
+            encoding="utf-8",
+        )
+        errors: list[str] = []
+
+        # Act
+        findings = dependency_waiver_gate.load_findings(path, "root", errors)
+
+        # Assert
+        self.assertEqual([], errors)
+        self.assertEqual((True,), tuple(finding.blocking for finding in findings))
+
+    def test_a_report_without_a_dependencies_array_is_rejected(self) -> None:
+        # Arrange
+        path = self.temporary_directory() / "audit.json"
+        path.write_text("{}", encoding="utf-8")
+        errors: list[str] = []
+
+        # Act
+        findings = dependency_waiver_gate.load_findings(path, "root", errors)
+
+        # Assert
+        self.assertEqual((), findings)
+        self.assertIn("audit.json: dependencies is required by a pip-audit report", errors)
+
+
 if __name__ == "__main__":
     unittest.main()
