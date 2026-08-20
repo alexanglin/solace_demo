@@ -67,6 +67,19 @@ class ComponentActivationTests(QualityGateTestCase):
         # Assert
         self.assert_hooks_failed(hooks, results, "MISSING: apps/dashboard/package.json")
 
+    def test_deploy_compose_without_environment_template_fails_the_compose_gate(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        compose = repository / "deploy" / "compose.yaml"
+        compose.parent.mkdir(parents=True)
+        compose.write_text("services: {}\n", encoding="utf-8")
+
+        # Act
+        result = self.run_hook("check-compose-policy.sh", repository)
+
+        # Assert
+        self.assert_hook_failed(result, "MISSING: .env.example")
+
 
 if __name__ == "__main__":
     unittest.main()

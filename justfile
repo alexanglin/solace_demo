@@ -41,6 +41,10 @@ check-complexity:
 check-mutation:
     pre-commit run --all-files --hook-stage pre-push mutation-full
 
+# Hold the deploy/ compose stack and its Dockerfiles to the compose policy gate.
+check-compose:
+    pre-commit run --all-files --hook-stage pre-commit compose-policy
+
 # Apply every automatic fix. The only thing here that modifies files.
 fix:
     scripts/fix.sh
