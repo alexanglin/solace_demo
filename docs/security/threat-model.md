@@ -35,7 +35,9 @@ In priority order. The ordering matters: it is what to trade away first under pr
 | Event Mesh Gateway ingress → A2A task | Any allowlisted CloudEvent | Schema validation, then a deterministic domain service normalizes before anything affects state |
 | Browser → local API | The browser, and anything that can reach loopback | IPv4/IPv6 loopback-only binding; an exact Host allowlist on every request; the exact configured dashboard Origin on browser mutations; and a per-runtime bearer on state-changing endpoints ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) |
 | Recorded fixture → live run | Any NDJSON on disk | Replay is structurally isolated; recorded evidence is never decision-eligible in a live run ([ADR-0009](../adr/0009-isolated-side-effect-free-replay.md)) |
-| Upstream dependency → runtime | Agent Mesh and its transitive tree | Pinned versions, locked files, audited advisories, and the authority boundary above |
+| Upstream dependency → runtime | Agent Mesh and its transitive tree | Pinned versions, locked files, advisories audited on every push and again daily, a recorded override or an expiring waiver for every reported finding, and the authority boundary above |
+| Container image → runtime | Every pulled base image and the layers the two Dockerfiles add | Tag-plus-digest pins held by the compose policy gate; Trivy image scans daily in continuous integration, blocking on fixed HIGH and CRITICAL findings under the same waiver registry ([ADR-0048](../adr/0048-scan-images-and-deploy-configuration-with-trivy.md)) |
+| Pull request → continuous integration | Any workflow change, including Dependabot's | zizmor audits every workflow and the Dependabot file offline at the commit stage, no checkout persists its token, CodeQL runs only where the token is writable, and every action is pinned to a commit ([ADR-0049](../adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md), [ADR-0050](../adr/0050-scan-python-with-codeql-in-continuous-integration-only.md)) |
 
 ## Threats
 
@@ -103,13 +105,24 @@ escalating band unreachable from a single model-generated source.
 
 ### T7 — Vulnerabilities in pinned upstream dependencies
 
-Agent Mesh 1.28.7 pins `starlette==0.49.1` and `google-adk==1.18.0`. `google-adk` 1.18.0 carries
-CVE-2026-4810 (missing authentication, unauthenticated remote code execution), remediated upstream in
-1.28.1; a second advisory concerns forged tool confirmations. Mitigations: the self-hosted Web UI binds to
-loopback; enabled surfaces are minimised; Phase 0 must enumerate which framework surfaces the pinned
-configuration actually starts and whether any binds beyond loopback; a version override is trialled
-against the black-box compatibility suite before any waiver is accepted; and both resolved lockfiles are
-audited with the report committed as evidence. **Note the framework-level tool-confirmation advisory is
+Agent Mesh 1.28.7 pins its dependency tree exactly and is the latest release, so an advisory against a
+pinned package has no upstream fix to take. Two cases are decided. `google-adk` 1.18.0 carries
+PYSEC-2026-344 (missing authentication, unauthenticated remote code execution), remediated upstream in
+1.28.1; the override was tried against the black-box compatibility suite, was unsatisfiable, and the
+advisory is an expiring waiver ([ADR-0031](../adr/0031-reject-the-google-adk-version-override.md)).
+`asteval` 1.0.6 carried CVE-2026-55244, a sandbox escape reachable from model output through Agent
+Mesh's math embeds; the single-package override to 1.0.9 is the case ADR-0031's rule admits, and a
+probe proves it against the pinned runtime on every push
+([ADR-0047](../adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md)). A second `google-adk`
+advisory concerns forged tool confirmations. Mitigations: the self-hosted Web UI binds to loopback;
+enabled surfaces are minimised; Phase 0 must enumerate which framework surfaces the pinned
+configuration actually starts and whether any binds beyond loopback; both resolved lockfiles and all
+seven stack images are audited on every push and again daily, and every reported finding is fixed,
+overridden, or bound to an expiring waiver
+([ADR-0026](../adr/0026-expiring-dependency-waivers.md),
+[ADR-0048](../adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
+[ADR-0051](../adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md)). **Note the
+framework-level tool-confirmation advisory is
 survivable by design**: Agent Mesh's confirmation mechanism is not this project's approval gate. That is
 asserted by case B29, not assumed.
 
@@ -133,6 +146,7 @@ low evidence score; and the plan forbids claiming that replay or simulated behav
 ## Out of scope for the initial release
 
 A hostile local user with filesystem access to the workstation; supply-chain compromise of the pinned
-wheels beyond advisory auditing; physical security; multi-operator authorization and delegation; event
+wheels and images beyond advisory auditing, image scanning, and the seven-day update cooldown; physical
+security; multi-operator authorization and delegation; event
 signing; and any deployed or multi-tenant topology. Each is a deliberate exclusion, recorded so it is not
 mistaken for an oversight.

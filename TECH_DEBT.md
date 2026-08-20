@@ -13,17 +13,25 @@ names what would clear it. Nothing here is a placeholder for work that is merely
 lives in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 **Next review date: 2026-09-18.** Every dependency waiver below expires on that date and the
-pre-push audit turns red until each is re-reviewed or cleared.
+pre-push audit turns red until each is re-reviewed or cleared. On the same date, read the last daily
+run of `.github/workflows/security.yml` and the repository's code-scanning alerts: a red daily run
+and a CodeQL alert page nobody
+([ADR-0050](docs/adr/0050-scan-python-with-codeql-in-continuous-integration-only.md),
+[ADR-0051](docs/adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md)).
 
 ## 1. Dependency advisories in the pinned Agent Mesh runtime
 
-Eleven advisories across five packages, all in the `agent-mesh` domain. The application workspace
-reports none.
+Eleven advisories across five packages, all in the `agent-mesh` domain, are waived; a twelfth,
+against `asteval`, is overridden rather than waived (below). The application workspace reports none.
 
 The constraint that shapes all of them: **Agent Mesh 1.28.7 pins every one of these five packages
 exactly**, so no transitive upgrade is available, and 1.28.7 is the latest upstream release, so
-there is nothing to upgrade Agent Mesh to. Fixing any of them requires overriding a vendor pin,
-which would mean the black-box compatibility suite was no longer testing the pinned wheels.
+there is nothing to upgrade Agent Mesh to. Fixing any of them requires overriding a vendor pin.
+[ADR-0031](docs/adr/0031-reject-the-google-adk-version-override.md) rejected the override that
+would have replaced three pins, and
+[ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) accepted the one that
+replaces a single leaf package with no dependents and an unchanged import surface, so the rule is a
+test each advisory is put to, not a prohibition.
 
 | Package | Version | Advisories | Fixed upstream in | Why it is not reachable here |
 | --- | --- | --- | --- | --- |
@@ -53,6 +61,19 @@ itself authorize a mission action.
 change invalidates the compensating control this acceptance rests on.
 
 **Clears when:** an Agent Mesh release ships with `google-adk` at or above 1.28.1.
+
+### Overridden rather than waived: `asteval`
+
+`asteval` 1.0.6, pinned exactly by Agent Mesh, carried CVE-2026-55244 — a sandbox escape in the
+`Interpreter` that Agent Mesh feeds math embeds taken from model output. `agent-mesh/pyproject.toml`
+overrides it to 1.0.9, and `agent-mesh/tests/test_pinned_runtime_overrides.py` proves the overridden
+wheel against the pinned runtime on every push
+([ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md)). The debt is the
+divergence: the verification environment's `asteval` is not the one the vendor declares, and the
+official container image still carries 1.0.6 (section 6).
+
+**Clears when:** an Agent Mesh release declares `asteval>=1.0.9`. The vendor-pin test turns red that
+day, and deleting the override line turns it green.
 
 ## 2. Suppressed upstream warnings
 
@@ -136,6 +157,8 @@ Nobody has started the stack. What that leaves unproven, each a design choice ra
 | The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
 | `scripts/broker-secrets.sh` is proven under LibreSSL on the workstation only | Extensions come from configuration files, the portable form | Continuous integration on Linux runs the script's tests against OpenSSL |
 | Docker Desktop's memory allocation and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision | The Phase 0 resource and showcase measurements land in `docs/operating-parameters.md` |
+| The official Agent Mesh image's `/opt/venv` carries `asteval` 1.0.6 | The override in [ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) changes the lock, not upstream's image; Trivy reports the finding at MEDIUM, below the blocking threshold, so every daily scan prints it as information | Upstream publishes an image with `asteval` at or above 1.0.9 |
+| Neither Dockerfile declares a `HEALTHCHECK`, so `trivy config` reports `DS-0026` at LOW on both | The compose policy gate requires the healthcheck in `deploy/compose.yaml`, which is where Compose reads it; the finding is informational on every pre-push run | A recorded decision settles where the healthcheck lives |
 
 **Clears when:** the first live run is recorded under `release-evidence/`.
 

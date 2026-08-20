@@ -49,9 +49,9 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 
 | Stage | What | Budget |
 | --- | --- | --- |
-| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, related tests | **≤ 60 s** |
+| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
@@ -69,9 +69,23 @@ just check-contracts   # schema inventory and positive/negative golden fixtures
 just check-complexity  # Ruff, cognitive complexity, and multi-language duplication
 just check-mutation    # independent Tier 1 mutation runs and per-module scoring
 just check-compose     # the deploy/ stack against the compose policy gate
+just check-deploy-config  # trivy config over deploy/, adjudicated under the waiver registry
+just scan-images       # build the derived images, then trivy image over all seven (needs Docker)
 ```
 
 `just` is a convenience wrapper. The hooks and CI invoke the scripts under [`scripts/`](scripts/) directly, so nothing breaks if you do not have `just` installed.
+
+Continuous integration runs two workflows. `checks.yml` re-runs the hook stages on every push and pull
+request. `security.yml` runs the locked-dependency audit, the `deploy/` misconfiguration audit, a Trivy
+scan of every pulled and built stack image, and CodeQL for Python — daily at 06:17 UTC, on dispatch, on
+every push to `main`, and on a pull request that touches the audited inputs
+([ADR-0048](docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
+[ADR-0050](docs/adr/0050-scan-python-with-codeql-in-continuous-integration-only.md),
+[ADR-0051](docs/adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md)). Dependabot raises
+daily pinned-update pull requests for both uv locks, the workflows, the two Dockerfiles, and the compose
+file, each held back by a seven-day cooldown
+([ADR-0052](docs/adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)); every one of them runs both
+hook stages like any other pull request.
 
 ## Test structure
 
@@ -189,6 +203,16 @@ files and never runs Docker, so a green result proves the stack's text conforms 
 [ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), not that it runs
 ([ADR-0045](docs/adr/0045-fail-closed-compose-policy-gate.md)).
 
+The `deploy/` misconfiguration audit follows the same contract and the same arming rule as the compose
+policy gate: inert until a compose file or Dockerfile is listed, then failing on a missing `trivy`,
+`pyproject.toml`, `uv.lock`, `uv`, or gate module before it scans anything. Trivy's own exit code is
+ignored in favour of its JSON report, which `tools/dependency_waiver_gate.py --source trivy`
+adjudicates: a HIGH or CRITICAL check in `FAIL` status blocks unless `dependency-waivers.toml` carries
+an unexpired waiver in the `deploy-config` domain, and every other finding prints as an `INFO:` line.
+The image scans apply the same rule per image, in the `image:<repository>` domain, and additionally
+require a fixed version before a finding blocks
+([ADR-0048](docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md)).
+
 ## Suppressions
 
 Per [ADR-0011](docs/adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), blanket `# type: ignore`, bare `# noqa`, and `eslint-disable` are prohibited. If you genuinely need one, record it as an ADR with the justification and the condition under which it can be removed. Unused ignores are themselves errors, so a waiver cannot silently outlive its cause.
@@ -206,10 +230,15 @@ Every hook revision is pinned to an exact upstream tag.
 just update-hooks   # pre-commit autoupdate
 ```
 
-Review every change. Renovate's `pre-commit` manager can raise one reviewable PR per hook, and is the recommended automation — note that it is disabled by default and must be enabled explicitly. Dependabot has no `pre-commit` ecosystem support.
+Review every change. Renovate's `pre-commit` manager can raise one reviewable PR per hook, and is the recommended automation — note that it is disabled by default and must be enabled explicitly. Dependabot has no `pre-commit` ecosystem support; it does watch the two uv locks, the workflows, the
+Dockerfiles, and the compose file through `.github/dependabot.yml`.
 
 ## Known gaps
 
+- The image scans run only in continuous integration. `just scan-images` builds the derived images and
+  scans all seven on a workstation that has Docker, but no hook runs it, so a new advisory in a base image is first seen
+  by the daily `security.yml` run rather than by a push. A red daily run and a CodeQL alert page
+  nobody; reading both is on the review date in [`TECH_DEBT.md`](TECH_DEBT.md).
 - `docs-strict` — the check that bans unquantified terms — is blocking at the `pre-commit` stage as of
   2026-08-19. Numbers belong in `docs/operating-parameters.md`; a value not yet known is marked
   `(provisional -- confirm in Phase 0)` rather than left vague. The check skips `docs/adr/` (immutable by

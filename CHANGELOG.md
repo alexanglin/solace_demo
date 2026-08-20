@@ -10,6 +10,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Trivy 0.74.0 scans the stack under the waiver registry. `tools/dependency_waiver_gate.py` takes
+  `--source trivy` and two new domains, `deploy-config` and `image:<repository>`: a HIGH or CRITICAL
+  finding with a fixed version (or, for a misconfiguration, in `FAIL` status) blocks unless an expiring
+  waiver covers it, and every other finding prints as an `INFO:` line. `trivy config` runs over
+  `deploy/` at pre-push through the fail-closed `trivy-config-full` hook, armed by the same rule as the
+  compose policy gate; `tools/image_inventory.py` lists every pulled and built image from the compose
+  file and the Dockerfiles, and `scripts/security/scan-images.sh` runs `trivy image` over each of
+  them in continuous integration. `just check-deploy-config` and `just scan-images` drive both
+  ([ADR-0048](docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md)).
+- zizmor 1.29.0 audits `.github/workflows/` and `.github/dependabot.yml` offline at the commit stage,
+  and any finding fails ([ADR-0049](docs/adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md)).
+- `.github/workflows/security.yml` runs daily at 06:17 UTC, on dispatch, on every push to `main`, and
+  on pull requests touching the audited inputs: the locked-dependency audit and the `deploy/`
+  misconfiguration audit, a Trivy scan of all seven stack images after a compose build, and CodeQL for
+  Python with build mode `none` — the last never on a pull request, where the token is read-only
+  ([ADR-0050](docs/adr/0050-scan-python-with-codeql-in-continuous-integration-only.md),
+  [ADR-0051](docs/adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md)).
+- `.github/dependabot.yml` watches both uv locks, the workflows, the two Dockerfiles, and the compose
+  file daily, at most five open pull requests each, with Conventional Commit prefixes the commit-message
+  hook accepts and the seven-day cooldown zizmor's `dependabot-cooldown` audit requires
+  ([ADR-0052](docs/adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)).
 - Docker is the runtime. `deploy/compose.yaml` defines every component except Ollama: the PubSub+
   Standard 10.26.0 broker container and PostgreSQL 17 in the default profile, Agent Mesh 1.28.7 built
   on its official image with the two Event Mesh wheels installed by hash under the `mesh` profile, the
@@ -201,6 +222,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- The pip-audit loader in `tools/dependency_waiver_gate.py` now requires the report's `dependencies`
+  array and refuses a Trivy report, just as the Trivy loader refuses a pip-audit one. A report with the
+  wrong shape used to read as clean.
+- The three checkouts in `checks.yml` no longer persist the workflow token into the working tree;
+  the push stage reads local refs only. `compose_policy_gate` exposes its Dockerfile instruction
+  parser as `dockerfile_instructions` for the image inventory.
 - Solace Cloud moved from the live broker to a showcase profile, and every document that named it as
   the broker now names the container: the plan's decision table gains its missing records, Phase 0's
   next step becomes the stack's first live run, Phase 5 exercises the mission against the container

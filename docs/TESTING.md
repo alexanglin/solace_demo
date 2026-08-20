@@ -167,7 +167,9 @@ and review remain mandatory for those behaviors.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
   recovery, and the soak run. Every value, and the instrument that measures it, is in
   [operating-parameters.md](operating-parameters.md).
-- **Security tests:** Secret scanning, dependency scanning, static analysis, authorization-negative cases, schema fuzzing, and prompt-injection cases.
+- **Security tests:** Secret scanning, dependency scanning, container-image and deploy misconfiguration
+  scanning, workflow auditing, CodeQL static analysis, authorization-negative cases, schema fuzzing,
+  and prompt-injection cases.
 - **Black-box compatibility tests:** The exact Agent Mesh and plugin wheels — configuration startup, agent-card discovery, A2A delegation, Event Mesh Gateway transformation and settlement, Event Mesh Tool request/reply, and ACL denial. The acceptance-evidence column in [ARCHITECTURE.md](ARCHITECTURE.md) is this class's case list.
 - **Mutation tests:** Run against safety gates, state transitions, idempotency, and evidence-score logic.
 - **Replay tests:** Replaying a committed fixture must produce the same ordered domain outcome and dashboard state.
@@ -189,7 +191,19 @@ hashed exports of every active uv lock. A reported advisory is adjudicated again
 `dependency-waivers.toml`, which binds each review to an exact domain, package, version, and
 advisory with a reason, reachability statement, compensating control, reviewer, review date, and
 expiry ([ADR-0026](adr/0026-expiring-dependency-waivers.md)). An unwaived advisory, an expired or
-out-of-window waiver, and a waiver matching no reported advisory each fail. TypeScript quality gates use Vitest, Testing Library, ESLint,
+out-of-window waiver, and a waiver matching no reported advisory each fail. The same gate adjudicates
+Trivy 0.74.0 reports: `trivy config` over `deploy/` at pre-push and `trivy image` over every pulled and
+built stack image in continuous integration, where a HIGH or CRITICAL finding with a fixed version
+blocks unless an expiring waiver covers it and every other finding is printed as information
+([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md)). zizmor 1.29.0 audits the
+workflow and Dependabot files offline at the commit stage, and any finding fails
+([ADR-0049](adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md)); CodeQL analyses the Python
+tree in continuous integration only
+([ADR-0050](adr/0050-scan-python-with-codeql-in-continuous-integration-only.md));
+`.github/workflows/security.yml` repeats the dependency audit, the configuration audit, and the image
+scans daily, and Dependabot raises pinned-update pull requests under a seven-day cooldown
+([ADR-0051](adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md),
+[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest, Testing Library, ESLint,
 TypeScript strict mode, and Playwright. jscpd 5.0.14 provides the multi-language duplication scan. The
 cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level

@@ -22,6 +22,7 @@ Mesh process, broker client, application, or model.
 | Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); inert until the first owned configuration |
 | Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; **not yet started** |
 | Live PubSub+ and Ollama messaging | Next Phase 0 evidence: the first `just up`; not yet demonstrated |
+| Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
 | Solace Cloud | A non-gating showcase profile for the Cloud console; no gate depends on it |
 | Everything else | Typed package manifests with no runtime behaviour |
 
@@ -148,7 +149,9 @@ failure-injection, and mutation obligations.
 
 Gates fail closed: a component with source but no manifest, a missing tool, or an absent
 report is an error, never a skip. Git hooks give fast feedback and CI re-runs the identical
-configuration, so CI is the authority.
+configuration, so CI is the authority. A daily security workflow re-audits both dependency locks, the
+deploy configuration, and every container image against the same expiring-waiver registry, so an
+advisory published against an unchanged tree surfaces the next morning rather than at the next push.
 
 ## License
 

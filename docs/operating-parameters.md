@@ -39,7 +39,15 @@ integer arithmetic; display rounding never changes a verdict.
 | Survivor reason | At least 20 Unicode characters | `mutation-survivors.toml` validation |
 | Dependency waiver lifetime | More than 0 and at most 30 calendar days | `dependency-waivers.toml` validation |
 | Dependency waiver reason | At least 20 Unicode characters | `dependency-waivers.toml` validation |
-| Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON |
+| Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON (`--source pip-audit`) and Trivy JSON (`--source trivy`) |
+| Blocking image advisory | HIGH or CRITICAL severity with a fixed version, unwaived; zero permitted | `tools/dependency_waiver_gate.py --source trivy --domain image:<repository>` over `trivy image` JSON |
+| Informational image advisory | Any other severity, or no fixed version; printed as `INFO:` on stdout and never fails | the same gate |
+| Blocking deploy misconfiguration | HIGH or CRITICAL check in `FAIL` status, unwaived; zero permitted | `scripts/hooks/deploy/trivy-config-full.sh` over `trivy config deploy` JSON in the `deploy-config` domain |
+| Image scan timeout | 20 minutes per image | `trivy image --timeout 20m` in `scripts/security/scan-images.sh` |
+| Workflow audit findings | Zero at any severity, offline | zizmor 1.29.0 pre-commit hook over `.github/workflows/` and `.github/dependabot.yml` |
+| Security re-scan cadence | Daily at 06:17 UTC, plus dispatch, every push to `main`, and pull requests touching the audited inputs | `.github/workflows/security.yml` |
+| Dependabot updates | Daily at 06:00 UTC; at most 5 open pull requests per ecosystem; a 7-day cooldown | `.github/dependabot.yml`, held by `tools/quality_gate_tests/hooks/test_hook_repairs.py` |
+| CodeQL coverage | Python, build mode `none`, on a Linux x64 runner | the `codeql` job of `.github/workflows/security.yml` |
 | Directory fan-out | At most 20 files per directory, counted as immediate children only | `tools/directory_fanout_gate.py` over `git ls-files --cached --others --exclude-standard` |
 | Fan-out exemption reason | At least 20 Unicode characters | `directory-fanout.toml` validation |
 | Compose policy | Every pulled image `name:tag@sha256:` with a 64-hex digest; every published port on `127.0.0.1`; secrets by file or indirection; a healthcheck on every service; the broker's `shm_size`, `nofile`, certificate path, and TLS port; `SOLACE_DEV_MODE=false` on Agent Mesh | `tools/compose_policy_gate.py` over `deploy/` compose files and Dockerfiles |
@@ -135,7 +143,9 @@ to it ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)).
 
 The runtime layout is in [ARCHITECTURE.md](ARCHITECTURE.md#deployment-layout); the decisions are
 [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md), [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), and [ADR-0046](adr/0046-generated-local-certificate-authority.md). Every image is pinned by its multi-architecture index digest, verified
-against Docker Hub on 2026-08-20, and the compose policy gate refuses a pull that is not.
+against Docker Hub on 2026-08-20, and the compose policy gate refuses a pull that is not. Every image
+below, and the two images the Dockerfiles build, is scanned by Trivy on each daily run
+([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md)).
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
