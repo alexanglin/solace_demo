@@ -24,14 +24,25 @@ matter. Only isolated third-party Node hooks are provisioned by pre-commit itsel
 
 ## Branching
 
-`main` is protected locally by the `no-commit-to-branch` hook. Work on a short-lived branch and open a pull request:
+`main` is protected in two places. The `no-commit-to-branch` hook stops a commit on `main` locally,
+and GitHub refuses a direct push to `main`, a force push, and a deletion
+([ADR-0054](docs/adr/0054-enforce-the-verification-authority-with-branch-protection.md)). Work on a
+short-lived branch and open a pull request:
 
 ```sh
 git switch -c feat/sector-assignment
+git push -u origin feat/sector-assignment
+gh pr create --fill
 ```
 
 This mirrors the [`AGENTS.md` version-control rules](AGENTS.md#9-version-control). If you try to commit on
 `main`, the hook stops you — that is not a misconfiguration.
+
+Three checks must pass before the merge button unlocks: **commit-stage hooks**, **pre-push hooks**, and
+**no credentials in CI**, all from `checks.yml`. They are the same hook configuration you ran locally,
+re-run on a Linux runner, which is why they occasionally catch what a workstation cannot. No approval is
+required while the project has one maintainer, history stays linear, and the protection applies to
+administrators too — so there is no flag that lands unverified work on `main`.
 
 ## Commit messages
 

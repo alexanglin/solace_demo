@@ -71,6 +71,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0051](0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md) | Re-scan daily and let Dependabot raise pinned-update pull requests | Accepted |
 | [0052](0052-hold-dependabot-to-a-seven-day-cooldown.md) | Hold Dependabot to the seven-day cooldown the workflow audit requires | Accepted |
 | [0053](0053-report-scaffolded-workspace-members-instead-of-failing-them.md) | Report scaffolded workspace members instead of failing them | Accepted |
+| [0054](0054-enforce-the-verification-authority-with-branch-protection.md) | Enforce the verification authority with branch protection on `main` | Accepted |
 
 ## Decisions still open
 
