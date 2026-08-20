@@ -162,7 +162,10 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   policy) and this file (it documents the words it bans). Run `just lint-docs-strict` to invoke it
   directly.
 - The Agent Mesh semantic-configuration validator remains required but is not yet executable. It must land
-  before the first owned Agent Mesh configuration.
+  before the first owned Agent Mesh configuration, and what it checks is now specified in
+  [ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md). Until it exists, files under
+  `agent-mesh/configs/` are validated by nothing at all: they are excluded from `check-yaml` because the
+  Solace AI Connector dialect is not plain YAML.
 - `packages/domain` and `services/command_gateway` contain no mutation-eligible behavior or co-located
   tests yet, and neither do the Tier 2 members. The mutation and coverage entry points are executable and
   intentionally fail closed until those packages gain tested behavior, so the pre-push tier stays red
