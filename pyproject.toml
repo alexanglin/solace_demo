@@ -62,6 +62,12 @@ dev = [
     "jsonschema==4.26.0",
     "referencing==0.37.0",
     "types-jsonschema==4.26.0.20260518",
+    # The compose policy gate parses deploy/ with PyYAML, which was already locked
+    # transitively through pre-commit; declaring it is what makes the import deliberate,
+    # and the stubs are what let strict mypy check it with no override
+    # (docs/adr/0045-fail-closed-compose-policy-gate.md).
+    "pyyaml==6.0.3",
+    "types-pyyaml==6.0.12.20260815",
     "complexipy==7.0.1",
     "mutmut==3.7.0",
 ]
