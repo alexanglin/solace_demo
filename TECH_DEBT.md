@@ -118,17 +118,26 @@ Ruff banned-api rule.
 **Clears when:** upstream ships `py.typed`, or the project writes stubs for the surface the adapter
 uses.
 
-## 4. Gates that are red by design
+## 4. What the gate modules still owe
 
-The pre-push tier does not pass on `main`, and this is intended rather than broken. Coverage is
-enforced per workspace member with no vacuous pass, so a member holding only a docstring fails
-rather than reporting success. The mutation gate fails at preflight for `services/command_gateway`,
-the one tier-one member that has no co-located tests yet; `packages/contracts` and `packages/domain`
-pass both gates. The root tooling member sits at 85% statements and 81% branches against its Tier 2
-threshold of 95%, because the mutation, contract, coverage, and import gates predate the per-member rule
-and were never brought up to it; the compose policy gate that joined them is at 100% apart from its
-`__main__` guard. The remaining lines clear as those members gain tested behaviour; none is a defect
-in the gates.
+The pre-push tier passes on `main`. It did not until 2026-08-20, when two changes closed the gap that
+[ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) had left open by design. Nine workspace members
+are scaffolds — a manifest, a docstring-only module, a `py.typed` marker — and the coverage and
+mutation gates now report them as `SCAFFOLD` rather than failing them, because a member with nothing
+to measure proves nothing either way
+([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)). The root
+tooling member, which had sat at 85% statements and 81% branches against its Tier 2 threshold of 95%,
+was characterized to 98.26% and 96.84% and passes.
+
+What remains is one module and its two entry points:
+
+| Item | Why it is accepted for now | Clears when |
+| --- | --- | --- |
+| `tools/aaa_checker/checker.py` at 92% statements and 91% branches, with `gate.py` at 74% and `__main__.py` uncovered | The checker's own conformance suite under `tools/aaa_checker/tests/` exercises the parser on positive and negative sources and runs before every tree scan, so the untested lines are diagnostic and entry-point paths rather than parsing rules | The three modules reach 100% in the per-member measurement, or a recorded decision states which paths are unreachable |
+
+`packages/contracts` and `packages/domain` pass the coverage and mutation gates at 100% statements,
+100% branches, and 882 of 882 mutants killed. A scaffold that gains its first executable statement or
+test file becomes an active member immediately and is measured against its declared tier.
 
 ## 5. Owed before the first Agent Mesh configuration
 
