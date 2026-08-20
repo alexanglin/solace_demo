@@ -1,4 +1,4 @@
-"""Event envelope, schemas, canonical serialization, and gate contracts."""
+"""Event envelope, topic grammar, instants, canonical serialization, and digest contracts."""
 
 from typing import Final
 
