@@ -59,6 +59,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0039](0039-drone-connectivity-states-and-recovery.md) | Name the drone connectivity states and count transitions in heartbeat intervals | Accepted |
 | [0040](0040-consume-approvals-by-recomputed-digest-and-two-clocks.md) | Consume approvals by recomputing the proposal digest and reading two clocks | Accepted |
 | [0041](0041-deny-by-default-command-authority-table.md) | Close the command-type set with a deny-by-default command-authority table | Accepted |
+| [0042](0042-approval-time-to-live.md) | Approval time to live of 60 seconds | Proposed |
 
 ## Decisions still open
 
@@ -77,3 +78,4 @@ These are known unresolved questions, recorded here so they are tracked rather t
 | What is the version-controlled lock representation for a local Ollama model: the digest form, where it is recorded, and how the validator compares it? | Until it exists every local-model configuration fails `MODEL_LOCK_REQUIRED` ([ADR-0035](0035-refuse-unprovable-agent-mesh-configuration.md)), so no local-only Agent Mesh configuration can be committed. | ADR once decided, with the first live Ollama configuration in Phase 0 |
 | What is the post-trial broker substrate once the Solace Cloud trial expires? | Phase 5, Phase 8 and the release criteria all require Solace Cloud, while the local container is scoped to integration tests only, so an expiry leaves the release criteria with no exit. | ADR once decided |
 | ~~Waiver or version override for `google-adk` 1.18.0 / CVE-2026-4810?~~ **Settled 2026-08-19: waiver.** The override was attempted and is unsatisfiable, and the advisory is reported as `PYSEC-2026-344` rather than under its CVE alias. Recorded in [ADR-0031](0031-reject-the-google-adk-version-override.md) with uv's verbatim conflict output; the accepted risk is carried in [TECH_DEBT.md](../../TECH_DEBT.md). | Agent Mesh 1.28.7 pins `google-adk==1.18.0` exactly; the advisory is unauthenticated remote code execution, fixed upstream in 1.28.1. A `[tool.uv] override-dependencies` bump must be tried against the black-box compatibility suite before a waiver is accepted. | Phase 0 gate |
+| What is the approval time to live? | [ADR-0006](0006-proposal-bound-single-use-approvals.md) requires the window chosen and justified; until it is, `packages/domain` injects the value with no default and the operating-parameters row stays open. | [ADR-0042](0042-approval-time-to-live.md), proposed at 60 seconds |
