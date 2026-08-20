@@ -66,6 +66,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0046](0046-generated-local-certificate-authority.md) | Secure the local broker with a generated per-checkout certificate authority | Accepted |
 | [0047](0047-override-the-asteval-pin-to-close-cve-2026-55244.md) | Override the asteval pin to 1.0.9 and close CVE-2026-55244 | Accepted |
 | [0048](0048-scan-images-and-deploy-configuration-with-trivy.md) | Scan every stack image and the deploy configuration with Trivy, blocking on fixed HIGH and CRITICAL findings under the waiver registry | Accepted |
+| [0049](0049-audit-workflows-with-zizmor-at-the-commit-stage.md) | Audit the GitHub Actions workflows with zizmor at the commit stage | Accepted |
 
 ## Decisions still open
 
