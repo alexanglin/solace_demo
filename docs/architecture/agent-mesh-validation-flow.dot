@@ -10,7 +10,7 @@ digraph AgentMeshValidationFlow {
     newrank=true,
     fontname="Helvetica",
     fontsize=20,
-    label="Agent Mesh validation — offline evidence, live proof, and security gate",
+    label="Agent Mesh validation — offline evidence and live proof",
     labelloc=t
   ];
 
@@ -89,14 +89,6 @@ digraph AgentMeshValidationFlow {
     ];
   }
 
-  security [
-    label="ADR-0033 dependency gate\n14 records • 11 identifiers • 5 exact pins\nNO WAIVER • NO OVERRIDE\nPhase 0 / merge / release blocked",
-    shape=octagon,
-    fillcolor="#FDE8E7",
-    color="#B4433C",
-    penwidth=2
-  ];
-
   configs -> validator;
   environment -> validator;
   pins -> validator;
@@ -107,7 +99,4 @@ digraph AgentMeshValidationFlow {
   offline_green -> pubsub [label="does not substitute for", style=dashed];
   pubsub -> runtime [dir=both, label="broker traffic"];
   runtime -> ollama [dir=both, label="model calls"];
-
-  pins -> security [label="locked audit", color="#B4433C", fontcolor="#8F302B"];
-  offline_green -> security [label="does not clear", style=dashed, color="#B4433C", fontcolor="#8F302B"];
 }
