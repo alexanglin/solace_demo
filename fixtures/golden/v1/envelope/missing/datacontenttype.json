@@ -1,0 +1,22 @@
+{
+  "specversion": "1.0",
+  "id": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6b",
+  "source": "urn:aerial-rescue:drone:drone-vision-01",
+  "type": "aerial-rescue.v1.drone.telemetry",
+  "subject": "m-2026-0001",
+  "time": "2026-08-20T14:03:07.250Z",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json",
+  "data": {
+    "missionId": "m-2026-0001",
+    "droneId": "drone-vision-01",
+    "latitudeMicrodegrees": 47123456,
+    "longitudeMicrodegrees": -122654321,
+    "batteryPercent": 87,
+    "altitudeMetres": 412,
+    "headingDegrees": 270,
+    "groundSpeedCentimetresPerSecond": 850
+  },
+  "sequence": "000000000000042",
+  "correlationid": "c-2026-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01"
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/topic-cases.schema.json",
+  "description": "The topic golden-case files: accepted topics with their parse, and refused topics with their refusal name.",
+  "type": "object",
+  "required": [
+    "format",
+    "cases"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": [
+        "topic",
+        "verdict"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "accept",
+            "refuse"
+          ]
+        },
+        "family": {
+          "enum": [
+            "OPERATOR_COMMAND",
+            "OPERATOR_APPROVAL",
+            "DRONE_TELEMETRY",
+            "DRONE_EVENT",
+            "DRONE_COMMAND",
+            "DRONE_COMMAND_RESULT",
+            "GATEWAY_REQUEST",
+            "GATEWAY_RESPONSE",
+            "AGENT_PROPOSAL",
+            "AGENT_RESPONSE",
+            "AUDIT"
+          ]
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-zA-Z0-9]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/eventType"
+        },
+        "refusal": {
+          "enum": [
+            "UNSUPPORTED_TYPE",
+            "LENGTH",
+            "WILDCARD",
+            "PREFIX",
+            "SHAPE",
+            "IDENTIFIER_FORM",
+            "KIND_FORM",
+            "AGENT_NAME_FORM",
+            "DECISION_VALUE",
+            "PARAMETER_SET"
+          ]
+        }
+      }
+    }
+  }
+}

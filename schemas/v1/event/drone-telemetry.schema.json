@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/drone-telemetry.schema.json",
+  "description": "A drone telemetry event: the envelope with its type, schema, and payload bound together.",
+  "allOf": [
+    {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "aerial-rescue.v1.drone.telemetry"
+        },
+        "dataschema": {
+          "const": "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
+        },
+        "data": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
+        }
+      }
+    }
+  ]
+}

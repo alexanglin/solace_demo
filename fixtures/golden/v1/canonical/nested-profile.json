@@ -1,0 +1,18 @@
+{
+  "missionId": "m1",
+  "flags": [
+    true,
+    false,
+    null
+  ],
+  "nested": {
+    "count": 3,
+    "items": [
+      "a",
+      {
+        "deep": -1
+      }
+    ]
+  },
+  "note": "façade — UTF-8 stays raw"
+}

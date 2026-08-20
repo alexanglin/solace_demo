@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json",
+  "description": "The CloudEvents 1.0 application event envelope profile of ADR-0037: a closed member set over the canonical profile.",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "subject",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "data",
+    "sequence",
+    "correlationid",
+    "traceparent"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "source": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/source"
+    },
+    "type": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/eventType"
+    },
+    "subject": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "time": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "dataschema": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/payloadSchema"
+    },
+    "data": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json"
+    },
+    "sequence": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/sequence"
+    },
+    "correlationid": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "traceparent": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/traceparent"
+    },
+    "causationid": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "tracestate": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/tracestate"
+    }
+  }
+}

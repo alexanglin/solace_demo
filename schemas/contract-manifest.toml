@@ -1,0 +1,105 @@
+format = 1
+
+# One table per schema. Every schema under schemas/ and every fixture under fixtures/golden/ is
+# registered exactly once (tools/contract_gate.py, docs/adr/0021-contract-artifact-manifest.md).
+# Identity, layout, and the one-reason rule for negatives: docs/adr/0038.
+
+[[contracts]]
+schema = "schemas/v1/canonical.schema.json"
+valid = [
+  "fixtures/golden/v1/canonical/nested-profile.json",
+  "fixtures/golden/v1/canonical/bounds.json",
+]
+invalid = [
+  "fixtures/golden/v1/canonical/key-uppercase.json",
+  "fixtures/golden/v1/canonical/key-65-characters.json",
+  "fixtures/golden/v1/canonical/integer-over-safe.json",
+  "fixtures/golden/v1/canonical/string-4097-bytes.json",
+  "fixtures/golden/v1/canonical/nested-key-uppercase.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/envelope.schema.json"
+valid = [
+  "fixtures/golden/v1/envelope/valid/baseline.json",
+  "fixtures/golden/v1/envelope/valid/optionals-present.json",
+]
+invalid = [
+  "fixtures/golden/v1/envelope/missing/specversion.json",
+  "fixtures/golden/v1/envelope/missing/id.json",
+  "fixtures/golden/v1/envelope/missing/source.json",
+  "fixtures/golden/v1/envelope/missing/type.json",
+  "fixtures/golden/v1/envelope/missing/subject.json",
+  "fixtures/golden/v1/envelope/missing/time.json",
+  "fixtures/golden/v1/envelope/missing/datacontenttype.json",
+  "fixtures/golden/v1/envelope/missing/dataschema.json",
+  "fixtures/golden/v1/envelope/missing/data.json",
+  "fixtures/golden/v1/envelope/missing/sequence.json",
+  "fixtures/golden/v1/envelope/missing/correlationid.json",
+  "fixtures/golden/v1/envelope/missing/traceparent.json",
+  "fixtures/golden/v1/envelope/malformed-context/specversion-not-1-0.json",
+  "fixtures/golden/v1/envelope/malformed-context/id-empty.json",
+  "fixtures/golden/v1/envelope/malformed-context/id-uppercase.json",
+  "fixtures/golden/v1/envelope/malformed-context/source-not-urn.json",
+  "fixtures/golden/v1/envelope/malformed-context/type-wrong-prefix.json",
+  "fixtures/golden/v1/envelope/malformed-context/subject-has-slash.json",
+  "fixtures/golden/v1/envelope/malformed-context/time-has-offset.json",
+  "fixtures/golden/v1/envelope/malformed-context/time-has-microseconds.json",
+  "fixtures/golden/v1/envelope/malformed-context/datacontenttype-not-json.json",
+  "fixtures/golden/v1/envelope/malformed-context/dataschema-outside-scheme.json",
+  "fixtures/golden/v1/envelope/malformed-context/data-not-object.json",
+  "fixtures/golden/v1/envelope/malformed-context/data-key-not-canonical.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/sequence-unpadded.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/sequence-sixteen-digits.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/correlationid-wildcard.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/causationid-null.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/traceparent-zero-trace-id.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/traceparent-uppercase-hex.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/tracestate-empty.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/unknown-member.json",
+  "fixtures/golden/v1/envelope/malformed-extensions/data-base64-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/payload/drone-telemetry.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/drone-telemetry/baseline.json",
+  "fixtures/golden/v1/payload/drone-telemetry/all-lower-bounds.json",
+  "fixtures/golden/v1/payload/drone-telemetry/all-upper-bounds.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/drone-telemetry/latitude-one-over.json",
+  "fixtures/golden/v1/payload/drone-telemetry/longitude-one-under.json",
+  "fixtures/golden/v1/payload/drone-telemetry/battery-over-100.json",
+  "fixtures/golden/v1/payload/drone-telemetry/battery-negative.json",
+  "fixtures/golden/v1/payload/drone-telemetry/altitude-one-under.json",
+  "fixtures/golden/v1/payload/drone-telemetry/altitude-one-over.json",
+  "fixtures/golden/v1/payload/drone-telemetry/heading-360.json",
+  "fixtures/golden/v1/payload/drone-telemetry/heading-negative.json",
+  "fixtures/golden/v1/payload/drone-telemetry/speed-one-over.json",
+  "fixtures/golden/v1/payload/drone-telemetry/speed-negative.json",
+  "fixtures/golden/v1/payload/drone-telemetry/missing-drone-id.json",
+  "fixtures/golden/v1/payload/drone-telemetry/unknown-member.json",
+  "fixtures/golden/v1/payload/drone-telemetry/latitude-not-integer.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/drone-telemetry.schema.json"
+valid = [
+  "fixtures/golden/v1/event/drone-telemetry/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/drone-telemetry/type-not-telemetry.json",
+  "fixtures/golden/v1/event/drone-telemetry/dataschema-not-telemetry.json",
+  "fixtures/golden/v1/event/drone-telemetry/data-fails-payload.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/topic-cases.schema.json"
+valid = [
+  "fixtures/golden/v1/topics/accepted.json",
+  "fixtures/golden/v1/topics/refused.json",
+]
+invalid = [
+  "fixtures/golden/v1/topics/case-without-topic.json",
+]

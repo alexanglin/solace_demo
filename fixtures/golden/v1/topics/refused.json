@@ -1,0 +1,65 @@
+{
+  "format": 1,
+  "cases": [
+    {
+      "topic": "other/*/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "verdict": "refuse",
+      "refusal": "LENGTH"
+    },
+    {
+      "topic": "aerial-rescue/v1/*/drone/*/telemetry",
+      "verdict": "refuse",
+      "refusal": "WILDCARD"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/>",
+      "verdict": "refuse",
+      "refusal": "WILDCARD"
+    },
+    {
+      "topic": "aerial-rescue/v2/m1/audit/note",
+      "verdict": "refuse",
+      "refusal": "PREFIX"
+    },
+    {
+      "topic": "aerial-rescue/validation/a2a/v1/agent/request/ValidationAgent",
+      "verdict": "refuse",
+      "refusal": "PREFIX"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/d1/status",
+      "verdict": "refuse",
+      "refusal": "SHAPE"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/audit/note/",
+      "verdict": "refuse",
+      "refusal": "SHAPE"
+    },
+    {
+      "topic": "aerial-rescue/v1//audit/note",
+      "verdict": "refuse",
+      "refusal": "IDENTIFIER_FORM"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/#d1/telemetry",
+      "verdict": "refuse",
+      "refusal": "IDENTIFIER_FORM"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/d1/event/Salient",
+      "verdict": "refuse",
+      "refusal": "KIND_FORM"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/agent/response/drone-vision-01",
+      "verdict": "refuse",
+      "refusal": "AGENT_NAME_FORM"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/operator/approval/maybe",
+      "verdict": "refuse",
+      "refusal": "DECISION_VALUE"
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "format": 1,
+  "cases": [
+    {
+      "topic": "aerial-rescue/v1/m1/operator/command/reassign-sector",
+      "verdict": "accept",
+      "family": "OPERATOR_COMMAND",
+      "missionId": "m1",
+      "parameters": {
+        "commandType": "reassign-sector"
+      },
+      "type": "aerial-rescue.v1.operator.command.reassign-sector"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/operator/approval/approve",
+      "verdict": "accept",
+      "family": "OPERATOR_APPROVAL",
+      "missionId": "m1",
+      "parameters": {
+        "decision": "approve"
+      },
+      "type": "aerial-rescue.v1.operator.approval.approve"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/operator/approval/reject",
+      "verdict": "accept",
+      "family": "OPERATOR_APPROVAL",
+      "missionId": "m1",
+      "parameters": {
+        "decision": "reject"
+      },
+      "type": "aerial-rescue.v1.operator.approval.reject"
+    },
+    {
+      "topic": "aerial-rescue/v1/m-2026-0001/drone/drone-vision-01/telemetry",
+      "verdict": "accept",
+      "family": "DRONE_TELEMETRY",
+      "missionId": "m-2026-0001",
+      "parameters": {
+        "droneId": "drone-vision-01"
+      },
+      "type": "aerial-rescue.v1.drone.telemetry"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/d1/event/salient",
+      "verdict": "accept",
+      "family": "DRONE_EVENT",
+      "missionId": "m1",
+      "parameters": {
+        "droneId": "d1",
+        "eventType": "salient"
+      },
+      "type": "aerial-rescue.v1.drone.event.salient"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/d1/command/reassign-sector",
+      "verdict": "accept",
+      "family": "DRONE_COMMAND",
+      "missionId": "m1",
+      "parameters": {
+        "droneId": "d1",
+        "commandType": "reassign-sector"
+      },
+      "type": "aerial-rescue.v1.drone.command.reassign-sector"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/drone/d1/command-result/0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6b",
+      "verdict": "accept",
+      "family": "DRONE_COMMAND_RESULT",
+      "missionId": "m1",
+      "parameters": {
+        "droneId": "d1",
+        "commandId": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6b"
+      },
+      "type": "aerial-rescue.v1.drone.command-result"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/gateway/request/fleet-status",
+      "verdict": "accept",
+      "family": "GATEWAY_REQUEST",
+      "missionId": "m1",
+      "parameters": {
+        "operation": "fleet-status"
+      },
+      "type": "aerial-rescue.v1.gateway.request.fleet-status"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/gateway/response/r1",
+      "verdict": "accept",
+      "family": "GATEWAY_RESPONSE",
+      "missionId": "m1",
+      "parameters": {
+        "requestId": "r1"
+      },
+      "type": "aerial-rescue.v1.gateway.response"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/agent/proposal/MissionCoordinator/reassignment",
+      "verdict": "accept",
+      "family": "AGENT_PROPOSAL",
+      "missionId": "m1",
+      "parameters": {
+        "agentName": "MissionCoordinator",
+        "proposalType": "reassignment"
+      },
+      "type": "aerial-rescue.v1.agent.proposal.reassignment"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/agent/response/sam_test_agent",
+      "verdict": "accept",
+      "family": "AGENT_RESPONSE",
+      "missionId": "m1",
+      "parameters": {
+        "agentName": "sam_test_agent"
+      },
+      "type": "aerial-rescue.v1.agent.response"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/audit/note",
+      "verdict": "accept",
+      "family": "AUDIT",
+      "missionId": "m1",
+      "parameters": {
+        "recordType": "note"
+      },
+      "type": "aerial-rescue.v1.audit.note"
+    },
+    {
+      "topic": "aerial-rescue/v1/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/drone/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/command-result/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "verdict": "accept",
+      "family": "DRONE_COMMAND_RESULT",
+      "missionId": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "parameters": {
+        "droneId": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "commandId": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+      },
+      "type": "aerial-rescue.v1.drone.command-result"
+    },
+    {
+      "topic": "aerial-rescue/v1/7/audit/a",
+      "verdict": "accept",
+      "family": "AUDIT",
+      "missionId": "7",
+      "parameters": {
+        "recordType": "a"
+      },
+      "type": "aerial-rescue.v1.audit.a"
+    }
+  ]
+}

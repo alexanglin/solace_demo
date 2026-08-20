@@ -1,0 +1,10 @@
+{
+  "missionId": "m-2026-0001",
+  "droneId": "drone-vision-01",
+  "latitudeMicrodegrees": 47123456,
+  "longitudeMicrodegrees": -122654321,
+  "batteryPercent": 87,
+  "altitudeMetres": 412,
+  "headingDegrees": 270,
+  "groundSpeedCentimetresPerSecond": -1
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json",
+  "description": "Routine drone telemetry: position in integer microdegrees, battery, altitude above mean sea level, heading clockwise from true north, and ground speed.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "latitudeMicrodegrees",
+    "longitudeMicrodegrees",
+    "batteryPercent",
+    "altitudeMetres",
+    "headingDegrees",
+    "groundSpeedCentimetresPerSecond"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "latitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+    },
+    "longitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+    },
+    "batteryPercent": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/percent"
+    },
+    "altitudeMetres": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/altitudeMetres"
+    },
+    "headingDegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/headingDegrees"
+    },
+    "groundSpeedCentimetresPerSecond": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/groundSpeedCentimetresPerSecond"
+    }
+  }
+}

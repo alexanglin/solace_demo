@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json",
+  "description": "An object inside the integer-only canonical profile of ADR-0027, and the shared definitions every v1 schema references.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[a-z][a-zA-Z0-9]{0,63}$"
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/value"
+  },
+  "$defs": {
+    "value": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/safeInteger"
+        },
+        {
+          "$ref": "#/$defs/string"
+        },
+        {
+          "$ref": "#/$defs/array"
+        },
+        {
+          "$ref": "#"
+        }
+      ]
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "string": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "array": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/value"
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "maxLength": 32
+    },
+    "agentName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]{1,64}$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^(?!0000)[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "eventType": {
+      "type": "string",
+      "pattern": "^aerial-rescue\\.v1(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*){2,3}$"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^urn:aerial-rescue:[a-z][a-z0-9]*(?:-[a-z0-9]+)*:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "payloadSchema": {
+      "type": "string",
+      "pattern": "^https://aerial-rescue\\.invalid/schemas/v1/payload/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.schema\\.json$"
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^[0-9]{15}$"
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "tracestate": {
+      "type": "string",
+      "pattern": "^[\\x20-\\x7e]{1,512}$"
+    },
+    "latitudeMicrodegrees": {
+      "type": "integer",
+      "minimum": -90000000,
+      "maximum": 90000000
+    },
+    "longitudeMicrodegrees": {
+      "type": "integer",
+      "minimum": -180000000,
+      "maximum": 180000000
+    },
+    "percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "altitudeMetres": {
+      "type": "integer",
+      "minimum": -500,
+      "maximum": 20000
+    },
+    "headingDegrees": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 359
+    },
+    "groundSpeedCentimetresPerSecond": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    }
+  }
+}
