@@ -144,6 +144,11 @@ and review remain mandatory for those behaviors.
 
 ## Test classes
 
+- **Offline Agent Mesh configuration tests:** In the isolated Python 3.13 environment, the exact pinned
+  upstream configuration models, distribution-bound symbols, and SAC merge primitive validate
+  includes, environment and secret handling, broker fields, model policy, gateway policy, cross-file
+  app-name uniqueness, and Event Mesh Tool topic authority without starting an external process or
+  client. The gate is inert before the first owned configuration and fails closed afterward.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
@@ -163,6 +168,12 @@ and review remain mandatory for those behaviors.
 - **Black-box compatibility tests:** The exact Agent Mesh and plugin wheels — configuration startup, agent-card discovery, A2A delegation, Event Mesh Gateway transformation and settlement, Event Mesh Tool request/reply, and ACL denial. The acceptance-evidence column in [ARCHITECTURE.md](ARCHITECTURE.md) is this class's case list.
 - **Mutation tests:** Run against safety gates, state transitions, idempotency, and evidence-score logic.
 - **Replay tests:** Replaying a committed fixture must produce the same ordered domain outcome and dashboard state.
+
+A green offline Agent Mesh configuration result satisfies only the semantic gate in
+[ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md). It does not satisfy broker
+integration, provider integration, or black-box compatibility. Live PubSub+ and Ollama messaging is
+the mandatory next Phase 0 evidence for A2A behaviour, plugin delivery and settlement, ACL denial,
+and structured model output.
 
 ## Tooling
 

@@ -213,7 +213,8 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 - Pin `solace-agent-mesh==1.28.7` in the isolated Python 3.13.15 `agent-mesh/` project and record the upstream source revision.
 - Pin and hash `sam-event-mesh-gateway==1.1.0` and `sam-event-mesh-tool==0.1.1`; prove those exact independently released wheels are compatible with Agent Mesh 1.28.7 before treating the combination as supported.
-- Connect the pinned runtime to local Ollama and the Solace Cloud broker without exposing either service publicly or recording credentials.
+- **Completed offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, schemas, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
+- **Mandatory next:** connect the pinned runtime to local Ollama and PubSub+ without exposing either service publicly or recording credentials.
 - Prove the trial broker identity can publish and subscribe to the required A2A namespace, create or connect to the required endpoints, and satisfy the selected temporary/durable queue, TTL, spool, and ACL policies.
 - Run the built-in Orchestrator, one specialized agent, one minimal YAML workflow, and the HTTP/SSE Web UI; prove agent-card discovery, structured workflow invocation, and one A2A delegation in Broker Manager.
 - Configure the thinnest official Event Mesh Gateway and Event Mesh Tool spike: one validated salient CloudEvent becomes one structured A2A task, and one tool request produces one validated, non-actuating command-gateway response.

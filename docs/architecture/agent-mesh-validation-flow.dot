@@ -1,0 +1,113 @@
+digraph AgentMeshValidationFlow {
+  graph [
+    rankdir=LR,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.42",
+    ranksep="0.72",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=20,
+    label="Agent Mesh validation — offline evidence, live proof, and security gate",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F7F9FC",
+    fontname="Helvetica",
+    fontsize=10,
+    margin="0.16,0.11"
+  ];
+
+  edge [
+    color="#52657A",
+    fontcolor="#314158",
+    fontname="Helvetica",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  subgraph cluster_inputs {
+    label="Version-controlled inputs";
+    color="#8193A6";
+    style="rounded";
+    configs [label="Owned Agent Mesh YAML\nincludes • agent cards • plugins"];
+    environment [label="Declared environment names\nno literal credentials or URL userinfo"];
+    pins [label="Exact Python 3.13.15 lock\nAgent Mesh 1.28.7\nGateway 1.1.0 • Tool 0.1.1"];
+  }
+
+  subgraph cluster_offline {
+    label="Offline semantic gate — ADR-0032";
+    color="#008F6B";
+    style="rounded";
+    validator [
+      label="Pinned upstream parser + owned policy\nincludes • schemas • RECORD-bound symbols • SAC merge\nmodel lock • broker/gateway policy • tool topics",
+      fillcolor="#DFF7EE",
+      color="#008F6B"
+    ];
+    rejected [
+      label="Invalid or missing prerequisite\nblock pre-commit • pre-push • CI",
+      fillcolor="#FDE8E7",
+      color="#B4433C"
+    ];
+    offline_green [
+      label="Green result\nconfiguration evidence only",
+      fillcolor="#E8F7F1",
+      color="#008F6B"
+    ];
+    no_external [
+      label="Starts no sam, app, broker client,\nOllama request, or model call",
+      shape=note,
+      fillcolor="#FFF7DD",
+      color="#B58900"
+    ];
+  }
+
+  subgraph cluster_live {
+    label="Mandatory next Phase 0 evidence";
+    color="#6B86A5";
+    style="rounded,dashed";
+    pubsub [
+      label="Live PubSub+\nidentity • ACLs • queues • delivery",
+      fillcolor="#E8F1FA",
+      color="#4D79A5"
+    ];
+    runtime [
+      label="Agent Mesh + plugins\nA2A discovery/delegation\ngateway settlement/redelivery\ntool request/reply",
+      fillcolor="#E8F1FA",
+      color="#4D79A5"
+    ];
+    ollama [
+      label="Live Ollama\npinned model • structured output",
+      fillcolor="#F0E9FF",
+      color="#7050A0"
+    ];
+  }
+
+  security [
+    label="ADR-0033 dependency gate\n14 records • 11 identifiers • 5 exact pins\nNO WAIVER • NO OVERRIDE\nPhase 0 / merge / release blocked",
+    shape=octagon,
+    fillcolor="#FDE8E7",
+    color="#B4433C",
+    penwidth=2
+  ];
+
+  configs -> validator;
+  environment -> validator;
+  pins -> validator;
+  validator -> rejected [label="fail", color="#B4433C", fontcolor="#8F302B"];
+  validator -> offline_green [label="pass", color="#008F6B", fontcolor="#006A50"];
+  validator -> no_external [style=dotted, arrowhead=none];
+
+  offline_green -> pubsub [label="does not substitute for", style=dashed];
+  pubsub -> runtime [dir=both, label="broker traffic"];
+  runtime -> ollama [dir=both, label="model calls"];
+
+  pins -> security [label="locked audit", color="#B4433C", fontcolor="#8F302B"];
+  offline_green -> security [label="does not clear", style=dashed, color="#B4433C", fontcolor="#8F302B"];
+}

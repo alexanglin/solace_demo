@@ -49,6 +49,28 @@ Editable source: [`docs/architecture/aerial-rescue-mesh-overview.dot`](architect
 
 SAC YAML, agent cards, prompts, inline Ollama model dictionaries, gateway/tool configuration, and plugin declarations under `agent-mesh/` are the reproducible source of truth. Do not configure `model_provider`; in Agent Mesh 1.28.7 it takes precedence over the inline `model` dictionary and would move model authority into the local Platform database. The pinned `sam` CLI initializes, runs, and exercises these files; record exact validation commands only after confirming them from `sam --help` for 1.28.7. Secrets are injected only through ignored environment files or an approved secret store.
 
+### Offline Agent Mesh configuration validation
+
+![Offline Agent Mesh validation flow](architecture/agent-mesh-validation-flow.png)
+
+[Editable Graphviz source](architecture/agent-mesh-validation-flow.dot)
+
+The offline semantic-configuration gate is complete as repository verification tooling. It runs
+inside the isolated Python 3.13 environment, imports the exact pinned Agent Mesh and Event Mesh
+plugin configuration models and symbols, binds loaded modules to their installed distribution
+records, and validates owned includes, environment references, secret hygiene, broker fields,
+model policy, gateway routing and settlement policy, and Event Mesh Tool topic authority. Every
+selected file is independently complete; multi-file invocations additionally use the pinned SAC
+merge primitive and reject combined app-name conflicts. The gate starts no Agent Mesh process,
+broker client, application, Ollama request, or model call. It is inert until an owned configuration
+exists, then fails closed on missing prerequisites or invalid input as required by
+[ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md).
+
+A green offline result is configuration evidence only. Live PubSub+ and Ollama messaging is the
+mandatory next Phase 0 step: it must prove broker identity and ACL enforcement, A2A discovery and
+delegation, Event Mesh Gateway transformation, settlement and redelivery, Event Mesh Tool
+request/reply, and structured model output.
+
 ## Local Python components
 
 - **Fleet simulator:** Adapts the deterministic scenario to broker and clock ports, drives the pure Tier 1

@@ -10,6 +10,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- The offline, fail-closed Agent Mesh semantic-configuration gate specified by ADR-0032. It combines
+  the exact pinned upstream configuration models, distribution-RECORD-bound symbols, and SAC
+  multi-file merge semantics with owned checks for includes, environment and secret handling,
+  model policy, broker fields, gateway routing and settlement policy, and Event Mesh Tool
+  authority, without starting Agent Mesh, PubSub+, Ollama, an application, or a model. An
+  editable validation-flow diagram and generated PNG document the evidence boundary. The hook script lives at
+  `scripts/hooks/agent-mesh/check-agent-mesh-configs.sh`, a sixth concern subdirectory under
+  ADR-0033, and its gate tests under `tools/quality_gate_tests/hooks/`.
+
 - A fail-closed directory fan-out gate, so structure is enforced rather than reviewed. Every other
   maintainability property here already had a number and a gate; how many files one directory holds did
   not. The limit is 20 immediate children, chosen because the tree had a wide empty band between the
@@ -115,6 +124,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- Superseded ADR-0030's broad Agent Mesh warning exemptions with ADR-0034's originating-module
+  filters. Known warnings from the exact pinned Solace and pydub packages remain contained, while
+  the same warning category or message from owned Agent Mesh tooling remains an error.
+- Marked live PubSub+ and Ollama messaging as the mandatory next Phase 0 evidence. Passing offline
+  Agent Mesh configuration validation does not attest broker delivery, A2A behaviour, plugin
+  settlement or redelivery, ACL enforcement, or model capability.
 
 - Decomposed the two directories the fan-out gate was written for, rather than waiving them. A gate whose
   first act is to waive the only violations it found has not been enforced. `tools/quality_gate_tests/`
