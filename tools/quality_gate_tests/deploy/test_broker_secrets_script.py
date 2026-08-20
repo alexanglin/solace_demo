@@ -138,9 +138,13 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
     def test_a_missing_openssl_fails_closed(self) -> None:
         # Arrange
         repository = self.temporary_repository()
+        # An empty directory, not a real one: Debian ships openssl in /bin, so naming a
+        # system directory here would leave the executable on PATH and the test would
+        # assert nothing on Linux while passing on macOS.
+        empty_path = self.temporary_directory()
 
         # Act
-        result = self.generate(repository, environment={"PATH": "/bin"})
+        result = self.generate(repository, environment={"PATH": str(empty_path)})
 
         # Assert
         self.assertNotEqual(0, result.returncode)
