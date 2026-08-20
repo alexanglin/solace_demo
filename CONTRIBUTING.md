@@ -196,6 +196,12 @@ The Agent Mesh semantic-configuration gate follows the same contract: it is iner
 configuration. A green result is offline evidence only; it does not attest PubSub+, Ollama, A2A, or
 plugin behaviour.
 
+The coverage and mutation gates distinguish a scaffold from an unmeasured member. A workspace member
+whose `src/` holds only docstring-only modules and `py.typed` markers, and which has no `tests/`
+directory, is reported as `SCAFFOLD` and neither measured nor counted as a failure; the first
+statement or test file makes it active and every threshold applies
+([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)).
+
 The compose policy gate follows the same contract: it is inert while `deploy/` holds no compose file
 or Dockerfile in the tracked-or-unignored listing, and from the first one it fails on a missing
 `.env.example`, `pyproject.toml`, `uv.lock`, `uv`, or gate module before it reads anything. It parses

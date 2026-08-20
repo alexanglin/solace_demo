@@ -222,6 +222,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- The coverage gate reports a scaffolded workspace member as `SCAFFOLD` instead of failing it, and
+  the mutation gate lists, preflights, and evaluates only the active tier-one members while naming
+  the scaffolded ones. `tools/member_scaffold.py` is the one predicate both gates call: a manifest,
+  no `tests/`, and nothing under `src/` but `py.typed` markers and docstring-only modules. The first
+  executable statement, test file, or non-Python source file makes the member active again, and a
+  scaffold without a declared tier still fails. This supersedes the clause of ADR-0019 that kept the
+  pre-push stage red on `main` by design
+  ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)).
 - The pip-audit loader in `tools/dependency_waiver_gate.py` now requires the report's `dependencies`
   array and refuses a Trivy report, just as the Trivy loader refuses a pip-audit one. A report with the
   wrong shape used to read as clean.

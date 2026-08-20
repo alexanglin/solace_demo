@@ -113,6 +113,10 @@ limits and their instruments live only in [operating-parameters.md](operating-pa
 Installed Agent Mesh, plugin, generated, and vendored code is excluded from owned-code coverage but remains subject to black-box compatibility, contract, integration, evaluation, and security tests. Configuration, owned adapters, error branches, and UI state logic are not exempt. Coverage is a gate, not a substitute for behavior-focused assertions.
 
 An active workspace member with no measurable production statements fails rather than passing vacuously.
+A scaffolded member — a manifest, docstring-only modules, a `py.typed` marker, and no `tests/`
+directory — is reported as `SCAFFOLD` by the coverage gate and skipped by the mutation gate, and it
+becomes an active member at its first executable statement or test file
+([ADR-0053](adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)).
 Coverage results are compared with integer arithmetic so display rounding cannot turn a value below a
 threshold into a pass ([ADR-0019](adr/0019-fail-closed-quality-gates.md)).
 
