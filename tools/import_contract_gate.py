@@ -11,6 +11,7 @@ FORBIDDEN_IMPORT_ROOTS = frozenset(
     {
         "asyncpg",
         "fastapi",
+        "httpx",
         "litellm",
         "ollama",
         "solace",

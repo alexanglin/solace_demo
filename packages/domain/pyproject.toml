@@ -35,7 +35,9 @@ cache_invalidation_files = [
 # Mechanical layering enforcement, per docs/adr/0011:18: packages/domain cannot import
 # Solace, FastAPI, SQLAlchemy, asyncpg, or Ollama clients. This converts the "pure typed
 # domain functions" rule from an aspiration into a build failure. Scoped here rather than
-# at the root because packages/store and packages/broker legitimately need these.
+# at the root because packages/store and packages/broker legitimately need these. The
+# roots named here equal FORBIDDEN_IMPORT_ROOTS in tools/import_contract_gate.py, and
+# tools/quality_gate_tests/contracts/test_import_contract_gate.py holds the two lists equal.
 [tool.ruff]
 extend = "../../pyproject.toml"
 
@@ -46,4 +48,6 @@ extend = "../../pyproject.toml"
 "sqlalchemy".msg = "packages/domain must stay persistence-free (ADR-0011); use a port."
 "asyncpg".msg = "packages/domain must stay persistence-free (ADR-0011); use a port."
 "ollama".msg = "packages/domain must stay model-client-free (ADR-0011); use a port."
+"litellm".msg = "packages/domain must stay model-client-free (ADR-0011); use a port."
+"solace_agent_mesh".msg = "packages/domain must not import the Agent Mesh runtime (ADR-0011); use a port."
 "httpx".msg = "packages/domain must not perform I/O (ADR-0011); use a port."
