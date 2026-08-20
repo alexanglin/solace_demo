@@ -528,7 +528,7 @@ def evaluate_dockerfile(dockerfile: Dockerfile, names: frozenset[str]) -> list[s
     issues: list[str] = []
     stages: set[str] = set()
     declared = set(names) | BUILDKIT_PREDECLARED_ARGS
-    for line, keyword, rest in _instructions(dockerfile.text):
+    for line, keyword, rest in dockerfile_instructions(dockerfile.text):
         if keyword == FROM_INSTRUCTION:
             issues.extend(_from_issues(dockerfile.path, line, rest, stages))
         elif keyword == RUN_INSTRUCTION:
@@ -540,7 +540,8 @@ def evaluate_dockerfile(dockerfile: Dockerfile, names: frozenset[str]) -> list[s
     return issues
 
 
-def _instructions(text: str) -> list[Instruction]:
+def dockerfile_instructions(text: str) -> list[Instruction]:
+    """Return each Dockerfile instruction as (first line, upper-case keyword, arguments)."""
     instructions: list[Instruction] = []
     buffer: list[str] = []
     start = 0
