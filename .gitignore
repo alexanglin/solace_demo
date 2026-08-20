@@ -47,6 +47,11 @@ test-results/
 blob-report/
 .playwright/
 
+# pip-audit's HTTP cache layer writes a session file named after its `:memory:` SQLite DSN
+# into the working directory. It is an illegal Windows filename, so leaving it untracked
+# fails check-illegal-windows-names for anyone who runs scripts/hooks/dependency-audit.sh.
+:memory:*
+
 # Local runtime state
 *.log
 logs/

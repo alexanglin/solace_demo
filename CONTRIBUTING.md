@@ -49,7 +49,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, hygiene, secret scan, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:

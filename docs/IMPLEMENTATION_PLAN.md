@@ -126,8 +126,12 @@ declaring its risk tier
 AGENTS.md                      (exists)  process rules only
 CLAUDE.md -> AGENTS.md         (exists)
 CHANGELOG.md                   (exists)
+TECH_DEBT.md                   (exists)  accepted risk, with what clears each item
 CONTRIBUTING.md                (exists)
 LICENSE                        (exists)
+NOTICE                         (exists)
+README.md                      (exists)
+.env.example                   (exists)  placeholder names only; never a live value
 NOTICE
 README.md
 justfile                       (exists)
@@ -140,6 +144,7 @@ tools/                         (scaffold) root repository-tooling package marker
 pyproject.toml                 (exists)  uv workspace root, declares members
 uv.lock                        (exists)  macOS arm64 and Linux aarch64 resolution
 mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
+dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
   dashboard/
 services/                      (scaffold) six typed service package shells
@@ -161,10 +166,11 @@ packages/                      (scaffold) five typed library package shells
 migrations/                              Alembic revisions for the durable store
 deploy/
   docker-compose.yml                     PubSub+ container and Postgres
-agent-mesh/                              separate non-member uv project
+agent-mesh/                    (exists)  separate non-member uv project
   .python-version              (exists)  Agent Mesh Python 3.13.15 pin
-  pyproject.toml
-  uv.lock
+  pyproject.toml               (exists)  the three pinned wheels and this domain's toolchain
+  uv.lock                      (exists)  251 packages, macOS arm64 and Linux aarch64
+  tests/                       (exists)  black-box compatibility probes, run on 3.13
   configs/
     agents/
     gateways/
@@ -176,6 +182,7 @@ schemas/
 scenarios/
 release-evidence/                        per-phase acceptance evidence, redacted
 tests/
+  phase0/                      (exists)  feasibility probes against the pinned runtimes
   unit/
   contract/
   integration/
