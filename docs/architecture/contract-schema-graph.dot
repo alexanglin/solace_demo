@@ -1,0 +1,67 @@
+digraph ContractSchemaGraph {
+  graph [
+    rankdir=LR,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.42",
+    ranksep="0.80",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=20,
+    label="v1 contract schemas — identity, references, and the ingress path",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F4F6FA",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+  edge [fontname="Helvetica", fontsize=10, color="#314158"];
+
+  subgraph cluster_schemas {
+    label="schemas/v1 — $id = https://aerial-rescue.invalid/ + repository path";
+    fontname="Helvetica";
+    fontsize=14;
+    color="#6E7C91";
+    style="rounded";
+
+    canonical [label="canonical.schema.json\nthe ADR-0027 profile and every shared $def"];
+    envelope [label="envelope.schema.json\nclosed member set, 12 required"];
+    payload [label="payload/drone-telemetry.schema.json\nintegers only, additionalProperties false"];
+    event [label="event/drone-telemetry.schema.json\nallOf envelope + type/dataschema const + data"];
+    cases [label="topic-cases.schema.json\naccepted and refused topic cases"];
+
+    envelope -> canonical [label="$ref #/$defs/*"];
+    payload -> canonical [label="$ref #/$defs/*"];
+    event -> envelope [label="allOf $ref"];
+    event -> payload [label="data $ref"];
+    cases -> canonical [label="$ref identifier, eventType"];
+  }
+
+  subgraph cluster_ingress {
+    label="packages/contracts — the ingress path the broker adapter follows";
+    fontname="Helvetica";
+    fontsize=14;
+    color="#008F6B";
+    style="rounded";
+
+    decode [label="canonical.decode\nrepeated key refused", fillcolor="#E7F6F1"];
+    parse [label="envelope.parse_envelope\nfixed refusal order", fillcolor="#E7F6F1"];
+    bind [label="envelope.check_topic_binding\ntype, subject, identifiers vs arriving topic", fillcolor="#E7F6F1"];
+    topics [label="topics.parse_topic\nfour level rules, closed families", fillcolor="#E7F6F1"];
+
+    decode -> parse -> bind;
+    topics -> bind [label="Topic"];
+  }
+
+  bindings [label="envelope.BINDINGS\ntype -> dataschema", shape=note, fillcolor="#FFF6D6", color="#B58B00"];
+  parse -> bindings [style=dashed, label="refuses an unbound type"];
+  bindings -> payload [style=dashed, label="names"];
+  parse -> envelope [style=dotted, arrowhead=none, label="same rules, asserted by a root test"];
+}
