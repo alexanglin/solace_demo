@@ -7,6 +7,8 @@
 *.p12
 *.pfx
 secrets/
+# The per-checkout certificate authority and broker certificate (docs/adr/0046).
+deploy/certs/
 
 # Python — application workspace (3.14.x) and agent-mesh subproject (3.13.x)
 .venv/

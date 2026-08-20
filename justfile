@@ -45,6 +45,14 @@ check-mutation:
 check-compose:
     pre-commit run --all-files --hook-stage pre-commit compose-policy
 
+# Generate the per-checkout certificate authority, broker certificate, and stack passwords.
+secrets:
+    scripts/broker-secrets.sh
+
+# Replace the generated authority, certificate, and passwords.
+rotate-secrets:
+    scripts/broker-secrets.sh --rotate
+
 # Apply every automatic fix. The only thing here that modifies files.
 fix:
     scripts/fix.sh

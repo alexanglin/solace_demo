@@ -85,23 +85,34 @@ class QualityGateTestCase(unittest.TestCase):
         cls.git(repository, "commit", "--quiet", "-m", message)
 
     @staticmethod
+    def run_script(
+        script: Path,
+        repository: Path,
+        arguments: tuple[str, ...] = (),
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one project-owned shell script inside ``repository`` with a minimal environment."""
+        script_environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        if environment is not None:
+            script_environment.update(environment)
+        return subprocess.run(
+            ("/bin/sh", str(script), *arguments),
+            cwd=repository,
+            env=script_environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    @classmethod
     def run_hook(
+        cls,
         hook_name: str,
         repository: Path,
         arguments: tuple[str, ...] = (),
         environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        hook_environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
-        if environment is not None:
-            hook_environment.update(environment)
-        return subprocess.run(
-            ("/bin/sh", str(hook_script(hook_name)), *arguments),
-            cwd=repository,
-            env=hook_environment,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        return cls.run_script(hook_script(hook_name), repository, arguments, environment)
 
     @staticmethod
     def write_argument_recorder(path: Path) -> None:
