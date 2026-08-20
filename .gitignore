@@ -54,6 +54,10 @@ docker/data/
 postgres-data/
 recordings/local/
 
+# Local tool caches and agent configuration (repository root only)
+/.cache/
+/.claude/
+
 # Editors and OS
 .DS_Store
 .idea/
