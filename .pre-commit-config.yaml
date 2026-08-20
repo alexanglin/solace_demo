@@ -467,6 +467,21 @@ repos:
         always_run: true
         pass_filenames: false
 
+      # Inert until deploy/ holds a compose file or Dockerfile, then fails closed on a
+      # missing trivy, manifest, lock, uv, or gate module
+      # (docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md). Trivy's written
+      # report, not its exit status, is adjudicated by the waiver gate; verbose so the INFO
+      # lines for findings below the blocking policy are shown on a pass. Image scans need
+      # Docker and run only in continuous integration.
+      - id: trivy-config-full
+        name: trivy config (deploy/ misconfiguration audit)
+        entry: scripts/hooks/deploy/trivy-config-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+        verbose: true
+
       - id: dashboard-test-full
         name: vitest (dashboard, full suite)
         entry: scripts/hooks/dashboard/dashboard-test-full.sh

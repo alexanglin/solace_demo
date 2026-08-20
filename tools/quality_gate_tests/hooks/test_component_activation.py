@@ -80,6 +80,19 @@ class ComponentActivationTests(QualityGateTestCase):
         # Assert
         self.assert_hook_failed(result, "MISSING: .env.example")
 
+    def test_deploy_compose_without_trivy_fails_the_misconfiguration_audit(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        dockerfile = repository / "deploy" / "agent-mesh" / "Dockerfile"
+        dockerfile.parent.mkdir(parents=True)
+        dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+
+        # Act
+        result = self.run_hook("trivy-config-full.sh", repository)
+
+        # Assert
+        self.assert_hook_failed(result, "MISSING: trivy")
+
 
 if __name__ == "__main__":
     unittest.main()

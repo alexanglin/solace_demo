@@ -15,6 +15,7 @@ class FullGateScriptTests(QualityGateTestCase):
             "dashboard-test-full": "scripts/hooks/dashboard/dashboard-test-full.sh",
             "dependency-audit": "scripts/hooks/deps/dependency-audit.sh",
             "python-quality-full": "scripts/hooks/python/python-quality-full.sh",
+            "trivy-config-full": "scripts/hooks/deploy/trivy-config-full.sh",
         }
         configuration = (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
 
@@ -70,6 +71,7 @@ class FullGateScriptTests(QualityGateTestCase):
             "python-quality-full.sh",
             "dashboard-test-full.sh",
             "dashboard-build.sh",
+            "trivy-config-full.sh",
         )
         repository = self.temporary_repository()
 

@@ -42,3 +42,12 @@ quality_agent_python_active() {
 quality_dashboard_active() {
 	[ -f apps/dashboard/package.json ] || quality_dashboard_source_present
 }
+
+# The deploy/ stack is active once its tracked-or-unignored listing holds a compose file or a
+# Dockerfile -- the same basenames the compose-spec and hadolint hooks lint, and the same
+# git-listing rule the compose policy gate arms on (docs/adr/0045, docs/adr/0048).
+quality_deploy_stack_active() {
+	[ -d deploy ] || return 1
+	git ls-files --cached --others --exclude-standard -- deploy |
+		grep -Eq '(^|/)(docker-)?compose(\.[^/]*)?\.ya?ml$|(^|/)Dockerfile(\.[^/]*)?$'
+}

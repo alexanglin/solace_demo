@@ -138,6 +138,7 @@ class HookRepairTests(QualityGateTestCase):
             "dependency-audit",
             "lockfiles-current",
             "python-quality-full",
+            "trivy-config-full",
         }
 
         # Act

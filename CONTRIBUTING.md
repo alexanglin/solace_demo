@@ -15,8 +15,9 @@ pre-commit install --install-hooks
 That installs hooks for six git stages: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, `post-merge`, and `pre-merge-commit`. A bare `pre-commit install` would only wire up `pre-commit` and your commit-message and push checks would silently never run.
 
 Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
-(`brew install graphviz`), and `shellcheck`. Running the stack in `deploy/` additionally needs Docker
-Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
+(`brew install graphviz`), `shellcheck`, and `trivy` 0.74.0 (`brew install trivy`), which the pre-push
+misconfiguration audit of `deploy/` fails closed without. Running the stack in `deploy/` additionally
+needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
 `apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
 matter. Only isolated third-party Node hooks are provisioned by pre-commit itself.

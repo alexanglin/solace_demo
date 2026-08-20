@@ -45,6 +45,10 @@ check-mutation:
 check-compose:
     pre-commit run --all-files --hook-stage pre-commit compose-policy
 
+# Audit the deploy/ Dockerfiles for misconfiguration with Trivy, adjudicated by the waiver gate.
+check-deploy-config:
+    pre-commit run --all-files --hook-stage pre-push trivy-config-full
+
 # Generate the per-checkout certificate authority, broker certificate, and stack passwords.
 secrets:
     scripts/broker-secrets.sh
