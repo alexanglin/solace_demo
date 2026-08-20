@@ -58,6 +58,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0038](0038-reserved-host-schema-identity-and-one-reason-fixtures.md) | Identify schemas by path-derived https URIs under a reserved host, reference them absolutely, and make every negative fixture fail for one reason | Accepted |
 | [0039](0039-drone-connectivity-states-and-recovery.md) | Name the drone connectivity states and count transitions in heartbeat intervals | Accepted |
 | [0040](0040-consume-approvals-by-recomputed-digest-and-two-clocks.md) | Consume approvals by recomputing the proposal digest and reading two clocks | Accepted |
+| [0041](0041-deny-by-default-command-authority-table.md) | Close the command-type set with a deny-by-default command-authority table | Accepted |
 
 ## Decisions still open
 
