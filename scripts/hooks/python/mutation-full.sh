@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
-# Independent mutation runs and scores for every tier-one workspace member.
+# Independent mutation runs and scores for every active tier-one workspace member;
+# a scaffolded one is named on stderr and skipped (docs/adr/0053).
 set -eu
 
 repository_root=$(git rev-parse --show-toplevel)

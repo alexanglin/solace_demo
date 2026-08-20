@@ -6,7 +6,8 @@
 # which is the exact outcome the gates exist to prevent (docs/adr/0010, docs/adr/0015).
 # tools/coverage_gate.py reads each member's declared risk tier and applies its
 # threshold; a member with no declared tier or no measured source fails rather than
-# defaulting to the weakest tier or passing vacuously (docs/adr/0017).
+# defaulting to the weakest tier or passing vacuously (docs/adr/0017), and a scaffold
+# with nothing to measure is reported as SCAFFOLD, not failed (docs/adr/0053).
 #
 # Tests needing a broker, a model, Docker, or the network are excluded: CI asserts no
 # such credentials are configured, so they cannot be part of the blocking suite.

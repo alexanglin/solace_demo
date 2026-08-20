@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from tools.member_scaffold import SCAFFOLD_DETAIL, SCAFFOLD_OUTCOME, is_scaffold
+
 TIER_THRESHOLDS: dict[int, int | None] = {1: 100, 2: 95, 3: None}
 """Tier 3 carries a smoke-plus-one-failure-path obligation a percentage cannot express."""
 
@@ -197,6 +199,15 @@ def _missing_manifest_verdict(root: Path, member: Path, report: dict[str, object
     )
 
 
+def _scaffold_verdict(
+    name: str,
+    tier: int | None,
+    measurement: CoverageMeasurement,
+) -> MemberVerdict:
+    """Report a declared member that has nothing to measure yet (``docs/adr/0053``)."""
+    return MemberVerdict(name, tier, None, measurement, SCAFFOLD_OUTCOME, SCAFFOLD_DETAIL)
+
+
 def collect(root: Path) -> list[MemberVerdict]:
     """Judge every workspace member under ``root``."""
     report = _coverage_json()
@@ -211,7 +222,12 @@ def collect(root: Path) -> list[MemberVerdict]:
             verdicts.append(_missing_manifest_verdict(root, member_path, report))
             continue
         member = member_path.relative_to(root).as_posix()
-        verdicts.append(judge(member, read_tier(pyproject), measure(report, member)))
+        tier = read_tier(pyproject)
+        measurement = measure(report, member)
+        if tier in TIER_THRESHOLDS and is_scaffold(member_path):
+            verdicts.append(_scaffold_verdict(member, tier, measurement))
+            continue
+        verdicts.append(judge(member, tier, measurement))
     return verdicts
 
 

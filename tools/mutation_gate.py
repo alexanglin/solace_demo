@@ -19,6 +19,8 @@ from datetime import date
 from pathlib import Path
 from typing import cast
 
+from tools.member_scaffold import SCAFFOLD_DETAIL, SCAFFOLD_OUTCOME, is_scaffold
+
 MUTATION_SCORE_PERCENT = 90
 MAX_SURVIVOR_REVIEW_DAYS = 30
 MIN_SURVIVOR_REASON_CHARACTERS = 20
@@ -477,6 +479,50 @@ def _print_verdict(verdict: MutationVerdict) -> None:
         print(f"       {error}", file=sys.stderr)
 
 
+def partition_tier_one_members(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split the declared tier-one members into active and scaffolded (``docs/adr/0053``)."""
+    members = discover_tier_one_members(root)
+    scaffolded = tuple(member for member in members if is_scaffold(root / member))
+    active = tuple(member for member in members if member not in scaffolded)
+    return active, scaffolded
+
+
+def _scaffold_line(member: str) -> str:
+    return f"{SCAFFOLD_OUTCOME:6} {member:28} {SCAFFOLD_DETAIL}"
+
+
+def _preflight(
+    root: Path,
+    member: str,
+    active: tuple[str, ...],
+    scaffolded: tuple[str, ...],
+) -> int:
+    if member in scaffolded:
+        print(_scaffold_line(member))
+        return 0
+    if member not in active:
+        print(f"FAIL: {member} is not a tier-one member", file=sys.stderr)
+        return 1
+    errors = validate_member_configuration(root, member)
+    for error in errors:
+        print(error, file=sys.stderr)
+    return 1 if errors else 0
+
+
+def _evaluate(root: Path, active: tuple[str, ...], scaffolded: tuple[str, ...]) -> int:
+    today = date.today()
+    registry_errors = validate_registry_scope(root, active + scaffolded, today=today)
+    verdicts = tuple(evaluate_member(root, member, today=today) for member in active)
+    for member in scaffolded:
+        print(_scaffold_line(member))
+    for verdict in verdicts:
+        _print_verdict(verdict)
+    for registry_error in registry_errors:
+        print(registry_error, file=sys.stderr)
+    failed = bool(registry_errors) or any(verdict.outcome == "FAIL" for verdict in verdicts)
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """List, preflight, or evaluate tier-one mutation results."""
     parser = argparse.ArgumentParser()
@@ -487,29 +533,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path.cwd()
     try:
-        members = discover_tier_one_members(root)
+        active, scaffolded = partition_tier_one_members(root)
         if args.list_tier_one:
-            print("\n".join(members))
+            for member in scaffolded:
+                print(_scaffold_line(member), file=sys.stderr)
+            print("\n".join(active))
             return 0
         if args.preflight:
-            if args.preflight not in members:
-                print(f"FAIL: {args.preflight} is not a tier-one member", file=sys.stderr)
-                return 1
-            errors = validate_member_configuration(root, args.preflight)
-            for error in errors:
-                print(error, file=sys.stderr)
-            return 1 if errors else 0
-        registry_errors = validate_registry_scope(root, members, today=date.today())
-        verdicts = tuple(evaluate_member(root, member, today=date.today()) for member in members)
+            return _preflight(root, args.preflight, active, scaffolded)
+        return _evaluate(root, active, scaffolded)
     except (MutationConfigurationError, OSError, tomllib.TOMLDecodeError) as exception:
         print(f"FAIL: mutation gate configuration: {exception}", file=sys.stderr)
         return 1
-    for verdict in verdicts:
-        _print_verdict(verdict)
-    for registry_error in registry_errors:
-        print(registry_error, file=sys.stderr)
-    failed = bool(registry_errors) or any(verdict.outcome == "FAIL" for verdict in verdicts)
-    return 1 if failed else 0
 
 
 if __name__ == "__main__":
