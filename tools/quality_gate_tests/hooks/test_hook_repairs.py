@@ -152,16 +152,21 @@ class HookRepairTests(QualityGateTestCase):
 
     def test_github_actions_are_pinned_to_immutable_revisions(self) -> None:
         # Arrange
-        workflow_path = ".github/workflows/checks.yml"
+        workflows = sorted((REPOSITORY_ROOT / ".github" / "workflows").glob("*.yml"))
 
         # Act
-        source = self.read_repository_text(workflow_path)
         revisions = tuple(
             match.group(1)
-            for match in re.finditer(r"^\s*- uses: [^@\s]+@([^\s#]+)", source, re.MULTILINE)
+            for workflow in workflows
+            for match in re.finditer(
+                r"^\s*- uses: [^@\s]+@([^\s#]+)",
+                workflow.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
         )
 
         # Assert
+        self.assertEqual({"checks.yml", "security.yml"}, {path.name for path in workflows})
         self.assertNotEqual((), revisions)
         self.assertTrue(
             all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in revisions),
