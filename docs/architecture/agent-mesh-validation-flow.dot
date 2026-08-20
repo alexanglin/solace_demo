@@ -69,7 +69,7 @@ digraph AgentMeshValidationFlow {
   }
 
   subgraph cluster_live {
-    label="Mandatory next Phase 0 evidence";
+    label="Next Phase 0 evidence";
     color="#6B86A5";
     style="rounded,dashed";
     pubsub [
