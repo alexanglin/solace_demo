@@ -8,57 +8,30 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ## [Unreleased]
 
-### Changed
-
-- Synchronized the whole uv workspace from the post-checkout and post-merge hook. It ran a bare
-  `uv sync --frozen`, and because `uv sync` is exact by default that pruned every workspace member's
-  editable install on each checkout, merge, and pull. A member test could then no longer import its own
-  package, so `pytest-unit-fast` failed until someone re-ran the sync by hand. CI never saw this: it
-  syncs with `--all-packages` explicitly and runs no post-checkout hook.
-
-- Excluded mutmut's generated `mutants/` tree from type checking and test collection. Ruff honours
-  `.gitignore` and mypy and pytest do not, so after any mutation run mypy reported the member's package
-  as a duplicate module and pytest collected a second copy of every tier-one test. The failure was
-  order-dependent: `mypy-full` and `pytest-full` run before `mutation-full`, so the first pre-push pass
-  succeeded and every later one failed.
-
-- Repaired the quality-gate test fixtures, which inherited `GIT_DIR` and `GIT_INDEX_FILE` from the
-  process running them. Inside a git hook that aimed every fixture command at the repository
-  running the hook, so `pytest-unit-fast` failed whenever a Python file was staged while passing
-  when the suite was run by hand.
-
-- Replaced global and broad-test Ruff `S603`/`S607` ignores with ADR-0025's exact four-file `S603`
-  allowlist, removed every `S607` waiver, and made required Git execution absolute and fail closed.
-- Kept deterministic evidence scoring and fleet state machines in Tier 1 domain code; the evidence and
-  fleet services remain Tier 2 coordination and adapter boundaries.
-- Standardized the decision metric as an evidence score across the architecture, testing, limitations,
-  and security documentation.
-- Split the normative documentation set so every fact has one home, per ADR-0016
-  (now Accepted): `docs/ARCHITECTURE.md`, `docs/CONTRACTS.md`, `docs/SAFETY.md`,
-  `docs/TESTING.md`, and `docs/operating-parameters.md`.
-  `docs/IMPLEMENTATION_PLAN.md` drops from 510 to ~300 lines and keeps sequenced
-  delivery only; `AGENTS.md` drops from 249 to ~180 lines and keeps process rules
-  only. Zero substantive lines are now duplicated across the set.
-- Added a document precedence rule and a "Decided by" column linking each
-  confirmed decision to its ADR, with `—` where a decision still owes one. Neither
-  governing document previously referenced `docs/adr/` at all.
-- Reconciled the plan with its own decision log: the durable store is Postgres per
-  ADR-0003 (the plan still specified the superseded SQLite store), approvals are
-  exempt from idempotent replay per ADR-0006, replay isolation is structural per
-  ADR-0009, imagery is artifact-only per ADR-0013, and the replay-determinism
-  oracle compares reduced dashboard state rather than raw event streams.
-- Restated the coverage gate per language. The former flat "95% across statements,
-  branches, functions, and lines" was not computable: `coverage.py` has no
-  function-coverage metric and statements and lines are the same measurement.
-- Accepted ADR-0015 and ADR-0016, both of which were already load-bearing in
-  tooling while still marked Proposed.
-- Recorded ADR-0002's decision that paid Anthropic or OpenAI models are permitted for
-  the Agent Mesh `general` and `planning` roles under an enforced USD $50 cap with
-  a persisted spend ledger and pre-call enforcement. The three edge agents stay on
-  local Ollama, and local-only operation remains a supported, tested configuration
-  so no release gate depends on a paid API.
-
 ### Added
+
+- Phase 0 ran for the first time and settled three of the open questions the register deferred to it.
+  `solace-pubsubplus` 1.11.0 does function on Python 3.14.7 rather than merely install: the bundled
+  native library loads, session creation marshals its callback structures, and the API version,
+  application identifier and a message payload read back, none of it needing a broker. ADR-0004's
+  split-runtime decision survives its kill criterion.
+
+- Agent Mesh 1.28.7, `sam-event-mesh-gateway` 1.1.0 and `sam-event-mesh-tool` 0.1.1 are pinned on
+  Python 3.13.15 and proven to work together. Nothing upstream attests the combination -- the gateway
+  declares no dependency on Agent Mesh and the tool declares none at all -- so the probes assert the
+  runtime symbols each plugin imports rather than resolution alone. The tool ships no entry point and
+  is imported by module path, as agent configuration wires it.
+
+- A test stage for the Agent Mesh domain, which previously had none. It was linted, type-checked,
+  security-scanned, audited and lock-verified, but no hook ran its tests at any stage, so a
+  compatibility probe there would have been committed and never executed. The hook enters the project
+  directory rather than passing `--project`, because pytest is rooted at the working directory and
+  `--project` does not change it.
+
+- `TECH_DEBT.md`, `README.md`, `NOTICE`, `.env.example`, and Phase 0 acceptance evidence under
+  `release-evidence/`. The technical-debt register exists because a machine-readable waiver registry
+  cannot tell a reader which of eleven advisories is unauthenticated remote code execution and which
+  is a packaging glob bug.
 
 - The first production code in the repository: `packages/contracts` now canonicalizes, parses, and
   digests digest-covered payloads, at 100% statement and branch coverage with a 100% mutation score and
@@ -120,3 +93,83 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - `CONTRIBUTING.md` describing the branching model, commit convention, and what
   runs at each stage.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
+
+### Changed
+
+- Synchronized the whole uv workspace from the post-checkout and post-merge hook. It ran a bare
+  `uv sync --frozen`, and because `uv sync` is exact by default that pruned every workspace member's
+  editable install on each checkout, merge, and pull. A member test could then no longer import its own
+  package, so `pytest-unit-fast` failed until someone re-ran the sync by hand. CI never saw this: it
+  syncs with `--all-packages` explicitly and runs no post-checkout hook.
+
+- Excluded mutmut's generated `mutants/` tree from type checking and test collection. Ruff honours
+  `.gitignore` and mypy and pytest do not, so after any mutation run mypy reported the member's package
+  as a duplicate module and pytest collected a second copy of every tier-one test. The failure was
+  order-dependent: `mypy-full` and `pytest-full` run before `mutation-full`, so the first pre-push pass
+  succeeded and every later one failed.
+
+- Repaired the quality-gate test fixtures, which inherited `GIT_DIR` and `GIT_INDEX_FILE` from the
+  process running them. Inside a git hook that aimed every fixture command at the repository
+  running the hook, so `pytest-unit-fast` failed whenever a Python file was staged while passing
+  when the suite was run by hand.
+
+- Replaced global and broad-test Ruff `S603`/`S607` ignores with ADR-0025's exact four-file `S603`
+  allowlist, removed every `S607` waiver, and made required Git execution absolute and fail closed.
+- Kept deterministic evidence scoring and fleet state machines in Tier 1 domain code; the evidence and
+  fleet services remain Tier 2 coordination and adapter boundaries.
+- Standardized the decision metric as an evidence score across the architecture, testing, limitations,
+  and security documentation.
+- Split the normative documentation set so every fact has one home, per ADR-0016
+  (now Accepted): `docs/ARCHITECTURE.md`, `docs/CONTRACTS.md`, `docs/SAFETY.md`,
+  `docs/TESTING.md`, and `docs/operating-parameters.md`.
+  `docs/IMPLEMENTATION_PLAN.md` drops from 510 to ~300 lines and keeps sequenced
+  delivery only; `AGENTS.md` drops from 249 to ~180 lines and keeps process rules
+  only. Zero substantive lines are now duplicated across the set.
+- Added a document precedence rule and a "Decided by" column linking each
+  confirmed decision to its ADR, with `—` where a decision still owes one. Neither
+  governing document previously referenced `docs/adr/` at all.
+- Reconciled the plan with its own decision log: the durable store is Postgres per
+  ADR-0003 (the plan still specified the superseded SQLite store), approvals are
+  exempt from idempotent replay per ADR-0006, replay isolation is structural per
+  ADR-0009, imagery is artifact-only per ADR-0013, and the replay-determinism
+  oracle compares reduced dashboard state rather than raw event streams.
+- Restated the coverage gate per language. The former flat "95% across statements,
+  branches, functions, and lines" was not computable: `coverage.py` has no
+  function-coverage metric and statements and lines are the same measurement.
+- Accepted ADR-0015 and ADR-0016, both of which were already load-bearing in
+  tooling while still marked Proposed.
+- Recorded ADR-0002's decision that paid Anthropic or OpenAI models are permitted for
+  the Agent Mesh `general` and `planning` roles under an enforced USD $50 cap with
+  a persisted spend ledger and pre-call enforcement. The three edge agents stay on
+  local Ollama, and local-only operation remains a supported, tested configuration
+  so no release gate depends on a paid API.
+
+### Fixed
+
+- The continuous-integration credential guard asserted that `SOLACE_URL` and `SOLACE_PASSWORD` were
+  unset. Neither name is what the runtime reads: the pinned Event Mesh templates use
+  `SOLACE_BROKER_URL` and `SOLACE_BROKER_PASSWORD`, so a real broker credential configured under the
+  name the templates consume would have passed the guard unnoticed.
+
+- Two stages type-checked the Agent Mesh tree under different settings. mypy reads configuration from
+  the working directory and never searches parents, and explicitly named files bypass its exclude
+  list, so the pre-commit hook running from the repository root applied the root table's Python 3.14
+  while the pre-push script applied whatever the project declared. The configuration file is now named
+  explicitly.
+
+- A comment claimed `pytest-related.sh` selects `-m unit`, so an unmarked suite would be silently
+  deselected. It does not; both blocking suites select by resource, not by test class.
+
+### Security
+
+- Eleven advisories across five packages are recorded as expiring, reviewed waivers, and the audit
+  gate passes honestly rather than by bypass. Every affected package is pinned exactly by Agent Mesh
+  1.28.7 and 1.28.7 is the latest upstream release, so no safe upgrade exists for any of them.
+
+- `google-adk` 1.18.0 carries unauthenticated remote code execution with no satisfiable fix: the
+  override the register required be attempted resolves to nothing, because 1.28.1 needs `google-genai`
+  and `fastapi` versions above Agent Mesh's exact pins. What bounds the risk is the absence of a
+  network path -- loopback-only binding, no public ingress, and a command gateway outside model
+  control -- rather than the absence of the vulnerability. The advisory is reported as
+  `PYSEC-2026-344`; the register named a CVE alias, which would have failed the waiver gate in both
+  directions at once.

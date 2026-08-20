@@ -126,11 +126,20 @@ jobs:
 
       # AGENTS.md §6 (Security and privacy hygiene) and docs/adr/0002: CI must hold no broker credential and no
       # model API key. This asserts the invariant rather than trusting it.
+      #
+      # Both spellings are named on purpose. The pinned Event Mesh Gateway and Event Mesh
+      # Tool templates read SOLACE_BROKER_URL, SOLACE_BROKER_USERNAME, SOLACE_BROKER_PASSWORD
+      # and SOLACE_BROKER_VPN, and .env.example follows them. Guarding only the shorter
+      # SOLACE_URL and SOLACE_PASSWORD would leave a real broker credential undetected under
+      # the exact names the runtime actually consumes.
       - name: Assert no secrets are configured for this workflow
         env:
           FORBIDDEN: >-
-            ${{ secrets.OPENAI_API_KEY }}${{ secrets.SOLACE_PASSWORD }}${{
-            secrets.SOLACE_URL }}${{ secrets.ANTHROPIC_API_KEY }}
+            ${{ secrets.OPENAI_API_KEY }}${{ secrets.ANTHROPIC_API_KEY }}${{
+            secrets.LLM_SERVICE_API_KEY }}${{ secrets.SOLACE_PASSWORD }}${{
+            secrets.SOLACE_URL }}${{ secrets.SOLACE_BROKER_PASSWORD }}${{
+            secrets.SOLACE_BROKER_URL }}${{ secrets.SOLACE_BROKER_USERNAME }}${{
+            secrets.SOLACE_BROKER_VPN }}
         run: |
           if [ -n "$FORBIDDEN" ]; then
             echo "::error::A credential is configured for this workflow. CI must run without broker or model credentials."

@@ -1,0 +1,131 @@
+# Agent Mesh project -- deliberately NOT a member of the root uv workspace.
+#
+# A uv workspace shares one resolution and one interpreter constraint, which the
+# 3.13/3.14 split forbids: Agent Mesh declares >=3.10.16,<3.14 while application services
+# target 3.14.7 (docs/adr/0004-split-python-runtimes.md,
+# docs/adr/0010-uv-workspace-and-toolchain.md). The two lockfiles and the two virtual
+# environments are never combined.
+#
+# The exact interpreter is pinned in agent-mesh/.python-version.
+[project]
+name = "aerial-rescue-agent-mesh"
+version = "0.0.0"
+description = "Pinned Solace Agent Mesh runtime, Event Mesh plugins, and owned extensions."
+requires-python = ">=3.13,<3.14"
+# Pinned exactly, per ADR-0001. Agent Mesh 1.28.7 is upstream release tag `1.28.7` (no `v`
+# prefix) at source revision 6344d2b8899a6c326e8b52fce9947c4bf4b56ae2, recorded here
+# because docs/IMPLEMENTATION_PLAN.md Phase 0 requires the revision in acceptance evidence.
+#
+# The two Event Mesh plugins are independently released and neither declares a dependency
+# on solace-agent-mesh, so no resolver constraint links this trio. agent-mesh/tests/ is
+# what attests the combination instead
+# (docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md).
+dependencies = [
+    "solace-agent-mesh==1.28.7",
+    "sam-event-mesh-gateway==1.1.0",
+    "sam-event-mesh-tool==0.1.1",
+]
+
+[tool.uv]
+# No owned package here yet. Configuration and plugins arrive in a later phase; until
+# then this project exists to pin and verify the upstream runtime.
+package = false
+required-version = "==0.12.5"
+# The same two targets the root workspace resolves for, per ADR-0010. Without this, uv
+# resolves universally and the exported requirement set the dependency audit reads would
+# cover platforms this project never runs on.
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+[dependency-groups]
+# The runtime-dependent hooks invoke these through `uv run --project agent-mesh --frozen`,
+# so they must exist in this project rather than the root one. Versions match the root
+# workspace so the two domains cannot drift into different tool behaviour.
+dev = [
+    "pytest==9.1.1",
+    "mypy==1.19.0",
+    "ruff==0.16.3",
+    "pip-audit==2.10.1",
+]
+
+# --------------------------------------------------------------------------- ruff ---
+# Ruff resolves configuration hierarchically from the nearest ancestor pyproject.toml
+# that declares [tool.ruff]. Without this section, every file under agent-mesh/ would be
+# linted with the root's target-version = "py314", and pyupgrade could rewrite this
+# project's 3.13 code into syntax its own interpreter cannot parse.
+[tool.ruff]
+extend = "../pyproject.toml"
+target-version = "py313"
+
+# -------------------------------------------------------------------------- mypy ---
+# mypy reads configuration from the current working directory only; it does not search
+# parent directories. The root config excludes ^agent-mesh/ and declares
+# python_version = "3.14", so without a configuration here the two hook stages would
+# check this tree under different settings
+# (docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md).
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unused_ignores = true
+warn_unreachable = true
+
+# Neither Agent Mesh nor either Event Mesh plugin ships a py.typed marker, and no stub
+# package exists for any of them. The relaxation is scoped to those exact distributions
+# for the same reason, and with the same removal condition, as the application side's
+# (docs/adr/0028-untyped-solace-client-boundary.md).
+[[tool.mypy.overrides]]
+module = [
+    "solace.*",
+    "solace_agent_mesh.*",
+    "solace_ai_connector.*",
+    "sam_event_mesh_gateway.*",
+    "sam_event_mesh_tool.*",
+    "google.adk.*",
+]
+ignore_missing_imports = true
+
+# ------------------------------------------------------------------------ pytest ---
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    "-ra",
+]
+xfail_strict = true
+# Every warning is an error, with two measured exemptions for the pinned upstream. This
+# project contains no owned production source, so neither can conceal a defect written
+# here; both are recorded as Phase 0 findings and both are revisited when owned code lands
+# under agent-mesh/plugins/
+# (docs/adr/0030-contain-upstream-warnings-in-the-agent-mesh-domain.md).
+filterwarnings = [
+    "error",
+    # solace-pubsubplus, reached transitively through solace-ai-connector, carries invalid
+    # escape sequences in its docstrings. Escalated, this becomes a SyntaxError at import
+    # and the verdict then depends on whether the bytecode cache is warm (ADR-0028).
+    "ignore:.*invalid escape sequence.*:SyntaxWarning",
+    # Agent Mesh 1.28.7 defines models with Pydantic's class-based Config against the
+    # pydantic 2.12.5 it pins itself. Removed in Pydantic V3, so this bounds how long the
+    # current pin stays viable. Eleven occurrences across four of its modules.
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    # The Solace client evaluates datetime.utcnow() as a default argument value, so any
+    # import of it raises this. Removed in a future Python.
+    "ignore:.*datetime.datetime.utcnow.*:DeprecationWarning",
+    # pydub, reached through the markitdown[all] extra Agent Mesh pins, warns when neither
+    # ffmpeg nor avconv is on PATH. This one is not a code defect: it makes the verdict
+    # depend on unrelated system packages, so the same commit would pass on a host with
+    # media tooling and fail on one without. Nothing here converts audio.
+    "ignore:.*ffmpeg or avconv.*:RuntimeWarning",
+]
+markers = [
+    "phase0: a Phase 0 feasibility gate probe",
+    "compatibility: black-box tests against the exact pinned wheels",
+    "broker: needs a reachable Solace broker",
+    "ollama: needs a local Ollama daemon with pinned models",
+    "paid: spends from a model-provider budget tranche",
+    "net: needs outbound network access",
+]

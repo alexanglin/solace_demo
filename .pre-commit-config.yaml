@@ -258,7 +258,12 @@ repos:
 
       - id: mypy-agent-mesh
         name: mypy (agent-mesh, py3.13)
-        entry: uv run --project agent-mesh --frozen mypy
+        # The config file is named explicitly because mypy reads configuration from the
+        # working directory only. This hook runs from the repository root, so without it
+        # the pre-commit stage would check this tree against the root table's
+        # python_version = "3.14" while pre-push checks it against agent-mesh's own
+        # (docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md).
+        entry: uv run --project agent-mesh --frozen mypy --config-file agent-mesh/pyproject.toml
         language: system
         types_or: [python, pyi]
         files: ^agent-mesh/
@@ -351,6 +356,17 @@ repos:
       - id: pytest-full
         name: pytest (full suite, per-member coverage gates)
         entry: scripts/hooks/pytest-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      # Runs from inside agent-mesh/ so pytest reads that project's configuration and
+      # interpreter. See docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md
+      # for why `uv run --project` is not equivalent here.
+      - id: agent-mesh-test-full
+        name: pytest (agent-mesh, py3.13)
+        entry: scripts/hooks/agent-mesh-test-full.sh
         language: script
         stages: [pre-push]
         always_run: true

@@ -26,6 +26,23 @@ class UvVersionPinTests(unittest.TestCase):
         self.assertIn(f"`uv` {expected}", contributing_source)
         self.assertIn(f'version: "{expected}"', workflow_source)
 
+    def test_the_agent_mesh_project_pins_the_same_uv_version_as_the_root(self) -> None:
+        """The two dependency domains must be resolved by one uv.
+
+        ADR-0020 pins uv exactly and requires lock verification in both Python
+        environments on an upgrade. Verifying only the root left the Agent Mesh project
+        free to declare a different version, or none, and still pass.
+        """
+        # Arrange
+        expected = "0.12.5"
+        agent_pyproject = REPOSITORY_ROOT / "agent-mesh" / "pyproject.toml"
+
+        # Act
+        agent_data = tomllib.loads(agent_pyproject.read_text(encoding="utf-8"))
+
+        # Assert
+        self.assertEqual(f"=={expected}", agent_data["tool"]["uv"].get("required-version"))
+
 
 if __name__ == "__main__":
     unittest.main()
