@@ -47,6 +47,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0027](0027-integer-only-canonical-serialization.md) | Canonicalize digests over an integer-only JSON profile | Accepted |
 | [0028](0028-untyped-solace-client-boundary.md) | Contain the pinned Solace client's static-analysis defects at its boundary | Accepted |
 | [0029](0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md) | Verify the Agent Mesh domain with its own toolchain, at its own stage | Accepted |
+| [0030](0030-contain-upstream-warnings-in-the-agent-mesh-domain.md) | Contain the pinned Agent Mesh runtime's upstream warnings | Accepted |
 
 ## Decisions still open
 
