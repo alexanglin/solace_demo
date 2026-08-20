@@ -157,6 +157,17 @@ warn_unreachable = true
 # type check after the first mutation run fails.
 exclude = ["^agent-mesh/", "^\\.venv/", "/mutants/"]
 
+# The Solace PubSub+ client ships no py.typed marker and no stub package exists, so
+# strict mypy reports import-untyped for every import of it. ADR-0011 forbids a blanket
+# inline suppression, and there is no `# type: ignore` anywhere in this tree, so the
+# relaxation is declared here instead: narrow to this distribution, and removable the day
+# upstream ships a marker (docs/adr/0028-untyped-solace-client-boundary.md). Everything
+# the client returns is Any, which is why it must stay behind a typed adapter rather than
+# being called from domain code.
+[[tool.mypy.overrides]]
+module = ["solace.*"]
+ignore_missing_imports = true
+
 # ------------------------------------------------------------------------ pytest ---
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -187,7 +198,17 @@ addopts = [
     "-ra",
 ]
 xfail_strict = true
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # The pinned Solace client's own docstrings carry invalid escape sequences, which
+    # Python 3.14 reports as a compile-time SyntaxWarning. Escalating it turns importing
+    # the client into a SyntaxError, and because the warning fires only when CPython
+    # compiles the source, the failure appears on a cold bytecode cache and vanishes on a
+    # warm one. Ruff W605 catches this same defect in owned source at lint time, so
+    # silencing the runtime warning costs no coverage of our own code
+    # (docs/adr/0028-untyped-solace-client-boundary.md).
+    "ignore:.*invalid escape sequence.*:SyntaxWarning",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [

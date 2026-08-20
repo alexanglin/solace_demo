@@ -30,6 +30,12 @@ members = [
 name = "aerial-rescue-broker"
 version = "0.0.0"
 source = { editable = "packages/broker" }
+dependencies = [
+    { name = "solace-pubsubplus" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "solace-pubsubplus", specifier = "==1.11.0" }]
 
 [[package]]
 name = "aerial-rescue-command-gateway"
@@ -851,6 +857,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
+]
+
+[[package]]
+name = "solace-pubsubplus"
+version = "1.11.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/27/d9fd4378d75929b2002c5f536a58b3e7a8ced538fa40a048919d177dd53e/solace_pubsubplus-1.11.0-py36-none-macosx_11_0_universal2.whl", hash = "sha256:f9b58a3bc2c2780744399c63db7d5c062e23effa52665c4c6dc56b838311a254", size = 11345986, upload-time = "2025-12-05T18:19:30.286Z" },
+    { url = "https://files.pythonhosted.org/packages/89/ec/0bc2c4e1d3b80e406e9983c61b871a71db42d8d5b28f34e8edb4e0c6a82b/solace_pubsubplus-1.11.0-py36-none-manylinux_2_17_aarch64.whl", hash = "sha256:114768fe365bc79abee90852dc483e9fa5bc3fb9a4bf218e85029f8d050d0de3", size = 2663052, upload-time = "2025-12-05T18:19:33.406Z" },
 ]
 
 [[package]]
