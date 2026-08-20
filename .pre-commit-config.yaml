@@ -185,7 +185,7 @@ repos:
 
       - id: no-env-files
         name: block .env files
-        entry: scripts/hooks/check-no-env.sh
+        entry: scripts/hooks/repo/check-no-env.sh
         language: script
         # Must see every staged path, so it cannot be scoped by type.
         always_run: true
@@ -219,13 +219,13 @@ repos:
 
       - id: docs-facts-and-links
         name: docs (facts, links, ADR index)
-        entry: scripts/hooks/check-docs.sh
+        entry: scripts/hooks/docs/check-docs.sh
         language: script
         types: [markdown]
 
       - id: diagrams-fresh
         name: diagrams regenerated
-        entry: scripts/hooks/check-diagrams.sh
+        entry: scripts/hooks/docs/check-diagrams.sh
         language: script
         files: ^docs/architecture/.*(\.dot|\.png|\.dot\.sha256)$
 
@@ -300,7 +300,7 @@ repos:
 
       - id: pytest-unit-fast
         name: pytest (unit, related packages)
-        entry: scripts/hooks/pytest-related.sh
+        entry: scripts/hooks/python/pytest-related.sh
         language: script
         types_or: [python, pyi]
         exclude: ^agent-mesh/
@@ -320,7 +320,7 @@ repos:
     hooks:
       - id: python-quality-full
         name: Python formatting and linting (whole tree)
-        entry: scripts/hooks/python-quality-full.sh
+        entry: scripts/hooks/python/python-quality-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -328,7 +328,7 @@ repos:
 
       - id: cognitive-complexity-full
         name: Python cognitive complexity (whole owned tree)
-        entry: scripts/hooks/cognitive-complexity-full.sh
+        entry: scripts/hooks/python/cognitive-complexity-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -336,7 +336,7 @@ repos:
 
       - id: duplication-full
         name: cross-language duplication (whole owned tree)
-        entry: scripts/hooks/duplication-full.sh
+        entry: scripts/hooks/repo/duplication-full.sh
         language: node
         language_version: "24.19.0"
         additional_dependencies:
@@ -347,7 +347,7 @@ repos:
 
       - id: mypy-full
         name: mypy (whole project, both environments)
-        entry: scripts/hooks/mypy-full.sh
+        entry: scripts/hooks/python/mypy-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -355,7 +355,7 @@ repos:
 
       - id: pytest-full
         name: pytest (full suite, per-member coverage gates)
-        entry: scripts/hooks/pytest-full.sh
+        entry: scripts/hooks/python/pytest-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -374,7 +374,7 @@ repos:
 
       - id: mutation-full
         name: mutmut (tier-one members, per-module score)
-        entry: scripts/hooks/mutation-full.sh
+        entry: scripts/hooks/python/mutation-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -400,17 +400,17 @@ repos:
 
       - id: commit-range-whitespace
         name: git diff --check (whitespace, pushed range)
-        entry: scripts/hooks/check-commit-range.sh
+        entry: scripts/hooks/repo/check-commit-range.sh
         language: script
         stages: [pre-push]
         always_run: true
         pass_filenames: false
 
-      # Finally wires scripts/hooks/check-locks.sh, which existed but was referenced by
+      # Finally wires scripts/hooks/deps/check-locks.sh, which existed but was referenced by
       # nothing -- so the changelog's three-domain lockfile claim was untrue.
       - id: lockfiles-current
         name: lockfiles current (root uv, agent-mesh uv, dashboard pnpm)
-        entry: scripts/hooks/check-locks.sh
+        entry: scripts/hooks/deps/check-locks.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -418,7 +418,7 @@ repos:
 
       - id: bandit-full
         name: bandit (static security analysis)
-        entry: scripts/hooks/bandit-full.sh
+        entry: scripts/hooks/python/bandit-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -426,7 +426,7 @@ repos:
 
       - id: dependency-audit
         name: pip-audit (known advisories in the resolved environment)
-        entry: scripts/hooks/dependency-audit.sh
+        entry: scripts/hooks/deps/dependency-audit.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -434,7 +434,7 @@ repos:
 
       - id: dashboard-test-full
         name: vitest (dashboard, full suite)
-        entry: scripts/hooks/dashboard-test-full.sh
+        entry: scripts/hooks/dashboard/dashboard-test-full.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -442,7 +442,7 @@ repos:
 
       - id: dashboard-build
         name: vite build (dashboard production build)
-        entry: scripts/hooks/dashboard-build.sh
+        entry: scripts/hooks/dashboard/dashboard-build.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -450,7 +450,7 @@ repos:
 
       - id: commit-messages-current
         name: commit messages (pushed range)
-        entry: scripts/hooks/check-commit-messages.sh
+        entry: scripts/hooks/repo/check-commit-messages.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -458,7 +458,7 @@ repos:
 
       - id: diagrams-fresh-all
         name: diagrams regenerated (all)
-        entry: scripts/hooks/check-diagrams-all.sh
+        entry: scripts/hooks/docs/check-diagrams-all.sh
         language: script
         stages: [pre-push]
         always_run: true
@@ -469,7 +469,7 @@ repos:
     hooks:
       - id: sync-dependencies
         name: sync dependencies if lockfiles changed
-        entry: scripts/hooks/sync-deps.sh
+        entry: scripts/hooks/deps/sync-deps.sh
         language: script
         stages: [post-checkout, post-merge]
         always_run: true

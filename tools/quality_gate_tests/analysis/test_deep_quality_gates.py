@@ -7,7 +7,7 @@ from pathlib import Path
 from tools import mutation_gate
 from tools.quality_gate_tests.support import MutationGateTestCase
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _evaluate_member(root: Path, member: str) -> mutation_gate.MutationVerdict:
@@ -38,9 +38,9 @@ class DeepQualityHookTests(unittest.TestCase):
         hooks = (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
         shellcheck_hook = hooks.split("- id: shellcheck", 1)[1].split("- id: test-aaa", 1)[0]
         deep_scripts = (
-            "scripts/hooks/cognitive-complexity-full.sh",
-            "scripts/hooks/duplication-full.sh",
-            "scripts/hooks/mutation-full.sh",
+            "scripts/hooks/python/cognitive-complexity-full.sh",
+            "scripts/hooks/repo/duplication-full.sh",
+            "scripts/hooks/python/mutation-full.sh",
         )
 
         # Act

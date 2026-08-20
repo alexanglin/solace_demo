@@ -14,7 +14,7 @@ class CommitMessageGateTests(QualityGateTestCase):
         source = self.read_repository_text(workflow_path)
 
         # Assert
-        self.assertIn("scripts/hooks/check-commit-messages.sh", source)
+        self.assertIn("scripts/hooks/repo/check-commit-messages.sh", source)
         self.assertIn("QUALITY_DIFF_BASE", source)
         self.assertIn("QUALITY_DIFF_HEAD", source)
 

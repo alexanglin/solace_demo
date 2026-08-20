@@ -16,7 +16,7 @@ set -eu
 cd "$(git rev-parse --show-toplevel)"
 script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
-. "$script_directory/quality-components.sh"
+. "$script_directory/../quality-components.sh"
 
 status=0
 

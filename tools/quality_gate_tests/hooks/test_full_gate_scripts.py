@@ -10,11 +10,11 @@ class FullGateScriptTests(QualityGateTestCase):
         # Arrange
         expected_entries = {
             "agent-mesh-test-full": "scripts/hooks/agent-mesh-test-full.sh",
-            "bandit-full": "scripts/hooks/bandit-full.sh",
-            "dashboard-build": "scripts/hooks/dashboard-build.sh",
-            "dashboard-test-full": "scripts/hooks/dashboard-test-full.sh",
-            "dependency-audit": "scripts/hooks/dependency-audit.sh",
-            "python-quality-full": "scripts/hooks/python-quality-full.sh",
+            "bandit-full": "scripts/hooks/python/bandit-full.sh",
+            "dashboard-build": "scripts/hooks/dashboard/dashboard-build.sh",
+            "dashboard-test-full": "scripts/hooks/dashboard/dashboard-test-full.sh",
+            "dependency-audit": "scripts/hooks/deps/dependency-audit.sh",
+            "python-quality-full": "scripts/hooks/python/python-quality-full.sh",
         }
         configuration = (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
 

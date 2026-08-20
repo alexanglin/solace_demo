@@ -13,6 +13,25 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIRECTORY = REPOSITORY_ROOT / "scripts" / "hooks"
 
 
+def hook_script(name: str) -> Path:
+    """Return the hook script with this basename, wherever it sits under scripts/hooks/.
+
+    The scripts are grouped into concern subdirectories, and the three named by accepted
+    records keep their original path (docs/adr/0033-bound-directory-fan-out.md). A
+    script's basename is its stable identity, so resolving by basename here keeps a
+    regrouping from rewriting every caller. A name that resolves to no script, or to more
+    than one, is an error rather than a silent skip.
+    """
+    direct = HOOKS_DIRECTORY / name
+    if direct.is_file():
+        return direct
+    matches = sorted(HOOKS_DIRECTORY.glob(f"*/{name}"))
+    if len(matches) != 1:
+        message = f"hook script is not uniquely resolvable under scripts/hooks/: {name}"
+        raise RuntimeError(message)
+    return matches[0]
+
+
 def hermetic_git_environment() -> dict[str, str]:
     """Return the ambient environment without the caller's inherited Git context.
 
@@ -76,7 +95,7 @@ class QualityGateTestCase(unittest.TestCase):
         if environment is not None:
             hook_environment.update(environment)
         return subprocess.run(
-            ("/bin/sh", str(HOOKS_DIRECTORY / hook_name), *arguments),
+            ("/bin/sh", str(hook_script(hook_name)), *arguments),
             cwd=repository,
             env=hook_environment,
             check=False,

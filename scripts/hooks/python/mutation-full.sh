@@ -6,7 +6,7 @@ repository_root=$(git rev-parse --show-toplevel)
 cd "$repository_root"
 script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source=scripts/hooks/quality-components.sh
-. "$script_directory/quality-components.sh"
+. "$script_directory/../quality-components.sh"
 
 quality_root_python_active || exit 0
 [ -f pyproject.toml ] || {

@@ -68,7 +68,7 @@ jobs:
           QUALITY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           QUALITY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           QUALITY_DIFF_REMOTE_NAME: origin
-        run: uv run --frozen scripts/hooks/check-commit-messages.sh
+        run: uv run --frozen scripts/hooks/repo/check-commit-messages.sh
 
   push-stage:
     name: pre-push hooks

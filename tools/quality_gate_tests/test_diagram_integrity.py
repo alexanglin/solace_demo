@@ -7,8 +7,8 @@ from pathlib import Path
 
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
-CHECK_ONE = REPOSITORY_ROOT / "scripts" / "hooks" / "check-diagrams.sh"
-CHECK_ALL = REPOSITORY_ROOT / "scripts" / "hooks" / "check-diagrams-all.sh"
+CHECK_ONE = REPOSITORY_ROOT / "scripts" / "hooks" / "docs" / "check-diagrams.sh"
+CHECK_ALL = REPOSITORY_ROOT / "scripts" / "hooks" / "docs" / "check-diagrams-all.sh"
 
 
 class DiagramIntegrityTests(QualityGateTestCase):
