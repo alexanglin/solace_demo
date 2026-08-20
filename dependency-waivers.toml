@@ -20,3 +20,142 @@
 # expires_on = "2026-09-18"
 
 format = 1
+
+# Reviewed 2026-08-19 against the Agent Mesh 1.28.7 pin. All five affected packages are
+# pinned exactly by that release, so no transitive fix exists for any of them, and 1.28.7 is
+# the latest upstream release. The google-adk override was attempted and is unsatisfiable
+# (docs/adr/0031-reject-the-google-adk-version-override.md). Reachability and compensating
+# controls below are reasoned from each advisory and this deployment's posture; they are not
+# the output of a penetration test. TECH_DEBT.md carries the human-readable summary.
+
+[[waivers]]
+domain = "agent-mesh"
+package = "starlette"
+version = "0.49.1"
+advisory = "PYSEC-2026-161"
+reason = "Host header is not validated when Starlette reconstructs request.url, allowing a path to be injected into the host part. No fix exists below Starlette 1.0.1, and Agent Mesh 1.28.7 pins 0.49.1 exactly."
+reachability = "Reachable only through the upstream Agent Mesh Web UI and its HTTP/SSE gateway. The project-owned dashboard API is a separate FastAPI service that performs its own exact Host allowlist check before route handling, per ADR-0024, so the owned surface does not rely on Starlette for this."
+compensating_control = "The upstream Web UI is bound to loopback and the reference deployment has no public ingress. The owned API validates Host itself and rejects missing, malformed, duplicated and non-allowlisted values."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "starlette"
+version = "0.49.1"
+advisory = "PYSEC-2026-248"
+reason = "The HTTP request path is not validated before request.url is rebuilt by concatenating and re-parsing scheme, host and path, so a path not beginning with a slash can alter the parsed result. Fixed only in Starlette 1.3.0, above the pinned 0.49.1."
+reachability = "Same surface as PYSEC-2026-161: the upstream Web UI and gateway. The owned dashboard API does not reconstruct URLs from untrusted paths, and its routes are declared rather than derived."
+compensating_control = "Loopback-only binding for the upstream Web UI, no public ingress, and an exact Host allowlist on every owned state-changing route."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "starlette"
+version = "0.49.1"
+advisory = "PYSEC-2026-249"
+reason = "request.form() honours max_fields and max_part_size for multipart bodies but silently ignores them for urlencoded bodies, so those bounds do not limit resource consumption. Fixed only in Starlette 1.3.1, above the pinned 0.49.1."
+reachability = "Reachable only where an upstream route parses a urlencoded form. The owned API accepts JSON request bodies validated by typed Pydantic models and does not call request.form()."
+compensating_control = "Loopback-only binding and no public ingress, so an attacker cannot reach the parser. Single-operator local simulation with no untrusted client."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "starlette"
+version = "0.49.1"
+advisory = "PYSEC-2026-2280"
+reason = "HTTPEndpoint selects its handler by lowercasing the HTTP method and looking it up with getattr without restricting the lookup to known methods, so an unexpected attribute can be reached. Fixed only in Starlette 1.1.0, above the pinned 0.49.1."
+reachability = "Requires an HTTPEndpoint-based route, which exists only in upstream Agent Mesh code. The owned API uses FastAPI path operation functions rather than HTTPEndpoint classes."
+compensating_control = "Loopback-only binding for the upstream surface and no public ingress. No owned route uses the affected construct."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "starlette"
+version = "0.49.1"
+advisory = "PYSEC-2026-2281"
+reason = "StaticFiles on Windows is vulnerable to server-side request forgery, because a UNC path causes realpath to open an outbound SMB connection before the path is rejected. Fixed only in Starlette 1.1.0, above the pinned 0.49.1."
+reachability = "Not reachable on this project's platforms. The advisory is specific to Windows path handling; the supported reference environment is macOS on Apple Silicon and the container target is Linux aarch64, and the lockfile resolves for those two platforms only."
+compensating_control = "Platform exclusion is structural rather than configured: no Windows environment is resolved, built or supported. Loopback-only binding applies in addition."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "cryptography"
+version = "48.0.1"
+advisory = "PYSEC-2026-3552"
+reason = "PKCS7 decryption reports the outcome of decrypting a RecipientInfo encryptedKey in distinguishable ways, one of which discloses the recovered RSA length, giving an oracle. Fixed in cryptography 50.0.0; Agent Mesh 1.28.7 pins 48.0.1 exactly."
+reachability = "Requires the application to decrypt attacker-supplied PKCS7 or S/MIME material. Nothing in this project decrypts PKCS7: the cryptography dependency is present for TLS and token handling in the upstream stack, and no owned code calls pkcs7_decrypt in any form."
+compensating_control = "No owned or configured code path submits PKCS7 material to the decryption functions, so the oracle has no caller. Broker transport security uses TLS certificate and hostname validation rather than PKCS7."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "cryptography"
+version = "48.0.1"
+advisory = "PYSEC-2026-3553"
+reason = "Resolving an invalid certificate chain containing duplicate self-signed certificates recurses on the same candidate, producing exponential work and a denial-of-service risk. Fixed in cryptography 49.0.0; Agent Mesh 1.28.7 pins 48.0.1 exactly."
+reachability = "Requires verifying a chain supplied by an untrusted party. This project verifies certificates when connecting outward to a known Solace broker endpoint, not when accepting inbound peer certificates, so the chains verified are the broker's rather than an attacker's."
+compensating_control = "No inbound mutual TLS is configured, so no attacker-supplied chain is verified. Outbound connections target a configured broker host over tcps with certificate and hostname validation."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "cryptography"
+version = "48.0.1"
+advisory = "PYSEC-2026-3554"
+reason = "A leaf certificate with a wildcard SAN is accepted against an intermediate whose name constraints permit only a specific host, allowing escape from the permitted name set. Fixed in cryptography 49.0.0; Agent Mesh 1.28.7 pins 48.0.1 exactly."
+reachability = "Requires reliance on name constraints in a private certificate authority hierarchy to bound which hosts a certificate may assert. This project uses public certificate authorities for the Solace broker endpoint and does not operate a constrained intermediate, so there is no constraint to escape."
+compensating_control = "No name-constrained private certificate authority is in use. Broker connections validate hostname explicitly in addition to chain validation."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "google-adk"
+version = "1.18.0"
+advisory = "PYSEC-2026-344"
+reason = "Code injection combined with missing authentication allows an unauthenticated remote attacker to execute arbitrary code. Fixed in google-adk 1.28.1, which cannot be installed: it requires google-genai at or above 1.64.0 and fastapi at or above 0.124.1, while Agent Mesh 1.28.7 pins google-genai 1.49.0 and fastapi 0.120.1 exactly. The override was attempted and uv reports the requirements unsatisfiable. Agent Mesh 1.28.7 is the latest upstream release, so no safe upgrade exists. See ADR-0031."
+reachability = "Reachable only by an attacker who can reach an ADK-served HTTP surface. Every Agent Mesh agent is an ADK agent, so the vulnerable runtime is genuinely present and this is the most serious advisory in the set. What is absent is the network path: no ADK surface is exposed beyond loopback and the reference deployment has no public ingress or tunnel."
+compensating_control = "The upstream Web UI and every agent process bind to loopback on a single workstation, and AGENTS.md forbids exposing them publicly. Agents may only propose; a deterministic command gateway outside model control is the sole publisher of executable commands, so code execution inside an agent cannot by itself authorize a mission action. Reassess immediately if any Agent Mesh surface is ever exposed beyond loopback."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "python-multipart"
+version = "0.0.30"
+advisory = "PYSEC-2026-3040"
+reason = "parse_form does not validate Content-Length before using it to bound a chunked read, so a negative value turns the bounded read into a read until end of file and loads the whole body into memory at once. Fixed in 0.0.31; Agent Mesh 1.28.7 pins 0.0.30 exactly."
+reachability = "Reachable only where a multipart form is parsed, which in this deployment is the upstream Agent Mesh Web UI upload path. The owned dashboard API accepts JSON bodies validated by typed models and parses no multipart forms."
+compensating_control = "Loopback-only binding and no public ingress, so no untrusted client can submit a request. No owned route parses multipart input."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
+
+[[waivers]]
+domain = "agent-mesh"
+package = "setuptools"
+version = "80.10.2"
+advisory = "PYSEC-2026-3447"
+reason = "FileList applies MANIFEST.in exclude and prune directives by matching compiled glob patterns in a way that can include files the directives intended to exclude. Fixed in setuptools 83.0.0; the pinned graph resolves 80.10.2."
+reachability = "A build-time concern only. It affects source distributions built from a MANIFEST.in, and this project builds no source distribution from the Agent Mesh project: the manifest declares package equals false and the domain exists to install and verify upstream wheels rather than to produce artifacts."
+compensating_control = "No packaging step runs in this domain, so the affected code path is never invoked. The application workspace, which does build wheels, resolves its own dependency graph and reports no advisory."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+expires_on = "2026-09-18"
