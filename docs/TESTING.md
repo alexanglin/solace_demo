@@ -180,7 +180,9 @@ TypeScript strict mode, and Playwright. jscpd 5.0.14 provides the multi-language
 cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
-message validation, and pushed-range `git diff --check`.
+message validation, pushed-range `git diff --check`, and the directory fan-out gate, which bounds how
+many files one directory holds as immediate children and adjudicates the two structural exemptions in
+`directory-fanout.toml` ([ADR-0033](adr/0033-bound-directory-fan-out.md)).
 Contract artifacts are inventoried through `schemas/contract-manifest.toml` and validated against an
 offline in-memory Draft 2020-12 registry at both blocking stages ([ADR-0021](adr/0021-contract-artifact-manifest.md)).
 

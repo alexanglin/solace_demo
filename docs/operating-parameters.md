@@ -39,6 +39,8 @@ integer arithmetic; display rounding never changes a verdict.
 | Dependency waiver lifetime | More than 0 and at most 30 calendar days | `dependency-waivers.toml` validation |
 | Dependency waiver reason | At least 20 Unicode characters | `dependency-waivers.toml` validation |
 | Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON |
+| Directory fan-out | At most 20 files per directory, counted as immediate children only | `tools/directory_fanout_gate.py` over `git ls-files --cached --others --exclude-standard` |
+| Fan-out exemption reason | At least 20 Unicode characters | `directory-fanout.toml` validation |
 
 ## Canonical serialization bounds
 

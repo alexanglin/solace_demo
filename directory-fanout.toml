@@ -1,0 +1,32 @@
+# Structural exemptions from the directory fan-out limit.
+#
+# The limit and its instrument are in docs/operating-parameters.md; the decision, the
+# counting rule, and the reasoning behind each entry below are in
+# docs/adr/0033-bound-directory-fan-out.md.
+#
+# These entries carry no expiry, unlike dependency-waivers.toml. A dependency waiver
+# expires because an upstream fix is something to wait for; a structural exemption has
+# nothing to wait for, and a recurring re-review that can only reach the same conclusion
+# is paperwork rather than a control. What keeps this file honest instead is that the
+# gate fails on a dead exemption: an entry naming a directory that no longer exceeds the
+# limit is an error, so a directory somebody decomposed cannot keep its waiver.
+#
+# An exemption is for a directory whose fan-out cannot be removed. A directory that is
+# merely untidy gets decomposed instead -- that is what the gate is for.
+format = 1
+
+[[exemptions]]
+directory = "."
+reason = "Build, lint, license, and packaging tools locate these manifests at the repository root and offer no way to relocate them, so moving any of them breaks the tool that reads it."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+decided_by = "ADR-0033"
+structural = true
+
+[[exemptions]]
+directory = "docs/adr"
+reason = "Every document links adr/00NN-*.md relatively and an accepted record is never renamed, so splitting the log breaks its cross-references and the links inside accepted records could not be repaired without violating that immutability rule."
+reviewed_by = "Alex Anglin"
+reviewed_on = "2026-08-19"
+decided_by = "ADR-0033"
+structural = true

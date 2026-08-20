@@ -10,6 +10,26 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- A fail-closed directory fan-out gate, so structure is enforced rather than reviewed. Every other
+  maintainability property here already had a number and a gate; how many files one directory holds did
+  not. The limit is 20 immediate children, chosen because the tree had a wide empty band between the
+  largest conforming directory at 7 and the four outliers at 22 and above, so it separates them without
+  arguing about borderline cases. Counting is deliberately not recursive: a recursive count fails a
+  parent *because* its children were split up, which is the opposite of the intent
+  ([ADR-0033](docs/adr/0033-bound-directory-fan-out.md)).
+
+  Exemptions live in `directory-fanout.toml` and are enforced in both directions, as the dependency
+  waivers are: a directory over the limit with no entry fails, and an entry naming a directory that is
+  no longer over the limit fails as a dead exemption. Unlike a dependency waiver they carry no expiry,
+  because a structural exemption has nothing to wait for and a recurring re-review that can only reach
+  the same conclusion is paperwork rather than a control. Two are granted -- the repository root, whose
+  manifests are located by tools that look only there, and `docs/adr/`, where every document links
+  records relatively and an accepted record is never renamed.
+
+  The enumeration lives in the hook script rather than the gate. ADR-0025 confines `subprocess` to four
+  reviewed Python owners, and counting directory entries is not a reason to reopen that decision, so the
+  gate is a pure function of the listing and the registry.
+
 - Phase 0 ran for the first time and settled three of the open questions the register deferred to it.
   `solace-pubsubplus` 1.11.0 does function on Python 3.14.7 rather than merely install: the bundled
   native library loads, session creation marshals its callback structures, and the API version,
@@ -95,6 +115,22 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- Decomposed the two directories the fan-out gate was written for, rather than waiving them. A gate whose
+  first act is to waive the only violations it found has not been enforced. `tools/quality_gate_tests/`
+  became four concern subpackages -- `hooks/`, `coverage/`, `contracts/`, `analysis/` -- and
+  `scripts/hooks/` became five: `python/`, `dashboard/`, `deps/`, `docs/`, `repo/`. No assertion changed
+  in either move; the suite runs the same 239 tests before and after.
+
+  Two files deliberately stayed where they were. `test_diagram_integrity.py` and the three hook scripts
+  named by accepted records -- `agent-mesh-test-full.sh` (ADR-0029), `check-env-template.sh` (ADR-0032)
+  and `check-docs-strict.sh` (ADR-0017) -- keep their paths, because an ADR is immutable and moving them
+  would leave four accepted records stating paths that no longer resolve. `test_diagram_integrity.py` is
+  additionally one of the four exact paths ADR-0025's `S603` allowlist names, so moving it would have
+  required reopening that decision to relocate a file.
+
+  The shared test fixture now resolves a hook script by basename wherever it sits, so a script's group
+  can change without rewriting its forty call sites.
 
 - Synchronized the whole uv workspace from the post-checkout and post-merge hook. It ran a bare
   `uv sync --frozen`, and because `uv sync` is exact by default that pruned every workspace member's
