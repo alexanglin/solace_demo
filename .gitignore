@@ -68,3 +68,7 @@ agent-mesh/.venv/
 agent-mesh/tmp/
 agent-mesh/*.db
 agent-mesh/instance/
+
+# Generated Claude Code worktrees. Scoped to the generated subdirectory rather than all
+# of .claude/, so shared project configuration there stays trackable if it is ever added.
+.claude/worktrees/

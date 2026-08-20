@@ -12,8 +12,12 @@ import pytest
 from tools.aaa_checker import gate
 from tools.aaa_checker.checker import Diagnostic, check_paths, check_text, main
 
-# Registered in the root pyproject. scripts/hooks/pytest-related.sh selects "-m unit",
-# so an unmarked suite is silently deselected rather than run.
+# Registered in the root pyproject, which sets --strict-markers, so an unregistered marker
+# is an error rather than a typo that silently marks nothing. Both blocking suites select
+# by resource rather than by test class -- scripts/hooks/pytest-related.sh and
+# scripts/hooks/pytest-full.sh each run the whole root suite with only
+# "not broker and not ollama and not paid and not docker and not net" -- so this marker
+# classifies the suite for docs/TESTING.md rather than deciding whether it runs.
 pytestmark = pytest.mark.unit
 
 DiagnosticCase = tuple[str, str, str]
