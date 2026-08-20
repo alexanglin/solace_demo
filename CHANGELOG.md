@@ -319,6 +319,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Security
 
+- `asteval` is overridden from the `1.0.6` that Agent Mesh 1.28.7 pins to `1.0.9`, closing
+  CVE-2026-55244 / GHSA-9w56-46f6-3qhx, a sandbox escape in the default `Interpreter` that Agent
+  Mesh feeds math embeds taken from model output. The single-package override is the case ADR-0031's
+  rule admits; a black-box probe in `agent-mesh/tests/` proves the overridden wheel against the pinned
+  runtime on every push and fails the day upstream raises its own pin. The eleven reviewed waivers
+  stand; nothing was added to the registry. The official Agent Mesh container image still carries
+  1.0.6 until upstream moves ([ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md)).
+
 - Every broker connection in the stack validates a per-checkout certificate authority and the broker's
   own certificate; no key, certificate, or password is tracked, and the one plaintext path — the Event
   Management Agent's SEMP connection inside the compose network — is named and never published

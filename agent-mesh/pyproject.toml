@@ -44,6 +44,14 @@ environments = [
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
     "sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
+# solace-agent-mesh 1.28.7 pins asteval==1.0.6, which carries CVE-2026-55244
+# (GHSA-9w56-46f6-3qhx): the default Interpreter's sandbox can be escaped, and Agent Mesh
+# evaluates math embeds taken from model output with it. asteval 1.0.9 fixes it, has no
+# dependencies, and changes no symbol Agent Mesh imports. This is the single-leaf override
+# ADR-0031's rule admits; tests/test_pinned_runtime_overrides.py proves the overridden wheel
+# against the pinned runtime and fails the day upstream raises its own pin, which is when
+# this line is deleted (docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md).
+override-dependencies = ["asteval==1.0.9"]
 
 [dependency-groups]
 # The runtime-dependent hooks invoke these through `uv run --project agent-mesh --frozen`,
