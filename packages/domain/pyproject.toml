@@ -3,7 +3,7 @@ name = "aerial-rescue-domain"
 version = "0.0.0"
 description = "Pure typed domain rules, state machines, and the spend guardrail."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = ["aerial-rescue-contracts"]
 
 [build-system]
 requires = ["hatchling"]

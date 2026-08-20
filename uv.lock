@@ -56,6 +56,12 @@ source = { editable = "services/dashboard_api" }
 name = "aerial-rescue-domain"
 version = "0.0.0"
 source = { editable = "packages/domain" }
+dependencies = [
+    { name = "aerial-rescue-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "aerial-rescue-contracts", editable = "packages/contracts" }]
 
 [[package]]
 name = "aerial-rescue-evidence-service"
