@@ -57,9 +57,10 @@ change invalidates the compensating control this acceptance rests on.
 ## 2. Suppressed upstream warnings
 
 The repository escalates every warning to an error. Four classes from the pinned upstream are
-exempted, each scoped by message or by exact warning class
+exempted, each scoped by message or exact warning class and, in the `agent-mesh` domain, by the
+upstream module or source path that emits it
 ([ADR-0028](docs/adr/0028-untyped-solace-client-boundary.md),
-[ADR-0030](docs/adr/0030-contain-upstream-warnings-in-the-agent-mesh-domain.md)).
+[ADR-0034](docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md)).
 
 | Warning | Source | Why it is exempt | Clears when |
 | --- | --- | --- | --- |
@@ -72,8 +73,13 @@ Two of these bound how long the current pins stay viable: Agent Mesh will not im
 Pydantic V3, and the Solace client will not compile cleanly once Python promotes the invalid-escape
 warning to an error.
 
-**The exemptions in the `agent-mesh` domain rest on it containing no owned production source.** They
-must be revisited the moment owned Python lands under `agent-mesh/plugins/`.
+**These exemptions rested on the `agent-mesh` domain containing no owned production source.** That
+stopped being true when the semantic-configuration validator landed under `agent-mesh/tools/`, so
+[ADR-0034](docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md) narrowed each
+exemption to the upstream module, or for the compile-time `SyntaxWarning` the upstream source path,
+that emits it. The same warning raised from owned code under `agent-mesh/tools/` or
+`agent-mesh/tests/` is an error again. The four upstream defects and their clearing conditions are
+unchanged.
 
 ## 3. Lost type checking at the Solace boundary
 
@@ -101,9 +107,17 @@ defect in the gates.
 
 ## 5. Owed before the first Agent Mesh configuration
 
-The Agent Mesh semantic-configuration validator is required and is not yet executable. Generic YAML
-checking is deliberately switched off for `agent-mesh/configs/`, so those files would otherwise land
-completely unvalidated. No owned Agent Mesh configuration may be written until the validator exists.
+The semantic-configuration validator
+[ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md) required exists at
+`agent-mesh/tools/agent_mesh_config_validator.py` and arms with the first file under
+`agent-mesh/configs/`. What is still owed is the local-model lock representation: every `ollama`
+model identifier fails `MODEL_LOCK_REQUIRED` until the digest form, its home, and the check are
+decided with the first live Ollama configuration
+([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). The rules the validator
+enforces more narrowly than ADR-0032 states them are listed under "Known gaps" in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Clears when:** the lock representation is recorded and the validator checks it.
 
 ## 6. Instrument definitions and unset parameters
 

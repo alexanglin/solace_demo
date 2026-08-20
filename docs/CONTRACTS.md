@@ -135,7 +135,7 @@ digest is SHA-256 rendered as lowercase hexadecimal.
 ## Delivery and failure semantics
 
 - Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope.
-- Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior.
+- Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
 - Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter.
 - Retries reuse the original command ID.
 - Lost connectivity changes a drone to `DEGRADED`, then `OFFLINE`, on consecutive missed heartbeats. The heartbeat interval and the two miss counts are in [operating-parameters.md](operating-parameters.md#connectivity-detection).

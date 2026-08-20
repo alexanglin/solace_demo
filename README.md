@@ -12,22 +12,22 @@ action?**
 ## Status
 
 **No operational demonstration runs yet.** This is a repository under construction. The
-offline Agent Mesh semantic-configuration gate runs as verification tooling, but it does not
-start Agent Mesh, PubSub+, Ollama, an application, or a model.
+Agent Mesh semantic-configuration gate runs as verification tooling, but it starts no Agent
+Mesh process, broker client, application, or model.
 
 | Area | State |
 | --- | --- |
-| Repository toolchain and quality gates | Complete; application foundation remains sequenced in Phase 1 |
+| Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
-| Agent Mesh configuration validation | Complete offline; exact pinned schemas, RECORD-bound symbols, SAC merge semantics, includes, model policy, topics, environment references, and secret hygiene are checked |
-| Live PubSub+ and Ollama messaging | Mandatory next Phase 0 evidence; not yet demonstrated |
-| Remaining application runtime | Typed package manifests with no runtime behaviour |
+| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); inert until the first owned configuration |
+| Live PubSub+ and Ollama messaging | Next Phase 0 evidence; not yet demonstrated |
+| Everything else | Typed package manifests with no runtime behaviour |
 
-One application module contains production code today. The Agent Mesh configuration validator
-is quality tooling, not operational runtime behaviour. Every other package under `packages/`
-and `services/` is a manifest and an empty namespace, deliberately: the verification machinery
-was built first so that no behaviour could land untested. Sequenced delivery and exit criteria
-are in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+One application module contains production code today, and one verification module checks
+Agent Mesh configuration without running it. Every other package under `packages/` and
+`services/` is a manifest and an empty namespace, deliberately: the verification machinery
+was built first so that no behaviour could land untested. Sequenced delivery and exit
+criteria are in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 
 ## The mission scenario
 
@@ -117,7 +117,8 @@ disagree.
 ## Getting started
 
 There is no operational application to start yet. What you can do today is run the verification
-suite, including the offline Agent Mesh semantic-configuration gate.
+suite. The Agent Mesh semantic-configuration gate is part of it, and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) shows how to run that gate on its own.
 
 Prerequisites: `uv` 0.12.5, Python 3.14.7, `pre-commit` 4.5, Graphviz, and `shellcheck`.
 Agent Mesh work additionally needs Python 3.13.15. Exact versions and the rationale are in
@@ -127,17 +128,6 @@ Agent Mesh work additionally needs Python 3.13.15. Exact versions and the ration
 pre-commit install --install-hooks   # six git stages, not just pre-commit
 just check-commit                    # the fast tier
 just check-push                      # the thorough tier
-```
-
-Run the offline Agent Mesh configuration gate directly from its isolated project. With no
-paths it discovers `configs/**/*.yaml` and `configs/**/*.yml`; until the first owned file
-lands it reports one successful `SKIP` line. Each selected file must be independently valid;
-when more than one file is selected, the gate also applies the pinned SAC merge primitive and
-rejects combined semantic conflicts such as duplicate app names.
-
-```sh
-cd agent-mesh
-uv run --frozen python -m tools.agent_mesh_config_validator [CONFIG ...]
 ```
 
 `just` is a convenience wrapper; the hooks and CI invoke the scripts under `scripts/`

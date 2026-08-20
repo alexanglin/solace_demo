@@ -145,10 +145,13 @@ and review remain mandatory for those behaviors.
 ## Test classes
 
 - **Offline Agent Mesh configuration tests:** In the isolated Python 3.13 environment, the exact pinned
-  upstream configuration models, distribution-bound symbols, and SAC merge primitive validate
-  includes, environment and secret handling, broker fields, model policy, gateway policy, cross-file
-  app-name uniqueness, and Event Mesh Tool topic authority without starting an external process or
-  client. The gate is inert before the first owned configuration and fails closed afterward.
+  upstream configuration models, distribution-bound symbols, and Solace AI Connector merge primitive
+  validate includes, environment references against `.env.example`, secret indirection, broker fields
+  and transport, model policy, gateway settlement and routing policy, cross-file app-name uniqueness,
+  and Event Mesh Tool topic authority without starting a process or client. The validator module is
+  held at 100% statement and branch coverage by the Agent Mesh test stage
+  ([operating-parameters.md](operating-parameters.md)). The gate is inert before the first owned
+  configuration and fails closed afterward.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
@@ -172,8 +175,8 @@ and review remain mandatory for those behaviors.
 A green offline Agent Mesh configuration result satisfies only the semantic gate in
 [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md). It does not satisfy broker
 integration, provider integration, or black-box compatibility. Live PubSub+ and Ollama messaging is
-the mandatory next Phase 0 evidence for A2A behaviour, plugin delivery and settlement, ACL denial,
-and structured model output.
+the next Phase 0 evidence for A2A behaviour, plugin delivery and settlement, ACL denial, and
+structured model output.
 
 ## Tooling
 

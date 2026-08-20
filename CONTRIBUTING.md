@@ -47,9 +47,9 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 
 | Stage | What | Budget |
 | --- | --- | --- |
-| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, Agent Mesh configuration semantics when active, hygiene, secret scan, related tests | **≤ 60 s** |
+| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
@@ -127,16 +127,21 @@ Agent Mesh project.
 
 Never combine the two lockfiles or install either globally.
 
-From the repository root, run the offline semantic gate with the frozen Python 3.13 lock. Omit
-paths for sorted discovery under `configs/`, or pass only paths inside that directory:
+To run the Agent Mesh semantic-configuration gate by hand, enter the Agent Mesh project so that
+`uv` resolves the frozen Python 3.13 lock and the validator imports the pinned wheels. With no
+arguments it discovers every `*.yaml` and `*.yml` under `configs/` in sorted order; arguments must
+be paths inside that directory:
 
 ```sh
 cd agent-mesh
 uv run --frozen python -m tools.agent_mesh_config_validator [CONFIG ...]
 ```
 
-Every selected file must be independently valid. A multi-file invocation also applies the pinned
-SAC merge primitive and rejects combined conflicts; it is not a partial-overlay linter.
+Every selected file must be valid on its own. When more than one file is selected the gate also
+merges them with the pinned Solace AI Connector merge primitive and fails on a conflict the merge
+exposes, such as two apps with one name; it is not a partial-overlay linter. The exit status is 0
+when every file is valid or no file exists, 1 on any finding, and 2 on a path outside `configs/`.
+A finding names the file, the location, and the rule, and never prints the offending value.
 
 ## Fail-closed gates
 
@@ -146,8 +151,11 @@ script, or generated report is an error. `SKIP` is not a successful result for a
 The post-checkout and post-merge dependency synchronizer is the sole exception: it warns instead of
 blocking the Git operation, and the next commit or push gate remains authoritative.
 
-The Agent Mesh semantic-configuration gate is offline evidence only; passing it does not attest
-PubSub+, Ollama, A2A, or plugin behaviour.
+The Agent Mesh semantic-configuration gate follows the same contract: it is inert while
+`agent-mesh/configs/` holds no YAML file, and from the first file it fails on a missing
+`agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, `uv`, or validator module before it reads any
+configuration. A green result is offline evidence only; it does not attest PubSub+, Ollama, A2A, or
+plugin behaviour.
 
 ## Suppressions
 
@@ -176,9 +184,15 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   policy) and this file (it documents the words it bans). Run `just lint-docs-strict` to invoke it
   directly.
 - The Agent Mesh semantic-configuration gate specified by
-  [ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md) is implemented and remains
-  inert until the first owned configuration. Live PubSub+ and Ollama messaging is the mandatory next
-  Phase 0 evidence.
+  [ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md) is implemented at
+  `agent-mesh/tools/agent_mesh_config_validator.py` and is inert until the first file lands under
+  `agent-mesh/configs/`. Two of its rules are enforced more narrowly than the record states them:
+  `model_provider` is rejected at the top level of an agent or workflow `app_config` rather than at
+  any depth, and the versioned-namespace rule is applied to the Event Mesh Tool's publish topic but
+  not yet to gateway subscription or output topics. Every local-model identifier fails
+  `MODEL_LOCK_REQUIRED` until the lock representation is decided
+  ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
+  messaging is the next Phase 0 evidence; a green offline result does not attest it.
 - `packages/domain` and `services/command_gateway` contain no mutation-eligible behavior or co-located
   tests yet, and neither do the Tier 2 members. The mutation and coverage entry points are executable and
   intentionally fail closed until those packages gain tested behavior, so the pre-push tier stays red

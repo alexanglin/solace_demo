@@ -171,6 +171,7 @@ agent-mesh/                    (exists)  separate non-member uv project
   pyproject.toml               (exists)  the three pinned wheels and this domain's toolchain
   uv.lock                      (exists)  251 packages, macOS arm64 and Linux aarch64
   tests/                       (exists)  black-box compatibility probes, run on 3.13
+  tools/                       (exists)  the offline semantic-configuration validator, run on 3.13
   configs/
     agents/
     gateways/
@@ -213,13 +214,13 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 - Pin `solace-agent-mesh==1.28.7` in the isolated Python 3.13.15 `agent-mesh/` project and record the upstream source revision.
 - Pin and hash `sam-event-mesh-gateway==1.1.0` and `sam-event-mesh-tool==0.1.1`; prove those exact independently released wheels are compatible with Agent Mesh 1.28.7 before treating the combination as supported.
-- **Completed offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, schemas, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
-- **Mandatory next:** connect the pinned runtime to local Ollama and PubSub+ without exposing either service publicly or recording credentials.
+- **Done offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, configuration models, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
+- **Next:** connect the pinned runtime to local Ollama and the Solace Cloud broker without exposing either service publicly or recording credentials.
 - Prove the trial broker identity can publish and subscribe to the required A2A namespace, create or connect to the required endpoints, and satisfy the selected temporary/durable queue, TTL, spool, and ACL policies.
 - Run the built-in Orchestrator, one specialized agent, one minimal YAML workflow, and the HTTP/SSE Web UI; prove agent-card discovery, structured workflow invocation, and one A2A delegation in Broker Manager.
 - Configure the thinnest official Event Mesh Gateway and Event Mesh Tool spike: one validated salient CloudEvent becomes one structured A2A task, and one tool request produces one validated, non-actuating command-gateway response.
 - Stop and revise the architecture if the selected Ollama model cannot provide reliable structured output/tool use, the trial broker cannot support the required A2A traffic, or the pinned plugins cannot enforce the domain boundary.
-- Run a locked dependency audit. Agent Mesh 1.28.7 pins Starlette 0.49.1 with upstream-noted CVE exceptions; document reachability and compensating controls, then require a safe upgrade/fix or a time-bounded human-approved waiver before release.
+- **Settled by waiver:** the locked dependency audit ran against the 251-package lock and reports eleven advisories across five packages that Agent Mesh 1.28.7 pins exactly; the `google-adk` override was attempted and is unsatisfiable. Each advisory is recorded with its reachability statement and compensating control as an expiring waiver in `dependency-waivers.toml`, all expiring 2026-09-18, and the accepted risk is carried in [TECH_DEBT.md](../TECH_DEBT.md) ([ADR-0031](adr/0031-reject-the-google-adk-version-override.md)).
 
 ### Phase 1: Foundation
 

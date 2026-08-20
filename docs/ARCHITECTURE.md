@@ -55,21 +55,9 @@ SAC YAML, agent cards, prompts, inline Ollama model dictionaries, gateway/tool c
 
 [Editable Graphviz source](architecture/agent-mesh-validation-flow.dot)
 
-The offline semantic-configuration gate is complete as repository verification tooling. It runs
-inside the isolated Python 3.13 environment, imports the exact pinned Agent Mesh and Event Mesh
-plugin configuration models and symbols, binds loaded modules to their installed distribution
-records, and validates owned includes, environment references, secret hygiene, broker fields,
-model policy, gateway routing and settlement policy, and Event Mesh Tool topic authority. Every
-selected file is independently complete; multi-file invocations additionally use the pinned SAC
-merge primitive and reject combined app-name conflicts. The gate starts no Agent Mesh process,
-broker client, application, Ollama request, or model call. It is inert until an owned configuration
-exists, then fails closed on missing prerequisites or invalid input as required by
-[ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md).
+The semantic-configuration gate [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) requires is repository verification tooling, not a runtime component. It runs inside the isolated Python 3.13 environment and delegates what upstream already defines to the exact pinned wheels: include expansion, parsing, and multi-file merge to Solace AI Connector 3.3.12; agent and workflow `app_config` validation to Agent Mesh 1.28.7's own configuration models; and gateway `app_config` validation to the Event Mesh Gateway 1.1.0 schema. Every imported symbol is bound to its installed distribution record, so a substituted module fails closed. On top of that it enforces the owned rules: includes stay inside the repository; every credential and broker field is an environment reference declared in `.env.example`; broker URLs are `tcps`, or WSS on port 443, with no userinfo; `model_provider` is absent and model identifiers are exact; gateway handlers settle with the policy stated in [CONTRACTS.md](CONTRACTS.md) and route only to declared outputs; and the Event Mesh Tool is the pinned `sam_event_mesh_tool.tools:EventMeshTool`, using request/reply over JSON and publishing only to `aerial-rescue/v1/{{ missionId }}/gateway/request/{{ operation }}` with wildcard-free identifiers. Every selected file must be valid on its own; a multi-file run also merges them with the pinned merge primitive and fails on a conflict such as a duplicated app name. The gate starts no Agent Mesh process, broker client, application, Ollama request, or model call, and runs the upstream imports inside a temporary home directory so their import-time artifacts never touch the working tree. It is inert until an owned configuration exists, then fails closed on a missing prerequisite or an unreadable file. Where it refuses more than ADR-0032 states, [ADR-0035](adr/0035-refuse-unprovable-agent-mesh-configuration.md) records why.
 
-A green offline result is configuration evidence only. Live PubSub+ and Ollama messaging is the
-mandatory next Phase 0 step: it must prove broker identity and ACL enforcement, A2A discovery and
-delegation, Event Mesh Gateway transformation, settlement and redelivery, Event Mesh Tool
-request/reply, and structured model output.
+A green result is configuration evidence only. Live PubSub+ and Ollama messaging is the next Phase 0 step: it must prove broker identity and ACL enforcement, A2A discovery and delegation, Event Mesh Gateway transformation, settlement and redelivery, Event Mesh Tool request/reply, and structured model output.
 
 ## Local Python components
 

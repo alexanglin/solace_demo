@@ -10,14 +10,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
-- The offline, fail-closed Agent Mesh semantic-configuration gate specified by ADR-0032. It combines
-  the exact pinned upstream configuration models, distribution-RECORD-bound symbols, and SAC
-  multi-file merge semantics with owned checks for includes, environment and secret handling,
-  model policy, broker fields, gateway routing and settlement policy, and Event Mesh Tool
-  authority, without starting Agent Mesh, PubSub+, Ollama, an application, or a model. An
-  editable validation-flow diagram and generated PNG document the evidence boundary. The hook script lives at
-  `scripts/hooks/agent-mesh/check-agent-mesh-configs.sh`, a sixth concern subdirectory under
-  ADR-0033, and its gate tests under `tools/quality_gate_tests/hooks/`.
+- The Agent Mesh semantic-configuration gate ADR-0032 specified: `agent-mesh/tools/agent_mesh_config_validator.py`,
+  run by `scripts/hooks/agent-mesh/check-agent-mesh-configs.sh` -- a sixth concern subdirectory
+  under ADR-0033, with its gate tests under `tools/quality_gate_tests/hooks/` -- at both blocking
+  stages and in CI. It runs on the 3.13 interpreter and delegates include expansion, parsing,
+  multi-file merge, and app-configuration models to the exact pinned Solace AI Connector, Agent
+  Mesh, and Event Mesh plugin wheels, binding each symbol to its installed distribution record, then
+  adds the owned rules: repository-contained includes, environment indirection for every credential
+  with every reference declared in `.env.example`, no `model_provider`, no floating model
+  identifier, `tcps` or WSS-on-443 broker URLs without userinfo, the gateway settlement and routing
+  policy, and an Event Mesh Tool that publishes only to
+  `aerial-rescue/v1/{{ missionId }}/gateway/request/{{ operation }}`. It starts no Agent Mesh
+  process, broker client, application, or model; it is inert until the first file lands under
+  `agent-mesh/configs/` and then fails closed on a missing manifest, lock, `uv`, or parser. Until the
+  local-model lock representation is decided, every `ollama` identifier fails `MODEL_LOCK_REQUIRED`
+  ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). An editable
+  validation-flow diagram and its generated PNG document the evidence boundary. A green result is
+  configuration evidence only; live PubSub+ and Ollama messaging remains the next Phase 0 evidence.
+
+- The Agent Mesh Bandit, cognitive-complexity, duplication, and source-presence checks now cover
+  `agent-mesh/tools/` as well as `agent-mesh/plugins/`, and the Agent Mesh test stage holds the
+  validator at 100% statement and branch coverage, so the first owned Python in that domain meets
+  every gate the plugins will.
 
 - A fail-closed directory fan-out gate, so structure is enforced rather than reviewed. Every other
   maintainability property here already had a number and a gate; how many files one directory holds did
@@ -125,12 +139,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
-- Superseded ADR-0030's broad Agent Mesh warning exemptions with ADR-0034's originating-module
-  filters. Known warnings from the exact pinned Solace and pydub packages remain contained, while
-  the same warning category or message from owned Agent Mesh tooling remains an error.
-- Marked live PubSub+ and Ollama messaging as the mandatory next Phase 0 evidence. Passing offline
-  Agent Mesh configuration validation does not attest broker delivery, A2A behaviour, plugin
-  settlement or redelivery, ACL enforcement, or model capability.
+- Superseded ADR-0030's category- and message-scoped Agent Mesh warning exemptions with ADR-0034's
+  source-scoped ones, because the validator is the first owned Python in that domain and ADR-0030
+  rested on there being none. The four exemptions cover what they did and now name where the warning
+  may come from: `solace_agent_mesh.*` for `PydanticDeprecatedSince20`, `solace.*` for
+  `datetime.utcnow`, `pydub.*` for the missing-ffmpeg warning, and a path expression inside the
+  installed `solace` package directory for the invalid-escape `SyntaxWarning`, which the compiler
+  attributes to a source path rather than to a module. Measured on a cold bytecode cache, a dotted
+  expression for that last warning fails 59 of the 82 Agent Mesh test and subtest results with
+  `SyntaxError`; the path expression passes all of them. The same warning raised from
+  `agent-mesh/tools/` or `agent-mesh/tests/` is an error. Nothing about the dependency audit changes:
+  the eleven waivers ADR-0031 recorded stand and expire 2026-09-18.
 
 - Decomposed the two directories the fan-out gate was written for, rather than waiving them. A gate whose
   first act is to waive the only violations it found has not been enforced. `tools/quality_gate_tests/`
