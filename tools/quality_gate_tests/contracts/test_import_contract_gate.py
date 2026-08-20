@@ -1,13 +1,36 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import runpy
 import tomllib
 import unittest
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+from unittest import mock
 
+import pytest
+
+from tools import import_contract_gate
 from tools.import_contract_gate import FORBIDDEN_IMPORT_ROOTS, check_source
-from tools.quality_gate_tests.support import REPOSITORY_ROOT
+from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
 DOMAIN_MANIFEST = REPOSITORY_ROOT / "packages" / "domain" / "pyproject.toml"
+RULES_MODULE = PurePosixPath("packages/domain/src/aerial_rescue_domain/rules.py")
+
+
+def _domain_tree(root: Path, source: str) -> None:
+    """Write one domain module under ``root`` at the gate's scanned location."""
+    module = root / RULES_MODULE
+    module.parent.mkdir(parents=True)
+    module.write_text(source, encoding="utf-8")
+
+
+def _run_main(root: Path) -> tuple[int, str]:
+    """Run the gate's entry point inside ``root`` and return its status and stderr."""
+    stderr = io.StringIO()
+    with mock.patch.object(Path, "cwd", return_value=root), contextlib.redirect_stderr(stderr):
+        status = import_contract_gate.main()
+    return status, stderr.getvalue()
 
 
 class ImportContractGateTests(unittest.TestCase):
@@ -50,6 +73,90 @@ class ImportContractGateTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), diagnostics)
+
+    def test_a_diagnostic_renders_as_a_compiler_style_line(self) -> None:
+        # Arrange
+        diagnostic = check_source(RULES_MODULE, "import os\nimport httpx\n")[0]
+
+        # Act
+        rendered = diagnostic.render()
+
+        # Assert
+        self.assertEqual(
+            f"{RULES_MODULE}:2:1: LAYER001 domain code must not import 'httpx'",
+            rendered,
+        )
+
+    def test_a_missing_or_relative_module_name_has_no_root(self) -> None:
+        # Arrange
+        modules = (None, ".models")
+
+        # Act
+        roots = tuple(import_contract_gate._root_name(module) for module in modules)
+
+        # Assert
+        self.assertEqual((None, None), roots)
+
+
+class ImportContractMainTests(QualityGateTestCase):
+    def test_main_passes_when_no_domain_source_root_exists(self) -> None:
+        # Arrange
+        root = self.temporary_directory()
+
+        # Act
+        status, stderr = _run_main(root)
+
+        # Assert
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr)
+
+    def test_main_passes_a_clean_domain_tree_silently(self) -> None:
+        # Arrange
+        root = self.temporary_directory()
+        _domain_tree(root, "from dataclasses import dataclass\nfrom .models import Mission\n")
+
+        # Act
+        status, stderr = _run_main(root)
+
+        # Assert
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr)
+
+    def test_main_reports_every_forbidden_import_on_stderr_and_fails(self) -> None:
+        # Arrange
+        root = self.temporary_directory()
+        _domain_tree(root, "import httpx\nfrom fastapi import FastAPI\n")
+
+        # Act
+        status, stderr = _run_main(root)
+
+        # Assert
+        self.assertEqual(1, status)
+        self.assertEqual(
+            [
+                f"{RULES_MODULE}:1:1: LAYER001 domain code must not import 'httpx'",
+                f"{RULES_MODULE}:2:1: LAYER001 domain code must not import 'fastapi'",
+            ],
+            stderr.splitlines(),
+        )
+
+    def test_the_module_entry_point_exits_with_the_gate_status(self) -> None:
+        # Arrange
+        root = self.temporary_directory()
+        _domain_tree(root, "import sqlalchemy\n")
+        stderr = io.StringIO()
+
+        # Act
+        with (
+            mock.patch.object(Path, "cwd", return_value=root),
+            contextlib.redirect_stderr(stderr),
+            pytest.raises(SystemExit) as raised,
+        ):
+            runpy.run_path(import_contract_gate.__file__, run_name="__main__")
+
+        # Assert
+        self.assertEqual(1, raised.value.code)
+        self.assertIn("LAYER001 domain code must not import 'sqlalchemy'", stderr.getvalue())
 
 
 class ImportBanParityTests(unittest.TestCase):

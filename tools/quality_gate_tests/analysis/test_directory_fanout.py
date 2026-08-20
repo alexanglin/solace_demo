@@ -5,9 +5,14 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import runpy
+import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from tools import directory_fanout_gate
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
@@ -146,6 +151,57 @@ class ExemptionRegistryTests(QualityGateTestCase):
         # Assert
         self.assertTrue(any("decided_by must be a non-empty string" in item for item in errors))
 
+    def test_a_missing_review_date_is_rejected(self) -> None:
+        # Arrange
+        entry = {key: value for key, value in EXEMPTION_FIELDS.items() if key != "reviewed_on"}
+        path = self.registry(registry_text(entry))
+
+        # Act
+        errors: list[str] = []
+        records = directory_fanout_gate.load_exemptions(path, errors)
+
+        # Assert
+        self.assertEqual((), records)
+        self.assertTrue(any("reviewed_on must be a non-empty string" in item for item in errors))
+
+    def test_a_malformed_review_date_is_rejected(self) -> None:
+        # Arrange
+        path = self.registry(registry_text(exemption(reviewed_on="yesterday")))
+
+        # Act
+        errors: list[str] = []
+        records = directory_fanout_gate.load_exemptions(path, errors)
+
+        # Assert
+        self.assertEqual((), records)
+        self.assertTrue(
+            any("reviewed_on must be an ISO-8601 calendar date" in item for item in errors)
+        )
+
+    def test_a_non_array_exemptions_value_is_rejected(self) -> None:
+        # Arrange
+        path = self.registry('format = 1\nexemptions = "docs/adr"\n')
+
+        # Act
+        errors: list[str] = []
+        records = directory_fanout_gate.load_exemptions(path, errors)
+
+        # Assert
+        self.assertEqual((), records)
+        self.assertTrue(any("exemptions must be an array of tables" in item for item in errors))
+
+    def test_a_non_table_exemption_entry_is_rejected(self) -> None:
+        # Arrange
+        path = self.registry('format = 1\nexemptions = ["docs/adr"]\n')
+
+        # Act
+        errors: list[str] = []
+        records = directory_fanout_gate.load_exemptions(path, errors)
+
+        # Assert
+        self.assertEqual((), records)
+        self.assertTrue(any("exemptions[1] must be a table" in item for item in errors))
+
     def test_a_well_formed_exemption_parses(self) -> None:
         # Arrange
         path = self.registry(registry_text(exemption()))
@@ -200,6 +256,16 @@ class FileCountingTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual({}, counts)
+
+    def test_an_empty_path_entry_is_ignored(self) -> None:
+        # Arrange
+        paths = ("", "pkg/a.py")
+
+        # Act
+        counts = directory_fanout_gate.count_files(paths)
+
+        # Assert
+        self.assertEqual({"pkg": 1}, counts)
 
 
 class EvaluationTests(QualityGateTestCase):
@@ -341,6 +407,31 @@ class CommandLineTests(QualityGateTestCase):
         # Assert
         self.assertEqual(1, status)
         self.assertIn("cannot read the path listing", stream.getvalue())
+
+    def test_running_the_module_as_a_script_exits_with_the_gate_status(self) -> None:
+        # Arrange
+        directory = self.temporary_directory()
+        registry_path = directory / directory_fanout_gate.REGISTRY_NAME
+        registry_path.write_text(registry_text(), encoding="utf-8")
+        limit = directory_fanout_gate.MAX_FILES_PER_DIRECTORY
+        listing = directory / "paths"
+        listing.write_bytes(
+            b"\0".join(f"pkg/module{index}.py".encode() for index in range(limit + 1))
+        )
+        arguments = ("--paths-from", str(listing), "--registry", str(registry_path))
+        stream = io.StringIO()
+
+        # Act
+        with (
+            mock.patch.object(sys, "argv", ["directory-fanout-gate", *arguments]),
+            contextlib.redirect_stderr(stream),
+            pytest.raises(SystemExit) as raised,
+        ):
+            runpy.run_path(directory_fanout_gate.__file__, run_name="__main__")
+
+        # Assert
+        self.assertEqual(1, raised.value.code)
+        self.assertIn("FANOUT: pkg holds 21 files", stream.getvalue())
 
 
 class RepositoryRegistryTests(QualityGateTestCase):

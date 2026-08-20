@@ -54,6 +54,16 @@ class MemberScaffoldPredicateTests(QualityGateTestCase):
         # Assert
         self.assertTrue(scaffold)
 
+    def test_an_empty_package_module_is_a_scaffold(self) -> None:
+        # Arrange
+        member = _scaffold(self.temporary_directory(), docstring="")
+
+        # Act
+        scaffold = member_scaffold.is_scaffold(member)
+
+        # Assert
+        self.assertTrue(scaffold)
+
     def test_bytecode_caches_do_not_make_a_scaffold_active(self) -> None:
         # Arrange
         member = _scaffold(self.temporary_directory())

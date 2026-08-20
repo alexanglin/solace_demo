@@ -47,6 +47,40 @@ class ExecutableResolutionTests(QualityGateTestCase):
         # Assert
         self.assertEqual(expected_message, str(captured.value))
 
+    def test_required_executable_fails_closed_for_a_dangling_symlink(self) -> None:
+        # Arrange
+        link = self.temporary_directory() / "git"
+        link.symlink_to(link.parent / "absent")
+        expected_message = "required executable is unavailable: git"
+
+        # Act
+        with (
+            mock.patch("tools.executable_resolution.shutil.which", return_value=str(link)),
+            pytest.raises(RuntimeError) as captured,
+        ):
+            executable_resolution.required_executable("git")
+
+        # Assert
+        self.assertEqual(expected_message, str(captured.value))
+        self.assertIsInstance(captured.value.__cause__, FileNotFoundError)
+
+    def test_required_executable_fails_closed_for_a_directory(self) -> None:
+        # Arrange
+        directory = self.temporary_directory() / "git"
+        directory.mkdir()
+        expected_message = "required executable is unavailable: git"
+
+        # Act
+        with (
+            mock.patch("tools.executable_resolution.shutil.which", return_value=str(directory)),
+            pytest.raises(RuntimeError) as captured,
+        ):
+            executable_resolution.required_executable("git")
+
+        # Assert
+        self.assertEqual(expected_message, str(captured.value))
+        self.assertIsNone(captured.value.__cause__)
+
     def test_aaa_repository_discovery_uses_the_resolved_git_path(self) -> None:
         # Arrange
         result = subprocess.CompletedProcess[bytes]((), 0, stdout=b"", stderr=b"")

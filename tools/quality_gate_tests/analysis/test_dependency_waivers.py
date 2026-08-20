@@ -5,14 +5,20 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import runpy
+import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from tools import dependency_waiver_gate
 from tools.quality_gate_tests.support import QualityGateTestCase
 
 TODAY = date(2026, 8, 19)
+ADJUDICATOR_MODULE = "tools.dependency_waiver_gate"
 
 WAIVER_FIELDS: dict[str, str] = {
     "domain": "agent-mesh",
@@ -415,6 +421,55 @@ class DependencyWaiverCommandTests(QualityGateTestCase):
         # Assert
         self.assertEqual(0, status)
         self.assertEqual("", output)
+
+
+def run_adjudicator_script() -> None:
+    """Execute the adjudicator as ``__main__`` from a fresh import, as ``python -m`` does."""
+    imported = sys.modules.pop(ADJUDICATOR_MODULE)
+    try:
+        runpy.run_module(ADJUDICATOR_MODULE, run_name="__main__")
+    finally:
+        sys.modules[ADJUDICATOR_MODULE] = imported
+
+
+class DependencyWaiverEntryPointTests(QualityGateTestCase):
+    def test_running_the_module_as_a_script_exits_with_the_blocking_status(self) -> None:
+        # Arrange
+        directory = self.temporary_directory()
+        registry = directory / "dependency-waivers.toml"
+        registry.write_text("format = 1\n", encoding="utf-8")
+        report = directory / "audit.json"
+        report.write_text(
+            report_text(dependency_entry("starlette", "0.49.1", "PYSEC-2026-161")),
+            encoding="utf-8",
+        )
+        command = [
+            "dependency_waiver_gate",
+            "--domain",
+            "agent-mesh",
+            "--report",
+            str(report),
+            "--registry",
+            str(registry),
+            "--today",
+            TODAY.isoformat(),
+        ]
+        stream = io.StringIO()
+
+        # Act
+        with (
+            mock.patch.object(sys, "argv", command),
+            contextlib.redirect_stderr(stream),
+            pytest.raises(SystemExit) as raised,
+        ):
+            run_adjudicator_script()
+
+        # Assert
+        self.assertEqual(1, raised.value.code)
+        self.assertIn(
+            "DEPENDENCY: unwaived advisory: starlette 0.49.1 PYSEC-2026-161 in agent-mesh",
+            stream.getvalue(),
+        )
 
 
 class MalformedDocumentTests(QualityGateTestCase):

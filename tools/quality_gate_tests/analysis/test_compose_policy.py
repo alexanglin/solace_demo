@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import io
+import runpy
+import sys
 import unittest
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
+from unittest import mock
+
+import pytest
 
 from tools import compose_policy_gate
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
@@ -16,6 +21,7 @@ DIGEST: Final = "sha256:" + "0" * 64
 IMAGE: Final = f"example/service:1.0.0@{DIGEST}"
 NAMES: Final = frozenset({"SESSION_SECRET_KEY", "SOLACE_BROKER_PASSWORD"})
 OMIT: Final = object()
+GATE_MODULE: Final = "tools.compose_policy_gate"
 
 CONFORMING_DOCKERFILE: Final = (
     f"FROM solace/solace-agent-mesh:1.28.7@{DIGEST} AS plugins\n"
@@ -121,6 +127,15 @@ def diagnostics(
     """Evaluate one compose file with the reviewed Dockerfile unless told otherwise."""
     reviewed = (reviewed_dockerfile(),) if dockerfiles is None else dockerfiles
     return compose_policy_gate.evaluate((compose,), reviewed, names)
+
+
+def run_gate_script() -> None:
+    """Run the gate the way ``python -m`` does: as ``__main__`` from a fresh import."""
+    cached = sys.modules.pop(GATE_MODULE)
+    try:
+        runpy.run_module(GATE_MODULE, run_name="__main__")
+    finally:
+        sys.modules[GATE_MODULE] = cached
 
 
 class ComposeParsingTests(QualityGateTestCase):
@@ -1295,6 +1310,32 @@ class CommandLineTests(QualityGateTestCase):
         # Assert
         self.assertEqual(1, status)
         self.assertIn(f"COMPOSE: missing environment template: {missing}", output)
+
+    def test_running_the_module_as_a_script_exits_with_the_gate_status(self) -> None:
+        # Arrange
+        template, compose, dockerfile = self.write_stack(self.temporary_directory())
+        argv = [
+            "compose_policy_gate",
+            "--env-template",
+            str(template),
+            "--compose",
+            str(compose),
+            "--dockerfile",
+            str(dockerfile),
+        ]
+        captured = io.StringIO()
+
+        # Act
+        with (
+            mock.patch.object(sys, "argv", argv),
+            contextlib.redirect_stderr(captured),
+            pytest.raises(SystemExit) as raised,
+        ):
+            run_gate_script()
+
+        # Assert
+        self.assertEqual(0, raised.value.code, captured.getvalue())
+        self.assertEqual("", captured.getvalue())
 
     def test_diagnostics_are_sorted_and_unique(self) -> None:
         # Arrange

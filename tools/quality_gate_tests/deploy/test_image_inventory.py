@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import contextlib
 import io
+import runpy
+import sys
 import unittest
 from typing import Final
+from unittest import mock
+
+import pytest
 
 from tools import compose_policy_gate, image_inventory
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
@@ -14,6 +19,7 @@ DIGEST: Final = "sha256:" + "0" * 64
 PULLED_IMAGE: Final = f"postgres:17.11-trixie@{DIGEST}"
 BASE_IMAGE: Final = f"python:3.14.7-slim-trixie@{DIGEST}"
 COMMITTED_IMAGES: Final = 7
+INVENTORY_MODULE: Final = "tools.image_inventory"
 
 
 def compose(**services: object) -> compose_policy_gate.ComposeFile:
@@ -26,6 +32,15 @@ def dockerfile(
 ) -> compose_policy_gate.Dockerfile:
     """Return a Dockerfile with ``text``."""
     return compose_policy_gate.Dockerfile(path, text)
+
+
+def run_inventory_script() -> None:
+    """Start the inventory as ``python -m`` would: ``__main__`` from a fresh import."""
+    loaded = sys.modules.pop(INVENTORY_MODULE)
+    try:
+        runpy.run_module(INVENTORY_MODULE, run_name="__main__")
+    finally:
+        sys.modules[INVENTORY_MODULE] = loaded
 
 
 class RepositoryTests(QualityGateTestCase):
@@ -220,6 +235,25 @@ class CommandLineTests(QualityGateTestCase):
         self.assertEqual(
             f"pulled - image:postgres {PULLED_IMAGE}\npulled - image:python {BASE_IMAGE}\n", out
         )
+
+    def test_running_the_module_as_a_script_prints_the_inventory_and_exits_zero(self) -> None:
+        # Arrange
+        compose_path = self.temporary_directory() / "compose.yaml"
+        compose_path.write_text(f"services:\n  db:\n    image: {PULLED_IMAGE}\n", encoding="utf-8")
+        script_arguments = ["image_inventory", "--compose", str(compose_path)]
+        out = io.StringIO()
+
+        # Act
+        with (
+            mock.patch.object(sys, "argv", script_arguments),
+            contextlib.redirect_stdout(out),
+            pytest.raises(SystemExit) as raised,
+        ):
+            run_inventory_script()
+
+        # Assert
+        self.assertEqual(0, raised.value.code)
+        self.assertEqual(f"pulled - image:postgres {PULLED_IMAGE}\n", out.getvalue())
 
     def test_an_unreadable_input_is_a_blocking_error(self) -> None:
         # Arrange

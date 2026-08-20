@@ -5,7 +5,19 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from tools import coverage_gate
+
+EMPTY_REPORT: dict[str, object] = {"files": {}}
+MEMBERS_ERROR = "[tool.uv.workspace].members must be a list of glob strings"
+TIER_TWO_MANIFEST = "[tool.aerial-rescue]\nrisk-tier = 2\n"
+
+
+def _collect_without_coverage(root: Path) -> list[coverage_gate.MemberVerdict]:
+    """Collect the verdicts under ``root`` against an empty coverage report."""
+    with mock.patch.object(coverage_gate, "_coverage_json", return_value=EMPTY_REPORT):
+        return coverage_gate.collect(root)
 
 
 class CoverageWorkspaceDiscoveryTests(unittest.TestCase):
@@ -70,10 +82,70 @@ class CoverageWorkspaceDiscoveryTests(unittest.TestCase):
         # Assert
         self.assertIsNone(tier)
 
+    def test_a_member_inventory_that_is_not_a_list_is_a_configuration_error(self) -> None:
+        # Arrange
+        root = self._root()
+        self._write_root_manifest(root, 'members = "components/*"')
+
+        # Act
+        with pytest.raises(coverage_gate.WorkspaceConfigurationError) as raised:
+            _collect_without_coverage(root)
+
+        # Assert
+        self.assertEqual(MEMBERS_ERROR, str(raised.value))
+
+    def test_a_member_inventory_with_a_non_string_entry_is_a_configuration_error(self) -> None:
+        # Arrange
+        root = self._root()
+        self._write_root_manifest(root, 'members = ["components/*", 1]')
+
+        # Act
+        with pytest.raises(coverage_gate.WorkspaceConfigurationError) as raised:
+            _collect_without_coverage(root)
+
+        # Assert
+        self.assertEqual(MEMBERS_ERROR, str(raised.value))
+
+    def test_a_root_without_a_manifest_cannot_be_collected(self) -> None:
+        # Arrange
+        root = self._root()
+
+        # Act
+        with pytest.raises(FileNotFoundError) as raised:
+            _collect_without_coverage(root)
+
+        # Assert
+        self.assertEqual(str(root / "pyproject.toml"), raised.value.filename)
+
+    def test_an_active_member_is_judged_against_its_declared_tier(self) -> None:
+        # Arrange
+        root = self._root()
+        self._write_root_manifest(root, 'members = ["components/*"]')
+        member = root / "components" / "example"
+        (member / "tests").mkdir(parents=True)
+        (member / "pyproject.toml").write_text(TIER_TWO_MANIFEST, encoding="utf-8")
+        report = self._report("components/example/src/example.py")
+
+        # Act
+        with mock.patch.object(coverage_gate, "_coverage_json", return_value=report):
+            verdicts = coverage_gate.collect(root)
+
+        # Assert
+        example = next(item for item in verdicts if item.name == "components/example")
+        self.assertEqual("PASS", example.outcome)
+        self.assertEqual(coverage_gate.TIER_THRESHOLDS[2], example.threshold)
+
     def _root(self) -> Path:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         return Path(directory.name)
+
+    @staticmethod
+    def _write_root_manifest(root: Path, members: str) -> None:
+        (root / "pyproject.toml").write_text(
+            f"{TIER_TWO_MANIFEST}[tool.uv.workspace]\n{members}\n",
+            encoding="utf-8",
+        )
 
     @staticmethod
     def _report(path: str) -> dict[str, object]:
