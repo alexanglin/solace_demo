@@ -68,6 +68,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0048](0048-scan-images-and-deploy-configuration-with-trivy.md) | Scan every stack image and the deploy configuration with Trivy, blocking on fixed HIGH and CRITICAL findings under the waiver registry | Accepted |
 | [0049](0049-audit-workflows-with-zizmor-at-the-commit-stage.md) | Audit the GitHub Actions workflows with zizmor at the commit stage | Accepted |
 | [0050](0050-scan-python-with-codeql-in-continuous-integration-only.md) | Scan Python with CodeQL in continuous integration only | Accepted |
+| [0051](0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md) | Re-scan daily and let Dependabot raise pinned-update pull requests | Accepted |
 
 ## Decisions still open
 
