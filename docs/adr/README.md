@@ -62,6 +62,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0042](0042-approval-time-to-live.md) | Approval time to live of 60 seconds | Proposed |
 | [0043](0043-docker-broker-with-solace-cloud-showcase.md) | Run the PubSub+ software event broker in Docker as the broker, with Solace Cloud as a non-gating showcase profile | Accepted |
 | [0044](0044-docker-compose-runtime-with-official-agent-mesh-image.md) | Run every component except Ollama in Docker Compose, with Agent Mesh from its official image | Accepted |
+| [0045](0045-fail-closed-compose-policy-gate.md) | Enforce a fail-closed compose policy gate at both blocking stages | Accepted |
 
 ## Decisions still open
 
