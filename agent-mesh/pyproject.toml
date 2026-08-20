@@ -12,7 +12,19 @@ name = "aerial-rescue-agent-mesh"
 version = "0.0.0"
 description = "Pinned Solace Agent Mesh runtime, Event Mesh plugins, and owned extensions."
 requires-python = ">=3.13,<3.14"
-dependencies = []
+# Pinned exactly, per ADR-0001. Agent Mesh 1.28.7 is upstream release tag `1.28.7` (no `v`
+# prefix) at source revision 6344d2b8899a6c326e8b52fce9947c4bf4b56ae2, recorded here
+# because docs/IMPLEMENTATION_PLAN.md Phase 0 requires the revision in acceptance evidence.
+#
+# The two Event Mesh plugins are independently released and neither declares a dependency
+# on solace-agent-mesh, so no resolver constraint links this trio. agent-mesh/tests/ is
+# what attests the combination instead
+# (docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md).
+dependencies = [
+    "solace-agent-mesh==1.28.7",
+    "sam-event-mesh-gateway==1.1.0",
+    "sam-event-mesh-tool==0.1.1",
+]
 
 [tool.uv]
 # No owned package here yet. Configuration and plugins arrive in a later phase; until
@@ -85,7 +97,30 @@ addopts = [
     "-ra",
 ]
 xfail_strict = true
-filterwarnings = ["error"]
+# Every warning is an error, with two measured exemptions for the pinned upstream. This
+# project contains no owned production source, so neither can conceal a defect written
+# here; both are recorded as Phase 0 findings and both are revisited when owned code lands
+# under agent-mesh/plugins/
+# (docs/adr/0030-contain-upstream-warnings-in-the-agent-mesh-domain.md).
+filterwarnings = [
+    "error",
+    # solace-pubsubplus, reached transitively through solace-ai-connector, carries invalid
+    # escape sequences in its docstrings. Escalated, this becomes a SyntaxError at import
+    # and the verdict then depends on whether the bytecode cache is warm (ADR-0028).
+    "ignore:.*invalid escape sequence.*:SyntaxWarning",
+    # Agent Mesh 1.28.7 defines models with Pydantic's class-based Config against the
+    # pydantic 2.12.5 it pins itself. Removed in Pydantic V3, so this bounds how long the
+    # current pin stays viable. Eleven occurrences across four of its modules.
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    # The Solace client evaluates datetime.utcnow() as a default argument value, so any
+    # import of it raises this. Removed in a future Python.
+    "ignore:.*datetime.datetime.utcnow.*:DeprecationWarning",
+    # pydub, reached through the markitdown[all] extra Agent Mesh pins, warns when neither
+    # ffmpeg nor avconv is on PATH. This one is not a code defect: it makes the verdict
+    # depend on unrelated system packages, so the same commit would pass on a host with
+    # media tooling and fail on one without. Nothing here converts audio.
+    "ignore:.*ffmpeg or avconv.*:RuntimeWarning",
+]
 markers = [
     "phase0: a Phase 0 feasibility gate probe",
     "compatibility: black-box tests against the exact pinned wheels",
