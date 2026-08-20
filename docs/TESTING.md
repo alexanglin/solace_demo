@@ -155,7 +155,7 @@ and review remain mandatory for those behaviors.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
-- **Broker integration tests:** Real ARM64 Solace PubSub+ container covering direct and persistent delivery, queues, reconnects, acknowledgement, and ACL denial.
+- **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent delivery, queues, reconnects, acknowledgement, and ACL denial. Admitting the class to a blocking continuous-integration stage is a verification change that needs its own record.
 - **Provider integration tests:** Local Ollama, the pinned Agent Mesh runtime, A2A discovery and
   delegation, and both pinned Event Mesh plugins. A test asserting transport, schema, or error handling
   uses a deterministic stub at the model boundary; only a test asserting model capability calls a real
@@ -163,7 +163,7 @@ and review remain mandatory for those behaviors.
 - **End-to-end tests:** Mission start through evidence, connectivity failure, replan, approval, and completion.
 - **User acceptance tests:** Playwright exercises the complete operator workflow, including live/replay labeling and approval blocking.
 - **Agent evaluations:** Curated datasets validate delegation, tool selection, structured outputs, refusal of unsafe requests, and approval behavior.
-- **Failure-injection tests:** Solace Cloud broker loss, local Agent Mesh process loss, Ollama loss, duplicate and out-of-order events, malformed input, model timeout, invalid output, and recovery.
+- **Failure-injection tests:** Broker loss, Agent Mesh container loss, Ollama loss, duplicate and out-of-order events, malformed input, model timeout, invalid output, and recovery.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
   recovery, and the soak run. Every value, and the instrument that measures it, is in
   [operating-parameters.md](operating-parameters.md).
@@ -199,6 +199,9 @@ many files one directory holds as immediate children and adjudicates the two str
 `directory-fanout.toml` ([ADR-0033](adr/0033-bound-directory-fan-out.md)).
 Contract artifacts are inventoried through `schemas/contract-manifest.toml` and validated against an
 offline in-memory Draft 2020-12 registry at both blocking stages ([ADR-0021](adr/0021-contract-artifact-manifest.md)).
+The compose policy gate, `tools/compose_policy_gate.py`, holds every compose file and Dockerfile under
+`deploy/` to the stack policy at both blocking stages without running Docker; it is inert until the
+first such file exists and fails closed afterwards ([ADR-0045](adr/0045-fail-closed-compose-policy-gate.md)).
 
 Ruff's subprocess boundary has no global or broad test-glob waiver. `S603` is permitted only for the four
 reviewed subprocess owners named by [ADR-0025](adr/0025-narrow-ruff-subprocess-waivers.md), and `S607` is

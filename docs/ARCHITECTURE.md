@@ -4,7 +4,7 @@
 > `AGENTS.md` reference it and must not restate it ([ADR-0016](adr/0016-documentation-set-split.md)).
 > Where this document and an `Accepted` ADR disagree, the ADR governs.
 >
-> **Related:** [ADR-0007](adr/0007-solace-first-implementation-policy.md) (Solace-first), [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) (self-hosted Agent Mesh), [ADR-0003](adr/0003-postgres-durable-mission-store.md) (durable store), [ADR-0004](adr/0004-split-python-runtimes.md) (split runtimes), [ADR-0008](adr/0008-abstention-over-recorded-substitution.md) (degraded behaviour), [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) (replay isolation). Interfaces are in [CONTRACTS.md](CONTRACTS.md); numbers in [operating-parameters.md](operating-parameters.md).
+> **Related:** [ADR-0007](adr/0007-solace-first-implementation-policy.md) (Solace-first), [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) (self-hosted Agent Mesh), [ADR-0003](adr/0003-postgres-durable-mission-store.md) (durable store), [ADR-0004](adr/0004-split-python-runtimes.md) (split runtimes), [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) (broker substrate and showcase), [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) (Compose runtime), [ADR-0046](adr/0046-generated-local-certificate-authority.md) (local TLS), [ADR-0008](adr/0008-abstention-over-recorded-substitution.md) (degraded behaviour), [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) (replay isolation). Interfaces are in [CONTRACTS.md](CONTRACTS.md); numbers in [operating-parameters.md](operating-parameters.md).
 
 ## Solace-first implementation policy
 
@@ -13,7 +13,7 @@ Use the largest practical set of supported open-source Solace building blocks be
 - Agent Mesh A2A Agent Hosts, agent cards, discovery, delegation, Orchestrator, YAML workflows, artifact handling, HTTP/SSE gateway, and evaluation tooling.
 - The official Event Mesh Gateway and Event Mesh Tool plugins, including Solace AI Connector expressions, transformations, structured invocation, correlation forwarding, request/reply, and explicit message settlement.
 - The Solace PubSub+ Messaging API for Python for application-side direct messaging, guaranteed messaging, queue consumers, publisher confirmation, request/reply, reconnect handling, and trace-context propagation.
-- Solace Cloud PubSub+ for the shared A2A control plane and application data plane, isolated through namespaces, client identities, ACLs, queues, and subscriptions.
+- The PubSub+ software event broker container for the shared A2A control plane and application data plane, isolated through namespaces, client identities, ACLs, queues, and subscriptions; the Developer-class Solace Cloud service is a non-gating showcase profile that carries the same traffic when selected by environment ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 
 Project-owned code is reserved for the SAR scenario and simulator, strict domain validation, deterministic evidence scoring, mission state, the command/approval policy boundary, recording/replay isolation, and the operator dashboard. A new custom transport, agent runtime, gateway, connector, or broker abstraction requires a documented capability gap and a focused test proving why the official Solace component is insufficient.
 
@@ -26,7 +26,8 @@ Project-owned code is reserved for the SAR scenario and simulator, strict domain
 | Event Mesh Gateway 1.1.0 | Allowlisted salient-event ingress, transforms, structured invocation, response routing | Topic-to-task contract, deferred settlement, redelivery, success/error routes |
 | Event Mesh Tool 0.1.1 | Read-only status and action-proposal request/reply | Correlation, timeout, malformed reply, and ACL-denial tests |
 | PubSub+ Messaging API for Python | Application telemetry, guaranteed consumers, publisher confirmation, reconnect, request/reply | Real-broker integration and failure-injection suites |
-| Solace Cloud PubSub+ | Shared broker, topic routing, queues, spool, ACL enforcement | Broker Manager clients/subscriptions/rates and queue-depth transition |
+| PubSub+ software event broker container | Shared broker, topic routing, queues, spool, ACL enforcement | Broker Manager clients/subscriptions/rates and queue-depth transition |
+| Solace Cloud service (showcase) | The same identities, queues, and traffic on a Developer-class service, by environment only | Redacted Cluster Manager, Broker Manager, and Event Portal evidence ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
 | Solace distributed-tracing integration | W3C trace propagation across publish/receive boundaries | One trace linked to A2A task, CloudEvent, proposal, and command IDs |
 
 ![Aerial Rescue Mesh open-source Solace-first architecture](architecture/aerial-rescue-mesh-overview.png)
@@ -35,7 +36,7 @@ Editable source: [`docs/architecture/aerial-rescue-mesh-overview.dot`](architect
 
 ## Self-hosted Solace Agent Mesh
 
-- **Solace Cloud event broker** carries application telemetry, mission events, evidence, commands, command results, and operator decisions.
+- **The PubSub+ broker container** carries application telemetry, mission events, evidence, commands, command results, and operator decisions.
 - **Agent Mesh runtime 1.28.7** runs locally from a pinned package and uses the broker for A2A discovery, task requests, status updates, and responses.
 - **Agent Mesh Orchestrator** discovers agents from their published agent cards and delegates mission-level work.
 - **Mission Response workflow** defines the repeatable mission-start-to-proposal path in versioned Agent Mesh YAML. It invokes specialized agents through structured inputs and outputs while leaving all executable effects to the deterministic command gateway.
@@ -86,7 +87,20 @@ Use Debian/glibc-based Python containers rather than Alpine images for ARM compa
 
 The Solace Python library must not be hosted through Python's `multiprocessing` module. Independent Agent Mesh components and edge agents run as separate native processes on the supported Apple Silicon path. Host-run components access Ollama through `http://127.0.0.1:11434`; containerized application services use `http://host.docker.internal:11434`.
 
-Run the supported Agent Mesh path natively from `agent-mesh/.venv` on Apple Silicon. Docker remains the supported path for the local PubSub+ test broker and may package project-owned application services with matching pinned Python bases, but the initial release does not depend on an emulated `linux/amd64` Agent Mesh image.
+### Deployment layout
+
+Every component except Ollama runs under Docker Compose from `deploy/compose.yaml`, and the compose policy gate holds that file to its policy on every commit ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md)). Images are pinned by tag and index digest, every published port binds to `127.0.0.1`, secrets are files under the ignored `deploy/secrets/` mounted at `/run/secrets/`, and every service declares a healthcheck.
+
+| Profile | Services | State |
+| --- | --- | --- |
+| default | `broker` (PubSub+ Standard 10.26.0), `postgres` (PostgreSQL 17) | Runnable; the only services with behaviour today |
+| `mesh` | `agent-mesh`, built on the official `solace/solace-agent-mesh:1.28.7` image with the two pinned Event Mesh wheels installed by hash | Inert until the first configuration lands under `agent-mesh/configs/`, which is when it moves to the default profile |
+| `services` | the six application services and the dashboard API, built from one Python 3.14.7 image | Inert: each command imports its package and exits, because no entrypoint exists yet |
+| `event-portal` | the Event Management Agent for Event Portal runtime discovery, an amd64-only image run under emulation | Non-gating showcase support ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
+
+Verification stays native: `agent-mesh/.venv` on Python 3.13.15 runs the configuration validator and the compatibility probes ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), while the container, which carries upstream's Python 3.13.11, is the runtime. The plugin-compatibility probe must be run inside the built image before the `mesh` profile is declared supported. Ollama stays on the host; containers reach it as `http://host.docker.internal:11434`. The showcase profile is the same stack pointed at the Solace Cloud service through an ignored `.env.showcase`; no gate, hook, or release criterion depends on it.
+
+`scripts/broker-secrets.sh` generates the per-checkout certificate authority, the broker's server certificate with subject alternative names for `localhost`, `broker`, and `127.0.0.1`, and the stack's passwords; `deploy/certs/` is the trust-store directory every client mounts, and `tcps` validation is never relaxed ([ADR-0046](adr/0046-generated-local-certificate-authority.md)).
 
 The reference workstation, self-hosted Agent Mesh processes, and one Ollama daemon form a common failure and resource domain. Startup must warm models sequentially, inference concurrency must be bounded, and Phase 0 must record idle/peak CPU, unified memory, and model-load time. Resource exhaustion or model eviction yields an explicit degraded state and abstention; it must never cause an approval bypass or silently substitute recorded evidence.
 
@@ -114,7 +128,7 @@ The browser dashboard contains:
 - An operator command area for mission creation and approved actions.
 - A prominent human-approval gate for rescue escalation.
 - A live-simulation/degraded-live-simulation/replay badge that cannot be hidden or confused.
-- Health indicators for Solace Cloud, the self-hosted Agent Mesh processes, Ollama, and the local services.
+- Health indicators for the broker, the Agent Mesh container, Ollama, and the local services.
 
 The dashboard uses React and TypeScript with Vite. Server-to-browser updates use SSE; operator actions use JSON HTTP requests. The UI must remain usable at the reference MacBook's normal resolution and must not rely on browser developer tools.
 
@@ -123,12 +137,12 @@ The dashboard uses React and TypeScript with Vite. Server-to-browser updates use
 The project deliberately exercises and exposes both Solace layers:
 
 - **Open-source Agent Mesh Web UI (`localhost:8000` by default):** use the per-request Activity viewer and `Agent Mesh > Agents` registry/topology to inspect tasks, discovered agents, delegation, streamed responses, and artifacts. This is an engineering surface; it is not the authoritative mission dashboard and cannot approve or dispatch an action.
-- **Solace PubSub+ Broker Manager:** show separately named Agent Mesh, gateway, command, simulator, edge-agent, recorder, and dashboard clients; inspect A2A and application topic subscriptions; observe ingress/egress rates; inspect guaranteed queue state; and use Try Me with the scoped A2A namespace during diagnostics.
+- **Solace PubSub+ Broker Manager** (`https://localhost:1943` on the container; the browser warns until the per-checkout authority is trusted)**:** show separately named Agent Mesh, gateway, command, simulator, edge-agent, recorder, and dashboard clients; inspect A2A and application topic subscriptions; observe ingress/egress rates; inspect guaranteed queue state; and use Try Me with the scoped A2A namespace during diagnostics.
 - **Aerial Rescue Mesh dashboard:** show normalized mission state, evidence provenance, command lifecycle, human approval, and the cross-system audit identifiers that link a domain event to an A2A task and executable command.
 
 The disconnect/reconnect acceptance flow must make Solace's role visible in Broker Manager: an offline drone's durable command queue changes from depth `0` to `1`, then returns to `0` only after reconnect, durable processing, and acknowledgement. Separately, Agent Mesh agent cards and task traffic prove dynamic discovery and A2A delegation over the broker. Screenshots may document these checks only after tenant-specific values and credentials are redacted.
 
-Reserve and document loopback-only development ports to avoid collisions: Agent Mesh initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, project dashboard `5173`, project API `8080`, and Ollama `11434`. The initialization UI is a setup surface, not an operational monitoring surface. Production-like local startup may serve the built dashboard through the API and omit the Vite port.
+Reserve and document loopback-only development ports to avoid collisions: Agent Mesh initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, project dashboard `5173`, project API `8080`, and Ollama `11434`. The initialization UI is a setup surface, not an operational monitoring surface. Production-like local startup may serve the built dashboard through the API and omit the Vite port. The compose stack publishes, on `127.0.0.1` only, 55443 and 1943 for the broker, 5432 for Postgres, 8000 for the Agent Mesh Web UI, 8080 for the dashboard API, and 8180 for the Event Management Agent; the broker's own 8080 and 8000 are never published, which is how they coexist with the reservations above ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
 
 ## Observability and operating modes
 
@@ -136,7 +150,7 @@ Every service exposes liveness and readiness. Agent Mesh readiness is composite:
 
 Supported modes are:
 
-- **Live simulation:** Solace Cloud, self-hosted Agent Mesh, live Python simulators, and local Ollama execute the synthetic scenario.
+- **Live simulation:** the PubSub+ container, Agent Mesh from its official image, live Python simulators, and local Ollama execute the synthetic scenario; the showcase profile runs the same mode against the Solace Cloud service ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - **Degraded live simulation:** Telemetry, the dashboard, and bounded operator control remain available when Agent Mesh or Ollama is unavailable; model-dependent work abstains or awaits manual review, and no recorded positive evidence enters the result.
 - **Replay:** A committed sanitized NDJSON stream, carrying a format version header, drives an isolated, side-effect-free dashboard adapter. Isolation is structural rather than credential-scoped: a run-mode value injected at the composition root causes the broker publisher, model client, approval-store writer, and escalation executor to refuse construction, so no publish path exists to misuse. Replay credentials hold no publish grant either, and the UI makes no claim that agents are executing ([ADR-0009](adr/0009-isolated-side-effect-free-replay.md)).
 

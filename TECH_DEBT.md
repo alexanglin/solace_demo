@@ -103,7 +103,10 @@ The pre-push tier does not pass on `main`, and this is intended rather than brok
 enforced per workspace member with no vacuous pass, so a member holding only a docstring fails
 rather than reporting success. The mutation gate fails at preflight for `services/command_gateway`,
 the one tier-one member that has no co-located tests yet; `packages/contracts` and `packages/domain`
-pass both gates. The remaining lines clear as those members gain tested behaviour; none is a defect
+pass both gates. The root tooling member sits at 85% statements and 81% branches against its Tier 2
+threshold of 95%, because the mutation, contract, coverage, and import gates predate the per-member rule
+and were never brought up to it; the compose policy gate that joined them is at 100% apart from its
+`__main__` guard. The remaining lines clear as those members gain tested behaviour; none is a defect
 in the gates.
 
 ## 5. Owed before the first Agent Mesh configuration
@@ -120,7 +123,23 @@ enforces more narrowly than ADR-0032 states them are listed under "Known gaps" i
 
 **Clears when:** the lock representation is recorded and the validator checks it.
 
-## 6. Instrument definitions and unset parameters
+## 6. Container stack defined but not yet exercised
+
+[ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) put every component
+except Ollama under `deploy/compose.yaml`, and the compose policy gate proves the file's text conforms.
+Nobody has started the stack. What that leaves unproven, each a design choice rather than a measurement:
+
+| Item | Why it is accepted for now | Clears when |
+| --- | --- | --- |
+| The broker healthcheck uses `curl` inside the image | Solace's own Helm readiness script does the same; the documented fallback is a `/dev/tcp` probe | The first `just up` records the broker reaching healthy |
+| The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15 | Upstream builds the image; a project-owned image would re-implement upstream's Dockerfile ([ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)) | The plugin-compatibility probe is run inside the built image and recorded |
+| The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
+| `scripts/broker-secrets.sh` is proven under LibreSSL on the workstation only | Extensions come from configuration files, the portable form | Continuous integration on Linux runs the script's tests against OpenSSL |
+| Docker Desktop's memory allocation and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision | The Phase 0 resource and showcase measurements land in `docs/operating-parameters.md` |
+
+**Clears when:** the first live run is recorded under `release-evidence/`.
+
+## 7. Instrument definitions and unset parameters
 
 Several service-level targets and operating parameters carry no number yet, and several carry a
 number with no defined instrument. They are tracked in their own home, the "Parameters still to be

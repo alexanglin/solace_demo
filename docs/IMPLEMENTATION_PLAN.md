@@ -3,7 +3,7 @@
 ## Document status
 
 - **Status:** Active build plan
-- **Last updated:** August 19, 2026
+- **Last updated:** August 20, 2026
 - **Release model:** Incremental, test-driven delivery
 - **Primary audience:** Engineering contributors and search-and-rescue stakeholders
 - **Repository:** Public reference implementation
@@ -42,12 +42,12 @@ decision has no ADR yet and one is owed.
 | --- | --- | --- |
 | Agent platform | Self-hosted open-source Solace Agent Mesh 1.28.7, pinned from the SolaceLabs repository | [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) |
 | Agent integration plugins | Official `sam-event-mesh-gateway` 1.1.0 and `sam-event-mesh-tool` 0.1.1, pinned and locked | [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) |
-| Event broker | A Solace Cloud event broker carries Agent Mesh A2A traffic and application events; a local ARM64 PubSub+ container carries deterministic integration tests. The Cloud entitlement is a time-limited trial, so the post-trial substrate is an open question and the container may be promoted to a first-class acceptance target | — |
+| Event broker | The PubSub+ software event broker container, pinned by digest under `deploy/compose.yaml`, is the broker for development, integration, continuous integration, acceptance, and release; the Developer-class Solace Cloud service is a non-gating showcase profile selected by environment alone | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Application event namespace | Application CloudEvents use `aerial-rescue/v1/...`, separate from the A2A namespace | [ADR-0014](adr/0014-application-events-separate-from-a2a.md) |
 | Delivery semantics | Direct delivery for routine telemetry; guaranteed delivery with queues and explicit acknowledgement for commands, results, evidence, failures, approvals, and audit records | — |
 | Agent models | Local Ollama for the three edge agents. The Agent Mesh `general` and `planning` roles may use a paid Anthropic or OpenAI model; provider, model, and split are selected by the Phase 0 evaluation | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Model budget | USD $50 total for the initial release, enforced before each call in tranches, with a persisted spend ledger. Local-only operation stays a supported, tested configuration and no release gate depends on a paid API | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
-| Local environment | Apple Silicon MacBook, 64 GB RAM, Docker, and Ollama | — |
+| Local environment | Apple Silicon MacBook, 64 GB RAM, Docker Desktop, and Ollama on the host; every other component runs under Docker Compose from digest-pinned images | [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
 | Local implementation | Python for the simulator, edge agents, broker integration, API, recording, and replay; no Go components | — |
 | Python runtimes | Application services on Python 3.14.7; Agent Mesh and its plugins on Python 3.13.15, in separate `uv`-managed environments | [ADR-0004](adr/0004-split-python-runtimes.md) |
 | Project layout | A `uv` workspace with per-member packages and one shared lockfile; `agent-mesh/` is a separate non-member project; local and CI tooling use uv 0.12.5 | [ADR-0010](adr/0010-uv-workspace-and-toolchain.md), [ADR-0020](adr/0020-pin-uv-version.md) |
@@ -61,12 +61,13 @@ decision has no ADR yet and one is owed.
 | Local operator API | Loopback, exact Host and browser-Origin checks, plus a per-runtime bearer protect state-changing requests in the single-operator simulation | [ADR-0024](adr/0024-local-operator-api-boundary.md) |
 | Degraded behaviour | Model failure yields an explicit abstention or manual review; recorded evidence is never substituted into a live run | [ADR-0008](adr/0008-abstention-over-recorded-substitution.md) |
 | Continuity | Clearly labeled degraded live simulation, and replay isolated by structural deny sinks rather than by credentials alone | [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) |
-| Deployment boundary | Solace Cloud plus the local workstation; no AWS deployment in the initial release | — |
+| Deployment boundary | The local workstation's Docker Compose stack; Solace Cloud only as the showcase profile; no AWS deployment in the initial release | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Data | Search-and-rescue artifacts composited onto public-domain wilderness backgrounds; never photographs of real people | [ADR-0013](adr/0013-sar-artifact-imagery-policy.md) |
-| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, and tier coverage by risk | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md) |
+| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, and tier coverage by risk | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md) |
 | Verification authority | Staged git hooks give fast feedback; CI re-runs the identical hooks and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) |
 | Document precedence | Each normative fact has exactly one home; `AGENTS.md` keeps process rules and this plan keeps sequenced delivery | [ADR-0016](adr/0016-documentation-set-split.md) |
 | Version control | Never commit without explicit human approval | — |
+| Local TLS | A per-checkout certificate authority signs the broker's certificate; keys are never tracked and `tcps` validation is never relaxed | [ADR-0046](adr/0046-generated-local-certificate-authority.md) |
 
 The upstream baseline is the Apache-2.0-licensed [`SolaceLabs/solace-agent-mesh`](https://github.com/SolaceLabs/solace-agent-mesh) repository. As of August 18, 2026, the pinned stable release is tag `1.28.7` (there is no `v` prefix), commit [`6344d2b8899a6c326e8b52fce9947c4bf4b56ae2`](https://github.com/SolaceLabs/solace-agent-mesh/commit/6344d2b8899a6c326e8b52fce9947c4bf4b56ae2). Install the released package in an isolated, locked subproject rather than vendoring upstream source. Record the package version and source commit in acceptance evidence, and evaluate upgrades deliberately against the full Agent Mesh integration and evaluation suites.
 
@@ -132,13 +133,11 @@ LICENSE                        (exists)
 NOTICE                         (exists)
 README.md                      (exists)
 .env.example                   (exists)  placeholder names only; never a live value
-NOTICE
-README.md
+.dockerignore                  (exists)  keeps secrets and caches out of the application image
 justfile                       (exists)
-.env.example
 .pre-commit-config.yaml        (exists)
 .github/workflows/             (exists)
-scripts/                       (exists)  hooks/, diagrams.sh, fix.sh
+scripts/                       (exists)  hooks/, diagrams.sh, fix.sh, broker-secrets.sh
 .python-version                (exists)  application Python 3.14.7 pin
 tools/                         (scaffold) root repository-tooling package marker
 pyproject.toml                 (exists)  uv workspace root, declares members
@@ -164,8 +163,11 @@ packages/                      (scaffold) five typed library package shells
   store/
   observability/
 migrations/                              Alembic revisions for the durable store
-deploy/
-  docker-compose.yml                     PubSub+ container and Postgres
+deploy/                        (exists)  held to the compose policy gate on every commit
+  compose.yaml                 (exists)  broker, Postgres, Agent Mesh, services, discovery agent
+  agent-mesh/Dockerfile        (exists)  official image plus the two hashed plugin wheels
+  application/Dockerfile       (exists)  Python 3.14.7 workspace image
+  certs/, secrets/             (ignored) written by scripts/broker-secrets.sh
 agent-mesh/                    (exists)  separate non-member uv project
   .python-version              (exists)  Agent Mesh Python 3.13.15 pin
   pyproject.toml               (exists)  the three pinned wheels and this domain's toolchain
@@ -217,16 +219,18 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Pin `solace-agent-mesh==1.28.7` in the isolated Python 3.13.15 `agent-mesh/` project and record the upstream source revision.
 - Pin and hash `sam-event-mesh-gateway==1.1.0` and `sam-event-mesh-tool==0.1.1`; prove those exact independently released wheels are compatible with Agent Mesh 1.28.7 before treating the combination as supported.
 - **Done offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, configuration models, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
-- **Next:** connect the pinned runtime to local Ollama and the Solace Cloud broker without exposing either service publicly or recording credentials.
-- Prove the trial broker identity can publish and subscribe to the required A2A namespace, create or connect to the required endpoints, and satisfy the selected temporary/durable queue, TTL, spool, and ACL policies.
+- **Next:** bring up `deploy/compose.yaml` for the first time — pull the pinned images, generate the per-checkout authority with `just secrets`, confirm the broker's healthcheck command and the Agent Mesh image's plugin compatibility inside the container — then connect the pinned runtime to local Ollama and the container without exposing either service publicly or recording a credential ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+- Provision the per-component identities, ACL profiles, and queues on the container over SEMP and prove them; reproduce the same definitions on the Developer-class Solace Cloud service for the showcase and record the fleet's connection count against that service's limit of 100 ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- Capture redacted Cloud-console evidence for the three showcase surfaces: Broker Manager and Cluster Manager, Event Portal Designer and Catalog, and Event Portal runtime discovery of the container through the Event Management Agent.
 - Run the built-in Orchestrator, one specialized agent, one minimal YAML workflow, and the HTTP/SSE Web UI; prove agent-card discovery, structured workflow invocation, and one A2A delegation in Broker Manager.
 - Configure the thinnest official Event Mesh Gateway and Event Mesh Tool spike: one validated salient CloudEvent becomes one structured A2A task, and one tool request produces one validated, non-actuating command-gateway response.
-- Stop and revise the architecture if the selected Ollama model cannot provide reliable structured output/tool use, the trial broker cannot support the required A2A traffic, or the pinned plugins cannot enforce the domain boundary.
+- Stop and revise the architecture if the selected Ollama model cannot provide reliable structured output/tool use, the container cannot carry the required A2A traffic, or the pinned plugins cannot enforce the domain boundary.
 - **Settled by waiver:** the locked dependency audit ran against the 251-package lock and reports eleven advisories across five packages that Agent Mesh 1.28.7 pins exactly; the `google-adk` override was attempted and is unsatisfiable. Each advisory is recorded with its reachability statement and compensating control as an expiring waiver in `dependency-waivers.toml`, all expiring 2026-09-18, and the accepted risk is carried in [TECH_DEBT.md](../TECH_DEBT.md) ([ADR-0031](adr/0031-reject-the-google-adk-version-override.md)).
 
 ### Phase 1: Foundation
 
-- Create project guidance, implementation plan, changelog, README skeleton, toolchain files, virtual environment, lockfiles, Docker Compose, and CI gates.
+- **Done:** the Docker Compose stack definition, the compose policy gate that holds it at both blocking stages, and the per-checkout certificate authority ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](adr/0046-generated-local-certificate-authority.md)). The stack has not been started yet; its first live run is Phase 0's next step.
+- Create project guidance, implementation plan, changelog, README skeleton, toolchain files, virtual environment, lockfiles, and CI gates.
 - Enforce exactly one ordered Arrange-Act-Assert cycle in every project-owned executable test before the first production behavior lands.
 - Make every active quality gate fail on a missing tool, manifest, lockfile, test, or report; run the same
   full-tree entry points in CI.
@@ -239,7 +243,7 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 - **Done:** the topic grammar, the CloudEvents envelope profile, the v1 JSON Schemas with golden fixtures, and the contract manifest ([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md), [ADR-0037](adr/0037-cloudevents-envelope-profile.md), [ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)).
 - Define delivery semantics, broker identities, ACLs, and queues.
-- Build the Python broker adapter test-first against a local ARM64 broker.
+- Build the Python broker adapter test-first against the PubSub+ container in `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 
 ### Phase 3: Simulator and dashboard baseline
 
@@ -263,11 +267,11 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Configure and evaluate the Mission Response workflow, Mission Coordinator, Evidence Fusion, and three independently deployed edge agents using the pinned Agent Mesh evaluation tooling.
 - Productionize and verify the pinned Event Mesh Gateway, Event Mesh Tool, and deterministic command-gateway boundary.
 - Verify agent discovery, delegation, structured outputs, allowlists, timeouts, and failure behavior against the pinned runtime.
-- Exercise the complete mission against Solace Cloud.
+- Exercise the complete mission against the container, then run the showcase profile against the Solace Cloud service and capture redacted console evidence ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 
 ### Phase 6: Resilience and safety
 
-- Add connectivity loss, durable edge outboxes, guaranteed command handling, retries, proposal-bound approval enforcement, Solace Cloud broker/Agent Mesh/Ollama failure behavior, and replay isolation verification.
+- Add connectivity loss, durable edge outboxes, guaranteed command handling, retries, proposal-bound approval enforcement, broker, Agent Mesh, and Ollama failure behaviour, and replay isolation verification.
 
 ### Phase 7: Release qualification and security
 
@@ -308,12 +312,14 @@ The initial release is ready only when:
 - Setup and recovery instructions work on the reference MacBook from a clean checkout.
 - Local-only operation passes the complete scenario, so no release gate depends on a paid model API.
 - Total paid model spend is within the USD $50 cap, with the spend ledger committed as release evidence.
+- No release gate depends on the Solace Cloud service; the showcase profile is evidence of demonstration, never of correctness ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 
 ## 8. Principal risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
 | Restricted network or cloud outage | Deterministic, clearly labeled replay through the same dashboard |
+| Solace Cloud trial expiry | Ends only the showcase profile; every gated path runs on the container ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
 | Local Ollama contention on the reference MacBook | Bound parallel inference, warm only required models, measure memory pressure, and define deterministic timeouts/abstention |
 | Agent Mesh version drift | Pin release 1.28.7 and its lockfile; upgrade only through compatibility, gateway, A2A, evaluation, and security gates |
 | Event Mesh plugin drift or unsafe settlement defaults | Pin gateway 1.1.0 and tool 0.1.1, validate schemas, configure explicit acknowledgement/failure policies, and test redelivery and ACL denial |

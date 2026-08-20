@@ -15,7 +15,8 @@ pre-commit install --install-hooks
 That installs hooks for six git stages: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, `post-merge`, and `pre-merge-commit`. A bare `pre-commit install` would only wire up `pre-commit` and your commit-message and push checks would silently never run.
 
 Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
-(`brew install graphviz`), and `shellcheck`. Agent Mesh work additionally requires Python 3.13.15. When
+(`brew install graphviz`), and `shellcheck`. Running the stack in `deploy/` additionally needs Docker
+Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
 `apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
 matter. Only isolated third-party Node hooks are provisioned by pre-commit itself.
@@ -47,7 +48,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 
 | Stage | What | Budget |
 | --- | --- | --- |
-| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, related tests | **≤ 60 s** |
+| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
 | `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
@@ -66,6 +67,7 @@ just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures
 just check-complexity  # Ruff, cognitive complexity, and multi-language duplication
 just check-mutation    # independent Tier 1 mutation runs and per-module scoring
+just check-compose     # the deploy/ stack against the compose policy gate
 ```
 
 `just` is a convenience wrapper. The hooks and CI invoke the scripts under [`scripts/`](scripts/) directly, so nothing breaks if you do not have `just` installed.
@@ -143,6 +145,28 @@ exposes, such as two apps with one name; it is not a partial-overlay linter. The
 when every file is valid or no file exists, 1 on any finding, and 2 on a path outside `configs/`.
 A finding names the file, the location, and the rule, and never prints the offending value.
 
+## Local stack
+
+Every component except Ollama runs under Docker Compose from `deploy/compose.yaml`
+([ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)):
+
+```sh
+cp .env.example .env   # then set SESSION_SECRET_KEY; the broker credentials follow provisioning
+just secrets           # per-checkout certificate authority, broker certificate, and passwords
+just up                # broker and Postgres, waiting for both to be healthy
+just ps                # service health
+just logs              # follow the logs
+just down              # stop; volumes are kept
+```
+
+`just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
+the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain
+entrypoints. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
+is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
+`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **Nobody has
+started this stack yet**: the first live run is the next increment, and until it is recorded under
+`release-evidence/` the healthcheck commands and the image-internal details are design, not evidence.
+
 ## Fail-closed gates
 
 Per [ADR-0019](docs/adr/0019-fail-closed-quality-gates.md), a component that has neither a manifest nor
@@ -156,6 +180,13 @@ The Agent Mesh semantic-configuration gate follows the same contract: it is iner
 `agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, `uv`, or validator module before it reads any
 configuration. A green result is offline evidence only; it does not attest PubSub+, Ollama, A2A, or
 plugin behaviour.
+
+The compose policy gate follows the same contract: it is inert while `deploy/` holds no compose file
+or Dockerfile in the tracked-or-unignored listing, and from the first one it fails on a missing
+`.env.example`, `pyproject.toml`, `uv.lock`, `uv`, or gate module before it reads anything. It parses
+files and never runs Docker, so a green result proves the stack's text conforms to
+[ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), not that it runs
+([ADR-0045](docs/adr/0045-fail-closed-compose-policy-gate.md)).
 
 ## Suppressions
 
@@ -196,4 +227,8 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
 - `services/command_gateway` contains no mutation-eligible behavior or co-located tests yet, and neither
   do the Tier 2 members. The mutation and coverage entry points are executable and intentionally fail
   closed until those packages gain tested behavior, so the pre-push tier stays red until they do.
-  `packages/contracts` and `packages/domain` pass both.
+  `packages/contracts` and `packages/domain` pass both; the root tooling member sits below its Tier 2
+  threshold because the mutation, contract, coverage, and import gates predate the per-member rule.
+- The `deploy/` stack is defined and held to its policy gate but has never been started. The broker
+  image's `curl`, the Agent Mesh management-server probe, the Event Management Agent's secret mount,
+  and the `openssl` flags under LibreSSL are confirmed by the first live run, not by any hook.

@@ -10,6 +10,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Docker is the runtime. `deploy/compose.yaml` defines every component except Ollama: the PubSub+
+  Standard 10.26.0 broker container and PostgreSQL 17 in the default profile, Agent Mesh 1.28.7 built
+  on its official image with the two Event Mesh wheels installed by hash under the `mesh` profile, the
+  six application services under an inert `services` profile until they gain entrypoints, and the
+  Event Management Agent under the non-gating `event-portal` profile. Every pulled image is pinned by
+  tag and index digest, every published port binds to `127.0.0.1`, the broker's management ports are
+  never published, secrets are files under the ignored `deploy/secrets/`, and every service declares a
+  healthcheck. Nothing has been started yet; the first live run is the next increment
+  ([ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+- The broker substrate decision the plan had owed since its first revision: the container is the
+  broker for development, integration, continuous integration, acceptance, and release, and the
+  Developer-class Solace Cloud service becomes a non-gating showcase profile selected by environment
+  alone, committed to three console surfaces — Broker Manager and Cluster Manager, Event Portal
+  Designer and Catalog, and Event Portal runtime discovery of the local container. The two open
+  questions about the trial service and the post-trial substrate are settled ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- A fail-closed compose policy gate, `tools/compose_policy_gate.py`, at both blocking stages and in
+  continuous integration. It parses the compose file and the Dockerfiles without running Docker and
+  refuses an unpinned or floating image, a port not bound to loopback, a literal secret or URL
+  userinfo, an undeclared environment reference, a missing healthcheck, a platform override outside
+  the one-entry allowlist, an unknown profile, a broker without its shared memory, file limits,
+  certificate path, or TLS port, an Agent Mesh service left at the image's developer-mode or
+  session-secret defaults, and a Dockerfile whose `FROM` lacks a digest or whose `pip install` lacks
+  `--require-hashes`. The committed stack is proven conformant by a test on every run ([ADR-0045](docs/adr/0045-fail-closed-compose-policy-gate.md)).
+- `scripts/broker-secrets.sh`, which generates a per-checkout EC P-256 certificate authority, the
+  broker's server certificate with subject alternative names for `localhost`, `broker`, and
+  `127.0.0.1`, and the stack's passwords, every private file 0600 and none of it ever tracked, so the
+  `tcps` rule applies to the container unchanged. `just secrets`, `just up`, `just down`, `just logs`,
+  `just ps`, `just showcase`, and `just check-compose` drive the stack and its gate ([ADR-0046](docs/adr/0046-generated-local-certificate-authority.md)).
+
 - The first tested code in `packages/domain`, the Tier 1 domain core, at 100% statement and branch
   coverage with 202/202 mutants killed and no reviewed survivors. `connectivity.py` counts consecutive
   heartbeat intervals into `CONNECTED`, `DEGRADED`, and `OFFLINE`, with the three counts injected and a
@@ -172,6 +201,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Solace Cloud moved from the live broker to a showcase profile, and every document that named it as
+  the broker now names the container: the plan's decision table gains its missing records, Phase 0's
+  next step becomes the stack's first live run, Phase 5 exercises the mission against the container
+  before the showcase, the architecture gains a deployment-layout section and a publication column on
+  the reserved-port table, the testing document's broker-integration class runs on the container, and
+  the operating parameters gain a local-stack table that fills the open image-digest row. ADR-0004's
+  rejected container alternative is superseded for the runtime only; its two verification environments
+  stand ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md), [ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+- `.env.example` is rewritten from the container's point of view with only names the pinned runtime
+  and the official images read, plus a commented showcase block for the ignored `.env.showcase`.
+- `pyyaml` 6.0.3 and its type stubs join the root development group so the compose policy gate can
+  parse YAML under strict mypy with no override.
+
 - Superseded ADR-0030's category- and message-scoped Agent Mesh warning exemptions with ADR-0034's
   source-scoped ones, because the validator is the first owned Python in that domain and ADR-0030
   rested on there being none. The four exemptions cover what they did and now name where the warning
@@ -276,6 +318,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   deselected. It does not; both blocking suites select by resource, not by test class.
 
 ### Security
+
+- Every broker connection in the stack validates a per-checkout certificate authority and the broker's
+  own certificate; no key, certificate, or password is tracked, and the one plaintext path — the Event
+  Management Agent's SEMP connection inside the compose network — is named and never published
+  ([ADR-0046](docs/adr/0046-generated-local-certificate-authority.md)).
 
 - Eleven advisories across five packages are recorded as expiring, reviewed waivers, and the audit
   gate passes honestly rather than by bypass. Every affected package is pinned exactly by Agent Mesh

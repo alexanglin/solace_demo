@@ -1,8 +1,10 @@
 # Threat model
 
-> **Scope:** the initial release — a single-operator local simulation on one workstation, a Solace event
-> broker, local Ollama models, and a public source repository. Managed deployments, multi-tenant
-> operation, and any cloud deployment are out of scope and require their own analysis.
+> **Scope:** the initial release — a single-operator local simulation on one workstation, the PubSub+
+> software event broker container, local Ollama models, and a public source repository. Managed
+> deployments, multi-tenant operation, and any cloud deployment are out of scope and require their own
+> analysis; the Solace Cloud showcase profile in [ADR-0043](../adr/0043-docker-broker-with-solace-cloud-showcase.md)
+> is a demonstration, not a deployment this model covers.
 >
 > **Related:** [../SAFETY.md](../SAFETY.md), [approval-bypass-catalogue.md](approval-bypass-catalogue.md),
 > [../LIMITATIONS.md](../LIMITATIONS.md),
@@ -54,7 +56,12 @@ generated in memory for one API process lifetime and is never persisted or logge
 `.env.example` carries placeholders only; gitleaks runs on the staged diff and again over full history at
 pre-push; CI asserts no credential secrets are configured; recorded fixtures are sanitized by a
 deny-by-default field allowlist with deterministic pseudonymisation of broker host, message-VPN, client,
-and queue names; screenshots are redacted before commit. **Residual risk:** the fixture sanitizer is
+and queue names; screenshots are redacted before commit; the stack's own secrets — the broker admin
+password, the Postgres password, the Event Management Agent's read-only SEMP credential, and the
+per-checkout certificate authority — are files under the ignored `deploy/secrets/` mounted as compose
+secrets rather than passed as environment literals, which the compose policy gate enforces
+([ADR-0045](../adr/0045-fail-closed-compose-policy-gate.md),
+[ADR-0046](../adr/0046-generated-local-certificate-authority.md)). **Residual risk:** the fixture sanitizer is
 project-owned code, and a field added to the envelope without updating the allowlist would leak by
 default — which is why the allowlist denies by default rather than permitting by default.
 

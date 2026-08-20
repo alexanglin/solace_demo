@@ -42,6 +42,7 @@ integer arithmetic; display rounding never changes a verdict.
 | Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON |
 | Directory fan-out | At most 20 files per directory, counted as immediate children only | `tools/directory_fanout_gate.py` over `git ls-files --cached --others --exclude-standard` |
 | Fan-out exemption reason | At least 20 Unicode characters | `directory-fanout.toml` validation |
+| Compose policy | Every pulled image `name:tag@sha256:` with a 64-hex digest; every published port on `127.0.0.1`; secrets by file or indirection; a healthcheck on every service; the broker's `shm_size`, `nofile`, certificate path, and TLS port; `SOLACE_DEV_MODE=false` on Agent Mesh | `tools/compose_policy_gate.py` over `deploy/` compose files and Dockerfiles |
 
 ## Canonical serialization bounds
 
@@ -130,6 +131,29 @@ to it ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)).
 | Consecutive misses to enter `OFFLINE` | 6 (provisional -- confirm in Phase 0) | Consistent with the 6-second offline-detection target above |
 | Consecutive heartbeats to return from `DEGRADED` or `OFFLINE` to `CONNECTED` | 2 (provisional -- confirm in Phase 0) | Prevents flapping on a marginal link |
 
+## Local stack
+
+The runtime layout is in [ARCHITECTURE.md](ARCHITECTURE.md#deployment-layout); the decisions are
+[ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md), [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), and [ADR-0046](adr/0046-generated-local-certificate-authority.md). Every image is pinned by its multi-architecture index digest, verified
+against Docker Hub on 2026-08-20, and the compose policy gate refuses a pull that is not.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Broker image | `solace/solace-pubsub-standard:10.26.0.8799` at `sha256:05f80ec7bd38c7592bebfb88a729b1b61c99fc1553758663f13eac626624698f` | `deploy/compose.yaml`, held by the compose policy gate |
+| Postgres image | `postgres:17.11-trixie` at `sha256:e38411452a464af89e5adadb8d223bf53b898d47d6ef918b2d58c08707350449` | `deploy/compose.yaml` |
+| Agent Mesh base image | `solace/solace-agent-mesh:1.28.7` at `sha256:25dc09b55e8a718e5a690e4abba039cbd032872cd6d4c402b7c69d1dead70255` | `deploy/agent-mesh/Dockerfile` |
+| Application base image | `python:3.14.7-slim-trixie` at `sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4` | `deploy/application/Dockerfile` |
+| Event Management Agent image | `solace/event-management-agent:1.9.9` at `sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b`, `linux/amd64` | `deploy/compose.yaml` |
+| Broker shared memory | 1 GiB | `shm_size`, from Solace's single-node template |
+| Broker open-file limit | 2448 soft, 1048576 hard | `ulimits.nofile`, from Solace's single-node template |
+| Broker connection scaling | 100 connections, the same ceiling as the Developer-class showcase service | `system_scaling_maxconnectioncount` |
+| Broker start period | 90 s before the first healthcheck counts, then 30 probes at 10 s | `healthcheck` in `deploy/compose.yaml` (provisional -- confirm in Phase 0) |
+| Published ports, all on `127.0.0.1` | 55443 SMF over TLS, 1943 SEMP over TLS, 5432 Postgres, 8000 Agent Mesh Web UI, 8080 dashboard API, 8180 Event Management Agent | compose policy gate refuses any other binding |
+| Certificate validity | 365 days for the authority and the broker certificate | `scripts/broker-secrets.sh`; `just rotate-secrets` renews |
+| Generated secret length | 32 random bytes, rendered as 64 hexadecimal characters | `scripts/broker-secrets.sh` |
+| Docker Desktop memory for the full stack | (provisional -- confirm in Phase 0) | Phase 0 resource measurement |
+| Fleet connection count against the Developer-class limit of 100 | (provisional -- confirm in Phase 0) | Phase 0 measurement on the showcase service |
+
 ## Model spend budget
 
 Enforced before each paid call, not reconciled afterwards. A persisted ledger in the durable store records
@@ -174,6 +198,5 @@ preference, and must carry a number before the release run.
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
 | Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
 | SSE per-client buffer bound and droppable-event classes | The soak target, and the rule that audit, approval, and evidence events are never dropped | open |
-| Container image tags and digests for PubSub+ and Postgres | Reproducibility from a clean checkout | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |
