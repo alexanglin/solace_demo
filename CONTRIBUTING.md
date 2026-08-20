@@ -193,7 +193,7 @@ Review every change. Renovate's `pre-commit` manager can raise one reviewable PR
   `MODEL_LOCK_REQUIRED` until the lock representation is decided
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
-- `packages/domain` and `services/command_gateway` contain no mutation-eligible behavior or co-located
-  tests yet, and neither do the Tier 2 members. The mutation and coverage entry points are executable and
-  intentionally fail closed until those packages gain tested behavior, so the pre-push tier stays red
-  until they do. `packages/contracts` is the first member to pass both.
+- `services/command_gateway` contains no mutation-eligible behavior or co-located tests yet, and neither
+  do the Tier 2 members. The mutation and coverage entry points are executable and intentionally fail
+  closed until those packages gain tested behavior, so the pre-push tier stays red until they do.
+  `packages/contracts` and `packages/domain` pass both.

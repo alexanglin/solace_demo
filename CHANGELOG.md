@@ -10,6 +10,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- The first tested code in `packages/domain`, the Tier 1 domain core, at 100% statement and branch
+  coverage with 202/202 mutants killed and no reviewed survivors. `connectivity.py` counts consecutive
+  heartbeat intervals into `CONNECTED`, `DEGRADED`, and `OFFLINE`, with the three counts injected and a
+  miss that never improves the state (ADR-0039). `idempotency.py` judges one producer's sequence against
+  its own high-water mark and denies a repeated approval consumption instead of replaying it.
+  `approvals.py` encodes the ADR-0006 protocol with `EXECUTED` reachable only through a consumption that
+  recomputes the proposal digest through the contracts package and reads a wall clock and a monotonic
+  clock together (ADR-0040). `authority.py` closes the `commandType` set to `assign-sector` and
+  `escalate-rescue` in a deny-by-default table that authorizes an escalation only from a consumed
+  approval (ADR-0041). Catalogue cases B08, B09, B10, B12, B15, B16, B23, and B25 have their domain
+  halves as named tests. The approval time to live is injected with no default; ADR-0042 proposes
+  60 seconds and awaits acceptance.
+
 - A typed builder and parser for the eleven application topic families, `packages/contracts`
   `topics.py`. Every variable level obeys one of four allowlisted rules, so a Solace wildcard, a
   reserved prefix, an empty level, or a separator inside a level is unrepresentable rather than
@@ -236,6 +249,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Fixed
+
+- The import-contract gate and the domain Ruff banned-api list disagreed in both directions: `httpx`
+  was banned only by Ruff, and `litellm` and `solace_agent_mesh` only by the gate. Both now forbid the
+  same eight roots, and a gate test holds the two lists equal.
+
+- `SAFETY.md` wrote the approval protocol as an arrow that read as though four states reach `EXECUTED`
+  and listed a narrower binding than ADR-0006 requires; it now states the seven legal transitions and
+  the full binding. The operator identity is carried as `operatorIdentity` on the wire, because a
+  snake-case key is unrepresentable under the canonical key rule; the Python field keeps its name. The
+  state-machine roster in `ARCHITECTURE.md` and `IMPLEMENTATION_PLAN.md` now matches ADR-0017, and the
+  connectivity row for the recovery count names both impaired states.
 
 - The continuous-integration credential guard asserted that `SOLACE_URL` and `SOLACE_PASSWORD` were
   unset. Neither name is what the runtime reads: the pinned Event Mesh templates use

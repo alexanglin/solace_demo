@@ -119,14 +119,16 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 The heartbeat is a dedicated liveness signal, not an inference from the telemetry stream: routine telemetry
 uses direct delivery and may be dropped under congestion, so absence of telemetry is not evidence of
 absence of the drone. Transitions are counted in consecutive missed heartbeat intervals rather than as a
-wall-clock gap, which gives hysteresis and makes the behaviour reproducible under a deterministic clock.
+wall-clock gap, which gives hysteresis and makes the behaviour reproducible under a deterministic clock. The
+healthy state is `CONNECTED` and every drone starts there; one recovery count returns both impaired states
+to it ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)).
 
 | Parameter | Value | Notes |
 | --- | --- | --- |
 | Heartbeat interval | 1 s (provisional -- confirm in Phase 0) | Matches the telemetry rate so no extra timer is needed |
 | Consecutive misses to enter `DEGRADED` | 3 (provisional -- confirm in Phase 0) | |
 | Consecutive misses to enter `OFFLINE` | 6 (provisional -- confirm in Phase 0) | Consistent with the 6-second offline-detection target above |
-| Consecutive heartbeats to leave `OFFLINE` | 2 (provisional -- confirm in Phase 0) | Prevents flapping on a marginal link |
+| Consecutive heartbeats to return from `DEGRADED` or `OFFLINE` to `CONNECTED` | 2 (provisional -- confirm in Phase 0) | Prevents flapping on a marginal link |
 
 ## Model spend budget
 
@@ -167,7 +169,7 @@ preference, and must carry a number before the release run.
 
 | Parameter | Required by | Status |
 | --- | --- | --- |
-| Approval time-to-live | [ADR-0006](adr/0006-proposal-bound-single-use-approvals.md), which requires an expiry window to be "chosen and justified" | open |
+| Approval time-to-live | [ADR-0006](adr/0006-proposal-bound-single-use-approvals.md), which requires an expiry window to be "chosen and justified" | open; [ADR-0042](adr/0042-approval-time-to-live.md) proposes 60 seconds and awaits acceptance; `packages/domain` takes the value as an injected parameter with no default |
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
 | Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |

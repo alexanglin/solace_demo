@@ -101,9 +101,10 @@ uses.
 
 The pre-push tier does not pass on `main`, and this is intended rather than broken. Coverage is
 enforced per workspace member with no vacuous pass, so a member holding only a docstring fails
-rather than reporting success. The mutation gate fails at preflight for the two tier-one members
-that have no co-located tests yet. Both clear as those members gain tested behaviour; neither is a
-defect in the gates.
+rather than reporting success. The mutation gate fails at preflight for `services/command_gateway`,
+the one tier-one member that has no co-located tests yet; `packages/contracts` and `packages/domain`
+pass both gates. The remaining lines clear as those members gain tested behaviour; none is a defect
+in the gates.
 
 ## 5. Owed before the first Agent Mesh configuration
 

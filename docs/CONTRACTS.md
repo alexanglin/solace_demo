@@ -78,7 +78,7 @@ is the only producer and parser of these topics:
 | Rule | Levels | Form |
 | --- | --- | --- |
 | IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
-| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; the sets stay open until the domain modules close them |
+| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)); `eventType`, `proposalType`, `recordType`, and `operation` stay open until the domain modules that define them land |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
@@ -129,7 +129,8 @@ The three state-changing endpoints — scenario start, scenario reset, and missi
 current API process's credential as `Authorization: Bearer <credential>`. The credential is generated anew
 for every API process lifetime, is never persisted or logged, and is not accepted from a cookie, query
 parameter, request body, or URL. For an approval, successful validation of that bearer is the sole source
-of the non-secret `operator_identity`; a body field cannot supply or override it.
+of the non-secret operator identity, carried as `operatorIdentity` under the canonical key rule below; a body
+field cannot supply or override it.
 
 Browser requests to those state-changing endpoints must also carry an `Origin` whose parsed scheme, host,
 and port exactly match the configured dashboard origin. Wildcard, `null`, suffix, and substring matches
@@ -209,8 +210,8 @@ exactly one reason. `schemas/contract-manifest.toml` registers every schema and 
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
 - Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter.
 - Retries reuse the original command ID.
-- Lost connectivity changes a drone to `DEGRADED`, then `OFFLINE`, on consecutive missed heartbeats. The heartbeat interval and the two miss counts are in [operating-parameters.md](operating-parameters.md#connectivity-detection).
+- A drone is `CONNECTED` while heartbeats arrive; consecutive missed heartbeat intervals change it to `DEGRADED`, then `OFFLINE`, and the configured count of consecutive heartbeats returns either impaired state to `CONNECTED` ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)). The heartbeat interval and the three counts are in [operating-parameters.md](operating-parameters.md#connectivity-detection).
 - A reconnecting drone reconciles commands and reports its last acknowledged sequence.
 - Model timeouts, invalid JSON, or schema failures create observable failure events and an abstain/manual-review result in live simulation. Recorded results are available only in isolated replay mode.
 - Agent Mesh or Ollama failure prevents new agent recommendations but does not stop telemetry, the dashboard, operator control, or replay.
-- Rescue escalation cannot occur without atomically consuming an unexpired, single-use approval matching the exact mission ID, proposal ID, proposal digest/version, and action parameters.
+- Rescue escalation cannot occur without atomically consuming an unexpired, single-use approval whose mission ID and proposal ID match and whose recorded digest equals the digest recomputed over the exact action parameters, score version included, that are about to be published ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)).

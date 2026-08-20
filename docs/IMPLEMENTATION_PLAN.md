@@ -159,8 +159,8 @@ packages/                      (scaffold) five typed library package shells
   broker/
   contracts/                   (exists)  canonical serialization, digest, topic grammar, envelope profile
     tests/                     (exists)  member-local mutation tests
-  domain/
-    tests/                               member-local mutation tests
+  domain/                      (exists)  connectivity, idempotency, approvals, command authority
+    tests/                     (exists)  member-local mutation tests
   store/
   observability/
 migrations/                              Alembic revisions for the durable store
@@ -243,8 +243,14 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 ### Phase 3: Simulator and dashboard baseline
 
-- Implement Tier 1 fleet and scenario state machines, then drive them through the Tier 2 fleet-simulator
-  adapter.
+- **Done:** the drone connectivity machine ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)),
+  the producer-scoped sequence and known-identifier rules, the approval record with dual-clock consumption
+  ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)), and the deny-by-default
+  command-authority table ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)) in
+  `packages/domain`.
+- Implement the remaining Tier 1 domain state machines
+  [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names — mission, sector, command, and evidence
+  lifecycles — then drive them through the Tier 2 fleet-simulator adapter.
 - Implement FastAPI, SSE, the initial map, fleet status, timeline, and record/replay path.
 
 ### Phase 4: Edge intelligence

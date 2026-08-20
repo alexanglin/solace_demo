@@ -29,20 +29,20 @@ requires an ADR. `Status` is the state of the test, not of the threat.
 | # | Attempt | Required outcome | Status |
 | --- | --- | --- | --- |
 | B07 | Two concurrent consumptions of the same approval | Exactly one succeeds; the other is denied. Asserted under real concurrency, not sequentially | to build |
-| B08 | Consume an approval that expired between validation and publication | Refused; expiry is evaluated inside the same transaction as consumption | to build |
-| B09 | Consume with the system clock moved backwards | Refused; expiry does not rely on a mutable wall clock alone | to build |
-| B10 | Approve a proposal, then supersede it, then consume | Refused; a superseded proposal is not approvable | to build |
+| B08 | Consume an approval that expired between validation and publication | Refused; expiry is evaluated inside the same transaction as consumption | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b08_…`); store, gateway, and HTTP halves to build |
+| B09 | Consume with the system clock moved backwards | Refused; expiry does not rely on a mutable wall clock alone | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b09_…`); store, gateway, and HTTP halves to build |
+| B10 | Approve a proposal, then supersede it, then consume | Refused; a superseded proposal is not approvable | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b10_…`); store, gateway, and HTTP halves to build |
 | B11 | Kill the process mid-consumption, restart, retry | No duplicate dispatch and no lost approval. Backs the RPO-0 target | to build |
 
 ## Digest and parameter binding
 
 | # | Attempt | Required outcome | Status |
 | --- | --- | --- | --- |
-| B12 | Alter an action parameter after approval, keeping the proposal ID | Refused on digest mismatch | to build |
+| B12 | Alter an action parameter after approval, keeping the proposal ID | Refused on digest mismatch | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b12_…`); store, gateway, and HTTP halves to build |
 | B13 | Add a field to the proposal outside the digest's covered field set | Impossible: the proposal schema sets `additionalProperties: false` | to build |
 | B14 | Exploit alternate coordinate representations or float formatting to alias two different coordinates before hashing | Impossible: no floating-point value is representable in a digest-covered payload and coordinates are integer microdegrees, so distinct coordinates cannot share a canonical form. A real number at the boundary is rejected, never coerced ([ADR-0027](../adr/0027-integer-only-canonical-serialization.md), [CONTRACTS.md](../CONTRACTS.md#canonical-serialization)) | to build |
-| B15 | Present an approval for mission A against a proposal in mission B | Refused; the binding includes the mission ID | to build |
-| B16 | Present an approval whose `scoreVersion` differs from the candidate's | Refused; the score version is inside the digest | to build |
+| B15 | Present an approval for mission A against a proposal in mission B | Refused; the binding includes the mission ID | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b15_…`); store, gateway, and HTTP halves to build |
+| B16 | Present an approval whose `scoreVersion` differs from the candidate's | Refused; the score version is inside the digest | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b16_…`); store, gateway, and HTTP halves to build |
 
 ## Authority and identity
 
@@ -52,16 +52,16 @@ requires an ADR. `Status` is the state of the test, not of the threat.
 | B18 | Publish to a command topic using the Event Mesh Tool identity | Denied by ACL; the tool may reach only command-gateway request topics | to build |
 | B19 | Publish using the recorder or dashboard identity | Denied by ACL | to build |
 | B20 | Drive an escalation from the Agent Mesh Web UI on loopback `:8000` | No effect; that surface cannot dispatch or approve | to build |
-| B21 | Reach a state-changing endpoint without the current runtime's bearer, with a prior runtime's bearer, or with a credential outside the authorization header | Refused; for approval, the current bearer is the sole source of `operator_identity` ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) | to build |
+| B21 | Reach a state-changing endpoint without the current runtime's bearer, with a prior runtime's bearer, or with a credential outside the authorization header | Refused; for approval, the current bearer is the sole source of the operator identity (`operatorIdentity` on the wire) ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) | to build |
 | B22 | Reach any local API endpoint from a rebound DNS name resolving to loopback | Refused by the exact Host allowlist on every request, which an Origin check alone does not stop ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) | to build |
-| B23 | Escalate an action type absent from the command-authority table | Refused; the table is deny-by-default | to build |
+| B23 | Escalate an action type absent from the command-authority table | Refused; the table is deny-by-default | domain rule tested (`packages/domain/tests/test_authority.py`, `test_b23_…`); store, gateway, and HTTP halves to build |
 | B24 | Write an `APPROVED` row directly into the durable store, then dispatch | Detectable in the audit trail; the state machine is not the only guard | to build |
 
 ## Model and ingress influence
 
 | # | Attempt | Required outcome | Status |
 | --- | --- | --- | --- |
-| B25 | Model output that asserts it is already approved, or emits an approval token | No effect; approval is never derived from model output | to build |
+| B25 | Model output that asserts it is already approved, or emits an approval token | No effect; approval is never derived from model output | domain rule tested (`packages/domain/tests/test_approvals.py`, `test_b25_…`); store, gateway, and HTTP halves to build |
 | B26 | Prompt injection via sensor text aimed at triggering escalation | No effect; the model has no dispatch authority | to build |
 | B27 | Prompt injection rendered **into an image** the vision agent reads | No effect; same authority boundary. Requires an adversarial image in the evaluation set | to build |
 | B28 | Forge a salient CloudEvent into the Event Mesh Gateway to fabricate a proposal | Proposal may be created but is not approved; escalation still blocked | to build |
