@@ -34,6 +34,7 @@ class ComponentActivationTests(QualityGateTestCase):
         source.parent.mkdir(parents=True)
         source.write_text("VALUE = 1\n", encoding="utf-8")
         hooks = (
+            "agent-mesh-test-full.sh",
             "bandit-full.sh",
             "check-locks.sh",
             "dependency-audit.sh",

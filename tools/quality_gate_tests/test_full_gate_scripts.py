@@ -9,6 +9,7 @@ class FullGateScriptTests(QualityGateTestCase):
     def test_full_gate_hooks_use_fail_closed_project_scripts(self) -> None:
         # Arrange
         expected_entries = {
+            "agent-mesh-test-full": "scripts/hooks/agent-mesh-test-full.sh",
             "bandit-full": "scripts/hooks/bandit-full.sh",
             "dashboard-build": "scripts/hooks/dashboard-build.sh",
             "dashboard-test-full": "scripts/hooks/dashboard-test-full.sh",
@@ -63,6 +64,7 @@ class FullGateScriptTests(QualityGateTestCase):
     def test_full_gate_scripts_are_inert_before_their_component_exists(self) -> None:
         # Arrange
         hook_names = (
+            "agent-mesh-test-full.sh",
             "bandit-full.sh",
             "dependency-audit.sh",
             "python-quality-full.sh",

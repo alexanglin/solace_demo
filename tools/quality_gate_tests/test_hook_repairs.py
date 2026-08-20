@@ -130,6 +130,7 @@ class HookRepairTests(QualityGateTestCase):
     def test_pre_push_configuration_contains_every_declared_gate(self) -> None:
         # Arrange
         required_hook_ids = {
+            "agent-mesh-test-full",
             "bandit-full",
             "commit-range-whitespace",
             "dashboard-build",
