@@ -1,0 +1,232 @@
+# The single definition of the local runtime (docs/adr/0044). Every component except Ollama
+# runs from this file, and the compose policy gate (docs/adr/0045) holds it to the policy on
+# every commit. Run `just secrets` once, then `just up`.
+#
+# Profiles:
+#   default       broker and postgres, the only services with behaviour today
+#   mesh          Agent Mesh from its official image; inert until agent-mesh/configs/ holds
+#                 the first configuration, which is when it moves to the default profile
+#   services      the application services; each command imports its package and exits,
+#                 because no entrypoint exists yet; documented, not live behaviour
+#   event-portal  the Event Management Agent for Event Portal runtime discovery; an amd64
+#                 image run under emulation; never gating (docs/adr/0043)
+name: aerial-rescue-mesh
+
+x-trust-store: &trust-store ./certs:/etc/aerial-rescue/certs:ro
+
+x-application: &application
+  build:
+    context: ..
+    dockerfile: deploy/application/Dockerfile
+  image: aerial-rescue/application:0.0.0
+  profiles: ["services"]
+  environment:
+    SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
+    SOLACE_BROKER_USERNAME: ${SOLACE_BROKER_USERNAME}
+    SOLACE_BROKER_PASSWORD: ${SOLACE_BROKER_PASSWORD}
+    SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
+    TRUST_STORE: ${TRUST_STORE}
+    OLLAMA_HOST: ${OLLAMA_HOST}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_DB: ${POSTGRES_DB}
+    POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+  secrets:
+    - postgres-password
+  volumes:
+    - *trust-store
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    broker:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  # Replaced by a real readiness probe when the service gains an entrypoint.
+  healthcheck:
+    test: ["CMD", "/app/.venv/bin/python", "-c", "import aerial_rescue_contracts"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+  restart: "no"
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  broker:
+    image: solace/solace-pubsub-standard:10.26.0.8799@sha256:05f80ec7bd38c7592bebfb88a729b1b61c99fc1553758663f13eac626624698f
+    hostname: broker
+    # Solace's single-node template fixes the shared memory, the file limits, and the
+    # 100-connection scaling tier; the admin password and the server certificate are
+    # compose secrets written by `just secrets` (docs/adr/0046).
+    shm_size: 1g
+    ulimits:
+      core: -1
+      nofile:
+        soft: 2448
+        hard: 1048576
+    environment:
+      username_admin_globalaccesslevel: admin
+      username_admin_passwordfilepath: /run/secrets/broker-admin-password
+      tls_servercertificate_filepath: /run/secrets/broker-server.pem
+      system_scaling_maxconnectioncount: "100"
+    secrets:
+      - broker-admin-password
+      - source: broker-server-pem
+        target: broker-server.pem
+    # SMF over TLS and SEMP over TLS only; 8080, 8000, 55555, and every other default stay
+    # unpublished, which is how the reserved-port collisions are removed (docs/adr/0044).
+    ports:
+      - "127.0.0.1:55443:55443"
+      - "127.0.0.1:1943:1943"
+    volumes:
+      - broker-storage:/var/lib/solace
+    healthcheck:
+      # /health-check/direct-active is the standalone endpoint. Whether the image carries
+      # curl is confirmed by the first live run; the documented fallback is a /dev/tcp probe.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5550/health-check/direct-active >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  postgres:
+    image: postgres:17.11-trixie@sha256:e38411452a464af89e5adadb8d223bf53b898d47d6ef918b2d58c08707350449
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    secrets:
+      - postgres-password
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  agent-mesh:
+    build:
+      context: ./agent-mesh
+      dockerfile: Dockerfile
+    image: aerial-rescue/agent-mesh:1.28.7
+    profiles: ["mesh"]
+    environment:
+      # The image defaults developer mode on, binds the Web UI to every interface inside
+      # the container, and ships a placeholder session secret; each is overridden here.
+      # Loopback-only is enforced by the host binding below, not inside the container.
+      SOLACE_DEV_MODE: "false"
+      SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
+      SOLACE_BROKER_USERNAME: ${SOLACE_BROKER_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_BROKER_PASSWORD}
+      SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
+      TRUST_STORE: ${TRUST_STORE}
+      USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}
+      NAMESPACE: ${NAMESPACE}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
+      FASTAPI_HOST: 0.0.0.0
+      FASTAPI_PORT: "8000"
+      LLM_SERVICE_ENDPOINT: ${LLM_SERVICE_ENDPOINT}
+      LLM_SERVICE_GENERAL_MODEL_NAME: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+      LLM_SERVICE_API_KEY: ${LLM_SERVICE_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OLLAMA_HOST: ${OLLAMA_HOST}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../agent-mesh/configs:/app/configs:ro
+      - *trust-store
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      broker:
+        condition: service_healthy
+    healthcheck:
+      # The management server's readiness probe; the first configuration enables it.
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  dashboard-api:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_dashboard_api"]
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  fleet-simulator:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_fleet_simulator"]
+
+  command-gateway:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_command_gateway"]
+
+  scenario-service:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_scenario_service"]
+
+  evidence-service:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_evidence_service"]
+
+  recorder:
+    <<: *application
+    command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_recorder"]
+
+  event-management-agent:
+    image: solace/event-management-agent:1.9.9@sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b
+    # Published for amd64 only; Docker Desktop runs it under emulation (docs/adr/0044).
+    platform: linux/amd64
+    profiles: ["event-portal"]
+    environment:
+      # The names the agent's connection file reads. The connection file itself is
+      # generated in the Solace Cloud console and kept as an ignored secret.
+      SOLACE_SEMP_USERNAME: ${SOLACE_SEMP_USERNAME}
+      SOLACE_SEMP_PASSWORD: ${SOLACE_SEMP_PASSWORD}
+      SOLACE_VPN_NAME: ${SOLACE_VPN_NAME}
+    secrets:
+      - source: ema-connection-file
+        target: /config/ema.yml
+    ports:
+      - "127.0.0.1:8180:8180"
+    depends_on:
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8180"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  broker-admin-password:
+    file: ./secrets/broker-admin-password
+  broker-server-pem:
+    file: ./secrets/broker-server.pem
+  postgres-password:
+    file: ./secrets/postgres-password
+  ema-connection-file:
+    file: ./secrets/ema-connection-file.yml
+
+volumes:
+  broker-storage: {}
+  postgres-data: {}

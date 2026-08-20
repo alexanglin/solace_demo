@@ -47,8 +47,9 @@ LOOPBACK_SHORT_PORT_PATTERN: Final = re.compile(
     r"^127\.0\.0\.1:(\d{1,5}):(\d{1,5})(?:/(?:tcp|udp))?$"
 )
 PIP_INSTALL_PATTERN: Final = re.compile(
-    r"(?:^|\s)(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install(?:\s|$)"
+    r"(?:^|[\s/])(?:pip3?|python3?(?:\.\d+)?\s+-m\s+pip|uv\s+pip)\s+install(?:\s|$)"
 )
+
 ASSIGNMENT_PATTERN: Final = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=", re.MULTILINE)
 DECLARATION_PATTERN: Final = re.compile(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=")
 

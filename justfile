@@ -53,6 +53,28 @@ secrets:
 rotate-secrets:
     scripts/broker-secrets.sh --rotate
 
+# Start the broker and Postgres and wait for both to be healthy. Add a profile explicitly:
+# `just up --profile mesh`, `--profile services`, or `--profile event-portal`.
+up *ARGS:
+    docker compose --env-file .env -f deploy/compose.yaml {{ARGS}} up --detach --wait
+
+# Stop the stack; volumes are kept.
+down:
+    docker compose --env-file .env -f deploy/compose.yaml down
+
+# Follow the stack's logs.
+logs:
+    docker compose --env-file .env -f deploy/compose.yaml logs --follow --tail 200
+
+# Show the stack's services and health.
+ps:
+    docker compose --env-file .env -f deploy/compose.yaml ps
+
+# Point the same stack at the Solace Cloud showcase service (docs/adr/0043). `.env.showcase`
+# is an ignored operator-created copy of .env.example carrying the service's values.
+showcase *ARGS:
+    docker compose --env-file .env.showcase -f deploy/compose.yaml {{ARGS}} up --detach --wait
+
 # Apply every automatic fix. The only thing here that modifies files.
 fix:
     scripts/fix.sh

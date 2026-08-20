@@ -1,0 +1,30 @@
+# Build context for deploy/application/Dockerfile is the repository root. Keep secrets,
+# environments, caches, generated artifacts, and the separate Agent Mesh project out.
+.git
+.venv
+**/.venv
+agent-mesh
+apps
+dist
+docs
+release-evidence
+fixtures
+node_modules
+.cache
+.claude
+.sam
+.hypothesis
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.complexipy_cache
+**/__pycache__
+**/mutants
+.coverage
+htmlcov
+.env
+.env.*
+deploy/certs
+deploy/secrets
+*.pem
+*.key

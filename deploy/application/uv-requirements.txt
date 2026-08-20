@@ -1,0 +1,5 @@
+# uv 0.12.5, the version docs/adr/0020 pins, as hashed PyPI artifacts for the arm64 image.
+uv==0.12.5 \
+    --hash=sha256:58abfb0f658b39a834307a11223bc170294ea214263b4c99ecc7663720d43544 \
+    --hash=sha256:2d65b7b3bc3fd28678f62aa7fb5d90f106ad9782c1354af60b6cecdf9ea9ecd9 \
+    --hash=sha256:442a21d181faae21742aaaf6d2091a0d27755d3eac344061a9a00c90169b7524

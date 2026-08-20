@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final
 
 from tools import compose_policy_gate
-from tools.quality_gate_tests.support import QualityGateTestCase
+from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
 DIGEST: Final = "sha256:" + "0" * 64
 IMAGE: Final = f"example/service:1.0.0@{DIGEST}"
@@ -1309,6 +1309,28 @@ class CommandLineTests(QualityGateTestCase):
         # Assert
         self.assertEqual(sorted(set(findings)), findings)
         self.assertEqual(4, len(findings))
+
+
+class RepositoryComposeTests(QualityGateTestCase):
+    def test_the_committed_stack_satisfies_the_policy(self) -> None:
+        # Arrange
+        deploy = REPOSITORY_ROOT / "deploy"
+        composes = sorted(str(path) for path in deploy.glob("**/compose*.y*ml"))
+        dockerfiles = sorted(str(path) for path in deploy.glob("**/Dockerfile*"))
+        arguments = ["--env-template", str(REPOSITORY_ROOT / ".env.example")]
+        for path in composes:
+            arguments.extend(["--compose", path])
+        for path in dockerfiles:
+            arguments.extend(["--dockerfile", path])
+        captured = io.StringIO()
+
+        # Act
+        with contextlib.redirect_stderr(captured):
+            status = compose_policy_gate.main(arguments)
+
+        # Assert
+        self.assertEqual(0, status, captured.getvalue())
+        self.assertEqual("", captured.getvalue())
 
 
 if __name__ == "__main__":

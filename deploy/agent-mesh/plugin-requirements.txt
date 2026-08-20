@@ -1,0 +1,6 @@
+# The two Event Mesh plugins the official Agent Mesh image omits (docs/adr/0044). Versions
+# and hashes are copied from agent-mesh/uv.lock; pip refuses any wheel that does not match.
+sam-event-mesh-gateway==1.1.0 \
+    --hash=sha256:a19d173d8b897d64189b1bf9fd423d5607fdd6aefb3848e7dbfde0c78eb7aa86
+sam-event-mesh-tool==0.1.1 \
+    --hash=sha256:2c5730e2dc0ff309995b6e4e98c9480b18ff178f7ca9542f5b5c2c4ff328629d

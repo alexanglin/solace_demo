@@ -204,6 +204,18 @@ class DockerfilePipTests(QualityGateTestCase):
         # Assert
         self.assertEqual([], issues)
 
+    def test_a_path_qualified_pip_install_without_require_hashes_fails(self) -> None:
+        # Arrange
+        text = PINNED_FROM + (
+            "RUN /opt/venv/bin/pip install --no-deps --target /opt/plugins -r r.txt\n"
+        )
+
+        # Act
+        issues = findings(text)
+
+        # Assert
+        self.assertIn(f"{PATH}:2: pip install must pass --require-hashes", issues)
+
 
 class DockerfileVariableTests(QualityGateTestCase):
     def test_a_variable_declared_by_arg_passes(self) -> None:
