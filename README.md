@@ -108,6 +108,7 @@ disagree.
 | Any number, and the instrument that measures it | [`docs/operating-parameters.md`](docs/operating-parameters.md) |
 | What is and is not modelled | [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) |
 | How to work in this repository | [`AGENTS.md`](AGENTS.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Risks this project has measured and accepted | [`TECH_DEBT.md`](TECH_DEBT.md) |
 
 ## Getting started
 
