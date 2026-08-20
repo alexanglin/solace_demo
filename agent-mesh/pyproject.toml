@@ -116,7 +116,10 @@ filterwarnings = [
     # solace-pubsubplus, reached transitively through solace-ai-connector, carries invalid
     # escape sequences in its docstrings. Escalated, this becomes a SyntaxError at import
     # and the verdict then depends on whether the bytecode cache is warm (ADR-0028).
-    "ignore:.*invalid escape sequence.*:SyntaxWarning:solace\\..*",
+    # A compile-time SyntaxWarning is attributed to the source path minus ".py", not to a
+    # dotted module name, so the expression matches the installed solace/ package directory
+    # under site-packages and nothing under this repository.
+    "ignore:.*invalid escape sequence.*:SyntaxWarning:.*[/\\\\]site-packages[/\\\\]solace[/\\\\].*",
     # Agent Mesh 1.28.7 defines models with Pydantic's class-based Config against the
     # pydantic 2.12.5 it pins itself. Removed in Pydantic V3, so this bounds how long the
     # current pin stays viable. Eleven occurrences across four of its modules.
