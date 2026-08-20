@@ -1,6 +1,6 @@
 # ADR-0030: Contain the pinned Agent Mesh runtime's upstream warnings
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0034](0034-scope-agent-mesh-warning-filters-to-upstream-modules.md)
 - **Date:** 2026-08-19
 - **Deciders:** Alex Anglin
 - **Supersedes:** none

@@ -26,9 +26,15 @@ dependencies = [
     "sam-event-mesh-tool==0.1.1",
 ]
 
+[tool.aerial-rescue]
+# The semantic configuration validator is owned repository tooling. It carries the same
+# tier as the root tooling package, while its full-suite gate deliberately enforces 100%
+# statement and branch coverage because the module is a safety-relevant policy boundary.
+risk-tier = 2
+
 [tool.uv]
-# No owned package here yet. Configuration and plugins arrive in a later phase; until
-# then this project exists to pin and verify the upstream runtime.
+# Owned tooling is executed directly from this tree; runtime plugins arrive later and no
+# distributable Agent Mesh package is built yet.
 package = false
 required-version = "==0.12.5"
 # The same two targets the root workspace resolves for, per ADR-0010. Without this, uv
@@ -45,8 +51,11 @@ environments = [
 # workspace so the two domains cannot drift into different tool behaviour.
 dev = [
     "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "coverage==7.15.4",
     "mypy==1.19.0",
     "ruff==0.16.3",
+    "bandit==1.9.4",
     "pip-audit==2.10.1",
 ]
 
@@ -98,29 +107,28 @@ addopts = [
     "-ra",
 ]
 xfail_strict = true
-# Every warning is an error, with two measured exemptions for the pinned upstream. This
-# project contains no owned production source, so neither can conceal a defect written
-# here; both are recorded as Phase 0 findings and both are revisited when owned code lands
-# under agent-mesh/plugins/
-# (docs/adr/0030-contain-upstream-warnings-in-the-agent-mesh-domain.md).
+# Every warning is an error. The measured exemptions are restricted by originating module
+# to the exact pinned upstream packages, so they cannot conceal warnings from owned tools
+# or future plugins
+# (docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md).
 filterwarnings = [
     "error",
     # solace-pubsubplus, reached transitively through solace-ai-connector, carries invalid
     # escape sequences in its docstrings. Escalated, this becomes a SyntaxError at import
     # and the verdict then depends on whether the bytecode cache is warm (ADR-0028).
-    "ignore:.*invalid escape sequence.*:SyntaxWarning",
+    "ignore:.*invalid escape sequence.*:SyntaxWarning:solace\\..*",
     # Agent Mesh 1.28.7 defines models with Pydantic's class-based Config against the
     # pydantic 2.12.5 it pins itself. Removed in Pydantic V3, so this bounds how long the
     # current pin stays viable. Eleven occurrences across four of its modules.
-    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20:solace_agent_mesh\\..*",
     # The Solace client evaluates datetime.utcnow() as a default argument value, so any
     # import of it raises this. Removed in a future Python.
-    "ignore:.*datetime.datetime.utcnow.*:DeprecationWarning",
+    "ignore:.*datetime.datetime.utcnow.*:DeprecationWarning:solace\\..*",
     # pydub, reached through the markitdown[all] extra Agent Mesh pins, warns when neither
     # ffmpeg nor avconv is on PATH. This one is not a code defect: it makes the verdict
     # depend on unrelated system packages, so the same commit would pass on a host with
     # media tooling and fail on one without. Nothing here converts audio.
-    "ignore:.*ffmpeg or avconv.*:RuntimeWarning",
+    "ignore:.*ffmpeg or avconv.*:RuntimeWarning:pydub\\..*",
 ]
 markers = [
     "phase0: a Phase 0 feasibility gate probe",

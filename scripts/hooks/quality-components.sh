@@ -18,7 +18,12 @@ quality_root_python_source_present() {
 }
 
 quality_agent_python_source_present() {
-	quality_tree_has_files agent-mesh/plugins -name '*.py' -o -name '*.pyi'
+	for root in agent-mesh/plugins agent-mesh/tools; do
+		if quality_tree_has_files "$root" -name '*.py' -o -name '*.pyi'; then
+			return 0
+		fi
+	done
+	return 1
 }
 
 quality_dashboard_source_present() {

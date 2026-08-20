@@ -38,4 +38,8 @@ command -v uv >/dev/null 2>&1 || {
 cd agent-mesh
 exec uv run --frozen pytest \
 	-m 'not broker and not ollama and not paid and not docker and not net' \
-	-q --no-header
+	-q --no-header \
+	--cov=tools.agent_mesh_config_validator \
+	--cov-branch \
+	--cov-report=term-missing \
+	--cov-fail-under=100

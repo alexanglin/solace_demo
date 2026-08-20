@@ -45,9 +45,12 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "bandit" },
+    { name = "coverage" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pytest" },
+    { name = "pytest-cov" },
     { name = "ruff" },
 ]
 
@@ -60,9 +63,12 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "bandit", specifier = "==1.9.4" },
+    { name = "coverage", specifier = "==7.15.4" },
     { name = "mypy", specifier = "==1.19.0" },
     { name = "pip-audit", specifier = "==2.10.1" },
     { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
     { name = "ruff", specifier = "==0.16.3" },
 ]
 
@@ -292,6 +298,20 @@ wheels = [
 ]
 
 [[package]]
+name = "bandit"
+version = "1.9.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "stevedore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/aa/c3/0cb80dfe0f3076e5da7e4c5ad8e57bac6ac357ff4a6406205501cade4965/bandit-1.9.4.tar.gz", hash = "sha256:b589e5de2afe70bd4d53fa0c1da6199f4085af666fde00e8a034f152a52cd628", size = 4242677, upload-time = "2026-02-25T06:44:15.503Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/a4/a26d5b25671d27e03afb5401a0be5899d94ff8fab6a698b1ac5be3ec29ef/bandit-1.9.4-py3-none-any.whl", hash = "sha256:f89ffa663767f5a0585ea075f01020207e966a9c0f2b9ef56a57c7963a3f6f8e", size = 134741, upload-time = "2026-02-25T06:44:13.694Z" },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.13.5"
 source = { registry = "https://pypi.org/simple" }
@@ -467,6 +487,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "coverage"
+version = "7.15.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/c3/4f2195f512fb172aa425a8803a874b2baa9ba7f80ff7b6080998761fc701/coverage-7.15.4.tar.gz", hash = "sha256:0548198fff07ccf4faf469520bce1c2eceb1ce3e62891921138dec10907f9d00", size = 936952, upload-time = "2026-08-06T13:50:24.442Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/f9/4dcf700137e8af550670f4d74d1b63828ce93e1e2b05e5f10710eb2ea987/coverage-7.15.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:3ff205ab5e3ecc670f6a4dd19d9cbf12ede53dd41cfc1e15716ec961ea6d314e", size = 222936, upload-time = "2026-08-06T13:48:02.391Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/80/d34e13fb4b293cbdb9665838cf5522077b8ad14ef947550631a4bced36a5/coverage-7.15.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:349062d66f00b40fa2c1c222438bad25fabf755631b5d82937fe985c8008615c", size = 257759, upload-time = "2026-08-06T13:48:08.036Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/e2/785077c230c157243eb5aa9a26c3be260ecd02001bead54a3cada3df8e03/coverage-7.15.4-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:2e179f19bfe1d31f8eeeaa12990194d761c4f62f0759661000bca6cd8729f40b", size = 255891, upload-time = "2026-08-06T13:48:13.209Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/d9/e70c286c979378f061d8266e279b686ab0b0b688e1fe0af864684f23a77d/coverage-7.15.4-py3-none-any.whl", hash = "sha256:964730a1e9de9c0cf11be6a1a3c79ce419c34882842abd256086ba4698705e84", size = 214332, upload-time = "2026-08-06T13:50:22.192Z" },
 ]
 
 [[package]]
@@ -2491,6 +2523,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-cov"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "coverage" },
+    { name = "pluggy" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b1/51/a849f96e117386044471c8ec2bd6cfebacda285da9525c9106aeb28da671/pytest_cov-7.1.0.tar.gz", hash = "sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2", size = 55592, upload-time = "2026-03-21T20:11:16.284Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl", hash = "sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678", size = 22876, upload-time = "2026-03-21T20:11:14.438Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -3020,6 +3066,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1b/3f/507c21db33b66fb027a332f2cb3abbbe924cc3a79ced12f01ed8645955c9/starlette-0.49.1.tar.gz", hash = "sha256:481a43b71e24ed8c43b11ea02f5353d77840e01480881b8cb5a26b8cae64a8cb", size = 2654703, upload-time = "2025-10-28T17:34:10.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/da/545b75d420bb23b5d494b0517757b351963e974e79933f01e05c929f20a6/starlette-0.49.1-py3-none-any.whl", hash = "sha256:d92ce9f07e4a3caa3ac13a79523bd18e3bc0042bb8ff2d759a8e7dd0e1859875", size = 74175, upload-time = "2025-10-28T17:34:09.13Z" },
+]
+
+[[package]]
+name = "stevedore"
+version = "5.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/dd/04d56c2a5232358df41f3d0f0e31833d378b6c8ed7803a6b1b7867b0eba6/stevedore-5.9.0.tar.gz", hash = "sha256:abbd0af7a38a8bbb1d6adea2e35b17609cf004eaac323e88a8d8963640dd2b3c", size = 514850, upload-time = "2026-07-02T11:38:08.509Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/8d/008761f6e1000600e5303db30d05724bdcf3d2d186cbb59fac79b52e39ed/stevedore-5.9.0-py3-none-any.whl", hash = "sha256:e520945d4c257700eddc1eb1d79df04b2ea578eef185e0e3fa5b442fc848d3f7", size = 54463, upload-time = "2026-07-02T11:38:07.43Z" },
 ]
 
 [[package]]

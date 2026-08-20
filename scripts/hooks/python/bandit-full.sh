@@ -48,14 +48,20 @@ if [ "$root_active" = true ]; then
 	fi
 fi
 
-if [ "$agent_active" = true ] && [ -d agent-mesh/plugins ]; then
-	[ -f agent-mesh/uv.lock ] || {
-		printf 'MISSING: agent-mesh/uv.lock is required for Agent Mesh Bandit checks\n' >&2
-		exit 1
-	}
-	uv run --project agent-mesh --frozen bandit --quiet --recursive --ignore-nosec \
-		--severity-level medium --confidence-level medium \
-		--exclude '*/tests/*,*/test_*.py' agent-mesh/plugins || status=1
+if [ "$agent_active" = true ]; then
+	set --
+	for path in agent-mesh/plugins agent-mesh/tools; do
+		[ -d "$path" ] && set -- "$@" "$path"
+	done
+	if [ "$#" -gt 0 ]; then
+		[ -f agent-mesh/uv.lock ] || {
+			printf 'MISSING: agent-mesh/uv.lock is required for Agent Mesh Bandit checks\n' >&2
+			exit 1
+		}
+		uv run --project agent-mesh --frozen bandit --quiet --recursive --ignore-nosec \
+			--severity-level medium --confidence-level medium \
+			--exclude '*/tests/*,*/test_*.py' "$@" || status=1
+	fi
 fi
 
 exit "$status"

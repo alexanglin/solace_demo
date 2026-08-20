@@ -1,0 +1,56 @@
+# ADR-0034: Scope Agent Mesh warning filters to upstream modules
+
+- **Status:** Accepted
+- **Date:** 2026-08-19
+- **Deciders:** Alex Anglin
+- **Supersedes:** [ADR-0030](0030-contain-upstream-warnings-in-the-agent-mesh-domain.md)
+
+## Context
+
+[ADR-0030](0030-contain-upstream-warnings-in-the-agent-mesh-domain.md) accepted four
+warning exemptions because the isolated Agent Mesh project contained no owned production
+source. The offline semantic configuration gate introduces owned Python under
+`agent-mesh/tools/`, so that premise no longer holds. In particular, the category-only
+`PydanticDeprecatedSince20` exemption could silence the same warning if owned validation
+code introduced it.
+
+The measured warnings still originate in the pinned upstream packages. Removing all four
+filters would make the compatibility verdict depend on bytecode-cache warmth, optional
+host media tools, and known upstream deprecations rather than on repository behavior.
+
+## Decision
+
+Keep `error` as the default warning policy and retain the four measured exemptions, but
+add an originating-module expression to every one:
+
+- invalid-escape `SyntaxWarning` and `datetime.utcnow` `DeprecationWarning` only from
+  `solace.*`;
+- `PydanticDeprecatedSince20` only from `solace_agent_mesh.*`;
+- the missing-ffmpeg `RuntimeWarning` only from `pydub.*`.
+
+No warning exemption may have an empty module expression in the Agent Mesh project.
+Warnings attributed to owned `tools.*`, future `plugins.*`, or tests therefore continue to
+fail collection or execution.
+
+The filters remain compatibility accommodations, not security acceptance. They neither
+change [ADR-0031](0031-reject-the-google-adk-version-override.md)'s dependency-waiver
+decision nor make Phase 0 complete.
+
+## Consequences
+
+- The exact pinned upstream imports remain deterministic across supported hosts.
+- Owned validator warnings cannot be hidden by an upstream exemption of the same category
+  or message.
+- A future upstream module rename will fail closed until the warning source and filter are
+  measured again.
+- The four upstream defects and their removal conditions remain visible; this decision
+  narrows their containment rather than resolving them.
+
+## Alternatives considered
+
+- **Retain ADR-0030 unchanged.** Rejected because its no-owned-source premise is false.
+- **Disable warnings-as-errors for this project.** Rejected because unrelated warnings
+  would stop carrying a blocking signal.
+- **Remove the upstream filters immediately.** Rejected because it restores the
+  cache- and host-dependent verdict measured by ADR-0030 without changing the pinned
+  runtime.

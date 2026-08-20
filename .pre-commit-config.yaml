@@ -229,6 +229,16 @@ repos:
         always_run: true
         pass_filenames: false
 
+      # Inert until the first file lands under agent-mesh/configs/, then fails closed on a
+      # missing lock, interpreter, or validator (docs/adr/0032-agent-mesh-semantic-configuration-validator.md).
+      - id: agent-mesh-configs
+        name: Agent Mesh configuration semantics
+        entry: scripts/hooks/agent-mesh/check-agent-mesh-configs.sh
+        language: script
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: docs-facts-and-links
         name: docs (facts, links, ADR index)
         entry: scripts/hooks/docs/check-docs.sh
