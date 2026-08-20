@@ -56,6 +56,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0036](0036-ascii-topic-grammar-bound-to-event-type.md) | Constrain application topics to an ASCII identifier grammar bound to the CloudEvents type | Accepted |
 | [0037](0037-cloudevents-envelope-profile.md) | Profile the CloudEvents 1.0 JSON envelope with required sequence and tracing extensions over the integer payload profile | Accepted |
 | [0038](0038-reserved-host-schema-identity-and-one-reason-fixtures.md) | Identify schemas by path-derived https URIs under a reserved host, reference them absolutely, and make every negative fixture fail for one reason | Accepted |
+| [0039](0039-drone-connectivity-states-and-recovery.md) | Name the drone connectivity states and count transitions in heartbeat intervals | Accepted |
 
 ## Decisions still open
 
