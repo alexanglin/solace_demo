@@ -129,6 +129,16 @@ repos:
     hooks:
       - id: actionlint
 
+  # Workflow security audit: persisted checkout credentials, expression injection, permission
+  # breadth, dangerous triggers. Offline so a token in a contributor's environment cannot make
+  # the local verdict differ from continuous integration's; any finding fails, and a
+  # suppression needs a record (docs/adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md).
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.29.0
+    hooks:
+      - id: zizmor
+        args: [--offline]
+
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.0 # upstream tags have no "v" prefix
     hooks:

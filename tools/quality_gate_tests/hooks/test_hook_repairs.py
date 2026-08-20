@@ -179,6 +179,43 @@ class HookRepairTests(QualityGateTestCase):
         self.assertIn("corepack enable", source)
         self.assertIn("pnpm --dir apps/dashboard install --frozen-lockfile", source)
 
+    def test_zizmor_audits_the_workflow_and_dependabot_files_at_the_commit_stage(self) -> None:
+        # Arrange
+        configuration = (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+        # Act
+        block = configuration.split("zizmorcore/zizmor-pre-commit", maxsplit=1)[1].split(
+            "\n  - repo:", maxsplit=1
+        )[0]
+
+        # Assert
+        self.assertIn("rev: v1.29.0", block)
+        self.assertIn("- id: zizmor", block)
+        self.assertIn("args: [--offline]", block)
+
+    def test_every_checkout_stops_persisting_credentials(self) -> None:
+        # Arrange
+        workflows = sorted((REPOSITORY_ROOT / ".github" / "workflows").glob("*.yml"))
+
+        # Act
+        checkouts = [
+            step
+            for workflow in workflows
+            for step in re.split(r"\n\s*- uses: ", workflow.read_text(encoding="utf-8"))
+            if step.startswith("actions/checkout@")
+        ]
+
+        # Assert
+        self.assertNotEqual([], checkouts)
+        self.assertTrue(
+            all("persist-credentials: false" in step for step in checkouts),
+            [
+                step.splitlines()[0]
+                for step in checkouts
+                if "persist-credentials: false" not in step
+            ],
+        )
+
     def test_gitleaks_does_not_exempt_environment_template_paths(self) -> None:
         # Arrange
         configuration = REPOSITORY_ROOT / ".gitleaks.toml"

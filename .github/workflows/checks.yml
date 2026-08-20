@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          # Full history so the pre-push secret scan has something to scan.
+          # Full history so the pre-push secret scan has something to scan. No step needs
+          # the token after checkout, so it is not left on disk (docs/adr/0049).
           fetch-depth: 0
           ref: ${{ github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -79,6 +81,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -129,6 +132,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       # AGENTS.md §6 (Security and privacy hygiene) and docs/adr/0002: CI must hold no broker credential and no
       # model API key. This asserts the invariant rather than trusting it.
