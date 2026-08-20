@@ -53,6 +53,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0033](0033-bound-directory-fan-out.md) | Bound directory fan-out and decompose by concern | Accepted |
 | [0034](0034-scope-agent-mesh-warning-filters-to-upstream-modules.md) | Scope Agent Mesh warning filters to upstream modules | Accepted |
 | [0035](0035-refuse-unprovable-agent-mesh-configuration.md) | Refuse Agent Mesh configuration the validator cannot yet prove | Accepted |
+| [0036](0036-ascii-topic-grammar-bound-to-event-type.md) | Constrain application topics to an ASCII identifier grammar bound to the CloudEvents type | Accepted |
 
 ## Decisions still open
 
