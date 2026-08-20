@@ -57,6 +57,7 @@ recordings/local/
 # Local tool caches and agent configuration (repository root only)
 /.cache/
 /.claude/
+/.sam/
 
 # Editors and OS
 .DS_Store
