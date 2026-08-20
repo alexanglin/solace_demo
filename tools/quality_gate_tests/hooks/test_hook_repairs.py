@@ -2,8 +2,25 @@ from __future__ import annotations
 
 import re
 import unittest
+from typing import cast
+
+import yaml
 
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
+
+COOLDOWN_DAYS = 7
+"""The Dependabot cooldown ADR-0052 fixes, the workflow audit's default."""
+
+
+def _permitted_commit_types() -> set[str]:
+    """Return the Conventional Commit types the commit-message hook accepts."""
+    configuration = (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    hook = configuration.split("- id: conventional-pre-commit", maxsplit=1)[-1]
+    match = re.search(r"args: \[--strict, ([^\]]+)\]", hook)
+    if match is None:
+        message = "the conventional-pre-commit hook no longer lists its permitted types"
+        raise RuntimeError(message)
+    return set(match.group(1).split(", "))
 
 
 class HookRepairTests(QualityGateTestCase):
@@ -220,6 +237,67 @@ class HookRepairTests(QualityGateTestCase):
                 if "persist-credentials: false" not in step
             ],
         )
+
+    @staticmethod
+    def _dependabot_updates() -> list[dict[str, object]]:
+        """Return the update entries of the Dependabot configuration."""
+        path = REPOSITORY_ROOT / ".github" / "dependabot.yml"
+        loaded = cast("object", yaml.safe_load(path.read_text(encoding="utf-8")))
+        if not isinstance(loaded, dict):
+            message = "dependabot.yml must be a mapping"
+            raise TypeError(message)
+        updates = loaded.get("updates")
+        if not isinstance(updates, list):
+            message = "dependabot.yml must hold an updates list"
+            raise TypeError(message)
+        return [entry for entry in updates if isinstance(entry, dict)]
+
+    def test_dependabot_watches_every_dependency_domain(self) -> None:
+        # Arrange
+        expected = {
+            ("uv", "/"),
+            ("uv", "/agent-mesh"),
+            ("github-actions", "/"),
+            ("docker", "/deploy/agent-mesh"),
+            ("docker", "/deploy/application"),
+            ("docker-compose", "/deploy"),
+        }
+
+        # Act
+        watched = {
+            (str(entry.get("package-ecosystem")), str(entry.get("directory")))
+            for entry in self._dependabot_updates()
+        }
+
+        # Assert
+        self.assertEqual(expected, watched)
+
+    def test_dependabot_updates_are_daily_bounded_and_conventionally_prefixed(self) -> None:
+        # Arrange
+        permitted = _permitted_commit_types()
+        updates = self._dependabot_updates()
+
+        # Act
+        shapes = [
+            (
+                cast("dict[str, object]", entry.get("schedule", {})).get("interval"),
+                entry.get("open-pull-requests-limit"),
+                cast("dict[str, object]", entry.get("cooldown", {})).get("default-days"),
+                cast("dict[str, object]", entry.get("commit-message", {})).get("prefix"),
+                cast("dict[str, object]", entry.get("commit-message", {})).get("include"),
+            )
+            for entry in updates
+        ]
+
+        # Assert
+        self.assertNotEqual([], shapes)
+        for interval, limit, cooldown, prefix, include in shapes:
+            with self.subTest(prefix=prefix):
+                self.assertEqual("daily", interval)
+                self.assertEqual(5, limit)
+                self.assertEqual(COOLDOWN_DAYS, cooldown)
+                self.assertIn(prefix, permitted)
+                self.assertEqual("scope", include)
 
     def test_gitleaks_does_not_exempt_environment_template_paths(self) -> None:
         # Arrange

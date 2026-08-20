@@ -1,0 +1,86 @@
+---
+# Dependabot raises the pull requests that clear what the daily security workflow finds
+# (docs/adr/0051). Each entry is an ecosystem this repository has; npm joins with the
+# dashboard. Commit prefixes satisfy the Conventional Commits hook, the open-pull-request
+# limit and the cooldown bound the traffic, and every pull request runs both hook stages
+# like any other: a Docker update moves a tag and its digest together, which the compose
+# policy gate requires, and a uv update regenerates the lock.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: uv
+    directory: /agent-mesh
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /deploy/agent-mesh
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /deploy/application
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
