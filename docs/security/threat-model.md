@@ -72,8 +72,9 @@ Injecting or replaying application events to fabricate evidence, drive a reassig
 candidate. Mitigations: ACLs restrict who may publish what; event IDs and command IDs are idempotency
 keys; consumers reject stale sequence numbers within a producer's stream; the durable audit ordinal, not a
 producer's claim, orders the timeline. **Residual risk:** the initial release does not sign events, so an
-identity with publish rights to a topic is trusted on that topic. An event's claimed source should be
-checked against the topic it arrived on.
+identity with publish rights to a topic is trusted on that topic. The ingress adapter calls `envelope.check_topic_binding` from `packages/contracts`, so an event's type,
+subject, and identifier parameters are checked against the topic it arrived on; whether the publishing
+identity may use that topic at all remains the broker ACL's responsibility.
 
 ### T5 — Prompt injection through sensor data
 

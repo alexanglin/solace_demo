@@ -65,6 +65,37 @@ which the offline contract-artifact gate validates against positive and negative
 | Canonicalization version | Integer 1, carried inside the hashed bytes | `packages/contracts` digest function |
 | Digest | SHA-256 rendered as 64 lowercase hexadecimal characters | `packages/contracts` digest function |
 
+## Topic and envelope bounds
+
+The grammar that uses these bounds is in [CONTRACTS.md](CONTRACTS.md#topic-taxonomy) and
+[CONTRACTS.md](CONTRACTS.md#event-envelope); the decisions are
+[ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md) and
+[ADR-0037](adr/0037-cloudevents-envelope-profile.md).
+
+| Parameter | Limit | Instrument |
+| --- | --- | --- |
+| Published topic length | At most 250 bytes of UTF-8, the Solace SMF limit; the grammar's longest output is 232 bytes | `packages/contracts` topic parser, plus a formatting proof test |
+| Topic levels | At most 8, against Solace's limit of 128 | Fixed by the family templates |
+| Identifier length | 1 to 64 characters | `packages/contracts` topic grammar plus JSON Schema |
+| Kind length | 1 to 32 characters | `packages/contracts` topic grammar plus JSON Schema |
+| Agent name length | 1 to 64 characters | `packages/contracts` topic grammar plus JSON Schema |
+| Producer identifier in `source` | 1 to 64 characters | `packages/contracts` envelope validator plus JSON Schema |
+| Sequence | Exactly 15 decimal digits, zero-padded; the maximum is below 2^53 - 1 | `packages/contracts` envelope validator plus JSON Schema |
+| Trace state | 1 to 512 printable ASCII characters | `packages/contracts` envelope validator plus JSON Schema |
+
+## Telemetry payload bounds
+
+The drone telemetry payload, `schemas/v1/payload/drone-telemetry.schema.json`, carries integers only and
+the coordinate rows above apply to it unchanged. Widening any row is a schema change and therefore a new
+major version ([CONTRACTS.md](CONTRACTS.md#event-envelope)).
+
+| Parameter | Limit | Instrument |
+| --- | --- | --- |
+| Battery | 0 to 100 percent | JSON Schema plus the ingress validator |
+| Altitude | -500 to 20000 metres above mean sea level | JSON Schema plus the ingress validator |
+| Heading | 0 to 359 degrees clockwise from true north | JSON Schema plus the ingress validator |
+| Ground speed | 0 to 10000 centimetres per second | JSON Schema plus the ingress validator |
+
 ## Workload and service-level profile
 
 Use a versioned acceptance workload so performance and delivery claims are reproducible. These are initial release targets; changing them requires measured evidence and a recorded decision.

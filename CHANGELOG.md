@@ -10,6 +10,26 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- A typed builder and parser for the eleven application topic families, `packages/contracts`
+  `topics.py`. Every variable level obeys one of four allowlisted rules, so a Solace wildcard, a
+  reserved prefix, an empty level, or a separator inside a level is unrepresentable rather than
+  defended against; the CloudEvents type is derived from the topic and recovered from it; parsing
+  refuses in a fixed order with typed refusals naming the parameter at fault. Agent names admit upper
+  case and underscores and refuse hyphens because that is the character class Agent Mesh 1.28.7
+  publishes under (ADR-0036).
+- The CloudEvents 1.0 envelope profile, `envelope.py`, validated at the trust boundary as a pure
+  function: a closed member set with sequence, correlation, causation, and W3C trace context as
+  extension attributes, `data` inside the integer canonical profile for every event type, a binding
+  table from type to payload schema that fails closed, an egress document form that is the exact
+  inverse of parsing, decoding through the canonical decoder so a repeated key is refused, and an
+  arriving-topic binding check for the broker adapter (ADR-0037).
+- The v1 JSON Schemas, golden fixtures, and `schemas/contract-manifest.toml`, which arm the
+  contract-artifact gate for the first time: the canonical profile with every shared definition, the
+  envelope, the drone telemetry payload and its composed event, and the topic golden cases. Every
+  schema `$id` is a path under the reserved host `https://aerial-rescue.invalid/`, every negative
+  fixture fails for exactly one reason, and a root contract suite proves the schema verdict equals the
+  Python verdict on every fixture and that the schema patterns are the Python constants (ADR-0038).
+
 - The Agent Mesh semantic-configuration gate ADR-0032 specified: `agent-mesh/tools/agent_mesh_config_validator.py`,
   run by `scripts/hooks/agent-mesh/check-agent-mesh-configs.sh` -- a sixth concern subdirectory
   under ADR-0033, with its gate tests under `tools/quality_gate_tests/hooks/` -- at both blocking

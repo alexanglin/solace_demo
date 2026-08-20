@@ -157,7 +157,7 @@ services/                      (scaffold) six typed service package shells
   recorder/
 packages/                      (scaffold) five typed library package shells
   broker/
-  contracts/                   (exists)  canonical serialization, digest, and topic contracts
+  contracts/                   (exists)  canonical serialization, digest, topic grammar, envelope profile
     tests/                     (exists)  member-local mutation tests
   domain/
     tests/                               member-local mutation tests
@@ -179,13 +179,15 @@ agent-mesh/                    (exists)  separate non-member uv project
   plugins/
   prompts/
   evaluations/
-schemas/
+schemas/                       (exists)  contract-manifest.toml and the v1 JSON Schemas
+fixtures/
+  golden/                      (exists)  golden fixtures, one directory per schema
 scenarios/
 release-evidence/                        per-phase acceptance evidence, redacted
 tests/
   phase0/                      (exists)  feasibility probes against the pinned runtimes
   unit/
-  contract/
+  contract/                    (exists)  schema identity and the golden-fixture oracle
   integration/
   e2e/
   performance/
@@ -235,7 +237,8 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 
 ### Phase 2: Contracts and broker
 
-- Define schemas, topics, delivery semantics, broker identities, ACLs, and queues.
+- **Done:** the topic grammar, the CloudEvents envelope profile, the v1 JSON Schemas with golden fixtures, and the contract manifest ([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md), [ADR-0037](adr/0037-cloudevents-envelope-profile.md), [ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)).
+- Define delivery semantics, broker identities, ACLs, and queues.
 - Build the Python broker adapter test-first against a local ARM64 broker.
 
 ### Phase 3: Simulator and dashboard baseline

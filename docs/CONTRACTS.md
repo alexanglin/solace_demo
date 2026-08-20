@@ -13,19 +13,43 @@
 
 ## Event envelope
 
-Every application event uses a CloudEvents 1.0 JSON envelope with, at minimum:
+Every application event is a CloudEvents 1.0 JSON object in structured mode, carried as the broker
+message payload, with a **closed** member set: twelve required members, two optional members, and
+nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). A JSON `null` is never read as
+absence; an optional member is present or omitted. `packages/contracts` validates the profile as a pure
+function, `envelope.parse_envelope`, and every refusal is a typed value naming the member at fault. The
+bounds live in [operating-parameters.md](operating-parameters.md#topic-and-envelope-bounds).
 
-- `specversion`
-- `id`
-- `source`
-- `type`
-- `subject`
-- `time`
-- `datacontenttype`
-- `dataschema`
-- `data`
+| Member | Required | Rule |
+| --- | --- | --- |
+| `specversion` | yes | the constant `1.0` |
+| `id` | yes | an identifier (the IDENTIFIER rule of the topic taxonomy); `source` plus `id` is unique, and `id` is the idempotency key |
+| `source` | yes | `urn:aerial-rescue:<producerKind>:<producerId>`, where `producerKind` is a KIND and `producerId` matches `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`; the producer scopes `sequence` |
+| `type` | yes | derived from the topic as the taxonomy defines, and bound to a payload schema; a well-formed but unbound type is refused |
+| `subject` | yes | the mission identifier; must equal `data.missionId` |
+| `time` | yes | the canonical instant `YYYY-MM-DDTHH:MM:SS.sssZ` naming a real calendar date |
+| `datacontenttype` | yes | the constant `application/json` |
+| `dataschema` | yes | the `$id` of the payload schema bound to `type`, of the form `https://aerial-rescue.invalid/schemas/v1/payload/<name>.schema.json`; its `v1` segment is the schema version |
+| `data` | yes | an object inside the canonical profile below, repeating `missionId` and every identifier the topic names |
+| `sequence` | yes, extension | a fifteen-digit zero-padded decimal string, so string order is numeric order; scoped to its producer, used only to reject stale updates within one stream, never to order the timeline ([ADR-0003](adr/0003-postgres-durable-mission-store.md)) |
+| `correlationid` | yes, extension | an identifier, carried across the A2A gateway boundary ([ADR-0014](adr/0014-application-events-separate-from-a2a.md)) |
+| `causationid` | optional, extension | an identifier |
+| `traceparent` | yes, extension | W3C Trace Context version `00` in lowercase hexadecimal with non-zero trace and parent identifiers |
+| `tracestate` | optional, extension | printable ASCII, bounded in length |
 
-Domain data includes `missionId`, `droneId` where applicable, sequence number, correlation ID, causation ID, schema version, and trace context. Event IDs and command IDs are globally unique and act as idempotency keys. The sequence number is scoped to its producer and is used only to detect staleness within that producer's stream; it is not comparable across sources and must not be used to order the mission timeline, which is ordered by the durable audit ordinal ([ADR-0003](adr/0003-postgres-durable-mission-store.md)).
+Refusals come in a fixed order, which TypeScript reimplements: not an object; an unknown member,
+`data_base64` included; a missing required member; a member outside its rule; `data` outside the
+canonical profile; an unbound `type`; a `dataschema` other than the bound one; a `subject` that is not
+the payload's mission. Ingress text is decoded through the canonical decoder, so a repeated key is
+refused rather than merged. The broker adapter then calls `envelope.check_topic_binding` with the topic
+the message actually arrived on: the type derived from that topic, its mission identifier, and each
+identifier it names must agree with the envelope, or the event is refused as `TOPIC_BINDING`.
+
+Some rules are validator-only because a JSON Schema cannot express them: a calendar-invalid `time`, an
+unbound `type`, the schema and subject bindings, the topic binding, a repeated key, a string whose byte
+length exceeds the bound while its code-point count does not, and a real number with a zero fraction such
+as `1.0`, which Draft 2020-12 `integer` admits and the profile refuses. Both language validators unit-test
+those rules; they are never golden negatives.
 
 Payloads are defined by versioned JSON Schemas. Python and TypeScript must consume the same schemas and shared golden fixtures. Breaking schema changes require a new major topic and schema version.
 
@@ -46,6 +70,31 @@ aerial-rescue/v1/{missionId}/agent/proposal/{agentName}/{proposalType}
 aerial-rescue/v1/{missionId}/agent/response/{agentName}
 aerial-rescue/v1/{missionId}/audit/{recordType}
 ```
+
+Every variable level obeys one of four rules
+([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md)), and `packages/contracts` (`topics.py`)
+is the only producer and parser of these topics:
+
+| Rule | Levels | Form |
+| --- | --- | --- |
+| IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
+| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; the sets stay open until the domain modules close them |
+| AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
+| DECISION | `decision` | exactly `approve` or `reject` |
+
+The CloudEvents `type` of an event is derived from its topic: drop the IDENTIFIER and AGENT_NAME levels,
+join the rest with `.`, and prefix `aerial-rescue.v1.`. So `aerial-rescue/v1/m1/drone/d1/event/salient`
+has the type `aerial-rescue.v1.drone.event.salient`, and `aerial-rescue/v1/m1/drone/d1/command-result/c1`
+has `aerial-rescue.v1.drone.command-result`. A topic is recovered from its type together with the
+identifiers a producer holds.
+
+Parsing refuses in a fixed order, which TypeScript reimplements: not a string; longer than the broker
+bound; a `*` or `>` anywhere; a prefix other than `aerial-rescue/v1`; a shape matching no family; then
+each level against its rule in template order, so an empty, `#`-, `!`-, or `+`-bearing level fails the
+rule of the parameter it occupies. Formatting never emits a wildcard, a reserved prefix, an empty level,
+or a trailing separator. Subscription strings, which do carry wildcards, belong to the broker adapter and
+are never produced here. The golden case files under `fixtures/golden/v1/topics/` record accepted and
+refused topics with their refusal names, which are part of the contract.
 
 Routine telemetry uses direct delivery because current position updates supersede stale updates. Mission commands, command results, evidence, failures, approvals, and audit records use guaranteed delivery through queues and explicit acknowledgement.
 
@@ -131,6 +180,28 @@ than passing. The hash input is the byte string `aerial-rescue/canonical/v1`, a 
 context, a newline, and the canonical bytes. The context is one of `proposal-digest`, `replay-state`,
 `evidence`, or `idempotency-body`, which stops bytes valid for one purpose being replayed as another. The
 digest is SHA-256 rendered as lowercase hexadecimal.
+
+## Schema identity
+
+A schema's `$id` is `https://aerial-rescue.invalid/` followed by its repository-relative path, so
+`schemas/v1/envelope.schema.json` is identified as
+`https://aerial-rescue.invalid/schemas/v1/envelope.schema.json`; RFC 6761 reserves `.invalid`, so no
+validator can ever fetch it
+([ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)). Every `$ref` is
+`#/$defs/...` inside one file or an absolute `$id` with an optional `#/$defs/...` fragment. Schemas use
+only `$schema`, `$id`, `$defs`, `$ref`, `description`, `type`, `const`, `enum`, `pattern`, `maxLength`,
+`minItems`, `minimum`, `maximum`, `required`, `properties`, `additionalProperties`, `propertyNames`,
+`anyOf`, `allOf`, and `items`, and never `format`, whose assertion behaviour is implementation-defined.
+Patterns are ASCII-only and use `[0-9]` rather than `\d`, so Python's `re` and ECMA-262 read them
+identically, and the pattern strings in the schemas are the constants in `packages/contracts`.
+
+`schemas/v1/canonical.schema.json` holds the canonical profile and every shared definition;
+`envelope.schema.json` the envelope; each payload has a `payload/<name>.schema.json` and a composed
+`event/<name>.schema.json` that binds `type`, `dataschema`, and `data` together; `topic-cases.schema.json`
+shapes the topic golden-case files. Golden fixtures live under `fixtures/golden/v1/<schema>/`; every
+negative fixture is the valid baseline with exactly one member changed and fails its owning schema for
+exactly one reason. `schemas/contract-manifest.toml` registers every schema and fixture exactly once
+([ADR-0021](adr/0021-contract-artifact-manifest.md)).
 
 ## Delivery and failure semantics
 
