@@ -1,0 +1,37 @@
+Aerial Rescue Mesh
+Copyright 2026 Alex Anglin
+
+This product includes software developed as a reference implementation of the
+open-source Solace Agent Mesh.
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the full terms.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+This project does not vendor or redistribute third-party source. It depends on the
+components below, installed from their published distributions and pinned in
+uv.lock and agent-mesh/uv.lock. Each remains under its own license. The license
+shown is the one the published distribution declares; verify it against the
+upstream repository before redistributing a built artifact.
+
+Solace Agent Mesh -- Apache License, Version 2.0
+  https://github.com/SolaceLabs/solace-agent-mesh
+  Pinned to release 1.28.7, source revision
+  6344d2b8899a6c326e8b52fce9947c4bf4b56ae2.
+
+SAM Event Mesh Gateway -- Apache License, Version 2.0
+  https://pypi.org/project/sam-event-mesh-gateway/1.1.0/
+
+SAM Event Mesh Tool -- Apache License, Version 2.0
+  https://pypi.org/project/sam-event-mesh-tool/0.1.1/
+
+Solace PubSub+ Messaging API for Python -- Apache License, Version 2.0
+  https://pypi.org/project/solace-pubsubplus/
+  Solace Corporation. The wheels bundle a native CCSMP library.
+
+Wilderness background imagery used by the search-and-rescue scenarios is
+public-domain material. Each asset carries a per-scenario record with its source,
+verbatim license text, retrieval date, and checksum, and no image depicts an
+identifiable person (docs/adr/0013-sar-artifact-imagery-policy.md).
