@@ -1,0 +1,57 @@
+apps:
+  - name: validation-agent-app
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_BROKER_USERNAME}
+      broker_password: ${SOLACE_BROKER_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: aerial-rescue/validation
+      agent_name: ValidationAgent
+      model:
+        model: openai/gpt-4o-mini-2024-07-18
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+      instruction: Validate configuration without starting a runtime.
+      tools:
+        - tool_type: python
+          component_module: sam_event_mesh_tool.tools
+          class_name: EventMeshTool
+          tool_config:
+            event_mesh_config:
+              broker_config:
+                dev_mode: false
+                broker_url: ${SOLACE_BROKER_URL}
+                broker_username: ${SOLACE_BROKER_USERNAME}
+                broker_password: ${SOLACE_BROKER_PASSWORD}
+                broker_vpn: ${SOLACE_BROKER_VPN}
+                temporary_queue: true
+              request_expiry_ms: 1000
+              payload_format: json
+            tool_name: SubmitCommandProposal
+            description: Submit a non-actuating command proposal.
+            parameters:
+              - name: missionId
+                type: string
+                required: true
+              - name: operation
+                type: string
+                required: true
+            topic: aerial-rescue/v1/{{ missionId }}/gateway/request/{{ operation }}
+            wait_for_response: true
+      session_service: {type: memory}
+      artifact_service: {type: memory}
+      agent_card:
+        description: Offline validation fixture.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills: []
+      agent_card_publishing: {interval_seconds: 0}
+      agent_discovery: {enabled: false}
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ['*']
+        request_timeout_seconds: 1

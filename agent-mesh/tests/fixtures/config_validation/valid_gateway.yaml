@@ -1,0 +1,45 @@
+apps:
+  - name: validation-event-mesh-gateway
+    app_module: sam_event_mesh_gateway.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_BROKER_USERNAME}
+      broker_password: ${SOLACE_BROKER_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: aerial-rescue/validation
+      gateway_id: validation-event-mesh-gateway
+      artifact_service: {type: memory}
+      authorization_service: {type: none}
+      default_user_identity: anonymous-validation-user
+      acknowledgment_policy:
+        mode: on_completion
+        on_failure:
+          action: nack
+          nack_outcome: rejected
+        timeout_seconds: 1
+      event_mesh_broker_config:
+        dev_mode: false
+        broker_url: ${SOLACE_BROKER_URL}
+        broker_username: ${SOLACE_BROKER_USERNAME}
+        broker_password: ${SOLACE_BROKER_PASSWORD}
+        broker_vpn: ${SOLACE_BROKER_VPN}
+        temporary_queue: true
+      event_handlers:
+        - name: salient-event
+          subscriptions:
+            - topic: aerial-rescue/v1/+/drone/+/event/salient
+              qos: 1
+          input_expression: 'template:Analyze {{json://input.payload}}'
+          payload_encoding: utf-8
+          payload_format: json
+          on_success: validation-response
+          target_agent_name: ValidationAgent
+      output_handlers:
+        - name: validation-response
+          topic_expression: 'template:aerial-rescue/v1/{{text://task_response:id}}/gateway/response/result'
+          payload_expression: task_response:text
+          payload_encoding: utf-8
+          payload_format: text

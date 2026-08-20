@@ -1,0 +1,43 @@
+apps:
+  - name: validation-workflow-app
+    app_module: solace_agent_mesh.workflow.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_BROKER_USERNAME}
+      broker_password: ${SOLACE_BROKER_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: aerial-rescue/validation
+      name: ValidationWorkflow
+      workflow:
+        version: 1.0.0
+        description: Offline validation workflow.
+        inputSchema:
+          type: object
+          properties:
+            request: {type: string}
+          required: [request]
+        outputSchema:
+          type: object
+          properties:
+            result: {type: string}
+          required: [result]
+        nodes:
+          - id: validate_request
+            type: agent
+            agent_name: ValidationAgent
+            instruction: Validate the request.
+            input:
+              text: '{{workflow.input.request}}'
+        outputMapping:
+          result: '{{validate_request.output.result}}'
+        skills:
+          - id: validate_request
+            name: Validate request
+            description: Validate one request.
+            tags: [validation]
+      session_service: {type: memory}
+      artifact_service: {type: memory}
+      agent_card_publishing: {interval_seconds: 0}
