@@ -49,6 +49,11 @@ check-compose:
 check-deploy-config:
     pre-commit run --all-files --hook-stage pre-push trivy-config-full
 
+# Build the derived images and scan every stack image with Trivy. Needs Docker and trivy.
+scan-images:
+    docker compose --env-file .env.example -f deploy/compose.yaml --profile mesh --profile services build agent-mesh dashboard-api
+    scripts/security/scan-images.sh
+
 # Generate the per-checkout certificate authority, broker certificate, and stack passwords.
 secrets:
     scripts/broker-secrets.sh
