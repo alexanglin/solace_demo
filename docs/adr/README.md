@@ -50,6 +50,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0030](0030-contain-upstream-warnings-in-the-agent-mesh-domain.md) | Contain the pinned Agent Mesh runtime's upstream warnings | Accepted |
 | [0031](0031-reject-the-google-adk-version-override.md) | Reject the google-adk version override and waive PYSEC-2026-344 | Accepted |
 | [0032](0032-agent-mesh-semantic-configuration-validator.md) | Validate Agent Mesh configuration semantically before any is written | Accepted |
+| [0033](0033-bound-directory-fan-out.md) | Bound directory fan-out and decompose by concern | Accepted |
 
 ## Decisions still open
 
