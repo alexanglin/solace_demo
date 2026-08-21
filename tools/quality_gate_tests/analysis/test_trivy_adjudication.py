@@ -19,6 +19,7 @@ from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCas
 
 TODAY: Final = date(2026, 8, 20)
 IMAGE_DOMAIN: Final = "image:postgres"
+CONFIG_DOMAIN: Final = "deploy-config"
 TARGET: Final = "postgres:17.11-trixie (debian 13.0)"
 DOCKERFILE: Final = "deploy/agent-mesh/Dockerfile"
 FROM_PATTERN: Final = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
@@ -120,7 +121,7 @@ class TrivyVulnerabilityParsingTests(TrivyTestCase):
         text = trivy_report(result(vulnerabilities=[vulnerability()]))
 
         # Act
-        loaded, errors = self.findings(text)
+        loaded, errors = self.findings(text, CONFIG_DOMAIN)
 
         # Assert
         self.assertEqual([], errors)
@@ -131,7 +132,7 @@ class TrivyVulnerabilityParsingTests(TrivyTestCase):
         text = trivy_report(result(vulnerabilities=[vulnerability(Severity="CRITICAL")]))
 
         # Act
-        loaded, _ = self.findings(text)
+        loaded, _ = self.findings(text, CONFIG_DOMAIN)
 
         # Assert
         self.assertTrue(loaded[0].blocking)
@@ -183,7 +184,7 @@ class TrivyVulnerabilityParsingTests(TrivyTestCase):
         text = trivy_report(result(vulnerabilities=[vulnerability(Severity="high")]))
 
         # Act
-        loaded, _ = self.findings(text)
+        loaded, _ = self.findings(text, CONFIG_DOMAIN)
 
         # Assert
         self.assertTrue(loaded[0].blocking)
@@ -247,6 +248,61 @@ class TrivyVulnerabilityParsingTests(TrivyTestCase):
         self.assertEqual(
             (IMAGE_DOMAIN, "libssl3t64", "3.5.6-1", "CVE-2026-1000"), loaded[0].identity
         )
+
+
+class ImageAdvisoriesAreReportedNotEnforcedTests(TrivyTestCase):
+    """ADR-0055: the lever on a pinned image is its digest, not a package inside it."""
+
+    def test_a_fixed_critical_advisory_in_an_image_does_not_block(self) -> None:
+        # Arrange
+        text = trivy_report(result(vulnerabilities=[vulnerability(Severity="CRITICAL")]))
+
+        # Act
+        loaded, errors = self.findings(text, IMAGE_DOMAIN)
+
+        # Assert
+        self.assertEqual([], errors)
+        self.assertEqual((False,), tuple(finding.blocking for finding in loaded))
+
+    def test_a_fixed_high_advisory_in_an_image_does_not_block(self) -> None:
+        # Arrange
+        text = trivy_report(result(vulnerabilities=[vulnerability(Severity="HIGH")]))
+
+        # Act
+        loaded, _ = self.findings(text, IMAGE_DOMAIN)
+
+        # Assert
+        self.assertFalse(loaded[0].blocking)
+
+    def test_the_same_advisory_still_blocks_where_the_project_can_act(self) -> None:
+        # Arrange
+        text = trivy_report(result(vulnerabilities=[vulnerability(Severity="CRITICAL")]))
+
+        # Act
+        loaded, _ = self.findings(text, CONFIG_DOMAIN)
+
+        # Assert
+        self.assertTrue(loaded[0].blocking)
+
+    def test_every_image_domain_is_recognised_as_an_image(self) -> None:
+        # Arrange
+        domains = ("image:postgres", "image:solace/solace-agent-mesh", "image:aerial-rescue/app")
+
+        # Act
+        recognised = tuple(dependency_waiver_gate.is_domain_image(name) for name in domains)
+
+        # Assert
+        self.assertEqual((True, True, True), recognised)
+
+    def test_a_manifest_domain_is_not_an_image(self) -> None:
+        # Arrange
+        domains = ("root", "agent-mesh", "dashboard", CONFIG_DOMAIN)
+
+        # Act
+        recognised = tuple(dependency_waiver_gate.is_domain_image(name) for name in domains)
+
+        # Assert
+        self.assertEqual((False, False, False, False), recognised)
 
 
 class TrivyMisconfigurationParsingTests(TrivyTestCase):
@@ -566,19 +622,32 @@ class TrivyCommandTests(TrivyTestCase):
             status = dependency_waiver_gate.main(arguments)
         return status, out.getvalue(), err.getvalue()
 
+    def test_an_unwaived_image_advisory_exits_zero_and_prints_it(self) -> None:
+        # Arrange
+        report = trivy_report(result(vulnerabilities=[vulnerability(Severity="CRITICAL")]))
+
+        # Act
+        status, out, err = self.invoke(
+            report, registry_text(), "--source", "trivy", "--domain", IMAGE_DOMAIN
+        )
+
+        # Assert
+        self.assertEqual((0, ""), (status, err))
+        self.assertIn("INFO: CRITICAL fixed: libssl3t64 3.5.6-1 CVE-2026-1000", out)
+
     def test_an_unwaived_blocking_finding_exits_non_zero(self) -> None:
         # Arrange
         report = trivy_report(result(vulnerabilities=[vulnerability()]))
 
         # Act
         status, _, err = self.invoke(
-            report, registry_text(), "--source", "trivy", "--domain", IMAGE_DOMAIN
+            report, registry_text(), "--source", "trivy", "--domain", CONFIG_DOMAIN
         )
 
         # Assert
         self.assertEqual(1, status)
         self.assertIn(
-            "DEPENDENCY: unwaived advisory: libssl3t64 3.5.6-1 CVE-2026-1000 in image:postgres", err
+            "DEPENDENCY: unwaived advisory: libssl3t64 3.5.6-1 CVE-2026-1000 in deploy-config", err
         )
 
     def test_a_current_waiver_covers_a_blocking_finding(self) -> None:
@@ -586,7 +655,7 @@ class TrivyCommandTests(TrivyTestCase):
         report = trivy_report(result(vulnerabilities=[vulnerability()]))
         registry = registry_text(
             waiver(
-                domain=IMAGE_DOMAIN,
+                domain=CONFIG_DOMAIN,
                 package="libssl3t64",
                 version="3.5.6-1",
                 advisory="CVE-2026-1000",
@@ -597,7 +666,7 @@ class TrivyCommandTests(TrivyTestCase):
 
         # Act
         status, out, err = self.invoke(
-            report, registry, "--source", "trivy", "--domain", IMAGE_DOMAIN
+            report, registry, "--source", "trivy", "--domain", CONFIG_DOMAIN
         )
 
         # Assert

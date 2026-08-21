@@ -72,6 +72,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0052](0052-hold-dependabot-to-a-seven-day-cooldown.md) | Hold Dependabot to the seven-day cooldown the workflow audit requires | Accepted |
 | [0053](0053-report-scaffolded-workspace-members-instead-of-failing-them.md) | Report scaffolded workspace members instead of failing them | Accepted |
 | [0054](0054-enforce-the-verification-authority-with-branch-protection.md) | Enforce the verification authority with branch protection on `main` | Accepted |
+| [0055](0055-block-on-the-image-pin-not-on-advisories-inside-it.md) | Block on the image pin, not on advisories inside a pinned image | Accepted |
 
 ## Decisions still open
 

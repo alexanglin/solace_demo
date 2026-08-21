@@ -107,6 +107,11 @@ jobs:
       - name: Scan every pulled and built image
         run: scripts/security/scan-images.sh
 
+      # An advisory inside a pinned image is reported, not enforced; the blocking control is
+      # that the pin is still the newest digest its tag carries (docs/adr/0055).
+      - name: Refuse an image pin upstream has moved past
+        run: scripts/security/check-image-pins.sh
+
   codeql:
     name: CodeQL (python)
     # Not on pull requests: a Dependabot pull request carries a read-only token and cannot

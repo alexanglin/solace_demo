@@ -49,6 +49,10 @@ check-compose:
 check-deploy-config:
     pre-commit run --all-files --hook-stage pre-push trivy-config-full
 
+# Refuse a pinned image digest that upstream has already moved past. Needs Docker.
+check-image-pins:
+    scripts/security/check-image-pins.sh
+
 # Build the derived images and scan every stack image with Trivy. Needs Docker and trivy.
 scan-images:
     docker compose --env-file .env.example -f deploy/compose.yaml --profile mesh --profile services build agent-mesh dashboard-api

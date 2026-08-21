@@ -321,6 +321,11 @@ def _fixed_versions(raw: object) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def is_domain_image(domain: str) -> bool:
+    """Return whether ``domain`` names a container image rather than a resolved manifest."""
+    return bool(IMAGE_DOMAIN_PATTERN.match(domain))
+
+
 def _blocks(severity: str, *, actionable: bool) -> bool:
     return severity.upper() in TRIVY_BLOCKING_SEVERITIES and actionable
 
@@ -335,7 +340,10 @@ def _vulnerability_finding(
     if advisory is None or package is None or version is None or severity is None:
         return None
     fixes = _fixed_versions(entry.get("FixedVersion"))
-    blocking = _blocks(severity, actionable=bool(fixes))
+    # ADR-0055: inside a pinned third-party image a published fix is not something this
+    # project can take -- its only lever is the digest it pins, which the pin gate checks.
+    # An advisory here is reported, never enforced.
+    blocking = _blocks(severity, actionable=bool(fixes) and not is_domain_image(domain))
     return Finding(domain, package, version, advisory, fixes, severity.upper(), blocking)
 
 
