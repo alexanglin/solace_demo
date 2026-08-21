@@ -13,10 +13,12 @@ The connection is injected, so every case below runs with no broker and no socke
 from __future__ import annotations
 
 import json
+import ssl
 import unittest
 from collections.abc import Mapping
 from enum import Enum
 
+import pytest
 from aerial_rescue_broker.provisioning import Method, Request
 from aerial_rescue_broker.semp import (
     REQUEST_TIMEOUT_SECONDS,
@@ -27,6 +29,7 @@ from aerial_rescue_broker.semp import (
     SempFailure,
     SempSession,
     connect,
+    verification_context,
 )
 
 CREDENTIAL = "fixture-not-a-real-credential"
@@ -265,18 +268,46 @@ class HeaderTests(unittest.TestCase):
 
 
 class ConnectTests(unittest.TestCase):
-    def test_a_connection_is_opened_to_the_endpoint_under_the_bounded_timeout(self) -> None:
+    def test_a_connection_carries_the_endpoint_and_the_bounded_timeout(self) -> None:
         # Arrange
-        endpoint = ENDPOINT
+        context = ssl.create_default_context()
 
         # Act
-        connection = connect(endpoint)
+        connection = connect(ENDPOINT, context=context)
 
         # Assert
         self.assertEqual(
             ("localhost", 1943, REQUEST_TIMEOUT_SECONDS),
             (connection.host, connection.port, connection.timeout),
         )
+
+    def test_an_authority_that_cannot_be_read_is_not_silently_replaced_by_system_trust(
+        self,
+    ) -> None:
+        # Arrange
+        absent = "deploy/certs/never-generated-authority.pem"
+
+        # Act
+        with pytest.raises(FileNotFoundError) as captured:
+            verification_context(absent)
+
+        # Assert
+        self.assertEqual(2, captured.value.errno)
+
+    def test_connect_builds_its_context_from_the_endpoints_authority_when_none_is_given(
+        self,
+    ) -> None:
+        # Arrange
+        endpoint = SempEndpoint(
+            "localhost", 1943, "admin", CREDENTIAL, "deploy/certs/never-generated.pem"
+        )
+
+        # Act
+        with pytest.raises(FileNotFoundError) as captured:
+            connect(endpoint)
+
+        # Assert
+        self.assertEqual(2, captured.value.errno)
 
     def test_the_transport_does_not_retry(self) -> None:
         # Arrange

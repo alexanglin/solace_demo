@@ -102,20 +102,39 @@ class HttpConnection(Protocol):
         ...
 
 
-def connect(endpoint: SempEndpoint) -> http.client.HTTPSConnection:
+def verification_context(authority: str) -> ssl.SSLContext:
+    """Return a context that verifies against ``authority`` with hostname checking left on.
+
+    Args:
+        authority: Path to the per-checkout authority certificate.
+
+    Returns:
+        A context built by ``ssl.create_default_context``, whose verification and hostname
+        checking defaults are never relaxed here.
+
+    Raises:
+        OSError: When ``authority`` cannot be read, which is the evidence that the named
+            file is loaded rather than the system trust store being silently accepted.
+    """
+    return ssl.create_default_context(cafile=authority)
+
+
+def connect(
+    endpoint: SempEndpoint, *, context: ssl.SSLContext | None = None
+) -> http.client.HTTPSConnection:
     """Return a connection to ``endpoint``, validating its chain against the authority.
 
     Args:
         endpoint: The broker's SEMP host and port and the authority that signs it.
+        context: The TLS context, injected only so tests need no generated material on
+            disk. Omitted, it is built from the endpoint's authority.
 
     Returns:
-        An unopened connection; ``http.client`` connects on the first request. Verification
-        and hostname checking are the defaults of ``ssl.create_default_context`` and are
-        never relaxed.
+        An unopened connection; ``http.client`` connects on the first request.
     """
-    context = ssl.create_default_context(cafile=endpoint.certificate_authority)
+    resolved = verification_context(endpoint.certificate_authority) if context is None else context
     return http.client.HTTPSConnection(
-        endpoint.host, endpoint.port, context=context, timeout=REQUEST_TIMEOUT_SECONDS
+        endpoint.host, endpoint.port, context=resolved, timeout=REQUEST_TIMEOUT_SECONDS
     )
 
 
