@@ -123,6 +123,10 @@ jobs:
           QUALITY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           QUALITY_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           QUALITY_DIFF_REMOTE_NAME: origin
+          # Unbuffered, or pre-commit's per-hook lines sit in a block buffer that is lost
+          # when the job is killed -- which is why a stage that timed out looked like it
+          # stopped at whichever hook happened to flush last.
+          PYTHONUNBUFFERED: "1"
         with:
           extra_args: --all-files --hook-stage pre-push
 
