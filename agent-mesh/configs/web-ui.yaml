@@ -1,0 +1,31 @@
+# The HTTP/SSE Web UI, the engineering surface on which agent-card discovery and delegation
+# are inspected (docs/adr/0065).
+#
+# `fastapi_host` is 0.0.0.0 because it binds inside the container; loopback is enforced by the
+# published port `127.0.0.1:8000` in deploy/compose.yaml, which the compose policy gate holds.
+# That binding is also the compensating control the accepted google-adk advisory rests on
+# (TECH_DEBT.md section 1), so `cors_allowed_origins` is stated explicitly rather than left to
+# the upstream default of ["*"].
+#
+# There is no `web-ui` broker principal: all four apps run in one connector process, so this
+# one uses the same agent-mesh-agent identity (docs/adr/0061).
+apps:
+  - name: web-ui-app
+    app_module: solace_agent_mesh.gateway.http_sse.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      gateway_id: aerial-rescue-web-ui
+      session_secret_key: ${SESSION_SECRET_KEY}
+      artifact_service: {type: memory}
+      fastapi_host: 0.0.0.0
+      fastapi_port: 8000
+      cors_allowed_origins:
+        - http://127.0.0.1:8000
+        - http://localhost:8000

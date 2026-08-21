@@ -1,0 +1,60 @@
+# The built-in Agent Mesh Orchestrator, and the only file carrying the management server.
+#
+# `management_server` is what serves /readyz on 8080, which the agent-mesh healthcheck in
+# deploy/compose.yaml probes; without it `up --wait` never returns. Solace AI Connector merges
+# every file under /app/configs and takes the last value for a non-list key, so exactly one
+# file may declare it (docs/adr/0044).
+#
+# The model is written literally rather than through an environment name: it is the exact
+# string agent-mesh/model-lock.toml pins, and a literal is the only form the offline gate can
+# prove (docs/adr/0063). `model_provider` is never used -- in 1.28.7 it takes precedence over
+# this block and moves model authority into the Platform database (docs/adr/0032).
+management_server:
+  enabled: true
+  port: 8080
+  health:
+    enabled: true
+    liveness_path: /healthz
+    readiness_path: /readyz
+
+apps:
+  - name: orchestrator-app
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      agent_name: Orchestrator
+      display_name: Orchestrator
+      model:
+        model: ollama_chat/qwen3:4b
+        api_base: ${OLLAMA_HOST}
+      instruction: |
+        You coordinate a wilderness search-and-rescue exercise. Break an operator request into
+        steps and delegate sector questions to the MissionCoordinator agent.
+
+        You may only propose. You cannot dispatch a command, approve an action, or escalate a
+        rescue; a deterministic command gateway outside your control is the sole publisher of
+        executable commands. Never claim an action has been taken.
+      session_service: {type: memory}
+      artifact_service: {type: memory}
+      agent_card:
+        description: Plans a search-and-rescue exercise and delegates to specialised agents.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: plan_search
+            name: Plan a search
+            description: Break a missing-person report into ordered, delegable steps.
+            tags: [planning]
+      agent_card_publishing: {interval_seconds: 30}
+      agent_discovery: {enabled: true}
+      inter_agent_communication:
+        allow_list: [MissionCoordinator]
+        deny_list: []
+        request_timeout_seconds: 60
