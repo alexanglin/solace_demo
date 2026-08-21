@@ -1,8 +1,58 @@
 from __future__ import annotations
 
+import re
 import unittest
 
+import yaml
+
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
+
+WORKFLOWS_DIRECTORY = REPOSITORY_ROOT / ".github" / "workflows"
+
+CONTINUOUS_INTEGRATION_BUDGET_MINUTES = 20
+"""The longest any job in this repository may be allowed to run before it is killed.
+
+Measured 2026-08-20, whole-tree, on the reference workstation and the runner: the
+complete pre-push stage takes 2m01s, the image scan 2m58s, CodeQL 1m13s, and the
+commit stage 1m15s. The slowest job therefore has better than four times its measured
+cost, so a job that reaches this budget is wedged rather than slow.
+
+The budget is a detection threshold, not a performance target. It was 60 minutes for
+the pre-push job, and a hook that blocked on a terminal prompt spent every one of those
+minutes before the runner killed it -- so the stage reported no verdict at all, eight
+times, and nobody could tell a wedge from a slow suite.
+"""
+
+_TYPE_CHECK_ENTRY = re.compile(r"(?<![\w-])(mypy|tsc|typecheck)(?![\w-])")
+_HOOK_STAGE_ARGUMENT = re.compile(r"--hook-stage\s+([\w-]+)")
+
+
+def _workflow_jobs() -> dict[str, dict[str, object]]:
+    """Return every job in every workflow, keyed by ``workflow.yml:job-name``."""
+    jobs: dict[str, dict[str, object]] = {}
+    for workflow in sorted(WORKFLOWS_DIRECTORY.glob("*.yml")):
+        document = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+        for name, job in document["jobs"].items():
+            jobs[f"{workflow.name}:{name}"] = job
+    return jobs
+
+
+def _type_check_hook_stages() -> dict[str, tuple[str, ...]]:
+    """Return the stages each project-owned type-checking hook declares.
+
+    A hook is a type-checking hook when its own entry runs one, which is the only
+    definition that keeps working when a hook is renamed.
+    """
+    configuration = yaml.safe_load(
+        (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    default_stages = tuple(configuration.get("default_stages", ()))
+    return {
+        hook["id"]: tuple(hook.get("stages", default_stages))
+        for repository in configuration["repos"]
+        for hook in repository["hooks"]
+        if _TYPE_CHECK_ENTRY.search(str(hook.get("entry", "")))
+    }
 
 
 class HookSemanticsTests(QualityGateTestCase):
@@ -168,6 +218,37 @@ class HookSemanticsTests(QualityGateTestCase):
 
         # Assert
         self.assertIn("pytest==", aaa_block)
+
+    def test_no_continuous_integration_job_may_outlive_its_measured_cost(self) -> None:
+        # Arrange
+        jobs = _workflow_jobs()
+
+        # Act
+        unbounded = {
+            name: job.get("timeout-minutes")
+            for name, job in jobs.items()
+            if not isinstance(job.get("timeout-minutes"), int)
+            or int(str(job["timeout-minutes"])) > CONTINUOUS_INTEGRATION_BUDGET_MINUTES
+        }
+
+        # Assert
+        self.assertNotEqual({}, jobs)
+        self.assertEqual({}, unbounded)
+
+    def test_every_type_check_hook_is_reached_by_a_continuous_integration_job(self) -> None:
+        # Arrange
+        declared = _type_check_hook_stages()
+        checks = (WORKFLOWS_DIRECTORY / "checks.yml").read_text(encoding="utf-8")
+
+        # Act
+        executed = set(_HOOK_STAGE_ARGUMENT.findall(checks))
+        unreached = {
+            hook: stages for hook, stages in declared.items() if not executed.intersection(stages)
+        }
+
+        # Assert
+        self.assertNotEqual({}, declared)
+        self.assertEqual({}, unreached)
 
 
 if __name__ == "__main__":
