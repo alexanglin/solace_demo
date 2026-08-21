@@ -53,6 +53,10 @@ class RecordingTransport:
             raise self.failure
         return ()
 
+    def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Record the read and answer it as an empty collection."""
+        return self.send(Request(Method.GET, path, {}))
+
 
 def _material(case: unittest.TestCase, *, complete: bool = True) -> Path:
     """Write the deploy directory the generator produces, optionally missing one file."""

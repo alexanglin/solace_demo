@@ -143,6 +143,10 @@ class SempTransport(Protocol):
         """Perform ``request`` and return its ``data`` member as a tuple of objects."""
         ...
 
+    def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return every row of the collection at ``path``, across every page of it."""
+        ...
+
 
 def describe(request: Request) -> str:
     """Return a log-safe rendering of ``request`` with every secret member replaced."""
@@ -253,9 +257,14 @@ def _collection_path(vpn: str, profile: str, access: Access) -> str:
 
 
 def _present(transport: SempTransport, path: str, access: Access) -> frozenset[str]:
-    """Return the topic exceptions the broker already carries in one sub-collection."""
+    """Return the topic exceptions the broker already carries in one sub-collection.
+
+    Read through ``read_all`` rather than one ``GET``: SEMP pages a collection at ten rows
+    unless asked for more, and a partial read makes the reconcile look like a first apply
+    every time -- the recorder profile's eleventh subscribe exception is what proved it.
+    """
     member = _EXCEPTION_MEMBER[access]
-    rows = transport.send(Request(Method.GET, path, {}))
+    rows = transport.read_all(path)
     return frozenset(str(row[member]) for row in rows if member in row)
 
 

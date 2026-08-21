@@ -17,10 +17,13 @@ import ssl
 import unittest
 from collections.abc import Mapping
 from enum import Enum
+from typing import override
 
 import pytest
 from aerial_rescue_broker.provisioning import Method, Request
 from aerial_rescue_broker.semp import (
+    MAX_PAGES,
+    PAGE_SIZE,
     REQUEST_TIMEOUT_SECONDS,
     RETRY_COUNT,
     SEMP_CONFIG_PATH,
@@ -75,12 +78,28 @@ class FakeConnection:
         return self.response
 
 
-def _document(data: object, *, code: str = "", description: str = "") -> bytes:
-    """Return a SEMP result document carrying ``data`` and an optional error."""
+def _document(data: object, *, code: str = "", description: str = "", cursor: str = "") -> bytes:
+    """Return a SEMP result document carrying ``data``, an optional error, and a cursor."""
     meta: dict[str, object] = {"responseCode": 200}
+    if cursor:
+        meta["paging"] = {"cursorQuery": cursor}
     if code:
         meta = {"responseCode": 400, "error": {"code": code, "description": description}}
     return json.dumps({"data": data, "meta": meta}).encode()
+
+
+class PagingConnection(FakeConnection):
+    """A connection that answers each successive request from a scripted list of pages."""
+
+    def __init__(self, pages: list[bytes]) -> None:
+        """Answer the first request with the first page, and so on."""
+        super().__init__()
+        self.pages = pages
+
+    @override
+    def getresponse(self) -> FakeResponse:
+        """Return the page matching how many requests have been made so far."""
+        return FakeResponse(200, self.pages[len(self.calls) - 1])
 
 
 def _failure_of(connection: FakeConnection, request: Request) -> tuple[Enum, object]:
@@ -245,6 +264,65 @@ class SendTests(unittest.TestCase):
 
         # Assert
         self.assertIs(SempFailure.MALFORMED, failure)
+
+
+class ReadAllTests(unittest.TestCase):
+    def test_a_single_page_collection_is_read_in_one_call(self) -> None:
+        # Arrange
+        rows = [{"subscribeTopicException": "a"}, {"subscribeTopicException": "b"}]
+        connection = FakeConnection(FakeResponse(200, _document(rows)))
+
+        # Act
+        read = SempSession(connection, ENDPOINT).read_all("msgVpns/default/aclProfiles")
+
+        # Assert
+        self.assertEqual((tuple(rows), 1), (read, len(connection.calls)))
+
+    def test_the_first_read_asks_for_more_than_the_brokers_default_page(self) -> None:
+        # Arrange
+        connection = FakeConnection(FakeResponse(200, _document([])))
+
+        # Act
+        SempSession(connection, ENDPOINT).read_all("msgVpns/default/aclProfiles")
+
+        # Assert
+        self.assertIn(f"?count={PAGE_SIZE}", connection.calls[0][1])
+
+    def test_a_paged_collection_is_followed_to_its_last_row(self) -> None:
+        # Arrange
+        pages = PagingConnection(
+            [
+                _document([{"subscribeTopicException": "a"}], cursor="opaque cursor/1"),
+                _document([{"subscribeTopicException": "b"}]),
+            ]
+        )
+
+        # Act
+        read = SempSession(pages, ENDPOINT).read_all("msgVpns/default/aclProfiles")
+
+        # Assert
+        self.assertEqual(
+            (({"subscribeTopicException": "a"}, {"subscribeTopicException": "b"}), 2, True),
+            (read, len(pages.calls), "cursor=opaque%20cursor%2F1" in pages.calls[1][1]),
+        )
+
+    def test_a_cursor_that_never_runs_out_is_refused_rather_than_looped_on(self) -> None:
+        # Arrange
+        endless = PagingConnection(
+            [_document([{"subscribeTopicException": "a"}], cursor="never ends")] * (MAX_PAGES + 2)
+        )
+
+        # Act
+        try:
+            SempSession(endless, ENDPOINT).read_all("msgVpns/default/aclProfiles")
+        except SempError as error:
+            captured = error
+        else:
+            message = "an endless cursor was followed to the end"
+            raise AssertionError(message)
+
+        # Assert
+        self.assertEqual((SempFailure.PAGING, MAX_PAGES), (captured.failure, len(endless.calls)))
 
 
 class HeaderTests(unittest.TestCase):

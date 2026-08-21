@@ -72,6 +72,11 @@ class FakeBroker:
             self.objects[request.path] = dict(request.body)
         return (dict(request.body),)
 
+    def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return the whole collection, as a paging-aware transport would."""
+        self.issued.append(Request(Method.GET, path, {}))
+        return tuple(self.collections.get(path, ()))
+
     def _remove(self, path: str) -> None:
         """Drop the row a ``collection/syntax,topic`` path names."""
         collection, _, key = path.rpartition("/")
