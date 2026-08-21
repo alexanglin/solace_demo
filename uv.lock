@@ -31,11 +31,15 @@ name = "aerial-rescue-broker"
 version = "0.0.0"
 source = { editable = "packages/broker" }
 dependencies = [
+    { name = "aerial-rescue-contracts" },
     { name = "solace-pubsubplus" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "solace-pubsubplus", specifier = "==1.11.0" }]
+requires-dist = [
+    { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "solace-pubsubplus", specifier = "==1.11.0" },
+]
 
 [[package]]
 name = "aerial-rescue-command-gateway"

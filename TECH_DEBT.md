@@ -121,7 +121,7 @@ uses.
 ## 4. What the gate modules still owe
 
 The pre-push tier passes on `main`. It did not until 2026-08-20, when two changes closed the gap that
-[ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) had left open by design. Nine workspace members
+[ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) had left open by design. Eight workspace members
 are scaffolds — a manifest, a docstring-only module, a `py.typed` marker — and the coverage and
 mutation gates now report them as `SCAFFOLD` rather than failing them, because a member with nothing
 to measure proves nothing either way

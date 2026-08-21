@@ -6,7 +6,9 @@ requires-python = ">=3.14,<3.15"
 # Solace PubSub+ Messaging API for Python. Agent Mesh transitively pins 1.9.0 on its
 # own 3.13 runtime; this is the application side on 3.14 and the divergence is a
 # recorded decision, not an accident (docs/adr/0004-split-python-runtimes.md).
-dependencies = ["solace-pubsubplus==1.11.0"]
+# The topic grammar and the versioned namespace prefix; this package builds the wildcard
+# subscription strings that grammar refuses to produce (docs/CONTRACTS.md).
+dependencies = ["aerial-rescue-contracts", "solace-pubsubplus==1.11.0"]
 
 [build-system]
 requires = ["hatchling"]
