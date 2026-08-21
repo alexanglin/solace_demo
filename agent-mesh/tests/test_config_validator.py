@@ -155,6 +155,25 @@ def _gateway_document() -> dict[str, object]:
     }
 
 
+def _web_ui_document() -> dict[str, object]:
+    """Return a minimal valid HTTP/SSE Web UI document (docs/adr/0065)."""
+    return {
+        "apps": [
+            {
+                "name": "validation-web-ui-app",
+                "app_module": "solace_agent_mesh.gateway.http_sse.app",
+                "broker": _broker(),
+                "app_config": {
+                    "namespace": "aerial-rescue-mesh/validation",
+                    "session_secret_key": "${SESSION_SECRET_KEY}",
+                    "artifact_service": {"type": "memory"},
+                    "cors_allowed_origins": ["http://127.0.0.1:8000"],
+                },
+            }
+        ]
+    }
+
+
 def _mapping(value: object) -> dict[str, object]:
     """Narrow one test document node to a string-keyed mapping."""
     return cast(dict[str, object], value)
@@ -405,6 +424,77 @@ class LocalModelPolicyTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(all(result.valid for result in results), results)
+
+
+class WebUiPolicyTests(unittest.TestCase):
+    """The Web UI is validated against its own declared schema (docs/adr/0065)."""
+
+    def test_the_web_ui_module_is_accepted_against_its_declared_schema(self) -> None:
+        # Arrange
+        document = _web_ui_document()
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertTrue(result.valid, result.issues)
+
+    def test_the_web_ui_required_fields_are_each_enforced(self) -> None:
+        # Arrange
+        candidates = []
+        for field in ("session_secret_key", "namespace", "artifact_service"):
+            document = _web_ui_document()
+            del _app_config(document)[field]
+            candidates.append(_render(document))
+
+        # Act
+        results = tuple(_validate_text(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(not result.valid for result in results), results)
+
+    def test_a_web_ui_without_loopback_cors_origins_is_refused(self) -> None:
+        # Arrange
+        candidates = []
+        for origins in (None, [], ["*"], ["https://rescue.example"], [11434], ["http://[::1"]):
+            document = _web_ui_document()
+            if origins is None:
+                del _app_config(document)["cors_allowed_origins"]
+            else:
+                _app_config(document)["cors_allowed_origins"] = origins
+            candidates.append(_render(document))
+
+        # Act
+        results = tuple(_validate_text(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all("WEBUI_EXPOSURE" in _rules(result) for result in results), results)
+
+    def test_a_web_ui_secret_and_local_model_obey_the_existing_rules(self) -> None:
+        # Arrange
+        literal_secret = _web_ui_document()
+        _app_config(literal_secret)["session_secret_key"] = "-".join(("fixture", "session", "key"))
+        unlisted_model = _web_ui_document()
+        _app_config(unlisted_model)["model"] = {"model": "ollama_chat/rescue:8b"}
+
+        # Act
+        secret_result = _validate_text(_render(literal_secret))
+        model_result = _validate_text(_render(unlisted_model))
+
+        # Assert
+        self.assertIn("SECRET_LITERAL", _rules(secret_result))
+        self.assertIn("MODEL_LOCK_REQUIRED", _rules(model_result))
+
+    def test_the_platform_service_module_is_still_refused(self) -> None:
+        # Arrange
+        document = _web_ui_document()
+        _only_app(document)["app_module"] = "solace_agent_mesh.services.platform.app"
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("APP_MODULE", _rules(result))
 
 
 class ResultTypeTests(unittest.TestCase):
@@ -1465,6 +1555,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             agent_model=object(),
             workflow_model=object(),
             gateway_schema=(),
+            webui_schema=(),
         )
 
         # Act
@@ -1612,6 +1703,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             agent_model=SimpleNamespace(model_fields=[]),
             workflow_model=object(),
             gateway_schema=(),
+            webui_schema=(),
         )
         missing_validator_runtime = validator._Runtime(
             load_config=lambda _path: _agent_document(),
@@ -1623,6 +1715,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             agent_model=SimpleNamespace(model_fields={}, model_validate_and_clean=None),
             workflow_model=object(),
             gateway_schema=(),
+            webui_schema=(),
         )
         gateway_classes = (
             SimpleNamespace(app_schema=None),
