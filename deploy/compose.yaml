@@ -14,6 +14,18 @@ name: aerial-rescue-mesh
 
 x-trust-store: &trust-store ./certs:/etc/aerial-rescue/certs:ro
 
+# Everything a service needs that is not its broker identity. Identity is per service,
+# because docs/adr/0061 gives each component its own least-privilege client username; a
+# service that shares one shares its authority (docs/security/threat-model.md T3).
+x-application-environment: &application-environment
+  SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
+  SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
+  TRUST_STORE: ${TRUST_STORE}
+  OLLAMA_HOST: ${OLLAMA_HOST}
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+
 x-application: &application
   build:
     context: ..
@@ -21,15 +33,7 @@ x-application: &application
   image: aerial-rescue/application:0.0.0
   profiles: ["services"]
   environment:
-    SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
-    SOLACE_BROKER_USERNAME: ${SOLACE_BROKER_USERNAME}
-    SOLACE_BROKER_PASSWORD: ${SOLACE_BROKER_PASSWORD}
-    SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
-    TRUST_STORE: ${TRUST_STORE}
-    OLLAMA_HOST: ${OLLAMA_HOST}
-    POSTGRES_USER: ${POSTGRES_USER}
-    POSTGRES_DB: ${POSTGRES_DB}
-    POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    <<: *application-environment
   secrets:
     - postgres-password
   volumes:
@@ -131,8 +135,11 @@ services:
       # Loopback-only is enforced by the host binding below, not inside the container.
       SOLACE_DEV_MODE: "false"
       SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
-      SOLACE_BROKER_USERNAME: ${SOLACE_BROKER_USERNAME}
-      SOLACE_BROKER_PASSWORD: ${SOLACE_BROKER_PASSWORD}
+      # The runtime's own identity. The Event Mesh Gateway and Tool are separate roles with
+      # separate credentials, named by their own configuration under agent-mesh/configs/
+      # when it lands (docs/adr/0061, docs/adr/0032).
+      SOLACE_BROKER_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       TRUST_STORE: ${TRUST_STORE}
       USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}
@@ -170,17 +177,31 @@ services:
   dashboard-api:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_dashboard_api"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_DASHBOARD_API_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_DASHBOARD_API_PASSWORD}
     ports:
       - "127.0.0.1:8080:8080"
 
   fleet-simulator:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_fleet_simulator"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_FLEET_SIMULATOR_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_FLEET_SIMULATOR_PASSWORD}
 
   command-gateway:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_command_gateway"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_COMMAND_GATEWAY_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_COMMAND_GATEWAY_PASSWORD}
 
+  # No broker identity by decision: the scenario service has no documented publish or
+  # subscribe role, and docs/adr/0061 extends deny-by-default to issuing identities.
   scenario-service:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_scenario_service"]
@@ -188,10 +209,18 @@ services:
   evidence-service:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_evidence_service"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_EVIDENCE_SERVICE_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_EVIDENCE_SERVICE_PASSWORD}
 
   recorder:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_recorder"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_RECORDER_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_RECORDER_PASSWORD}
 
   event-management-agent:
     image: solace/event-management-agent:1.9.9@sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b
