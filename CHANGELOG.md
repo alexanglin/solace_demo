@@ -10,6 +10,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- The approval time-to-live is 60 seconds.
+  [ADR-0042](docs/adr/0042-approval-time-to-live.md) moves to `Accepted` and
+  `docs/operating-parameters.md` gains an approval-timing section, closing the last row that
+  [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) had left open. No code changes:
+  `packages/domain` still takes the window as an injected parameter with no default, so the
+  composition root supplies `timedelta(seconds=60)`. The number is derived from the committed
+  service-level targets rather than measured — a 30 s restart recovery, a 10 s backlog drain, and a
+  2 s command path give a 42 s worst case with 18 s of margin — so moving it is a superseding record.
+
 - **The broker enforces who may publish what.** Before this change, an identity that did not exist,
   with a password that was never issued, could connect to the container and publish a guaranteed
   message to `aerial-rescue/v1/{missionId}/drone/{droneId}/command/escalate-rescue` — the topic
