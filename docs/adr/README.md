@@ -74,6 +74,8 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0054](0054-enforce-the-verification-authority-with-branch-protection.md) | Enforce the verification authority with branch protection on `main` | Accepted |
 | [0055](0055-block-on-the-image-pin-not-on-advisories-inside-it.md) | Block on the image pin, not on advisories inside a pinned image | Accepted |
 | [0056](0056-raise-mypy-to-every-lever-the-tree-satisfies.md) | Raise mypy to every strictness lever both trees already satisfy | Accepted |
+| [0057](0057-typescript-strictness-baseline-before-the-dashboard.md) | Fix the dashboard's TypeScript baseline before the first dashboard file, and gate it | Accepted |
+| [0058](0058-validate-dashboard-inputs-against-the-committed-schemas.md) | Generate the dashboard's contract types from the committed schemas and validate every untrusted input against them | Accepted |
 | [0059](0059-keep-the-verification-authority-able-to-report.md) | Keep the verification authority able to report a verdict | Accepted |
 
 ## Decisions still open
