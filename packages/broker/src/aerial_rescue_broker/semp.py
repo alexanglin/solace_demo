@@ -33,8 +33,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Final, Protocol
+from urllib.parse import quote
 
-from aerial_rescue_broker.provisioning import SECRET_MEMBERS, Request, describe
+from aerial_rescue_broker.provisioning import SECRET_MEMBERS, Method, Request, describe
 
 SEMP_CONFIG_PATH: Final = "/SEMP/v2/config"
 """The configuration API's root, below which every request path is relative."""
@@ -45,6 +46,12 @@ REQUEST_TIMEOUT_SECONDS: Final = 10.0
 RETRY_COUNT: Final = 0
 """Retries per call. Re-running the convergent apply is the retry; see the module docstring."""
 
+PAGE_SIZE: Final = 100
+"""Rows asked for per collection read. The broker pages at ten unless asked for more."""
+
+MAX_PAGES: Final = 20
+"""Bound on one collection read. An unbounded cursor loop is a hang, not a read."""
+
 _SUCCESS_STATUS: Final = range(200, 300)
 
 
@@ -54,6 +61,7 @@ class SempFailure(Enum):
     TRANSPORT = "the SEMP request could not be completed"
     STATUS = "the broker refused the SEMP request"
     MALFORMED = "the broker's response is not a SEMP result object"
+    PAGING = "the collection did not end within the page bound"
 
 
 class SempError(RuntimeError):
@@ -159,6 +167,14 @@ def _detail(request: Request, status: int, document: Mapping[str, object]) -> st
     return " ".join(parts)
 
 
+def _cursor(document: Mapping[str, object]) -> str | None:
+    """Return the paging cursor a partial collection carries, or ``None`` when it is whole."""
+    meta = document.get("meta")
+    paging = meta.get("paging") if isinstance(meta, Mapping) else None
+    cursor = paging.get("cursorQuery") if isinstance(paging, Mapping) else None
+    return cursor if isinstance(cursor, str) else None
+
+
 def _rows(request: Request, data: object) -> tuple[Mapping[str, object], ...]:
     """Return the ``data`` member as a tuple of objects, refusing any other shape."""
     if data is None:
@@ -186,13 +202,43 @@ class SempSession:
 
         Returns:
             The result rows: one for an object result, one per row for a collection, and
-            none when the result carries no ``data``.
+            none when the result carries no ``data``. A collection read this way is only
+            the broker's first page; use :meth:`read_all` for a whole one.
 
         Raises:
             SempError: With ``TRANSPORT`` when the call could not be made, preserving the
                 operating-system error as ``__cause__``; with ``STATUS`` when the broker
                 refused it; and with ``MALFORMED`` when the response is not a SEMP result.
         """
+        return _rows(request, self._perform(request).get("data"))
+
+    def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return every row of the collection at ``path``, following the broker's cursor.
+
+        Args:
+            path: The collection's configuration-relative path.
+
+        Returns:
+            Every row, across as many pages as the broker splits the collection into.
+
+        Raises:
+            SempError: With ``PAGING`` when the cursor has not run out within
+                ``MAX_PAGES``, and with the same failures :meth:`send` raises.
+        """
+        rows: list[Mapping[str, object]] = []
+        query = f"?count={PAGE_SIZE}"
+        for _ in range(MAX_PAGES):
+            request = Request(Method.GET, path + query, {})
+            document = self._perform(request)
+            rows.extend(_rows(request, document.get("data")))
+            cursor = _cursor(document)
+            if cursor is None:
+                return tuple(rows)
+            query = f"?count={PAGE_SIZE}&cursor={quote(cursor, safe='')}"
+        raise SempError(SempFailure.PAGING, path)
+
+    def _perform(self, request: Request) -> Mapping[str, object]:
+        """Send one request and return the whole SEMP result document."""
         body = json.dumps(dict(request.body)) if request.body else None
         try:
             self._connection.request(
@@ -202,11 +248,9 @@ class SempSession:
             payload = response.read()
         except OSError as error:
             raise SempError(SempFailure.TRANSPORT, describe(request)) from error
-        return self._result(request, response.status, payload)
+        return self._document(request, response.status, payload)
 
-    def _result(
-        self, request: Request, status: int, payload: bytes
-    ) -> tuple[Mapping[str, object], ...]:
+    def _document(self, request: Request, status: int, payload: bytes) -> Mapping[str, object]:
         """Parse one response, refusing a non-SEMP body and a refused status."""
         try:
             document = json.loads(payload)
@@ -216,4 +260,4 @@ class SempSession:
             raise SempError(SempFailure.MALFORMED, describe(request))
         if status not in _SUCCESS_STATUS:
             raise SempError(SempFailure.STATUS, _detail(request, status, document))
-        return _rows(request, document.get("data"))
+        return document
