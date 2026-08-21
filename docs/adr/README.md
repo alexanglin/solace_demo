@@ -81,6 +81,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0061](0061-least-privilege-broker-principals-and-topic-authorization.md) | Give each component a least-privilege broker identity and deny topic access by default | Accepted |
 | [0062](0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) | Type-check the Agent Mesh domain from its own directory, over its whole tree | Accepted |
 | [0063](0063-lock-local-models-by-manifest-digest.md) | Lock local Ollama models by manifest digest in a committed lock file | Accepted |
+| [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 
 ## Decisions still open
 
