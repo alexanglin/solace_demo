@@ -11,9 +11,11 @@ apps:
     app_config:
       namespace: aerial-rescue/validation
       agent_name: ValidationAgent
+      # A paid model is reached at its provider's own endpoint, so it declares no api_base.
+      # Pointing api_base at ${LLM_SERVICE_ENDPOINT} would name Ollama, and docs/adr/0063
+      # judges locality by the resolved endpoint rather than by the identifier's prefix.
       model:
         model: openai/gpt-4o-mini-2024-07-18
-        api_base: ${LLM_SERVICE_ENDPOINT}
         api_key: ${LLM_SERVICE_API_KEY}
       instruction: Validate configuration without starting a runtime.
       tools:

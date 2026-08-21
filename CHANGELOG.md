@@ -10,6 +10,32 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Local models are locked by digest, and the validator now knows what "local" means.**
+  [ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) refused every `ollama`
+  identifier until the lock representation was recorded, so no local-only Agent Mesh configuration
+  could be committed at all. Measured against the running daemon, the obvious representation does not
+  exist: `POST /api/show` rejects `llama3@sha256:<hex>` as an invalid model name and finds no
+  `llama3:sha256-<hex>`, while `GET /api/tags` does report the manifest digest. An Ollama model is
+  addressable only as `name:tag`, so the digest cannot ride in the identifier.
+
+  `agent-mesh/model-lock.toml` is where it rides instead, and the validator proves membership and form
+  while readiness is left to prove the digest — a split
+  [ADR-0063](docs/adr/0063-lock-local-models-by-manifest-digest.md) states rather than papers over.
+  `MODEL_LOCK` reports an unusable lock, `MODEL_LOCAL_FORM` a local model not written as
+  `ollama_chat/<name>:<tag>`, and `MODEL_LOCK_REQUIRED` survives with a narrower meaning — not listed —
+  so a reader who hits the code ADR-0035 names still lands on a record. Form and membership are
+  separate faults with separate codes; a canonically written model that is merely unlisted does not
+  report as malformed.
+
+  The rule that mattered most was the one nobody had asked for. The validator decided a model was
+  local by testing its identifier for an `ollama` prefix, and `valid_agent_with_tool.yaml` — a
+  committed fixture, and the shape a contributor would copy — declared
+  `openai/gpt-4o-mini-2024-07-18` with `api_base: ${LLM_SERVICE_ENDPOINT}`, which `.env.example`
+  expands to Ollama's own OpenAI-compatible endpoint. A paid-looking identifier was pointed at the
+  local daemon and passed. Locality is now decided by the resolved endpoint, which the validator can
+  see because it judges the environment-expanded document, and the fixture was the first thing the new
+  rule caught.
+
 - **The `mesh` profile could not have started.** `deploy/compose.yaml` gained nine per-role
   identities on 2026-08-21, but nothing produced the eighteen variables it reads, and
   `scripts/broker-secrets.sh` writes passwords only as files under `deploy/secrets/`.

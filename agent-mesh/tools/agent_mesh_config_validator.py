@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.machinery import PathFinder
@@ -54,6 +55,15 @@ SAFE_TOOL_TOPIC_PATTERN = re.compile(
     r"^aerial-rescue/v1/\{\{\s*missionId\s*\}\}/gateway/request/"
     r"\{\{\s*operation\s*\}\}$"
 )
+MODEL_LOCK_FILENAME = "model-lock.toml"
+MODEL_LOCK_FORMAT = 1
+MODEL_LOCK_KEYS = frozenset(("identifier", "digest", "recorded_on", "recorded_by", "reason"))
+MODEL_LOCK_MINIMUM_REASON = 20
+MODEL_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+LOCAL_MODEL_PATTERN = re.compile(
+    r"^ollama_chat/[a-z0-9][a-z0-9._-]*:(?!latest$)[a-z0-9][a-z0-9._-]*$"
+)
+OLLAMA_ENDPOINT_PORT = 11434
 PINNED_MODEL_PATTERN = re.compile(
     r"(?:[-:@](?:v?\d+\.\d+(?:\.\d+)?|\d{4}-\d{2}-\d{2}|\d{8})|"
     r"@sha256:[0-9a-f]{64})$",
@@ -115,6 +125,21 @@ class _RuntimeBoundaryError(RuntimeError):
         super().__init__("the exact pinned upstream validation boundary is unavailable")
 
 
+@dataclass(frozen=True)
+class _ModelPolicy:
+    """What the project's own model rules need beyond the configuration itself."""
+
+    lock: frozenset[str]
+    required: bool
+
+
+class _ModelLockError(ValueError):
+    """The tracked local-model lock cannot safely seed validation."""
+
+    def __init__(self) -> None:
+        super().__init__("the tracked local-model lock is invalid")
+
+
 class _EnvironmentTemplateError(ValueError):
     """The tracked environment template cannot safely seed validation."""
 
@@ -138,6 +163,40 @@ def _read_environment_template(path: Path) -> dict[str, str]:
         placeholder = not value or value.startswith("<") or value == f"${{{name}}}"
         values[name] = "offline-placeholder" if placeholder else value
     return values
+
+
+def _locked_identifier(entry: object) -> str:
+    """Return one lock entry's identifier, refusing an entry that is not exactly in form."""
+    if not isinstance(entry, dict) or set(entry) != MODEL_LOCK_KEYS:
+        raise _ModelLockError
+    identifier = entry["identifier"]
+    digest = entry["digest"]
+    reason = entry["reason"]
+    if not isinstance(identifier, str) or LOCAL_MODEL_PATTERN.fullmatch(identifier) is None:
+        raise _ModelLockError
+    if not isinstance(digest, str) or MODEL_DIGEST_PATTERN.fullmatch(digest) is None:
+        raise _ModelLockError
+    if not isinstance(reason, str) or len(reason.strip()) < MODEL_LOCK_MINIMUM_REASON:
+        raise _ModelLockError
+    return identifier
+
+
+def _read_model_lock(path: Path) -> frozenset[str]:
+    """Return the locked local-model identifiers (docs/adr/0063)."""
+    try:
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise _ModelLockError from error
+    declared = document.get("format")
+    if type(declared) is not int or declared != MODEL_LOCK_FORMAT:
+        raise _ModelLockError
+    entries = document.get("models")
+    if not isinstance(entries, list):
+        raise _ModelLockError
+    identifiers = tuple(_locked_identifier(entry) for entry in entries)
+    if len(set(identifiers)) != len(identifiers):
+        raise _ModelLockError
+    return frozenset(identifiers)
 
 
 @contextlib.contextmanager
@@ -518,12 +577,61 @@ def _model_identifier(model: object) -> str | None:
     return None
 
 
+def _local_endpoint(model: object) -> bool:
+    """Return whether ``model`` declares an ``api_base`` naming the local Ollama daemon.
+
+    The document reaching this rule is already environment-expanded, so an ``api_base`` written
+    as ``${LLM_SERVICE_ENDPOINT}`` is compared as the URL the template resolves it to. That is
+    what stops a paid-looking identifier from being pointed at Ollama (docs/adr/0063).
+    """
+    if not isinstance(model, dict):
+        return False
+    api_base = model.get("api_base")
+    if not isinstance(api_base, str):
+        return False
+    try:
+        return urlsplit(api_base).port == OLLAMA_ENDPOINT_PORT
+    except ValueError:
+        return False
+
+
+def _local_model_issues(
+    path: Path,
+    identifier: str,
+    location: str,
+    policy: _ModelPolicy,
+) -> tuple[ValidationIssue, ...]:
+    """Return why a local model may not be committed, or nothing when it is locked.
+
+    Form and lock membership are separate faults with separate codes, so a canonically
+    written model that is merely unlisted does not report as malformed.
+    """
+    if LOCAL_MODEL_PATTERN.fullmatch(identifier) is None:
+        return (
+            _issue(
+                path,
+                f"{location}.model",
+                "MODEL_LOCAL_FORM",
+                "local model must be written as ollama_chat/<name>:<tag>",
+            ),
+        )
+    if identifier not in policy.lock:
+        return (
+            _issue(
+                path,
+                f"{location}.model",
+                "MODEL_LOCK_REQUIRED",
+                "local model is not listed in the lock",
+            ),
+        )
+    return ()
+
+
 def _model_policy_issues(
     path: Path,
     app_config: Mapping[str, object],
     location: str,
-    *,
-    required: bool,
+    policy: _ModelPolicy,
 ) -> tuple[ValidationIssue, ...]:
     issues: list[ValidationIssue] = []
     if "model_provider" in app_config:
@@ -534,7 +642,7 @@ def _model_policy_issues(
         )
     identifier = _model_identifier(app_config.get("model"))
     if not identifier:
-        if required or app_config.get("model") is not None:
+        if policy.required or app_config.get("model") is not None:
             issues.append(
                 _issue(
                     path,
@@ -544,15 +652,8 @@ def _model_policy_issues(
                 )
             )
         return tuple(issues)
-    if identifier.casefold().startswith("ollama"):
-        issues.append(
-            _issue(
-                path,
-                f"{location}.model",
-                "MODEL_LOCK_REQUIRED",
-                "local model lock is not yet defined",
-            )
-        )
+    if _local_endpoint(app_config.get("model")) or identifier.casefold().startswith("ollama"):
+        issues.extend(_local_model_issues(path, identifier, location, policy))
     elif not PINNED_MODEL_PATTERN.search(identifier):
         issues.append(
             _issue(
@@ -570,15 +671,14 @@ def _model_issues(
     app_config: Mapping[str, object],
     model: object,
     location: str,
-    *,
-    model_required: bool,
+    policy: _ModelPolicy,
 ) -> tuple[ValidationIssue, ...]:
     unknown = sorted(set(app_config) - _model_fields(model))
     issues = [
         _issue(path, f"{location}.{name}", "APP_CONFIG_UNKNOWN", "unknown app configuration field")
         for name in unknown
     ]
-    issues.extend(_model_policy_issues(path, app_config, location, required=model_required))
+    issues.extend(_model_policy_issues(path, app_config, location, policy))
     if not _invoke_model(model, app_config):
         issues.append(_issue(path, location, "APP_CONFIG", "upstream app configuration rejected"))
     return tuple(issues)
@@ -1139,7 +1239,7 @@ def _tool_issues(
 
 
 def _app_issues(
-    path: Path, app: object, runtime: _Runtime, index: int
+    path: Path, app: object, runtime: _Runtime, index: int, lock: frozenset[str]
 ) -> tuple[ValidationIssue, ...]:
     location = f"apps[{index}]"
     if not isinstance(app, dict):
@@ -1175,7 +1275,7 @@ def _app_issues(
                 typed_config,
                 runtime.agent_model,
                 f"{location}.app_config",
-                model_required=True,
+                _ModelPolicy(lock, required=True),
             )
         )
         issues.extend(_tool_issues(path, typed_config, f"{location}.app_config"))
@@ -1186,7 +1286,7 @@ def _app_issues(
                 typed_config,
                 runtime.workflow_model,
                 f"{location}.app_config",
-                model_required=False,
+                _ModelPolicy(lock, required=False),
             )
         )
     else:
@@ -1194,7 +1294,9 @@ def _app_issues(
     return tuple(issues)
 
 
-def _envelope_result(path: Path, parsed: object, runtime: _Runtime) -> ValidationResult:
+def _envelope_result(
+    path: Path, parsed: object, runtime: _Runtime, lock: frozenset[str]
+) -> ValidationResult:
     if not isinstance(parsed, dict):
         issue = _issue(path, "document", "CONFIG_ROOT", "configuration root must be a mapping")
         return ValidationResult(path, 0, (issue,))
@@ -1206,7 +1308,9 @@ def _envelope_result(path: Path, parsed: object, runtime: _Runtime) -> Validatio
         issue = _issue(path, "apps", "APPS_EMPTY", "apps must contain at least one entry")
         return ValidationResult(path, 0, (issue,))
     issues = [
-        issue for index, app in enumerate(apps) for issue in _app_issues(path, app, runtime, index)
+        issue
+        for index, app in enumerate(apps)
+        for issue in _app_issues(path, app, runtime, index, lock)
     ]
     names = tuple(app.get("name") for app in apps if isinstance(app, dict))
     valid_names = tuple(name for name in names if isinstance(name, str) and name.strip())
@@ -1225,6 +1329,7 @@ def _validate_one(
     root: Path,
     declared_environment: frozenset[str],
     runtime: _Runtime,
+    lock: frozenset[str],
 ) -> ValidationResult:
     _, include_issues = _read_include_tree(path, root=root)
     if include_issues:
@@ -1245,13 +1350,14 @@ def _validate_one(
     if parsed is None:
         issue = _issue(path, "document", "YAML_PARSE", "configuration could not be parsed")
         return ValidationResult(path, 0, (issue,))
-    return _envelope_result(path, parsed, runtime)
+    return _envelope_result(path, parsed, runtime, lock)
 
 
 def _merge_results(
     paths: Sequence[Path],
     results: tuple[ValidationResult, ...],
     runtime: _Runtime,
+    lock: frozenset[str],
 ) -> tuple[ValidationResult, ...]:
     if len(paths) < MINIMUM_CONFIGS_TO_MERGE or any(not result.valid for result in results):
         return results
@@ -1268,7 +1374,7 @@ def _merge_results(
         try:
             for parsed in parsed_configs:
                 merged = runtime.merge_config(merged, parsed)
-            merged_result = _envelope_result(paths[0], merged, runtime)
+            merged_result = _envelope_result(paths[0], merged, runtime, lock)
         except Exception:
             merged_result = merge_failure
     if merged_result.valid:
@@ -1286,14 +1392,28 @@ def _merge_results(
     )
 
 
+def _fanned_out(
+    paths: Sequence[Path], location: str, rule: str, message: str
+) -> tuple[ValidationResult, ...]:
+    """Return the same whole-run refusal against every path, so no file reads as validated."""
+    return tuple(
+        ValidationResult(path, 0, (_issue(path, location, rule, message),)) for path in paths
+    )
+
+
 def validate_paths(
     paths: Sequence[Path],
     *,
     config_root: Path,
     env_template: Path,
+    model_lock: Path,
 ) -> tuple[ValidationResult, ...]:
     """Validate configuration paths without starting the Agent Mesh runtime."""
     ordered_paths = tuple(sorted(path.resolve() for path in paths))
+    try:
+        lock = _read_model_lock(model_lock)
+    except _ModelLockError:
+        return _fanned_out(ordered_paths, "model-lock", "MODEL_LOCK", "local model lock is invalid")
     try:
         environment = _read_environment_template(env_template)
         with _isolated_runtime_environment(environment):
@@ -1304,25 +1424,17 @@ def validate_paths(
                     root=config_root.resolve(),
                     declared_environment=frozenset(environment),
                     runtime=runtime,
+                    lock=lock,
                 )
                 for path in ordered_paths
             )
-            return _merge_results(ordered_paths, results, runtime)
+            return _merge_results(ordered_paths, results, runtime, lock)
     except (OSError, ValueError, importlib.metadata.PackageNotFoundError, _RuntimeBoundaryError):
-        return tuple(
-            ValidationResult(
-                path,
-                0,
-                (
-                    _issue(
-                        path,
-                        "runtime",
-                        "RUNTIME_PREREQUISITE",
-                        "pinned validation runtime is unavailable",
-                    ),
-                ),
-            )
-            for path in ordered_paths
+        return _fanned_out(
+            ordered_paths,
+            "runtime",
+            "RUNTIME_PREREQUISITE",
+            "pinned validation runtime is unavailable",
         )
 
 
@@ -1366,6 +1478,7 @@ def run(
         paths,
         config_root=project_root / "configs",
         env_template=project_root.parent / ".env.example",
+        model_lock=project_root / MODEL_LOCK_FILENAME,
     )
     for result in results:
         display = _display_path(result.path, project_root)
