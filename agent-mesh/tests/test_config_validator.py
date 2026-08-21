@@ -38,8 +38,8 @@ def _broker() -> dict[str, object]:
     return {
         "dev_mode": True,
         "broker_url": "${SOLACE_BROKER_URL}",
-        "broker_username": "${SOLACE_BROKER_USERNAME}",
-        "broker_password": "${SOLACE_BROKER_PASSWORD}",
+        "broker_username": "${SOLACE_AGENT_MESH_AGENT_USERNAME}",
+        "broker_password": "${SOLACE_AGENT_MESH_AGENT_PASSWORD}",
         "broker_vpn": "${SOLACE_BROKER_VPN}",
     }
 
@@ -254,7 +254,7 @@ class ValidConfigurationTests(unittest.TestCase):
 
         # Act
         with (
-            patch.dict(os.environ, {"SOLACE_BROKER_PASSWORD": "DO-NOT-READ"}),
+            patch.dict(os.environ, {"SOLACE_AGENT_MESH_AGENT_PASSWORD": "DO-NOT-READ"}),
             patch.object(socket.socket, "connect", side_effect=AssertionError("network used")),
         ):
             result = validate_paths((path,), config_root=FIXTURES, env_template=ENV_TEMPLATE)[0]
@@ -540,14 +540,17 @@ class IncludeAndSecretPolicyTests(unittest.TestCase):
         userinfo = "fixture-user" + ":" + "fixture-value"
         credential_url = "tcps://" + userinfo + "@broker.invalid:55443"
         candidates = (
-            (source.replace("${SOLACE_BROKER_PASSWORD}", sensitive_value), "SECRET_LITERAL"),
             (
-                source.replace("${SOLACE_BROKER_USERNAME}", sensitive_username),
+                source.replace("${SOLACE_AGENT_MESH_AGENT_PASSWORD}", sensitive_value),
+                "SECRET_LITERAL",
+            ),
+            (
+                source.replace("${SOLACE_AGENT_MESH_AGENT_USERNAME}", sensitive_username),
                 "SECRET_LITERAL",
             ),
             (source.replace("${SOLACE_BROKER_VPN}", sensitive_vpn), "SECRET_LITERAL"),
             (
-                source.replace("${SOLACE_BROKER_USERNAME}", "${UNDECLARED_USERNAME}"),
+                source.replace("${SOLACE_AGENT_MESH_AGENT_USERNAME}", "${UNDECLARED_USERNAME}"),
                 "ENV_UNDECLARED",
             ),
             (

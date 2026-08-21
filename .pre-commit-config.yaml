@@ -314,15 +314,18 @@ repos:
 
       - id: mypy-agent-mesh
         name: mypy (agent-mesh, py3.13)
-        # The config file is named explicitly because mypy reads configuration from the
-        # working directory only. This hook runs from the repository root, so without it
-        # the pre-commit stage would check this tree against the root table's
-        # python_version = "3.14" while pre-push checks it against agent-mesh's own
-        # (docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md).
-        entry: uv run --project agent-mesh --frozen mypy --config-file agent-mesh/pyproject.toml
-        language: system
+        # Runs from agent-mesh/ over the whole tree rather than from the root over the
+        # staged files. mypy resolves a module name relative to its working directory, so
+        # from the root `from tools import agent_mesh_config_validator` collides with the
+        # root tooling package and resolves only when the validator happens to be staged
+        # beside its own tests. Whole-tree also removes the fast/authoritative disagreement
+        # ADR-0029 exists to prevent, and costs 0.29s warm
+        # (docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md).
+        entry: scripts/hooks/agent-mesh/mypy-agent-mesh.sh
+        language: script
         types_or: [python, pyi]
         files: ^agent-mesh/
+        pass_filenames: false
         require_serial: true
 
       - id: eslint

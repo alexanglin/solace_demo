@@ -10,6 +10,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- The commit-stage type check for the Agent Mesh domain agreed with the authoritative one only by
+  luck. It ran from the repository root over the staged files, and mypy derives a module name
+  relative to its working directory — so `from tools import agent_mesh_config_validator` resolved
+  only when the validator module happened to be staged beside its own tests, which is why
+  `pre-commit run --all-files` always passed and a narrower commit did not. It now runs from
+  `agent-mesh/` over the whole tree, the same command `mypy-full.sh` issues, at 0.29 s warm
+  ([ADR-0062](docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md)).
+
 - Three documents still described PostgreSQL 17 after
   [ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) moved the store to 18.6:
   the profile table in `docs/ARCHITECTURE.md`, the image row in `docs/operating-parameters.md`, and
