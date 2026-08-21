@@ -55,6 +55,27 @@ quality_dashboard_active() {
 	[ -f apps/dashboard/package.json ] || quality_dashboard_source_present
 }
 
+# Fail closed once the dashboard is active. ADR-0019 makes a missing manifest, lockfile, or
+# package manager a failure rather than a skip, and four dashboard gates need the identical
+# preamble -- four copies of it would trip the duplication gate. $1 names the work, so the
+# message says which gate could not run.
+quality_dashboard_require() {
+	quality_dashboard_active || return 1
+	[ -f apps/dashboard/package.json ] || {
+		printf 'MISSING: apps/dashboard/package.json is required by owned dashboard source\n' >&2
+		exit 1
+	}
+	[ -f apps/dashboard/pnpm-lock.yaml ] || {
+		printf 'MISSING: apps/dashboard/pnpm-lock.yaml is required for %s\n' "$1" >&2
+		exit 1
+	}
+	command -v pnpm >/dev/null 2>&1 || {
+		printf 'MISSING: pnpm is not installed, so %s cannot run\n' "$1" >&2
+		exit 1
+	}
+	return 0
+}
+
 # The deploy/ stack is active once its tracked-or-unignored listing holds a compose file or a
 # Dockerfile -- the same basenames the compose-spec and hadolint hooks lint, and the same
 # git-listing rule the compose policy gate arms on (docs/adr/0045, docs/adr/0048).

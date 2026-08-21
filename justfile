@@ -23,6 +23,17 @@ check-commit:
 check-push:
     pre-commit run --all-files --hook-stage pre-push
 
+# Type-check both Python environments and the dashboard, whole-program, as CI does.
+check-types:
+    pre-commit run --all-files --hook-stage pre-push mypy-full
+    pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
+
+# Hold the dashboard's TypeScript configuration, lint, and formatting to docs/adr/0057.
+check-dashboard:
+    pre-commit run --all-files --hook-stage pre-commit typescript-policy
+    pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
+    pre-commit run --all-files --hook-stage pre-push dashboard-quality-full
+
 # Verify the mandatory AAA structure of every project-owned executable test.
 check-aaa:
     pre-commit run --all-files --hook-stage pre-commit test-aaa

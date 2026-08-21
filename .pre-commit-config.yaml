@@ -262,6 +262,17 @@ repos:
         always_run: true
         pass_filenames: false
 
+      # Inert until apps/dashboard holds a manifest or TypeScript source, then fails
+      # closed. Holds the compiler options, the required package scripts, the zero-warning
+      # rule, the coverage thresholds, and the exact-version rule to docs/adr/0057.
+      - id: typescript-policy
+        name: dashboard TypeScript configuration policy
+        entry: scripts/hooks/dashboard/check-typescript-policy.sh
+        language: script
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: docs-facts-and-links
         name: docs (facts, links, ADR index)
         entry: scripts/hooks/docs/check-docs.sh
@@ -318,14 +329,18 @@ repos:
         name: eslint (dashboard)
         entry: pre-commit hazmat cd apps/dashboard pnpm exec eslint --
         language: system
-        files: ^apps/dashboard/.*\.(ts|tsx|js|jsx)$
+        files: ^apps/dashboard/.*\.(ts|tsx|js|jsx|cjs|mjs)$
         require_serial: true
 
+      # Whole-project by nature, so `files:` is a TRIGGER rather than a scope. It must
+      # include the configuration and the manifests, because a tsconfig edit or an @types
+      # bump changes the verdict for every file while touching no .ts at all. The
+      # unconditional run is dashboard-typecheck-full at pre-push (docs/adr/0057).
       - id: tsc
         name: tsc --noEmit (dashboard)
-        entry: pnpm --dir apps/dashboard exec tsc --noEmit
-        language: system
-        files: ^apps/dashboard/.*\.(ts|tsx)$
+        entry: scripts/hooks/dashboard/dashboard-typecheck-full.sh
+        language: script
+        files: ^apps/dashboard/(.*\.(ts|tsx)|tsconfig[^/]*\.json|package\.json|pnpm-lock\.yaml)$
         pass_filenames: false
         require_serial: true
 
@@ -333,7 +348,7 @@ repos:
         name: prettier --check (dashboard)
         entry: pre-commit hazmat cd apps/dashboard pnpm exec prettier --check --
         language: system
-        files: ^apps/dashboard/.*\.(ts|tsx|css|json)$
+        files: ^apps/dashboard/.*\.(ts|tsx|js|jsx|cjs|mjs|css|json|html)$
 
       # Related tests only, to hold the pre-commit stage inside its budget.
       # `--run` is mandatory: vitest defaults to watch mode and would hang.
@@ -495,6 +510,22 @@ repos:
       - id: dashboard-test-full
         name: vitest (dashboard, full suite)
         entry: scripts/hooks/dashboard/dashboard-test-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-typecheck-full
+        name: tsc --noEmit (dashboard, whole project)
+        entry: scripts/hooks/dashboard/dashboard-typecheck-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-quality-full
+        name: eslint and prettier (dashboard, whole tree)
+        entry: scripts/hooks/dashboard/dashboard-quality-full.sh
         language: script
         stages: [pre-push]
         always_run: true
