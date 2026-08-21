@@ -77,6 +77,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0057](0057-typescript-strictness-baseline-before-the-dashboard.md) | Fix the dashboard's TypeScript baseline before the first dashboard file, and gate it | Accepted |
 | [0058](0058-validate-dashboard-inputs-against-the-committed-schemas.md) | Generate the dashboard's contract types from the committed schemas and validate every untrusted input against them | Accepted |
 | [0059](0059-keep-the-verification-authority-able-to-report.md) | Keep the verification authority able to report a verdict | Accepted |
+| [0060](0060-postgresql-18-and-its-data-directory-layout.md) | Move the durable store to PostgreSQL 18 and adopt its data-directory layout | Accepted |
 
 ## Decisions still open
 

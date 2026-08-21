@@ -186,6 +186,16 @@ just logs              # follow the logs
 just down              # stop; volumes are kept
 ```
 
+If you started the stack before 2026-08-21 you hold a PostgreSQL 17 cluster, and the 18.6 image
+refuses to start on it — a hard failure with a clear message, not silent data loss. There is no data
+to keep yet, so discard it once
+([ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)):
+
+```sh
+docker compose --env-file .env -f deploy/compose.yaml down
+docker volume rm aerial-rescue-mesh_postgres-data
+```
+
 `just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
 the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain
 entrypoints. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
