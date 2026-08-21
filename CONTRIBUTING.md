@@ -181,6 +181,7 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 cp .env.example .env   # then set SESSION_SECRET_KEY; the broker credentials follow provisioning
 just secrets           # per-checkout certificate authority, broker certificate, and passwords
 just up                # broker and Postgres, waiting for both to be healthy
+just provision         # broker identities and ACL profiles over SEMP; safe to re-run
 just ps                # service health
 just logs              # follow the logs
 just down              # stop; volumes are kept
@@ -195,6 +196,15 @@ to keep yet, so discard it once
 docker compose --env-file .env -f deploy/compose.yaml down
 docker volume rm aerial-rescue-mesh_postgres-data
 ```
+
+`just provision` is not optional once you intend to connect anything: it applies
+[ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)'s nine
+least-privilege client usernames and their deny-by-default ACL profiles, and it disables the factory
+`default` client username. Until it runs, any identity may publish any topic, including the
+executable command topics; after it runs, a client presenting `default` or an unknown username
+cannot connect at all. Copy each role's password from `deploy/secrets/broker-<role>-password` into
+your own `.env` under the names `.env.example` declares. Re-running it changes nothing, so run it
+again after `just rotate-secrets`.
 
 `just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
 the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain

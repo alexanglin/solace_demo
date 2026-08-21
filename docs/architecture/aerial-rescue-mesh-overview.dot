@@ -52,7 +52,7 @@ digraph AerialRescueMesh {
       style="rounded";
 
       local_broker [label="PubSub+ Standard 10.26.0 container\ntcps 55443 • SEMP/TLS 1943\nthe broker for every gated path (ADR-0043)", shape=cylinder, fillcolor="#DFF7EE", color="#008F6B"];
-      postgres [label="PostgreSQL 17 container\ndurable mission store (ADR-0003)", shape=cylinder, fillcolor="#EEF2F6"];
+      postgres [label="PostgreSQL 18 container\ndurable mission store (ADR-0003)", shape=cylinder, fillcolor="#EEF2F6"];
 
       subgraph cluster_sam {
         label="Agent Mesh 1.28.7 — official image + pinned plugins — profile mesh";

@@ -82,6 +82,11 @@ rotate-secrets:
 up *ARGS:
     docker compose --env-file .env -f deploy/compose.yaml {{ARGS}} up --detach --wait
 
+# Apply the broker authorization matrix over SEMP. Needs a running broker and the
+# credentials `just secrets` writes (docs/adr/0061). Safe to re-run; it converges.
+provision *ARGS:
+    uv run --frozen python -m aerial_rescue_broker {{ARGS}}
+
 # Stop the stack; volumes are kept.
 down:
     docker compose --env-file .env -f deploy/compose.yaml down

@@ -10,6 +10,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Three documents still described PostgreSQL 17 after
+  [ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) moved the store to 18.6:
+  the profile table in `docs/ARCHITECTURE.md`, the image row in `docs/operating-parameters.md`, and
+  the architecture diagram itself, which is a rendered PNG and so had to be regenerated and looked
+  at. The operating-parameters table also gains the data directory, `/var/lib/postgresql/18/docker`,
+  which is the fact that made the major bump a defect rather than a pin change.
+- `just provision` applies the broker authorization matrix, and `CONTRIBUTING.md` puts it in the
+  local-stack sequence between `just up` and `just ps`. It is not optional once anything intends to
+  connect: until it runs any identity may publish any topic, and after it runs a client presenting
+  `default` or an unknown username cannot connect at all.
+
 - The approval time-to-live is 60 seconds.
   [ADR-0042](docs/adr/0042-approval-time-to-live.md) moves to `Accepted` and
   `docs/operating-parameters.md` gains an approval-timing section, closing the last row that
