@@ -16,9 +16,8 @@ import importlib
 import importlib.metadata
 import tomllib
 import unittest
-from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 import pytest
 
@@ -31,10 +30,28 @@ EVALUATORS: Final = "solace_agent_mesh.common.utils.embeds.evaluators"
 EXPECTED_SUM: Final = 5
 
 
-def _math_evaluator() -> Callable[..., object]:
+class MathEmbedEvaluator(Protocol):
+    """The one Agent Mesh embed evaluator these probes call.
+
+    Mirrors ``_evaluate_math_embed`` in the pinned runtime. ``Callable[..., object]`` would
+    be shorter, but its ``...`` is an explicit ``Any``, which ADR-0056 forbids, and it
+    checks nothing: it accepts any arity and any argument type. Naming the signature makes
+    an upstream change a type error here rather than a failure at call time.
+    """
+
+    def __call__(
+        self,
+        expression: str,
+        context: object,
+        log_identifier: str,
+        format_spec: str | None = None,
+    ) -> tuple[str, str | None, int]: ...
+
+
+def _math_evaluator() -> MathEmbedEvaluator:
     """Return Agent Mesh's math-embed evaluator through its public mapping."""
     evaluators = importlib.import_module(EVALUATORS)
-    evaluate: Callable[..., object] = evaluators.EMBED_EVALUATORS["math"]
+    evaluate: MathEmbedEvaluator = evaluators.EMBED_EVALUATORS["math"]
     return evaluate
 
 
