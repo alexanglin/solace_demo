@@ -10,6 +10,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- Both `[tool.mypy]` tables enable every strictness lever mypy 1.19.0 offers and the tree already
+  satisfies: `disallow_any_explicit`, `strict_equality_for_none`, `local_partial_types`, and all
+  thirteen error codes that are off by default, among them `exhaustive-match`, `unused-awaitable`,
+  `possibly-undefined`, and `ignore-without-code`. Measured at zero errors on both trees before
+  being enabled. `tools/quality_gate_tests/contracts/test_type_check_contract.py` asserts a floor,
+  so deleting `strict = true` from both tables fails rather than satisfying a pure drift rule; holds
+  the two tables equal outside `python_version`, `exclude`, and the override lists; computes the
+  expected error-code list from `mypy.errorcodes`, so a mypy upgrade that adds an optional code
+  fails until it is decided on; and makes ADR-0029's interpreter routing executable
+  ([ADR-0056](docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md)).
+- The dashboard's TypeScript baseline is fixed before the first dashboard file exists, and
+  `tools/typescript_policy_gate.py` refuses a configuration that does not carry it: the compiler
+  options `strict` omits, `skipLibCheck: false`, a relative-only `extends`, the six required package
+  scripts, `--max-warnings 0`, the four coverage thresholds, and exact dependency versions. New
+  pre-push gates `dashboard-typecheck-full` and `dashboard-quality-full` run the whole project and
+  the whole tree, the counterparts of `mypy-full` and `python-quality-full`. All of them are inert
+  until `apps/dashboard` holds a manifest or TypeScript source, and fail closed afterwards
+  ([ADR-0057](docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
+  [ADR-0058](docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
+- `just check-types` and `just check-dashboard`. Every other deep gate had a recipe; type checking
+  did not.
+
 - Trivy 0.74.0 scans the stack under the waiver registry. `tools/dependency_waiver_gate.py` takes
   `--source trivy` and two new domains, `deploy-config` and `image:<repository>`: a HIGH or CRITICAL
   finding with a fixed version (or, for a misconfiguration, in `FAIL` status) blocks unless an expiring
@@ -372,6 +394,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - Two documents carried an unfinished sentence — `TECH_DEBT.md` and `CONTRIBUTING.md` both stopped at
   "a CodeQL alert page nobody". No gate could see it: markdownlint checks structure, `typos` checks
   tokens, and `docs-strict` checks banned phrases, none of which can tell that a sentence does not end.
+- The whole-program Python gates built their argument list from the literal roots
+  `tools packages services tests migrations`, so a new top-level directory holding Python was
+  checked file by file at the commit stage and not at all by the pre-push run -- the run whose own
+  header records that per-file checking gives a different answer than checking the project. The
+  roots are now derived from git's own listing.
+- The commit-stage `tsc` hook carries `pass_filenames: false`, which makes its `files:` pattern a
+  trigger rather than a scope, and the trigger matched only `.ts` and `.tsx`. A change to
+  `tsconfig.json`, to `package.json`, or a bumped type-declaration package would have run no type
+  check while changing the verdict for every file.
+- `security.yml`'s daily audit job set up no Node and no pnpm, while `dependency-audit.sh` audits the
+  dashboard through pnpm once a manifest exists. The job would have failed closed on `MISSING: pnpm`
+  the day `apps/dashboard/package.json` landed. Its pull-request path filter also omitted
+  `apps/dashboard/**`, so a dashboard lockfile change would never have triggered the audit that
+  covers it.
 
 - `test_a_missing_openssl_fails_closed` established its precondition with `PATH=/bin`, which hides
   `openssl` on macOS but not on Debian, where `/bin` is a symlink to `/usr/bin`. The test asserted a

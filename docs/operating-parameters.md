@@ -22,7 +22,10 @@ integer arithmetic; display rounding never changes a verdict.
 | Python Tier 2 branch coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
 | Agent Mesh owned-tooling coverage | 100% statements and 100% branches for `agent-mesh/tools/agent_mesh_config_validator.py` | `pytest-cov` with `--cov-fail-under=100` in `scripts/hooks/agent-mesh-test-full.sh` |
 | Python Tier 3 test inventory | At least 1 smoke test and 1 failure-path test per module | Tier inventory gate; Tier 3 fails until this inventory is executable |
-| TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest coverage thresholds |
+| TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest thresholds carried on the `test:coverage` script, held there by `tools/typescript_policy_gate.py` |
+| TypeScript type errors | Zero, whole project | `tsc --noEmit` through `scripts/hooks/dashboard/dashboard-typecheck-full.sh` |
+| TypeScript lint findings | Zero at any severity | `eslint --max-warnings 0` through `scripts/hooks/dashboard/dashboard-quality-full.sh` |
+| TypeScript compiler options | Every option [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md) names, at the value it names | `tools/typescript_policy_gate.py` |
 | Cyclomatic complexity | At most 8 per function | Ruff `C901` |
 | Cognitive complexity | At most 15 per function | Complexipy 7.0.1 |
 | Function arguments | At most 5 | Ruff `PLR0913` and `PLR0917` |

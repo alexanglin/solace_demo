@@ -60,9 +60,9 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 
 | Stage | What | Budget |
 | --- | --- | --- |
-| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, related tests | **≤ 60 s** |
+| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, related tests | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard test/build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, test and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:

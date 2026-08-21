@@ -77,7 +77,11 @@ The system must support mission planning, sector assignment, live telemetry, int
 
 ## 4. Dashboard engineering rules
 
-- Enable TypeScript strict mode and avoid `any` except at a validated external boundary.
+- Type checking, linting, and the runtime validation boundary are fixed by
+  [ADR-0057](docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md) and
+  [ADR-0058](docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md), and enforced by
+  the dashboard gates. Do not restate the option list here.
+- Use `any` only where an input is immediately validated into a typed domain value.
 - Keep server state, mission state, and presentation state distinct.
 - Render from normalized domain events; do not encode independent mission business rules in UI components.
 - Make live simulation, degraded live simulation, and replay modes visually unmistakable.
