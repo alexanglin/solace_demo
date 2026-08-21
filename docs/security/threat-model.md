@@ -80,8 +80,12 @@ specification: nine authorization roles, two total publish and subscribe tables 
 families, a separate A2A grant, `disallow` as every owned ACL profile's default action, and the factory
 `default` client username disabled so no denial is bypassable by connecting as it. The negative tests
 are catalogue cases B17, B18, and B19; their status is tracked in
-[approval-bypass-catalogue.md](approval-bypass-catalogue.md), not here. **Residual risk:** the roles are
-coarser than the processes, so three edge agents share one authority.
+[approval-bypass-catalogue.md](approval-bypass-catalogue.md), not here. All three now pass against the
+running container, with the matrix applied and the factory identity disabled
+([`release-evidence/phase-0/broker-authorization.md`](../../release-evidence/phase-0/broker-authorization.md)).
+**Residual risks:** the roles are coarser than the processes, so three edge agents share one
+authority; no test yet asserts that a *subscription* outside a role's grants is refused; and no
+durable queue exists, so the guaranteed-delivery half of this mitigation is unenforced.
 
 ### T4 — Event spoofing and replay on the data plane
 

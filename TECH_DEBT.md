@@ -189,10 +189,18 @@ rather than a measurement:
 | Item | Why it is accepted for now | Clears when |
 | --- | --- | --- |
 | The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15 | Upstream builds the image; a project-owned image would re-implement upstream's Dockerfile ([ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)) | The plugin-compatibility probe is run inside the built image and recorded |
+| No durable queue exists, so guaranteed delivery has no endpoint | The four queue parameters -- maximum spool, maximum redelivery, message time-to-live, and dead-message-queue target -- are unset, and setting them needs the backlog-recovery measurement ([ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)) | The parameters carry numbers and the provisioner creates the queues |
+| The three Agent Mesh roles hold no A2A grant | `NAMESPACE` is blank, and [ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) fixes it with the first Agent Mesh configuration. Withholding under-grants rather than over-grants | The namespace is fixed and the provisioner is re-run |
 | The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
 | Full-stack memory and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision. The allocation and the default profile's cost are now measured; the two components that make the figure interesting, Agent Mesh and the emulated discovery agent, have not run | The `mesh` profile runs and the showcase measurement lands in `docs/operating-parameters.md` |
 | The official Agent Mesh image's `/opt/venv` carries `asteval` 1.0.6 | The override in [ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) changes the lock, not upstream's image; Trivy reports the finding at MEDIUM, below the blocking threshold, so every daily scan prints it as information | Upstream publishes an image with `asteval` at or above 1.0.9 |
 | Neither Dockerfile declares a `HEALTHCHECK`, so `trivy config` reports `DS-0026` at LOW on both | The compose policy gate requires the healthcheck in `deploy/compose.yaml`, which is where Compose reads it; the finding is informational on every pre-push run | A recorded decision settles where the healthcheck lives |
+
+**Broker authorization landed on 2026-08-21** and is recorded in
+[`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md).
+Before it, an identity that did not exist could publish an executable rescue-escalation command; the
+factory `default` client username is now disabled and every owned ACL profile denies by default. The
+two rows it adds above are what it did not settle.
 
 **Two rows cleared on 2026-08-21.** The broker image carries `/usr/bin/curl` 7.76.1 and the container
 reached healthy, so the healthcheck's assumption is measured rather than argued and the `/dev/tcp`
