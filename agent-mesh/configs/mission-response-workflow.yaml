@@ -1,0 +1,48 @@
+# The minimal versioned Mission Response workflow. Phase 0 needs one structured invocation
+# with typed input and output, not the full mission sequence; the sequence arrives in Phase 5.
+#
+# The workflow declares no model of its own: every model-bearing step runs on the agent it
+# names, so there is one place per model and one lock entry behind it (docs/adr/0063).
+apps:
+  - name: mission-response-workflow-app
+    app_module: solace_agent_mesh.workflow.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      name: MissionResponse
+      workflow:
+        version: 1.0.0
+        description: Assess the search sectors for one wilderness missing-person report.
+        inputSchema:
+          type: object
+          properties:
+            report: {type: string}
+          required: [report]
+        outputSchema:
+          type: object
+          properties:
+            assessment: {type: string}
+          required: [assessment]
+        nodes:
+          - id: assess_sectors
+            type: agent
+            agent_name: MissionCoordinator
+            instruction: Assess and rank the search sectors described in the report.
+            input:
+              text: '{{workflow.input.report}}'
+        outputMapping:
+          assessment: '{{assess_sectors.output.result}}'
+        skills:
+          - id: assess_sectors
+            name: Assess search sectors
+            description: Assess the search sectors for one missing-person report.
+            tags: [search, sectors]
+      session_service: {type: memory}
+      artifact_service: {type: memory}
+      agent_card_publishing: {interval_seconds: 30}

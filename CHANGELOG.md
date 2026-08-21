@@ -10,6 +10,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **`agent-mesh/configs/` exists, so the `mesh` profile has something to run.** Four
+  self-contained files: the built-in Orchestrator, a MissionCoordinator agent it may delegate to,
+  a versioned MissionResponse workflow with typed input and output schemas, and the HTTP/SSE Web UI.
+  `deploy/compose.yaml` has bind-mounted this directory since the stack was defined, and the official
+  image's `/app` is empty, so until now the profile had no configuration at all.
+
+  The upstream templates could not be copied. Every one of them sets `app_base_path: .`, which fails
+  `APP_SOURCE`, and `main_orchestrator.yaml` sets `model_provider: ["planning"]`, which fails
+  `MODEL_PROVIDER`. `!include` is unusable too: upstream's dialect puts the directive at column zero
+  between mapping keys, which is not valid YAML, and the repository's yamllint hook reads these files
+  even though `check-yaml` excludes them. Each config is therefore self-contained, which costs a
+  repeated broker block and buys a file that parses.
+
+  `management_server` lives in `orchestrator.yaml` and nowhere else. It is what serves `/readyz` on
+  8080, which the compose healthcheck probes, so without it `up --wait` would never return; and
+  because Solace AI Connector merges every file and takes the last value for a non-list key, two
+  declarations would be a silent conflict rather than an error. A test holds it to exactly one file.
+
+  Delegation is deny-by-default at the A2A layer as well as the broker's: the Orchestrator's
+  `allow_list` names `MissionCoordinator` alone, and the coordinator's `deny_list` is `*`, so it can
+  be asked but cannot ask. Both agents run on `ollama_chat/qwen3:4b`, written literally and locked by
+  digest, and both instructions state that the agent may only propose.
+
 - **The validator accepts the HTTP/SSE Web UI, and refuses its wildcard CORS default**
   ([ADR-0065](docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md)). The
   Web UI's module was outside `SUPPORTED_MODULES`, so a surface the Phase 0 deliverable names and

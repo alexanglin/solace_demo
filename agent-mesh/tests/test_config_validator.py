@@ -497,6 +497,40 @@ class WebUiPolicyTests(unittest.TestCase):
         self.assertIn("APP_MODULE", _rules(result))
 
 
+class CommittedConfigurationTests(unittest.TestCase):
+    """The configuration deploy/compose.yaml mounts must validate exactly as committed."""
+
+    def test_the_committed_mesh_configuration_validates(self) -> None:
+        # Arrange
+        config_root = Path(__file__).parents[1] / "configs"
+
+        # Act
+        results = validate_paths(
+            tuple(sorted(config_root.glob("*.yaml"))),
+            config_root=config_root,
+            env_template=ENV_TEMPLATE,
+            model_lock=MODEL_LOCK,
+        )
+
+        # Assert
+        self.assertEqual(4, len(results))
+        self.assertTrue(all(result.valid for result in results), results)
+
+    def test_exactly_one_committed_file_serves_the_readiness_probe(self) -> None:
+        # Arrange
+        configs = sorted((Path(__file__).parents[1] / "configs").glob("*.yaml"))
+
+        # Act
+        declaring = tuple(
+            path.name
+            for path in configs
+            if "management_server:" in path.read_text(encoding="utf-8")
+        )
+
+        # Assert
+        self.assertEqual(("orchestrator.yaml",), declaring)
+
+
 class ResultTypeTests(unittest.TestCase):
     def test_results_and_issues_are_immutable_and_validity_is_derived(self) -> None:
         # Arrange

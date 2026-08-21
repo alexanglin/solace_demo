@@ -1,0 +1,47 @@
+# The one specialised agent the Orchestrator delegates to, so that Phase 0 can prove a real
+# A2A delegation rather than a single agent talking to itself.
+#
+# It is a delegation target only: `allow_list` is empty and `deny_list` is `*`, so it can be
+# asked but cannot ask. Deny-by-default is the same posture the broker's authorization matrix
+# takes (docs/adr/0061), expressed here at the A2A layer.
+apps:
+  - name: mission-coordinator-app
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      agent_name: MissionCoordinator
+      display_name: Mission Coordinator
+      model:
+        model: ollama_chat/qwen3:4b
+        api_base: ${OLLAMA_HOST}
+      instruction: |
+        You assess search sectors for a wilderness search-and-rescue exercise. Given a search
+        area and a last-known position, describe how you would divide the area into sectors
+        and which to search first, with your reasoning.
+
+        You may only propose. You cannot assign a sector, dispatch a drone, or escalate a
+        rescue. Represent the subject anonymously and never infer identity.
+      session_service: {type: memory}
+      artifact_service: {type: memory}
+      agent_card:
+        description: Assesses and prioritises search sectors for a wilderness search area.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: assess_sectors
+            name: Assess search sectors
+            description: Divide a search area into sectors and rank them by search priority.
+            tags: [search, sectors]
+      agent_card_publishing: {interval_seconds: 30}
+      agent_discovery: {enabled: true}
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ['*']
+        request_timeout_seconds: 60
