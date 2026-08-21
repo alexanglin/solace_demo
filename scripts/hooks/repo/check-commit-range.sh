@@ -48,5 +48,10 @@ git rev-parse --verify --quiet "$head^{tree}" >/dev/null || {
 	exit 2
 }
 
-exec git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab \
+# --no-pager is load-bearing, not tidiness. pre-commit runs hooks under a pseudo-terminal
+# so their output keeps its colour, git therefore sees a terminal and sends `diff` through
+# core.pager, and on a runner whose TERM is degraded `less` prints "Press RETURN to
+# continue" and waits for a keystroke that never comes. The job then burns its entire
+# timeout and is killed, so the stage reports no verdict at all rather than a red one.
+exec git --no-pager -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab \
 	diff --no-ext-diff --check "$base" "$head" --
