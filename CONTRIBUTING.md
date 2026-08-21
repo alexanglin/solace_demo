@@ -260,7 +260,7 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
 - The image scans run only in continuous integration. `just scan-images` builds the derived images and
   scans all seven on a workstation that has Docker, but no hook runs it, so a new advisory in a base image is first seen
   by the daily `security.yml` run rather than by a push. A red daily run and a CodeQL alert page
-  nobody; reading both is on the review date in [`TECH_DEBT.md`](TECH_DEBT.md).
+  nobody reads are not controls; reading both is on the review date in [`TECH_DEBT.md`](TECH_DEBT.md).
 - `docs-strict` — the check that bans unquantified terms — is blocking at the `pre-commit` stage as of
   2026-08-19. Numbers belong in `docs/operating-parameters.md`; a value not yet known is marked
   `(provisional -- confirm in Phase 0)` rather than left vague. The check skips `docs/adr/` (immutable by
