@@ -96,3 +96,20 @@ This is not a defect in the stack, and it is not a number the project controls. 
 because the reference environment is part of the reproducibility claim: a clean checkout on a
 workstation whose Docker disk is full fails at the pull with an error that says nothing about this
 repository.
+
+## Amendment, same day: the durable store moved to PostgreSQL 18
+
+The run above used `postgres:17.11-trixie`, the pin in force at the time. Later on 2026-08-21 the pin
+moved to `18.6-trixie`, the newest major, and the named volume moved to the mount that image declares
+([ADR-0060](../../docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)). The record above is
+left as it was written; this is what changed.
+
+The stack was torn down, the version 17 volume discarded, and the default profile started again.
+Both services healthy, `up --wait` returning 0 in **20.77s**. `select version()` reports
+`PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu`, a native arm64 build;
+`show data_directory` reports `/var/lib/postgresql/18/docker`; and the named volume holds
+`18/docker/PG_VERSION`, so the cluster is inside the volume and survives the container. The three
+probes in `tests/phase0/test_first_live_stack.py` pass unchanged against the rebuilt stack.
+
+Everything the original run settled about the broker is unaffected: the same image, the same
+authority, the same loopback bindings.

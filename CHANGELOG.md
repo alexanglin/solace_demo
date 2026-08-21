@@ -73,7 +73,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   hook accepts and the seven-day cooldown zizmor's `dependabot-cooldown` audit requires
   ([ADR-0052](docs/adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)).
 - Docker is the runtime. `deploy/compose.yaml` defines every component except Ollama: the PubSub+
-  Standard 10.26.0 broker container and PostgreSQL 17 in the default profile, Agent Mesh 1.28.7 built
+  Standard 10.26.0 broker container and PostgreSQL 18 in the default profile, Agent Mesh 1.28.7 built
   on its official image with the two Event Mesh wheels installed by hash under the `mesh` profile, the
   six application services under an inert `services` profile until they gain entrypoints, and the
   Event Management Agent under the non-gating `event-portal` profile. Every pulled image is pinned by
@@ -262,6 +262,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
+  `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets
+  `PGDATA=/var/lib/postgresql/18/docker` and declares `/var/lib/postgresql` as its volume, so keeping
+  the old mount would have put the running cluster in the container's writable layer — a durable store
+  that loses its database on every recreation, which no gate here could have detected because the
+  compose file would still have named a volume. Verified live: healthy in 20.77s, `PostgreSQL 18.6 …
+  aarch64-unknown-linux-gnu`, `data_directory` at `/var/lib/postgresql/18/docker`, and
+  `18/docker/PG_VERSION` present inside the named volume. **An existing version 17 cluster will not
+  start under this image**; discard it with `docker compose down` and
+  `docker volume rm aerial-rescue-mesh_postgres-data`
+  ([ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)).
 
 - Every job in `.github/workflows/` is bounded by a budget derived from its measured cost: at most 20
   minutes, down from 60 on `pre-push hooks` and `image scan` and 30 on `codeql`. Measured 2026-08-20

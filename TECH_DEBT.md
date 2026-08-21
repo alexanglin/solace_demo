@@ -149,7 +149,8 @@ family of Debian packages, 51 are the Go standard library inside the Solace imag
 Python packages in the vendor's own virtual environment.
 
 None of them is waived, because none of them is actionable. Every pinned digest was the newest its tag
-carried on that date, 3.14.7, 17.11, and 1.28.7 were the newest tags, and the two derived images inherit
+carried on that date, 3.14.7, 17.11, and 1.28.7 were the newest tags then (the durable store has
+since moved to 18.6, [ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)), and the two derived images inherit
 their operating-system packages wholesale from a base this project pins rather than builds. The fix for
 all 307 arrives the same way: a publisher rebuilds an image, and the pin check of
 [ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) turns red until the digest
