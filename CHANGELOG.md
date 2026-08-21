@@ -222,6 +222,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Every job in `.github/workflows/` is bounded by a budget derived from its measured cost: at most 20
+  minutes, down from 60 on `pre-push hooks` and `image scan` and 30 on `codeql`. Measured 2026-08-20
+  whole-tree — the complete pre-push stage 2m01s, the image scan 2m58s, CodeQL 1m13s, the commit stage
+  1m15s — so the slowest job keeps better than four times its cost. The budget is a detection
+  threshold: a job that reaches it is wedged rather than slow, and the previous hour meant nobody
+  could tell those apart. `test_no_continuous_integration_job_may_outlive_its_measured_cost` holds it
+  and `docs/operating-parameters.md` records it
+  ([ADR-0059](docs/adr/0059-keep-the-verification-authority-able-to-report.md)).
+- `test_every_type_check_hook_is_reached_by_a_continuous_integration_job` asserts the wiring that was
+  previously only true: every hook whose own entry runs `mypy` or `tsc` must declare a stage that a
+  `checks.yml` job executes. Identifying the hooks by entry rather than by id keeps the rule intact
+  through a rename, so retargeting a `--hook-stage` argument or deleting the push-stage job now fails
+  a test instead of silently ending whole-tree type checking.
+
 - The image scan reports advisories instead of enforcing them, and a new gate enforces the thing the
   project can act on. The first run found 307 blocking findings across the seven images and none was
   actionable: every pinned digest was already the newest its tag carried, the newest tags were already
@@ -339,6 +353,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Fixed
+
+- The `pre-push hooks` job had never once completed. Eight runs, every one stalled immediately after
+  `gitleaks (full history)` and killed at the 60-minute cap with orphan `git` and `pager` processes in
+  the cleanup log — so whole-tree type checking, the full test suite and its coverage gates, mutation
+  scoring, the lockfile checks, Bandit, the dependency audit and the deploy-configuration scan had
+  never reported a verdict, red or green. pre-commit runs hooks under a pseudo-terminal to keep their
+  colour, git therefore sent `diff --check` through `core.pager`, and on a runner whose `TERM` is
+  degraded `less` blocked on `Press RETURN to continue`. `scripts/hooks/repo/check-commit-range.sh`
+  now passes `--no-pager`. The complete pre-push stage takes 2m01s
+  ([ADR-0059](docs/adr/0059-keep-the-verification-authority-able-to-report.md)).
+- The quality-gate harness could not have caught it: `run_script` runs every hook through pipes, so
+  git took its pipe path in every test and its terminal path only where nobody was looking.
+  `run_script_on_terminal` runs a hook on a pseudo-terminal with a fixed degraded `TERM` and kills the
+  session rather than the script, so a surviving pager cannot outlive the test that caught it.
+  `test_no_hook_script_lets_git_start_a_pager` holds the class: no project-owned hook script may run a
+  pageable git subcommand with the terminal inherited and no pager suppressed.
+- Two documents carried an unfinished sentence — `TECH_DEBT.md` and `CONTRIBUTING.md` both stopped at
+  "a CodeQL alert page nobody". No gate could see it: markdownlint checks structure, `typos` checks
+  tokens, and `docs-strict` checks banned phrases, none of which can tell that a sentence does not end.
 
 - `test_a_missing_openssl_fails_closed` established its precondition with `PATH=/bin`, which hides
   `openssl` on macOS but not on Debian, where `/bin` is a symlink to `/usr/bin`. The test asserted a

@@ -15,7 +15,7 @@ lives in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
 **Next review date: 2026-09-18.** Every dependency waiver below expires on that date and the
 pre-push audit turns red until each is re-reviewed or cleared. On the same date, read the last daily
 run of `.github/workflows/security.yml` and the repository's code-scanning alerts: a red daily run
-and a CodeQL alert page nobody
+and a CodeQL alert page nobody reads are not controls
 ([ADR-0050](docs/adr/0050-scan-python-with-codeql-in-continuous-integration-only.md),
 [ADR-0051](docs/adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md)).
 
