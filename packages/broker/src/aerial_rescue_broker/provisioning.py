@@ -153,10 +153,10 @@ def describe(request: Request) -> str:
     return f"{request.method.value} {request.path} {body}"
 
 
-def _exceptions_for(role: Principal, access: Access, namespace: object) -> frozenset[str]:
-    """Return the topic exceptions ``role`` needs in one direction, A2A included."""
+def _exceptions_for(role: Principal, access: Access, namespace: object | None) -> frozenset[str]:
+    """Return the topic exceptions ``role`` needs in one direction, A2A included when set."""
     topics = {subscription_for(family) for family in grants(role, access)}
-    if may_use_a2a(role):
+    if namespace is not None and may_use_a2a(role):
         topics.add(a2a_subscription(namespace))
     return frozenset(topics)
 
@@ -170,7 +170,7 @@ def _credential(credentials: Mapping[Principal, str], role: Principal) -> str:
 
 
 def desired_state(
-    vpn: str, credentials: Mapping[Principal, str], namespace: object
+    vpn: str, credentials: Mapping[Principal, str], namespace: object | None
 ) -> DesiredState:
     """Return every owned object the authorization matrix implies.
 
@@ -178,6 +178,9 @@ def desired_state(
         vpn: The message VPN the objects belong to.
         credentials: One credential per role, injected rather than generated here.
         namespace: The Agent Mesh A2A namespace, validated by the subscription renderer.
+            ``None`` means it is not yet fixed -- ``.env.example`` still leaves ``NAMESPACE``
+            blank -- and the three Agent Mesh roles then hold no A2A grant at all, which
+            under-grants rather than over-grants and so fails safe.
 
     Returns:
         The profiles and usernames, one of each per role, in role declaration order.

@@ -181,6 +181,33 @@ class DesiredStateTests(unittest.TestCase):
             carrying,
         )
 
+    def test_an_unset_namespace_leaves_the_agent_mesh_roles_with_no_a2a_grant(self) -> None:
+        # Arrange
+        a2a = a2a_subscription(NAMESPACE)
+
+        # Act
+        state = desired_state(VPN, CREDENTIALS, None)
+
+        # Assert
+        self.assertEqual(
+            (frozenset(), frozenset()),
+            (
+                frozenset(
+                    role
+                    for role in Principal
+                    for access in Access
+                    if a2a in _exceptions_of(state, role, access)
+                ),
+                frozenset(
+                    topic
+                    for role in Principal
+                    for access in Access
+                    for topic in _exceptions_of(state, role, access)
+                    if topic.endswith("/>")
+                ),
+            ),
+        )
+
     def test_the_recorder_profile_reads_every_family_and_writes_none(self) -> None:
         # Arrange
         state = desired_state(VPN, CREDENTIALS, NAMESPACE)
