@@ -210,8 +210,15 @@ tree in continuous integration only
 `.github/workflows/security.yml` repeats the dependency audit, the configuration audit, and the image
 scans daily, and Dependabot raises pinned-update pull requests under a seven-day cooldown
 ([ADR-0051](adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md),
-[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest, Testing Library, ESLint,
-TypeScript strict mode, and Playwright. jscpd 5.0.14 provides the multi-language duplication scan. The
+[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest, Testing Library, Playwright, `tsc --noEmit` over the whole
+project, and typescript-eslint's type-aware presets at zero tolerated warnings; the compiler
+options, the required package scripts, and the coverage thresholds are held by
+`tools/typescript_policy_gate.py` at both blocking stages
+([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)). Playwright
+specifications live under `apps/dashboard/tests/e2e/`, because anything outside `apps/dashboard`
+escapes the type check, the linter, the formatter, and the duplication scan together. Vitest must
+not register its globals: the AAA gate resolves test identifiers from `vitest` and
+`@playwright/test` imports, so global registration fails every dashboard test closed. jscpd 5.0.14 provides the multi-language duplication scan. The
 cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
