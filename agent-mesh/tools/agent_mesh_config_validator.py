@@ -27,6 +27,9 @@ EXPECTED_VERSIONS: Mapping[str, str] = {
 AGENT_MODULE = "solace_agent_mesh.agent.sac.app"
 WORKFLOW_MODULE = "solace_agent_mesh.workflow.app"
 GATEWAY_MODULE = "sam_event_mesh_gateway.app"
+WEBUI_MODULE = "solace_agent_mesh.gateway.http_sse.app"
+WEBUI_CLASS = "WebUIBackendApp"
+LOOPBACK_HOSTS = frozenset(("127.0.0.1", "localhost", "::1"))
 TOOL_MODULE = "sam_event_mesh_tool.tools"
 TOOL_CLASS = "EventMeshTool"
 ALTERNATE_TOOL_LOADER_FIELDS = (
@@ -35,7 +38,7 @@ ALTERNATE_TOOL_LOADER_FIELDS = (
     "init_function",
     "cleanup_function",
 )
-SUPPORTED_MODULES = frozenset((AGENT_MODULE, WORKFLOW_MODULE, GATEWAY_MODULE))
+SUPPORTED_MODULES = frozenset((AGENT_MODULE, WORKFLOW_MODULE, GATEWAY_MODULE, WEBUI_MODULE))
 BROKER_FIELDS = ("broker_url", "broker_username", "broker_password", "broker_vpn")
 ENV_REFERENCE_FIELD_NAMES = frozenset(BROKER_FIELDS)
 INCLUDE_PATTERN = re.compile(
@@ -116,6 +119,7 @@ class _Runtime:
     agent_model: object
     workflow_model: object
     gateway_schema: tuple[dict[str, object], ...]
+    webui_schema: tuple[dict[str, object], ...]
 
 
 class _RuntimeBoundaryError(RuntimeError):
@@ -266,19 +270,29 @@ def _distribution_attribute(
     return value
 
 
-def _gateway_schema() -> tuple[dict[str, object], ...]:
-    gateway_class = _distribution_attribute(
-        "sam-event-mesh-gateway",
-        GATEWAY_MODULE,
-        "EventMeshGatewayApp",
-    )
-    raw_schema = getattr(gateway_class, "app_schema", None)
+def _app_schema(distribution: str, module: str, class_name: str) -> tuple[dict[str, object], ...]:
+    """Return one upstream app class's declared configuration parameters.
+
+    ``BaseGatewayApp.__init_subclass__`` merges each subclass's own parameters into a
+    class-level ``app_schema``, so the Event Mesh Gateway and the Web UI expose the same shape
+    (docs/adr/0065).
+    """
+    app_class = _distribution_attribute(distribution, module, class_name)
+    raw_schema = getattr(app_class, "app_schema", None)
     if not isinstance(raw_schema, dict):
         raise _RuntimeBoundaryError
     parameters = raw_schema.get("config_parameters")
     if not isinstance(parameters, list) or not all(isinstance(item, dict) for item in parameters):
         raise _RuntimeBoundaryError
     return tuple(cast(dict[str, object], item) for item in parameters)
+
+
+def _gateway_schema() -> tuple[dict[str, object], ...]:
+    return _app_schema("sam-event-mesh-gateway", GATEWAY_MODULE, "EventMeshGatewayApp")
+
+
+def _webui_schema() -> tuple[dict[str, object], ...]:
+    return _app_schema("solace-agent-mesh", WEBUI_MODULE, WEBUI_CLASS)
 
 
 def _verify_gateway_entry_point() -> None:
@@ -356,6 +370,7 @@ def _load_runtime() -> _Runtime:
             "WorkflowAppConfig",
         ),
         gateway_schema=_gateway_schema(),
+        webui_schema=_webui_schema(),
     )
 
 
@@ -931,6 +946,45 @@ def _gateway_handler_policy_issues(
     return tuple(issues)
 
 
+def _loopback_origin(origin: object) -> bool:
+    """Return whether ``origin`` is a browser origin on the loopback interface."""
+    if not isinstance(origin, str):
+        return False
+    try:
+        return urlsplit(origin).hostname in LOOPBACK_HOSTS
+    except ValueError:
+        return False
+
+
+def _webui_issues(
+    path: Path,
+    app_config: Mapping[str, object],
+    runtime: _Runtime,
+    location: str,
+    lock: frozenset[str],
+) -> tuple[ValidationIssue, ...]:
+    """Return the Web UI's schema, model, and exposure diagnostics (docs/adr/0065).
+
+    The Event Mesh Gateway's settlement and handler rules are deliberately absent: they
+    describe an event-driven gateway, which this is not.
+    """
+    issues = list(_schema_mapping_issues(path, app_config, runtime.webui_schema, location))
+    issues.extend(
+        _model_policy_issues(path, app_config, location, _ModelPolicy(lock, required=False))
+    )
+    origins = app_config.get("cors_allowed_origins")
+    if not isinstance(origins, list) or not origins or not all(map(_loopback_origin, origins)):
+        issues.append(
+            _issue(
+                path,
+                f"{location}.cors_allowed_origins",
+                "WEBUI_EXPOSURE",
+                "web UI origins must be a nonempty loopback-only list",
+            )
+        )
+    return tuple(issues)
+
+
 def _gateway_issues(
     path: Path,
     app_config: Mapping[str, object],
@@ -1238,6 +1292,22 @@ def _tool_issues(
     return tuple(issues)
 
 
+def _app_source_issues(
+    path: Path, app: Mapping[str, object], location: str
+) -> tuple[ValidationIssue, ...]:
+    """Return diagnostics for runtime package installation and filesystem import paths."""
+    return tuple(
+        _issue(
+            path,
+            f"{location}.{field}",
+            "APP_SOURCE",
+            "runtime package installation and filesystem import paths are forbidden",
+        )
+        for field in ("app_package", "app_base_path")
+        if field in app
+    )
+
+
 def _app_issues(
     path: Path, app: object, runtime: _Runtime, index: int, lock: frozenset[str]
 ) -> tuple[ValidationIssue, ...]:
@@ -1246,16 +1316,7 @@ def _app_issues(
         return (_issue(path, location, "APP_TYPE", "app entry must be a mapping"),)
     module = app.get("app_module")
     issues = list(_broker_issues(path, app.get("broker"), f"{location}.broker"))
-    for field in ("app_package", "app_base_path"):
-        if field in app:
-            issues.append(
-                _issue(
-                    path,
-                    f"{location}.{field}",
-                    "APP_SOURCE",
-                    "runtime package installation and filesystem import paths are forbidden",
-                )
-            )
+    issues.extend(_app_source_issues(path, app, location))
     if module not in SUPPORTED_MODULES:
         issues.append(
             _issue(path, f"{location}.app_module", "APP_MODULE", "unsupported app module")
@@ -1289,6 +1350,8 @@ def _app_issues(
                 _ModelPolicy(lock, required=False),
             )
         )
+    elif module == WEBUI_MODULE:
+        issues.extend(_webui_issues(path, typed_config, runtime, f"{location}.app_config", lock))
     else:
         issues.extend(_gateway_issues(path, typed_config, runtime, f"{location}.app_config"))
     return tuple(issues)

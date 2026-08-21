@@ -10,6 +10,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The validator accepts the HTTP/SSE Web UI, and refuses its wildcard CORS default**
+  ([ADR-0065](docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md)). The
+  Web UI's module was outside `SUPPORTED_MODULES`, so a surface the Phase 0 deliverable names and
+  `deploy/compose.yaml` already publishes could not be configured. It is validated against
+  `WebUIBackendApp.app_schema`, read from the pinned wheel through the same distribution-bound
+  boundary as every other upstream symbol, so a substituted module still fails closed.
+
+  Read from the wheel, that schema declares 53 parameters and requires three. The one that mattered
+  was neither: `cors_allowed_origins` is optional and defaults to `["*"]`. A wildcard there sits on the
+  same surface whose only compensating control is the loopback binding that
+  [TECH_DEBT.md](TECH_DEBT.md) §1 leans on when it accepts an unauthenticated remote-code-execution
+  advisory in `google-adk` 1.18.0, so `WEBUI_EXPOSURE` refuses an absent, empty, or non-loopback origin
+  list — silence fails rather than passing. The Event Mesh Gateway's settlement and handler-routing
+  rules are deliberately not applied; they describe an event-driven gateway the Web UI is not.
+
+  `solace_agent_mesh.services.platform.app` stays refused. Its template requires `model_provider`,
+  which [ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md) forbids because it
+  moves model authority into the local Platform database and out of version control — and that service
+  is the database. Adding the fourth module pushed `_app_issues` to a cyclomatic complexity of 9
+  against a limit of 8; the fix was to extract `_app_source_issues`, not to widen the budget.
+
 - **The Agent Mesh A2A namespace is `aerial-rescue-mesh`**
   ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)). `NAMESPACE` had been blank since
   [ADR-0014](docs/adr/0014-application-events-separate-from-a2a.md) separated the two namespaces
