@@ -75,6 +75,14 @@ for the simulator, dashboard, Agent Mesh gateways and agents, recorder, and comm
 explicit ACL, plus negative tests asserting denial. **The ACL matrix is load-bearing and must be specified
 before the components that depend on it are built** ([ADR-0005](../adr/0005-deterministic-command-gateway.md)).
 
+[ADR-0061](../adr/0061-least-privilege-broker-principals-and-topic-authorization.md) is that
+specification: nine authorization roles, two total publish and subscribe tables over the eleven topic
+families, a separate A2A grant, `disallow` as every owned ACL profile's default action, and the factory
+`default` client username disabled so no denial is bypassable by connecting as it. The negative tests
+are catalogue cases B17, B18, and B19; their status is tracked in
+[approval-bypass-catalogue.md](approval-bypass-catalogue.md), not here. **Residual risk:** the roles are
+coarser than the processes, so three edge agents share one authority.
+
 ### T4 — Event spoofing and replay on the data plane
 
 Injecting or replaying application events to fabricate evidence, drive a reassignment, or manufacture a
