@@ -1,6 +1,6 @@
 # ADR-0042: Approval time to live of 60 seconds
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-20
 - **Deciders:** Alex Anglin
 - **Supersedes:** none

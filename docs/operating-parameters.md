@@ -218,6 +218,17 @@ or logged. The routes and header rules are defined by
 | --- | --- | --- |
 | Bearer credential entropy | At least 256 bits | Fresh independent randomness on every API process start |
 
+## Approval timing
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Approval time-to-live | 60 s, measured from the operator's decision reading to the gateway's consumption on both clocks ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md), [ADR-0042](adr/0042-approval-time-to-live.md)) | `packages/domain` takes it as an injected parameter with no default; the composition root supplies `timedelta(seconds=60)` |
+
+The window is derived from the service-level rows above rather than measured: a 30 s restart
+recovery, a 10 s backlog drain, and a 2 s connected command path give a documented worst case of
+42 s and leave 18 s of margin. Moving it is a superseding record, because the parameter gates safety
+behaviour.
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
@@ -225,7 +236,6 @@ preference, and must carry a number before the release run.
 
 | Parameter | Required by | Status |
 | --- | --- | --- |
-| Approval time-to-live | [ADR-0006](adr/0006-proposal-bound-single-use-approvals.md), which requires an expiry window to be "chosen and justified" | open; [ADR-0042](adr/0042-approval-time-to-live.md) proposes 60 seconds and awaits acceptance; `packages/domain` takes the value as an injected parameter with no default |
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
 | Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
