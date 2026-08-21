@@ -13,6 +13,7 @@
 #   secrets/postgres-password       32 random bytes, hexadecimal
 #   secrets/semp-discovery-password 32 random bytes, hexadecimal
 #   secrets/broker-<role>-password  one per broker authorization role, same form
+#   secrets/.env.roles              the same role credentials as Compose variables
 #
 # The nine role names below are the second home of the Principal enum in packages/domain
 # (docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md). A gate test
@@ -68,6 +69,27 @@ report() {
 	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery}-password\n' "$secrets"
 	printf 'roles:      %s/broker-{%s}-password\n' "$secrets" \
 		"$(printf '%s' "$broker_roles" | tr '\n ' ',,')"
+	printf 'compose:    %s/.env.roles\n' "$secrets"
+}
+
+# Compose reads the nine role identities from this file as a second --env-file, so no
+# password is ever hand-copied into .env. It is derived from the password files above and
+# rewritten on every run, which keeps it correct after a rotation or a filled gap. The
+# name begins with .env so .gitignore's `.env.*` rule and the no-env-files hook both cover
+# it in addition to `secrets/`; a live credential reaching a commit is the one failure a
+# later commit cannot undo (AGENTS.md section 6).
+write_role_environment() {
+	pending="$secrets/.env.roles.pending"
+	: >"$pending"
+	chmod 600 "$pending"
+	for role in $broker_roles; do
+		variable=$(printf '%s' "$role" | tr 'a-z-' 'A-Z_')
+		printf 'SOLACE_%s_USERNAME=%s\n' "$variable" "$role" >>"$pending"
+		printf 'SOLACE_%s_PASSWORD=%s\n' "$variable" \
+			"$(cat "$secrets/broker-$role-password")" >>"$pending"
+	done
+	mv "$pending" "$secrets/.env.roles"
+	chmod 600 "$secrets/.env.roles"
 }
 
 # Certificate material is all-or-nothing: a server certificate is only meaningful beside the
@@ -84,6 +106,7 @@ for name in $passwords; do
 	[ -f "$secrets/$name" ] || complete=false
 done
 if [ "$complete" = true ] && [ "$rotate" = false ]; then
+	write_role_environment
 	printf 'unchanged: material already present; pass --rotate to regenerate\n'
 	report
 	exit 0
@@ -154,6 +177,8 @@ for name in $passwords; do
 		chmod 600 "$secrets/$name"
 	fi
 done
+
+write_role_environment
 
 printf 'written: certificate authority, broker certificate, and passwords under %s\n' "$deploy_dir"
 report
