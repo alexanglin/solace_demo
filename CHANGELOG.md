@@ -10,6 +10,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Agent Mesh A2A namespace is `aerial-rescue-mesh`**
+  ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)). `NAMESPACE` had been blank since
+  [ADR-0014](docs/adr/0014-application-events-separate-from-a2a.md) separated the two namespaces
+  without choosing a value, and [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)
+  made the omission load-bearing: the provisioner withholds the A2A topic exception when no namespace
+  is supplied, which is why the live broker carries 41 exceptions rather than 47 and why Agent Mesh
+  would have been unable to reach its own topics.
+
+  Two rules constrained the value and disagreed about one form. Agent Mesh rstrips a trailing slash and
+  its image defaults to `sam/`; `a2a_subscription()` refuses a trailing slash and refuses a first level
+  of `aerial-rescue`. The stricter governs. Choosing the compose project's own name makes ADR-0014's
+  separation something the broker enforces rather than something the prose asserts: the grant
+  `aerial-rescue-mesh/>` provably cannot reach an application topic, because the first level differs.
+  A gate test holds the committed template equal to the rendered subscription, so the two cannot drift.
+
 - **Local models are locked by digest, and the validator now knows what "local" means.**
   [ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) refused every `ollama`
   identifier until the lock representation was recorded, so no local-only Agent Mesh configuration

@@ -16,6 +16,7 @@ from __future__ import annotations
 import unittest
 
 import yaml
+from aerial_rescue_broker.subscriptions import a2a_subscription
 from aerial_rescue_domain.principals import Principal
 
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
@@ -52,6 +53,17 @@ def _services() -> dict[str, dict[str, str]]:
 
 
 class BrokerIdentityWiringTests(QualityGateTestCase):
+    def test_the_template_fixes_an_a2a_namespace_the_subscription_builder_accepts(self) -> None:
+        # Arrange
+        declared = _declarations()["NAMESPACE"]
+
+        # Act
+        subscription = a2a_subscription(declared)
+
+        # Assert
+        self.assertEqual("aerial-rescue-mesh", declared)
+        self.assertEqual("aerial-rescue-mesh/>", subscription)
+
     def test_every_role_declares_a_username_holding_its_own_name(self) -> None:
         # Arrange
         declarations = _declarations()
