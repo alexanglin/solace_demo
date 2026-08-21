@@ -41,12 +41,12 @@ if [ "$root_active" = true ]; then
 		exit 1
 	}
 	set --
-	for path in tools packages services tests migrations; do
-		if [ -d "$path" ] && find "$path" -type f \( -name '*.py' -o -name '*.pyi' \) \
-			-print -quit | grep -q .; then
-			set -- "$@" "$path"
-		fi
-	done
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		set -- "$@" "$path"
+	done <<LISTING
+$(quality_root_python_paths)
+LISTING
 	if [ "$#" -gt 0 ]; then
 		uv run --frozen mypy --strict "$@" || status=1
 	fi

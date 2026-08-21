@@ -31,6 +31,18 @@ quality_dashboard_source_present() {
 		-name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx'
 }
 
+# Emit, one per line, every top-level directory holding owned Python, so the whole-program
+# gates reach a new root the day it appears instead of the day someone remembers to edit a
+# literal list (docs/adr/0056). The listing is git's -- tracked plus unignored -- so .venv,
+# dist/, and mutants/ are excluded without a second exclusion list to keep in step.
+# agent-mesh/ is omitted because it is checked by its own toolchain (docs/adr/0029).
+quality_root_python_paths() {
+	git ls-files --cached --others --exclude-standard -- '*.py' '*.pyi' |
+		grep -v '^agent-mesh/' |
+		sed -n 's|^\([^/]*\)/.*|\1|p' |
+		sort -u
+}
+
 quality_root_python_active() {
 	[ -f pyproject.toml ] || quality_root_python_source_present
 }
