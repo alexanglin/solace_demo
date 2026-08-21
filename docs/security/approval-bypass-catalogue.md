@@ -48,14 +48,19 @@ requires an ADR. `Status` is the state of the test, not of the threat.
 
 | # | Attempt | Required outcome | Status |
 | --- | --- | --- | --- |
-| B17 | Publish to an executable command topic using an edge-agent identity | Denied by broker ACL. This is the load-bearing control in [ADR-0005](../adr/0005-deterministic-command-gateway.md) | to build |
-| B18 | Publish to a command topic using the Event Mesh Tool identity | Denied by ACL; the tool may reach only command-gateway request topics | to build |
-| B19 | Publish using the recorder or dashboard identity | Denied by ACL | to build |
+| B17 | Publish to an executable command topic using an edge-agent identity | Denied by broker ACL. This is the load-bearing control in [ADR-0005](../adr/0005-deterministic-command-gateway.md) | **proven live** against the container (`tests/security/test_broker_authorization.py`, `test_b17_…`), with the command gateway publishing the same topic as the positive control ([ADR-0061](../adr/0061-least-privilege-broker-principals-and-topic-authorization.md)) |
+| B18 | Publish to a command topic using the Event Mesh Tool identity | Denied by ACL; the tool may reach only command-gateway request topics | **proven live** (`tests/security/test_broker_authorization.py`, `test_b18_…`); the tool's one permitted family is asserted in the same run |
+| B19 | Publish using the recorder or dashboard identity | Denied by ACL | **proven live** (`tests/security/test_broker_authorization.py`, `test_b19_…`); the recorder is separately asserted to hold no publish grant on any family |
 | B20 | Drive an escalation from the Agent Mesh Web UI on loopback `:8000` | No effect; that surface cannot dispatch or approve | to build |
 | B21 | Reach a state-changing endpoint without the current runtime's bearer, with a prior runtime's bearer, or with a credential outside the authorization header | Refused; for approval, the current bearer is the sole source of the operator identity (`operatorIdentity` on the wire) ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) | to build |
 | B22 | Reach any local API endpoint from a rebound DNS name resolving to loopback | Refused by the exact Host allowlist on every request, which an Origin check alone does not stop ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) | to build |
 | B23 | Escalate an action type absent from the command-authority table | Refused; the table is deny-by-default | domain rule tested (`packages/domain/tests/test_authority.py`, `test_b23_…`); store, gateway, and HTTP halves to build |
 | B24 | Write an `APPROVED` row directly into the durable store, then dispatch | Detectable in the audit trail; the state machine is not the only guard | to build |
+
+The three rows above are the first catalogue cases settled against a running broker rather than a
+unit test. The state they were measured against, including the state before the matrix was applied —
+in which an identity that did not exist published an executable rescue-escalation command — is in
+[`release-evidence/phase-0/broker-authorization.md`](../../release-evidence/phase-0/broker-authorization.md).
 
 ## Model and ingress influence
 

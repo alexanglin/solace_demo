@@ -10,6 +10,48 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The broker enforces who may publish what.** Before this change, an identity that did not exist,
+  with a password that was never issued, could connect to the container and publish a guaranteed
+  message to `aerial-rescue/v1/{missionId}/drone/{droneId}/command/escalate-rescue` — the topic
+  [ADR-0005](docs/adr/0005-deterministic-command-gateway.md) reserves to the deterministic command
+  gateway. Unknown usernames resolved to the enabled factory `default` client username, whose ACL
+  profile permitted every topic in both directions.
+
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) closes it
+  with nine authorization roles rather than one identity per process, so three edge agents get
+  distinct usernames for observability and identical authority through one ACL profile.
+  `packages/domain/principals.py` carries two tables total over the roles and a separate A2A grant, at
+  tier 1: 100% statements and branches, 226 of 226 mutants killed. `command-gateway` is the only role
+  that may publish a drone command; `event-mesh-tool` may publish exactly the one family the offline
+  configuration validator already holds it to, so that boundary now survives a configuration that
+  never met the validator; `recorder` and `discovery` hold no publish grant at all; and the scenario
+  service gets no identity, because it has no documented broker role and deny-by-default extends to
+  issuing them.
+
+  `packages/broker` projects the tables onto the broker. `subscriptions.py` renders one bounded
+  pattern per topic family, using only the single-level `*` and never `>`, and every pattern is put
+  to a topic of each of the other ten families — with variable levels filled by values that shadow
+  literal levels — and must refuse it. `provisioning.py` converges rather than assuming an empty
+  broker, and `semp.py` carries SEMP over a bounded `http.client` connection that redacts every
+  secret member and withholds the broker's free-text error whenever the request carried one.
+
+  Proven against the running container: nine ACL profiles at `disallow` for publish, subscribe, and
+  share name, nine client usernames each on its own profile, the factory `default` disabled, and 41
+  topic exceptions. Catalogue cases B17, B18, and B19 move from `to build` to passing, with the
+  command gateway publishing the same topic as the positive control, because a broker refusing
+  everybody would satisfy every denial test. The full before-and-after is in
+  [`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md).
+
+  `scripts/broker-secrets.sh` writes one credential per role and no longer treats its output as one
+  all-or-nothing set, so adding a role fills its own gap instead of rotating the certificate authority
+  the running broker is presenting. `deploy/compose.yaml` gives each service its own identity;
+  `.env.example` declares all nine, usernames as real values because they are role names rather than
+  secrets. Four gate tests hold the four homes of the role set equal to the `Principal` enum.
+
+  Not settled: no durable queue exists, so guaranteed delivery has no endpoint; the A2A grant is
+  withheld until `NAMESPACE` is fixed; no test asserts that a *subscription* outside a role's grants
+  is refused; and the showcase service has not been given the same definitions.
+
 - **The compose stack has been started.** The default profile's first live run is recorded in
   `release-evidence/phase-0/first-live-run.md`: broker and Postgres both reach `healthy` and
   `up --wait` returns 0 in 40.75s including both image pulls, all three published ports are bound to
