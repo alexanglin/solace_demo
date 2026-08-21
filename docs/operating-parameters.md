@@ -170,6 +170,22 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Docker Desktop memory for the full stack | (provisional -- confirm in Phase 0) | Phase 0 resource measurement, once the `mesh` profile runs |
 | Fleet connection count against the Developer-class limit of 100 | (provisional -- confirm in Phase 0) | Phase 0 measurement on the showcase service |
 
+## Broker authorization
+
+The roles, their grants, and the deny-by-default rule are
+[ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md). The matrix itself
+lives in `packages/domain/src/aerial_rescue_domain/principals.py`, where a test asserts it is total
+over the roles and names every family's publisher set; this section carries only the numbers.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Authorization roles | 9, one ACL profile each | `Principal` in `packages/domain`; a test asserts the nine names |
+| Role name bound | at most 32 characters and inside the topic kind form, because the name is also the ACL profile name | `MAX_KIND_LENGTH` and `KIND_PATTERN` from `packages/contracts`, asserted per role |
+| ACL profile default actions | `disallow` for publish topic, subscribe topic, and subscribe share name; `allow` for client connect | `packages/broker/src/aerial_rescue_broker/provisioning.py`, asserted per profile |
+| Topic exceptions written | 16 publish and 31 subscribe across the nine profiles, the A2A grant included | asserted by the apply test in `packages/broker/tests/test_provisioning.py` |
+| SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
+| SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
+
 ## Model spend budget
 
 Enforced before each paid call, not reconciled afterwards. A persisted ledger in the durable store records
