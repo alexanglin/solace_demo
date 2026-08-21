@@ -178,8 +178,8 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 ([ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)):
 
 ```sh
-cp .env.example .env   # then set SESSION_SECRET_KEY; the broker credentials follow provisioning
-just secrets           # per-checkout certificate authority, broker certificate, and passwords
+cp .env.example .env   # then set SESSION_SECRET_KEY; the role credentials are generated, not copied
+just secrets           # certificate authority, broker certificate, passwords, and secrets/.env.roles
 just up                # broker and Postgres, waiting for both to be healthy
 just provision         # broker identities and ACL profiles over SEMP; safe to re-run
 just ps                # service health
@@ -193,7 +193,7 @@ to keep yet, so discard it once
 ([ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)):
 
 ```sh
-docker compose --env-file .env -f deploy/compose.yaml down
+docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml down
 docker volume rm aerial-rescue-mesh_postgres-data
 ```
 
@@ -202,9 +202,15 @@ docker volume rm aerial-rescue-mesh_postgres-data
 least-privilege client usernames and their deny-by-default ACL profiles, and it disables the factory
 `default` client username. Until it runs, any identity may publish any topic, including the
 executable command topics; after it runs, a client presenting `default` or an unknown username
-cannot connect at all. Copy each role's password from `deploy/secrets/broker-<role>-password` into
-your own `.env` under the names `.env.example` declares. Re-running it changes nothing, so run it
-again after `just rotate-secrets`.
+cannot connect at all. Re-running it changes nothing, so run it again after `just rotate-secrets`.
+
+You never copy a role password by hand. `just secrets` writes `deploy/secrets/.env.roles`, holding
+each role's username and password under the names `.env.example` declares, and every compose recipe
+passes it as a second `--env-file` after `.env`. It is regenerated on every run, so it stays correct
+after `just rotate-secrets` or after a single missing password is filled. It is never tracked: it
+lives under the ignored `deploy/secrets/`, its name matches `.gitignore`'s `.env.*` rule, and the
+`no-env-files` hook blocks it if it is ever staged. Run `just secrets` before `just up`, or compose
+stops on the missing file rather than starting a service with a blank identity.
 
 `just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
 the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain

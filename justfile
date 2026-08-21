@@ -80,7 +80,7 @@ rotate-secrets:
 # Start the broker and Postgres and wait for both to be healthy. Add a profile explicitly:
 # `just up --profile mesh`, `--profile services`, or `--profile event-portal`.
 up *ARGS:
-    docker compose --env-file .env -f deploy/compose.yaml {{ARGS}} up --detach --wait
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml {{ARGS}} up --detach --wait
 
 # Apply the broker authorization matrix over SEMP. Needs a running broker and the
 # credentials `just secrets` writes (docs/adr/0061). Safe to re-run; it converges.
@@ -89,15 +89,15 @@ provision *ARGS:
 
 # Stop the stack; volumes are kept.
 down:
-    docker compose --env-file .env -f deploy/compose.yaml down
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml down
 
 # Follow the stack's logs.
 logs:
-    docker compose --env-file .env -f deploy/compose.yaml logs --follow --tail 200
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml logs --follow --tail 200
 
 # Show the stack's services and health.
 ps:
-    docker compose --env-file .env -f deploy/compose.yaml ps
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps
 
 # Point the same stack at the Solace Cloud showcase service (docs/adr/0043). `.env.showcase`
 # is an ignored operator-created copy of .env.example carrying the service's values.

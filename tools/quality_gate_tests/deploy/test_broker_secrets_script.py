@@ -36,6 +36,39 @@ def _material(deploy: Path) -> dict[str, bytes]:
     return {name: (deploy / name).read_bytes() for name in (*PRIVATE_FILES, "certs/ca.pem")}
 
 
+ROLE_ENVIRONMENT = "secrets/.env.roles"
+"""The generated file Compose reads for the nine role identities; never tracked."""
+
+
+def _variable(role: Principal, suffix: str) -> str:
+    """Return the compose variable carrying ``role``'s username or password."""
+    return f"SOLACE_{role.value.replace('-', '_').upper()}_{suffix}"
+
+
+def _role_environment(deploy: Path) -> dict[str, str]:
+    """Return every assignment in the generated role environment file."""
+    pairs = (
+        line.partition("=")
+        for line in (deploy / ROLE_ENVIRONMENT).read_text(encoding="utf-8").splitlines()
+        if line
+    )
+    return {key: value for key, separator, value in pairs if separator}
+
+
+def _suffixed(declarations: dict[str, str], suffix: str) -> dict[str, str]:
+    """Return only the declarations whose name ends with ``suffix``."""
+    return {name: value for name, value in declarations.items() if name.endswith(suffix)}
+
+
+def _expected_passwords(deploy: Path) -> dict[str, str]:
+    """Return the password each role's generated credential file holds, keyed by variable."""
+    passwords: dict[str, str] = {}
+    for role in Principal:
+        credential = deploy / f"secrets/broker-{role.value}-password"
+        passwords[_variable(role, "PASSWORD")] = credential.read_text(encoding="utf-8")
+    return passwords
+
+
 class BrokerSecretsScriptTests(QualityGateTestCase):
     def generate(
         self,
@@ -212,6 +245,76 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("usage:", result.stderr)
         self.assertFalse((repository / "deploy").exists())
+
+    def test_it_writes_the_role_environment_file_compose_reads(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        declarations = _role_environment(repository / "deploy")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            {_variable(role, "USERNAME"): role.value for role in Principal},
+            _suffixed(declarations, "_USERNAME"),
+        )
+
+    def test_the_role_environment_file_is_private(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        self.generate(repository)
+
+        # Assert
+        mode = (repository / "deploy" / ROLE_ENVIRONMENT).stat().st_mode
+        self.assertEqual(0o600, stat.S_IMODE(mode))
+
+    def test_the_role_environment_file_carries_each_roles_generated_password(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        self.generate(repository)
+
+        # Assert
+        deploy = repository / "deploy"
+        self.assertEqual(
+            _expected_passwords(deploy),
+            _suffixed(_role_environment(deploy), "_PASSWORD"),
+        )
+
+    def test_a_deleted_role_environment_file_is_rewritten_without_rotating_anything(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        self.generate(repository)
+        before = _material(repository / "deploy")
+        (repository / "deploy" / ROLE_ENVIRONMENT).unlink()
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(before, _material(repository / "deploy"))
+        self.assertTrue((repository / "deploy" / ROLE_ENVIRONMENT).is_file())
+
+    def test_rotating_rewrites_the_role_environment_file_with_the_new_passwords(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        self.generate(repository)
+        before = _role_environment(repository / "deploy")
+
+        # Act
+        self.generate(repository, ("--rotate",))
+
+        # Assert
+        deploy = repository / "deploy"
+        after = _role_environment(deploy)
+        self.assertNotEqual(before, after)
+        self.assertEqual(_expected_passwords(deploy), _suffixed(after, "_PASSWORD"))
 
 
 if __name__ == "__main__":

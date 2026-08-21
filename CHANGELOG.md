@@ -10,6 +10,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The `mesh` profile could not have started.** `deploy/compose.yaml` gained nine per-role
+  identities on 2026-08-21, but nothing produced the eighteen variables it reads, and
+  `scripts/broker-secrets.sh` writes passwords only as files under `deploy/secrets/`.
+  `docker compose --env-file .env --profile mesh config` resolved the Agent Mesh service to
+  `SOLACE_BROKER_USERNAME: ""` — a blank identity, which the now-provisioned broker refuses outright
+  because the factory `default` username is disabled and an unknown username cannot connect.
+  `CONTRIBUTING.md` covered the gap with an instruction to copy each role's password into `.env` by
+  hand: nine secrets, repeated after every `just rotate-secrets`.
+
+  `scripts/broker-secrets.sh` now also writes `deploy/secrets/.env.roles`, holding each role's
+  username and password under the names `.env.example` declares, and `just up`, `down`, `logs`, and
+  `ps` pass it as a second `--env-file` after `.env`. It is derived from the password files and
+  rewritten on every run, including the unchanged path, so it stays correct after a rotation or after
+  a single missing password is filled. The name begins with `.env` deliberately: it is covered by
+  `.gitignore`'s `secrets/` rule, by its `.env.*` rule, and by the `no-env-files` hook, three
+  independent guards on the one failure a later commit cannot undo. `just showcase` is untouched —
+  the Solace Cloud service carries its own identities in `.env.showcase`.
+
 - The commit-stage type check for the Agent Mesh domain agreed with the authoritative one only by
   luck. It ran from the repository root over the staged files, and mypy derives a module name
   relative to its working directory — so `from tools import agent_mesh_config_validator` resolved
