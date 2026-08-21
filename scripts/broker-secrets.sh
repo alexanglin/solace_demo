@@ -12,6 +12,11 @@
 #   secrets/broker-admin-password   32 random bytes, hexadecimal
 #   secrets/postgres-password       32 random bytes, hexadecimal
 #   secrets/semp-discovery-password 32 random bytes, hexadecimal
+#   secrets/broker-<role>-password  one per broker authorization role, same form
+#
+# The nine role names below are the second home of the Principal enum in packages/domain
+# (docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md). A gate test
+# in tools/quality_gate_tests/deploy/ holds the two equal, so neither can drift alone.
 #
 # Every private file is created 0600. Existing material is left alone unless --rotate is
 # given. Nothing here prints a key or a password: only paths, fingerprints, and the
@@ -46,6 +51,13 @@ certs="$deploy_dir/certs"
 secrets="$deploy_dir/secrets"
 validity_days=365
 
+broker_roles="fleet-simulator command-gateway dashboard-api evidence-service recorder
+event-mesh-gateway event-mesh-tool agent-mesh-agent discovery"
+passwords="broker-admin-password postgres-password semp-discovery-password"
+for role in $broker_roles; do
+	passwords="$passwords broker-$role-password"
+done
+
 report() {
 	printf 'authority:  %s\n' "$certs/ca.pem"
 	openssl x509 -noout -fingerprint -sha256 -in "$certs/ca.pem"
@@ -54,14 +66,22 @@ report() {
 	openssl x509 -noout -text -in "$secrets/broker-server.crt" |
 		grep -A1 'Subject Alternative Name' | tail -n 1 | sed 's/^[[:space:]]*//'
 	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery}-password\n' "$secrets"
+	printf 'roles:      %s/broker-{%s}-password\n' "$secrets" \
+		"$(printf '%s' "$broker_roles" | tr '\n ' ',,')"
 }
 
-complete=true
+# Certificate material is all-or-nothing: a server certificate is only meaningful beside the
+# authority that signed it. Passwords are independent of it and of each other, so a role
+# added later fills its own gap rather than rotating the authority the running broker is
+# already presenting.
+certificates=true
 for required in "$certs/ca.pem" "$secrets/ca.key" "$secrets/broker-server.key" \
-	"$secrets/broker-server.crt" "$secrets/broker-server.pem" \
-	"$secrets/broker-admin-password" "$secrets/postgres-password" \
-	"$secrets/semp-discovery-password"; do
-	[ -f "$required" ] || complete=false
+	"$secrets/broker-server.crt" "$secrets/broker-server.pem"; do
+	[ -f "$required" ] || certificates=false
+done
+complete=$certificates
+for name in $passwords; do
+	[ -f "$secrets/$name" ] || complete=false
 done
 if [ "$complete" = true ] && [ "$rotate" = false ]; then
 	printf 'unchanged: material already present; pass --rotate to regenerate\n'
@@ -115,19 +135,24 @@ openssl x509 -req -in "$work/broker-server.csr" -CA "$work/ca.pem" -CAkey "$work
 	-CAcreateserial -days "$validity_days" -sha256 -extfile "$work/server.ext" \
 	-out "$work/broker-server.crt" 2>/dev/null
 cat "$work/broker-server.key" "$work/broker-server.crt" >"$work/broker-server.pem"
-for name in broker-admin-password postgres-password semp-discovery-password; do
-	openssl rand -hex 32 | tr -d '\n' >"$work/$name"
-done
-
 mkdir -p "$certs" "$secrets"
 chmod 755 "$certs"
 chmod 700 "$secrets"
-cp "$work/ca.pem" "$certs/ca.pem"
-chmod 644 "$certs/ca.pem"
-for name in ca.key broker-server.key broker-server.crt broker-server.pem \
-	broker-admin-password postgres-password semp-discovery-password; do
-	cp "$work/$name" "$secrets/$name"
-	chmod 600 "$secrets/$name"
+
+if [ "$certificates" = false ] || [ "$rotate" = true ]; then
+	cp "$work/ca.pem" "$certs/ca.pem"
+	chmod 644 "$certs/ca.pem"
+	for name in ca.key broker-server.key broker-server.crt broker-server.pem; do
+		cp "$work/$name" "$secrets/$name"
+		chmod 600 "$secrets/$name"
+	done
+fi
+
+for name in $passwords; do
+	if [ "$rotate" = true ] || [ ! -f "$secrets/$name" ]; then
+		openssl rand -hex 32 | tr -d '\n' >"$secrets/$name"
+		chmod 600 "$secrets/$name"
+	fi
 done
 
 printf 'written: certificate authority, broker certificate, and passwords under %s\n' "$deploy_dir"

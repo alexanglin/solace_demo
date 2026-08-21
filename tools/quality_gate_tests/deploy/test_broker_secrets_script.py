@@ -7,19 +7,27 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from aerial_rescue_domain.principals import Principal
+
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
 SCRIPT = REPOSITORY_ROOT / "scripts" / "broker-secrets.sh"
 PASSWORD_HEX_LENGTH = 64
 """32 random bytes rendered as hexadecimal."""
+STACK_PASSWORDS = (
+    "secrets/broker-admin-password",
+    "secrets/postgres-password",
+    "secrets/semp-discovery-password",
+)
+ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in Principal)
+"""One per broker authorization role (ADR-0061); the script's own list is held equal below."""
 PRIVATE_FILES = (
     "secrets/ca.key",
     "secrets/broker-server.key",
     "secrets/broker-server.crt",
     "secrets/broker-server.pem",
-    "secrets/broker-admin-password",
-    "secrets/postgres-password",
-    "secrets/semp-discovery-password",
+    *STACK_PASSWORDS,
+    *ROLE_PASSWORDS,
 )
 
 
@@ -38,7 +46,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_three_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_twelve_passwords(self) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -98,8 +106,8 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
 
         # Assert
         passwords = [
-            (repository / "deploy" / "secrets" / name).read_text(encoding="utf-8").strip()
-            for name in ("broker-admin-password", "postgres-password", "semp-discovery-password")
+            (repository / "deploy" / name).read_text(encoding="utf-8").strip()
+            for name in (*STACK_PASSWORDS, *ROLE_PASSWORDS)
         ]
         self.assertNotIn("PRIVATE KEY", result.stdout + result.stderr)
         self.assertTrue(
@@ -150,6 +158,48 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("MISSING: openssl", result.stderr)
         self.assertFalse((repository / "deploy").exists())
+
+    def test_a_missing_password_is_filled_without_rotating_the_authority(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        self.generate(repository)
+        before = _material(repository / "deploy")
+        (repository / "deploy" / ROLE_PASSWORDS[0]).unlink()
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        after = _material(repository / "deploy")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            {name: before[name] for name in before if name != ROLE_PASSWORDS[0]},
+            {name: after[name] for name in after if name != ROLE_PASSWORDS[0]},
+        )
+        self.assertNotEqual(before[ROLE_PASSWORDS[0]], after[ROLE_PASSWORDS[0]])
+
+    def test_the_scripts_role_list_equals_the_authorization_roles(self) -> None:
+        # Arrange
+        declaration = SCRIPT.read_text(encoding="utf-8").partition('broker_roles="')[2]
+
+        # Act
+        listed = tuple(declaration.partition('"')[0].split())
+
+        # Assert
+        self.assertEqual(tuple(role.value for role in Principal), listed)
+
+    def test_every_role_receives_its_own_distinct_credential(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        self.generate(repository)
+
+        # Assert
+        credentials = {
+            (repository / "deploy" / name).read_text(encoding="utf-8") for name in ROLE_PASSWORDS
+        }
+        self.assertEqual(len(ROLE_PASSWORDS), len(credentials))
 
     def test_an_unknown_argument_is_refused(self) -> None:
         # Arrange
