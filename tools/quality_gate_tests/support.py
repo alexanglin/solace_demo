@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import pty
+import select
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -11,6 +16,63 @@ from tools.executable_resolution import required_executable
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIRECTORY = REPOSITORY_ROOT / "scripts" / "hooks"
+
+TERMINAL_TIMEOUT_SECONDS = 15.0
+"""How long a script attached to a terminal may run before it is treated as wedged."""
+
+_TERMINAL_KILL_SECONDS = 5.0
+_TERMINAL_POLL_SECONDS = 0.1
+_TERMINAL_READ_BYTES = 4096
+
+
+@dataclasses.dataclass(frozen=True)
+class TerminalResult:
+    """The outcome of a script whose output was attached to a pseudo-terminal."""
+
+    returncode: int | None
+    output: str
+
+    @property
+    def timed_out(self) -> bool:
+        """Whether the script had to be killed instead of exiting on its own."""
+        return self.returncode is None
+
+
+def _drain_terminal(
+    controller: int,
+    process: subprocess.Popen[bytes],
+    deadline: float,
+) -> bytes:
+    """Read the terminal until the script closes it or the deadline passes."""
+    chunks: list[bytes] = []
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select([controller], [], [], _TERMINAL_POLL_SECONDS)
+        if not readable:
+            if process.poll() is not None:
+                break
+            continue
+        try:
+            chunk = os.read(controller, _TERMINAL_READ_BYTES)
+        except OSError:
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _settle_terminal_process(process: subprocess.Popen[bytes]) -> int | None:
+    """Return the exit status, killing the whole session when the script never exits.
+
+    The session, not the process: a script that wedges does so because something it
+    started is waiting for a keystroke, and killing only the script would leave that
+    child holding the terminal open.
+    """
+    if process.poll() is None:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        process.wait(timeout=_TERMINAL_KILL_SECONDS)
+        return None
+    return process.returncode
 
 
 def hook_script(name: str) -> Path:
@@ -113,6 +175,59 @@ class QualityGateTestCase(unittest.TestCase):
         environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return cls.run_script(hook_script(hook_name), repository, arguments, environment)
+
+    @staticmethod
+    def run_script_on_terminal(
+        script: Path,
+        repository: Path,
+        arguments: tuple[str, ...] = (),
+        environment: dict[str, str] | None = None,
+        timeout_seconds: float = TERMINAL_TIMEOUT_SECONDS,
+    ) -> TerminalResult:
+        """Run one project-owned shell script with its output attached to a terminal.
+
+        ``run_script`` captures output through pipes, so a command whose behaviour
+        depends on stdout being a terminal takes its pipe path here and its terminal
+        path nowhere. pre-commit allocates a pseudo-terminal so hook output keeps its
+        colour, and the runner's terminal is degraded, so the terminal path is the one
+        the verification authority actually takes. ``TERM`` is fixed to the degraded
+        value rather than inherited, so the check does not depend on the terminal the
+        contributor happens to be sitting at.
+        """
+        script_environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TERM": "dumb"}
+        if environment is not None:
+            script_environment.update(environment)
+        controller, follower = pty.openpty()
+        try:
+            try:
+                process = subprocess.Popen(
+                    ("/bin/sh", str(script), *arguments),
+                    cwd=repository,
+                    env=script_environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=follower,
+                    stderr=follower,
+                    start_new_session=True,
+                )
+            finally:
+                os.close(follower)
+            output = _drain_terminal(controller, process, time.monotonic() + timeout_seconds)
+            returncode = _settle_terminal_process(process)
+        finally:
+            os.close(controller)
+        return TerminalResult(returncode, output.decode("utf-8", errors="replace"))
+
+    @classmethod
+    def run_hook_on_terminal(
+        cls,
+        hook_name: str,
+        repository: Path,
+        arguments: tuple[str, ...] = (),
+        environment: dict[str, str] | None = None,
+    ) -> TerminalResult:
+        return cls.run_script_on_terminal(
+            hook_script(hook_name), repository, arguments, environment
+        )
 
     @staticmethod
     def write_argument_recorder(path: Path) -> None:
