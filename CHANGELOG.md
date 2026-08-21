@@ -10,6 +10,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The compose stack has been started.** The default profile's first live run is recorded in
+  `release-evidence/phase-0/first-live-run.md`: broker and Postgres both reach `healthy` and
+  `up --wait` returns 0 in 40.75s including both image pulls, all three published ports are bound to
+  `127.0.0.1` on the running containers, and the broker holds 1.543 GiB against the workstation's
+  7.652 GiB allocation. `tests/phase0/test_first_live_stack.py` completes a full TLS handshake against
+  55443 and 1943 with chain verification against the generated authority and hostname checking left
+  on, and reads back all three subject alternative names; all three probes failed with
+  `ConnectionRefusedError` before the stack was started. They carry the `docker` and `broker` markers,
+  so no blocking suite runs them.
+- Two accepted-debt rows cleared with that run. The broker image carries `/usr/bin/curl` 7.76.1, so the
+  healthcheck's assumption is measured rather than argued and the documented `/dev/tcp` fallback is
+  unnecessary; and `scripts/broker-secrets.sh` produced a working authority under macOS LibreSSL 3.3.6,
+  while the nine tests that drive it now pass on the Linux runner against OpenSSL — which they could
+  not do before, because the job they run in had never completed.
+- The measured resource numbers land in `docs/operating-parameters.md`: the Docker Desktop allocation,
+  the default profile's cost at rest, and the observed time to healthy. Full-stack memory and the
+  fleet's connection count stay provisional, because the two components that make that figure
+  interesting have not run.
+
 - Both `[tool.mypy]` tables enable every strictness lever mypy 1.19.0 offers and the tree already
   satisfies: `disallow_any_explicit`, `strict_equality_for_none`, `local_partial_types`, and all
   thirteen error codes that are off by default, among them `exhaustive-match`, `unused-awaitable`,
