@@ -190,8 +190,9 @@ just down              # stop; volumes are kept
 the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain
 entrypoints. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
 is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
-`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **Nobody has
-started this stack yet**: the first live run is the next increment, and until it is recorded under
+`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: its first live run is recorded in
+[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). For the
+`mesh`, `services`, and `event-portal` profiles, which remain unstarted, until each is recorded under
 `release-evidence/` the healthcheck commands and the image-internal details are design, not evidence.
 
 ## Fail-closed gates
@@ -277,10 +278,15 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
 - `services/command_gateway` contains no mutation-eligible behavior or co-located tests yet, and neither
-  do the Tier 2 members. The mutation and coverage entry points are executable and intentionally fail
-  closed until those packages gain tested behavior, so the pre-push tier stays red until they do.
-  `packages/contracts` and `packages/domain` pass both; the root tooling member sits below its Tier 2
-  threshold because the mutation, contract, coverage, and import gates predate the per-member rule.
-- The `deploy/` stack is defined and held to its policy gate but has never been started. The broker
-  image's `curl`, the Agent Mesh management-server probe, the Event Management Agent's secret mount,
-  and the `openssl` flags under LibreSSL are confirmed by the first live run, not by any hook.
+  do the Tier 2 members. This no longer turns the pre-push tier red: a member with nothing to measure is
+  reported as `SCAFFOLD` rather than failed
+  ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)), and both
+  the coverage and mutation gates pass on `main` today. `packages/contracts` and `packages/domain` are
+  fully scored. What remains is the AAA checker's three modules, carried as a row in
+  [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
+- The `mesh`, `services`, and `event-portal` profiles are defined and held to the policy gate but have
+  never been started, so the Agent Mesh management-server probe and the Event Management Agent's secret
+  mount are still design rather than measurement. The broker image's `curl` and the `openssl` flags
+  under LibreSSL were confirmed by the default profile's first live run and are recorded in
+  [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). No hook
+  can prove any of them: a policy gate reads the compose file and cannot see inside an image.

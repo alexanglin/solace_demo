@@ -20,7 +20,7 @@ Mesh process, broker client, application, or model.
 | Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
 | Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); inert until the first owned configuration |
-| Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; **not yet started** |
+| Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the default profile's **first live run is recorded** in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
 | Live PubSub+ and Ollama messaging | Next Phase 0 evidence: the first `just up`; not yet demonstrated |
 | Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
 | Solace Cloud | A non-gating showcase profile for the Cloud console; no gate depends on it |

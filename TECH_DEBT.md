@@ -180,19 +180,28 @@ enforces more narrowly than ADR-0032 states them are listed under "Known gaps" i
 
 [ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) put every component
 except Ollama under `deploy/compose.yaml`, and the compose policy gate proves the file's text conforms.
-Nobody has started the stack. What that leaves unproven, each a design choice rather than a measurement:
+The default profile has now been started and recorded in
+[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), which
+cleared two rows below. What the profiles that remain unstarted leave unproven, each a design choice
+rather than a measurement:
 
 | Item | Why it is accepted for now | Clears when |
 | --- | --- | --- |
-| The broker healthcheck uses `curl` inside the image | Solace's own Helm readiness script does the same; the documented fallback is a `/dev/tcp` probe | The first `just up` records the broker reaching healthy |
 | The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15 | Upstream builds the image; a project-owned image would re-implement upstream's Dockerfile ([ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)) | The plugin-compatibility probe is run inside the built image and recorded |
 | The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
-| `scripts/broker-secrets.sh` is proven under LibreSSL on the workstation only | Extensions come from configuration files, the portable form | Continuous integration on Linux runs the script's tests against OpenSSL |
-| Docker Desktop's memory allocation and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision | The Phase 0 resource and showcase measurements land in `docs/operating-parameters.md` |
+| Full-stack memory and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision. The allocation and the default profile's cost are now measured; the two components that make the figure interesting, Agent Mesh and the emulated discovery agent, have not run | The `mesh` profile runs and the showcase measurement lands in `docs/operating-parameters.md` |
 | The official Agent Mesh image's `/opt/venv` carries `asteval` 1.0.6 | The override in [ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) changes the lock, not upstream's image; Trivy reports the finding at MEDIUM, below the blocking threshold, so every daily scan prints it as information | Upstream publishes an image with `asteval` at or above 1.0.9 |
 | Neither Dockerfile declares a `HEALTHCHECK`, so `trivy config` reports `DS-0026` at LOW on both | The compose policy gate requires the healthcheck in `deploy/compose.yaml`, which is where Compose reads it; the finding is informational on every pre-push run | A recorded decision settles where the healthcheck lives |
 
-**Clears when:** the first live run is recorded under `release-evidence/`.
+**Two rows cleared on 2026-08-21.** The broker image carries `/usr/bin/curl` 7.76.1 and the container
+reached healthy, so the healthcheck's assumption is measured rather than argued and the `/dev/tcp`
+fallback is unnecessary. `scripts/broker-secrets.sh` generated a working authority under macOS
+LibreSSL 3.3.6, and the nine tests that drive it now pass on the Linux runner against OpenSSL — which
+they could not do before, because the job they run in had never completed
+([ADR-0059](docs/adr/0059-keep-the-verification-authority-able-to-report.md)).
+
+**Clears when:** the `mesh`, `services`, and `event-portal` profiles are started and recorded under
+`release-evidence/`.
 
 ## 7. Instrument definitions and unset parameters
 
