@@ -139,6 +139,29 @@ What remains is one module and its two entry points:
 100% branches, and 882 of 882 mutants killed. A scaffold that gains its first executable statement or
 test file becomes an active member immediately and is measured against its declared tier.
 
+## 4b. Advisories inside the pinned third-party images
+
+The first image scan, on 2026-08-20, reported **307 distinct HIGH and CRITICAL advisories with published
+fixes** across the seven images: 63 in `solace/event-management-agent`, 58 in `postgres`, 48 each in
+`solace/solace-agent-mesh` and the derived `aerial-rescue/agent-mesh`, 38 each in `python` and the derived
+`aerial-rescue/application`, and 14 in `solace/solace-pubsub-standard`. Roughly 180 are the `util-linux`
+family of Debian packages, 51 are the Go standard library inside the Solace images, and the rest are
+Python packages in the vendor's own virtual environment.
+
+None of them is waived, because none of them is actionable. Every pinned digest was the newest its tag
+carried on that date, 3.14.7, 17.11, and 1.28.7 were the newest tags, and the two derived images inherit
+their operating-system packages wholesale from a base this project pins rather than builds. The fix for
+all 307 arrives the same way: a publisher rebuilds an image, and the pin check of
+[ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) turns red until the digest
+is bumped.
+
+**This is the risk of running pinned third-party images, and it is accepted knowingly rather than
+signed away.** No waiver claims any of these has been reviewed for reachability; the scan prints all of
+them on every run and the daily workflow keeps the list current.
+
+**Clears when:** each publisher rebuilds. The pin check is the instrument, and it needs no human to
+notice.
+
 ## 5. Owed before the first Agent Mesh configuration
 
 The semantic-configuration validator

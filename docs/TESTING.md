@@ -197,9 +197,12 @@ advisory with a reason, reachability statement, compensating control, reviewer, 
 expiry ([ADR-0026](adr/0026-expiring-dependency-waivers.md)). An unwaived advisory, an expired or
 out-of-window waiver, and a waiver matching no reported advisory each fail. The same gate adjudicates
 Trivy 0.74.0 reports: `trivy config` over `deploy/` at pre-push and `trivy image` over every pulled and
-built stack image in continuous integration, where a HIGH or CRITICAL finding with a fixed version
-blocks unless an expiring waiver covers it and every other finding is printed as information
-([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md)). zizmor 1.29.0 audits the
+built stack image in continuous integration. A `deploy-config` misconfiguration at HIGH or CRITICAL
+blocks unless an expiring waiver covers it; an advisory inside an image is printed as information and
+never blocks, because the project's only lever on a pinned third-party image is the digest it names.
+That lever has its own gate: `tools/image_pin_gate.py` fails when a pinned digest is no longer the
+newest its tag carries ([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
+[ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)). zizmor 1.29.0 audits the
 workflow and Dependabot files offline at the commit stage, and any finding fails
 ([ADR-0049](adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md)); CodeQL analyses the Python
 tree in continuous integration only

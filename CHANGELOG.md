@@ -222,6 +222,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- The image scan reports advisories instead of enforcing them, and a new gate enforces the thing the
+  project can act on. The first run found 307 blocking findings across the seven images and none was
+  actionable: every pinned digest was already the newest its tag carried, the newest tags were already
+  pinned, hadolint `DL3005` forbids the `apt-get upgrade` layer that would patch the two derived
+  images, and ADR-0007 forbids patching a vendor image. `tools/image_pin_gate.py`, driven by
+  `scripts/security/check-image-pins.sh` and `just check-image-pins`, now fails when a pinned digest is
+  no longer the newest its tag carries, so the fix arrives by changing the image rather than by signing
+  307 waivers on a 30-day cycle. `deploy-config` misconfigurations and the `pip-audit` zero-tolerance
+  rule are unchanged ([ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)).
+- `main` is protected on GitHub: a pull request with zero required approvals, the three `checks.yml`
+  jobs required, linear history, no force pushes or deletions, and enforcement for administrators
+  ([ADR-0054](docs/adr/0054-enforce-the-verification-authority-with-branch-protection.md)).
+
 - The coverage gate reports a scaffolded workspace member as `SCAFFOLD` instead of failing it, and
   the mutation gate lists, preflights, and evaluates only the active tier-one members while naming
   the scaffolded ones. `tools/member_scaffold.py` is the one predicate both gates call: a manifest,
@@ -326,6 +339,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Fixed
+
+- `test_a_missing_openssl_fails_closed` established its precondition with `PATH=/bin`, which hides
+  `openssl` on macOS but not on Debian, where `/bin` is a symlink to `/usr/bin`. The test asserted a
+  real fail-closed path on the workstation and, on the Linux runner, ran the script with `openssl`
+  available and failed on its own assertion. It now points `PATH` at an empty directory. This was the
+  first defect continuous integration found that no local run could have.
 
 - The import-contract gate and the domain Ruff banned-api list disagreed in both directions: `httpx`
   was banned only by Ruff, and `litellm` and `solace_agent_mesh` only by the gate. Both now forbid the

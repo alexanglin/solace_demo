@@ -82,6 +82,7 @@ just check-mutation    # independent Tier 1 mutation runs and per-module scoring
 just check-compose     # the deploy/ stack against the compose policy gate
 just check-deploy-config  # trivy config over deploy/, adjudicated under the waiver registry
 just scan-images       # build the derived images, then trivy image over all seven (needs Docker)
+just check-image-pins  # refuse a pinned digest upstream has already moved past (needs Docker)
 ```
 
 `just` is a convenience wrapper. The hooks and CI invoke the scripts under [`scripts/`](scripts/) directly, so nothing breaks if you do not have `just` installed.
@@ -226,9 +227,13 @@ policy gate: inert until a compose file or Dockerfile is listed, then failing on
 ignored in favour of its JSON report, which `tools/dependency_waiver_gate.py --source trivy`
 adjudicates: a HIGH or CRITICAL check in `FAIL` status blocks unless `dependency-waivers.toml` carries
 an unexpired waiver in the `deploy-config` domain, and every other finding prints as an `INFO:` line.
-The image scans apply the same rule per image, in the `image:<repository>` domain, and additionally
-require a fixed version before a finding blocks
-([ADR-0048](docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md)).
+The image scans print every advisory they find and block on none of them: inside a pinned
+third-party image a published fix is not something this repository can take, and the seven images
+were each at their newest published digest when the rule was written. The enforced control is
+`just check-image-pins`, which fails when a pinned digest is no longer the newest its tag carries —
+so when a publisher rebuilds an image to fix those advisories, the pin goes stale and CI says so
+([ADR-0048](docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
+[ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)).
 
 ## Suppressions
 

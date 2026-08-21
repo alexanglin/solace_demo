@@ -40,8 +40,8 @@ integer arithmetic; display rounding never changes a verdict.
 | Dependency waiver lifetime | More than 0 and at most 30 calendar days | `dependency-waivers.toml` validation |
 | Dependency waiver reason | At least 20 Unicode characters | `dependency-waivers.toml` validation |
 | Unwaived known advisory | Zero permitted in any audited dependency domain | `tools/dependency_waiver_gate.py` over pip-audit JSON (`--source pip-audit`) and Trivy JSON (`--source trivy`) |
-| Blocking image advisory | HIGH or CRITICAL severity with a fixed version, unwaived; zero permitted | `tools/dependency_waiver_gate.py --source trivy --domain image:<repository>` over `trivy image` JSON |
-| Informational image advisory | Any other severity, or no fixed version; printed as `INFO:` on stdout and never fails | the same gate |
+| Image advisory | Reported at every severity, enforced at none; printed as `INFO:` on stdout ([ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)) | `tools/dependency_waiver_gate.py --source trivy --domain image:<repository>` over `trivy image` JSON |
+| Image pin freshness | Every pulled image's pinned digest equals the digest its tag carries now; zero stale pins permitted | `tools/image_pin_gate.py` over the report `scripts/security/check-image-pins.sh` resolves |
 | Blocking deploy misconfiguration | HIGH or CRITICAL check in `FAIL` status, unwaived; zero permitted | `scripts/hooks/deploy/trivy-config-full.sh` over `trivy config deploy` JSON in the `deploy-config` domain |
 | Image scan timeout | 20 minutes per image | `trivy image --timeout 20m` in `scripts/security/scan-images.sh` |
 | Workflow audit findings | Zero at any severity, offline | zizmor 1.29.0 pre-commit hook over `.github/workflows/` and `.github/dependabot.yml` |
