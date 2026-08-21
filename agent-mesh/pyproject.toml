@@ -87,6 +87,31 @@ python_version = "3.13"
 strict = true
 warn_unused_ignores = true
 warn_unreachable = true
+# None of the four below is implied by `strict`, which in mypy 1.19 expands to fifteen
+# flags and stops there. Measured on 2026-08-20: all thirteen optional error codes plus
+# these three switches cost zero errors on this tree, so they are a ratchet rather than a
+# migration (docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md). They are
+# declared here, not on a hook command line, because the commit-stage hooks read only this
+# table -- a command-line setting would make the fast stage weaker than the authoritative
+# one, which is the disagreement ADR-0029 exists to prevent.
+disallow_any_explicit = true
+strict_equality_for_none = true
+local_partial_types = true
+enable_error_code = [
+    "deprecated",
+    "exhaustive-match",
+    "explicit-override",
+    "ignore-without-code",
+    "mutable-override",
+    "possibly-undefined",
+    "redundant-expr",
+    "redundant-self",
+    "truthy-bool",
+    "truthy-iterable",
+    "unimported-reveal",
+    "unused-awaitable",
+    "unused-ignore",
+]
 
 # Neither Agent Mesh nor either Event Mesh plugin ships a py.typed marker, and no stub
 # package exists for any of them. The relaxation is scoped to those exact distributions
