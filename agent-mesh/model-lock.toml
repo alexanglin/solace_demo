@@ -1,0 +1,18 @@
+# Local model lock (docs/adr/0063-lock-local-models-by-manifest-digest.md).
+#
+# Ollama is addressable only as `name:tag`, and a tag is mutable: `ollama pull` re-points it
+# with no warning. The digest therefore cannot live in the model identifier a configuration
+# carries, so it lives here. The offline configuration validator proves that a local model is
+# listed here in the canonical form and that its digest is well formed; readiness compares
+# these digests against `GET /api/tags` on the running daemon.
+#
+# `digest` is the Ollama *manifest* digest, the value `GET /api/tags` reports as
+# `.models[].digest` and whose first twelve characters are the identifier `ollama list` prints.
+format = 1
+
+[[models]]
+identifier = "ollama_chat/qwen3:4b"
+digest = "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+recorded_on = "2026-08-21"
+recorded_by = "Alex Anglin"
+reason = "Phase 0 orchestration spike for the general and planning roles. Tool-capable at 2.50 GB, reported by Ollama as completion, tools, and thinking. Provisional: the roles are pinned by the Phase 4 model selection."

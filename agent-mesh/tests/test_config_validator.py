@@ -31,6 +31,7 @@ from tools.agent_mesh_config_validator import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "config_validation"
 ENV_TEMPLATE = Path(__file__).parents[2] / ".env.example"
+MODEL_LOCK = Path(__file__).parents[1] / "model-lock.toml"
 
 
 def _broker() -> dict[str, object]:
@@ -201,9 +202,62 @@ def _project_with(
         ENV_TEMPLATE.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    (project / "model-lock.toml").write_text(
+        MODEL_LOCK.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     path = config_root / name
     path.write_text(content, encoding="utf-8")
     return temporary, path
+
+
+LOCKED_DIGEST = "sha256:" + "9a" * 32
+"""A well-formed Ollama manifest digest; the value never has to be real to be well formed."""
+LOCKED_REASON = "A reason long enough to satisfy the twenty-character minimum."
+
+
+def _lock(
+    identifier: str = "ollama_chat/qwen3:4b",
+    digest: str = LOCKED_DIGEST,
+    reason: str = LOCKED_REASON,
+    entries: int = 1,
+) -> str:
+    """Return a local-model lock document with ``entries`` copies of one entry."""
+    entry = (
+        "[[models]]\n"
+        f'identifier = "{identifier}"\n'
+        f'digest = "{digest}"\n'
+        'recorded_on = "2026-08-21"\n'
+        'recorded_by = "Validation"\n'
+        f'reason = "{reason}"\n'
+    )
+    return "format = 1\n" + entry * entries
+
+
+def _local_agent(identifier: str = "ollama_chat/qwen3:4b", **model: object) -> str:
+    """Return an agent document whose model is ``identifier`` with the given model fields."""
+    document = _agent_document()
+    _app_config(document)["model"] = {"model": identifier, **model}
+    return _render(document)
+
+
+def _validate_against_lock(lock: str | None, content: str | None = None) -> ValidationResult:
+    """Validate one configuration against ``lock``, or against no lock file when it is None."""
+    temporary, path = _project_with(content if content is not None else _render(_agent_document()))
+    try:
+        model_lock = path.parent.parent / "model-lock.toml"
+        if lock is None:
+            model_lock.unlink()
+        else:
+            model_lock.write_text(lock, encoding="utf-8")
+        return validate_paths(
+            (path,),
+            config_root=path.parent,
+            env_template=Path(temporary.name) / ".env.example",
+            model_lock=model_lock,
+        )[0]
+    finally:
+        temporary.cleanup()
 
 
 def _validate_text(content: str) -> ValidationResult:
@@ -214,9 +268,143 @@ def _validate_text(content: str) -> ValidationResult:
             (path,),
             config_root=path.parent,
             env_template=Path(temporary.name) / ".env.example",
+            model_lock=path.parent.parent / "model-lock.toml",
         )[0]
     finally:
         temporary.cleanup()
+
+
+class ModelLockTests(unittest.TestCase):
+    """The lock file docs/adr/0063 makes the offline half of the local-model rule."""
+
+    def test_an_absent_or_unparsable_lock_refuses_the_run_without_naming_the_runtime(self) -> None:
+        # Arrange
+        unparsable = "format = 1\n[[models]]\nidentifier = "
+
+        # Act
+        absent = _validate_against_lock(None)
+        malformed = _validate_against_lock(unparsable)
+
+        # Assert
+        self.assertEqual({"MODEL_LOCK"}, _rules(absent))
+        self.assertEqual({"MODEL_LOCK"}, _rules(malformed))
+        self.assertEqual("model-lock", absent.issues[0].location)
+
+    def test_a_lock_format_that_is_absent_wrongly_typed_or_unknown_is_refused(self) -> None:
+        # Arrange
+        candidates = (
+            _lock().replace("format = 1\n", ""),
+            _lock().replace("format = 1", "format = true"),
+            _lock().replace("format = 1", "format = 2"),
+        )
+
+        # Act
+        results = tuple(_validate_against_lock(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(_rules(result) == {"MODEL_LOCK"} for result in results), results)
+
+    def test_a_lock_without_a_list_of_models_is_refused(self) -> None:
+        # Arrange
+        candidates = ("format = 1\n", 'format = 1\nmodels = "ollama_chat/qwen3:4b"\n')
+
+        # Act
+        results = tuple(_validate_against_lock(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(_rules(result) == {"MODEL_LOCK"} for result in results), results)
+
+    def test_a_lock_entry_is_refused_unless_it_carries_exactly_the_recorded_keys(self) -> None:
+        # Arrange
+        candidates = (
+            _lock().replace('recorded_by = "Validation"\n', ""),
+            _lock() + 'extra = "unrecorded"\n',
+            "format = 1\nmodels = [1]\n",
+        )
+
+        # Act
+        results = tuple(_validate_against_lock(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(_rules(result) == {"MODEL_LOCK"} for result in results), results)
+
+    def test_a_lock_entry_is_refused_on_identifier_digest_or_reason(self) -> None:
+        # Arrange
+        candidates = (
+            _lock(identifier="ollama/qwen3:4b"),
+            _lock(identifier="ollama_chat/qwen3:latest"),
+            _lock().replace('identifier = "ollama_chat/qwen3:4b"', "identifier = 4"),
+            _lock(digest=LOCKED_DIGEST.upper()),
+            _lock(digest="sha256:abc"),
+            _lock(digest=LOCKED_DIGEST.removeprefix("sha256:")),
+            _lock(reason="too short"),
+        )
+
+        # Act
+        results = tuple(_validate_against_lock(candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(_rules(result) == {"MODEL_LOCK"} for result in results), results)
+
+    def test_a_lock_listing_one_identifier_twice_is_refused(self) -> None:
+        # Arrange
+        duplicated = _lock(entries=2)
+
+        # Act
+        result = _validate_against_lock(duplicated)
+
+        # Assert
+        self.assertEqual({"MODEL_LOCK"}, _rules(result))
+
+    def test_the_committed_lock_admits_the_model_it_records(self) -> None:
+        # Arrange
+        committed = MODEL_LOCK.read_text(encoding="utf-8")
+
+        # Act
+        result = _validate_against_lock(committed, _local_agent())
+
+        # Assert
+        self.assertTrue(result.valid, result.issues)
+
+
+class LocalModelPolicyTests(unittest.TestCase):
+    """Locality is decided by the resolved endpoint, not by the identifier's prefix."""
+
+    def test_a_paid_identifier_reached_at_the_ollama_endpoint_is_refused(self) -> None:
+        # Arrange
+        disguised = _local_agent(
+            "openai/gpt-4o-mini-2024-07-18", api_base="http://host.docker.internal:11434/v1"
+        )
+
+        # Act
+        result = _validate_against_lock(_lock(), disguised)
+
+        # Assert
+        self.assertIn("MODEL_LOCAL_FORM", _rules(result))
+
+    def test_a_local_model_absent_from_the_lock_is_refused_as_unlisted_not_malformed(self) -> None:
+        # Arrange
+        unlisted = _local_agent("ollama_chat/rescue:8b")
+
+        # Act
+        result = _validate_against_lock(_lock(), unlisted)
+
+        # Assert
+        self.assertEqual({"MODEL_LOCK_REQUIRED"}, _rules(result))
+
+    def test_an_api_base_that_is_absent_unusable_or_remote_is_not_judged_local(self) -> None:
+        # Arrange
+        candidates = (
+            _local_agent("openai/gpt-4o-mini-2024-07-18", api_base=11434),
+            _local_agent("openai/gpt-4o-mini-2024-07-18", api_base="http://host:notaport/v1"),
+            _local_agent("openai/gpt-4o-mini-2024-07-18", api_base="https://api.openai.com/v1"),
+        )
+
+        # Act
+        results = tuple(_validate_against_lock(_lock(), candidate) for candidate in candidates)
+
+        # Assert
+        self.assertTrue(all(result.valid for result in results), results)
 
 
 class ResultTypeTests(unittest.TestCase):
@@ -240,7 +428,9 @@ class ValidConfigurationTests(unittest.TestCase):
         paths = tuple(sorted(FIXTURES.glob("valid_*.yaml")))
 
         # Act
-        results = validate_paths(paths, config_root=FIXTURES, env_template=ENV_TEMPLATE)
+        results = validate_paths(
+            paths, config_root=FIXTURES, env_template=ENV_TEMPLATE, model_lock=MODEL_LOCK
+        )
 
         # Assert
         self.assertEqual(3, len(results))
@@ -257,7 +447,9 @@ class ValidConfigurationTests(unittest.TestCase):
             patch.dict(os.environ, {"SOLACE_AGENT_MESH_AGENT_PASSWORD": "DO-NOT-READ"}),
             patch.object(socket.socket, "connect", side_effect=AssertionError("network used")),
         ):
-            result = validate_paths((path,), config_root=FIXTURES, env_template=ENV_TEMPLATE)[0]
+            result = validate_paths(
+                (path,), config_root=FIXTURES, env_template=ENV_TEMPLATE, model_lock=MODEL_LOCK
+            )[0]
         after = tuple(path.parents[2].rglob(":memory:.ses"))
 
         # Assert
@@ -278,6 +470,7 @@ class EnvelopeAndModelPolicyTests(unittest.TestCase):
             (second, first),
             config_root=first.parent,
             env_template=Path(temporary.name) / ".env.example",
+            model_lock=first.parent.parent / "model-lock.toml",
         )
 
         # Assert
@@ -515,6 +708,7 @@ class IncludeAndSecretPolicyTests(unittest.TestCase):
             ),
             config_root=config_root,
             env_template=ENV_TEMPLATE,
+            model_lock=MODEL_LOCK,
         )
 
         # Assert
@@ -598,6 +792,7 @@ class IncludeAndSecretPolicyTests(unittest.TestCase):
             (path,),
             config_root=config_root,
             env_template=root / ".env.example",
+            model_lock=MODEL_LOCK,
         )[0]
 
         # Assert
@@ -625,7 +820,9 @@ class IncludeAndSecretPolicyTests(unittest.TestCase):
         # Act
         values = validator._read_environment_template(template)
         invalid_results = tuple(
-            validate_paths((config,), config_root=root, env_template=candidate)[0]
+            validate_paths(
+                (config,), config_root=root, env_template=candidate, model_lock=MODEL_LOCK
+            )[0]
             for candidate in (invalid, missing)
         )
 
@@ -684,6 +881,7 @@ class IncludeAndSecretPolicyTests(unittest.TestCase):
                 (symlink_root, unreadable_root),
                 config_root=config_root,
                 env_template=ENV_TEMPLATE,
+                model_lock=MODEL_LOCK,
             )
 
         # Assert
@@ -1221,9 +1419,9 @@ class RuntimeBoundaryTests(unittest.TestCase):
 
         # Act
         with patch.object(validator, "_parsed_config", return_value=None):
-            parse_results = validator._merge_results(paths, results, runtime)
+            parse_results = validator._merge_results(paths, results, runtime, frozenset())
         with patch.object(validator, "_parsed_config", return_value={"apps": []}):
-            merge_results = validator._merge_results(paths, results, runtime)
+            merge_results = validator._merge_results(paths, results, runtime, frozenset())
 
         # Assert
         self.assertTrue(
@@ -1249,6 +1447,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
                 (path,),
                 config_root=path.parent,
                 env_template=Path(temporary.name) / ".env.example",
+                model_lock=path.parent.parent / "model-lock.toml",
             )[0]
 
         # Assert
@@ -1274,6 +1473,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
                 (path,),
                 config_root=path.parent,
                 env_template=Path(temporary.name) / ".env.example",
+                model_lock=path.parent.parent / "model-lock.toml",
             )[0]
 
         # Assert
@@ -1310,7 +1510,10 @@ class RuntimeBoundaryTests(unittest.TestCase):
         # Act
         with patch.object(metadata, "version", return_value="0.0.0"):
             version_result = validate_paths(
-                (path,), config_root=path.parent, env_template=env_template
+                (path,),
+                config_root=path.parent,
+                env_template=env_template,
+                model_lock=MODEL_LOCK,
             )[0]
         with patch.object(
             metadata,
@@ -1318,11 +1521,17 @@ class RuntimeBoundaryTests(unittest.TestCase):
             side_effect=RuntimeError("distribution metadata failed"),
         ):
             metadata_result = validate_paths(
-                (path,), config_root=path.parent, env_template=env_template
+                (path,),
+                config_root=path.parent,
+                env_template=env_template,
+                model_lock=MODEL_LOCK,
             )[0]
         with patch.object(metadata, "entry_points", return_value=missing_entries):
             missing_entry_result = validate_paths(
-                (path,), config_root=path.parent, env_template=env_template
+                (path,),
+                config_root=path.parent,
+                env_template=env_template,
+                model_lock=MODEL_LOCK,
             )[0]
         with patch.object(
             metadata,
@@ -1330,7 +1539,10 @@ class RuntimeBoundaryTests(unittest.TestCase):
             side_effect=RuntimeError("entry point discovery failed"),
         ):
             entry_discovery_result = validate_paths(
-                (path,), config_root=path.parent, env_template=env_template
+                (path,),
+                config_root=path.parent,
+                env_template=env_template,
+                model_lock=MODEL_LOCK,
             )[0]
         malformed_entry_results = []
         for entry in (
@@ -1341,14 +1553,22 @@ class RuntimeBoundaryTests(unittest.TestCase):
         ):
             with patch.object(metadata, "entry_points", return_value=(entry,)):
                 malformed_entry_results.append(
-                    validate_paths((path,), config_root=path.parent, env_template=env_template)[0]
+                    validate_paths(
+                        (path,),
+                        config_root=path.parent,
+                        env_template=env_template,
+                        model_lock=MODEL_LOCK,
+                    )[0]
                 )
         with (
             patch.object(validator, "_verify_gateway_entry_point", return_value=None),
             patch.object(validator, "TOOL_CLASS", "MissingEventMeshTool"),
         ):
             symbol_result = validate_paths(
-                (path,), config_root=path.parent, env_template=env_template
+                (path,),
+                config_root=path.parent,
+                env_template=env_template,
+                model_lock=MODEL_LOCK,
             )[0]
         with (
             patch.object(
@@ -1415,7 +1635,12 @@ class RuntimeBoundaryTests(unittest.TestCase):
         for runtime in (malformed_fields_runtime, missing_validator_runtime):
             with patch.object(validator, "_load_runtime", return_value=runtime):
                 model_results.append(
-                    validate_paths((path,), config_root=path.parent, env_template=env_template)[0]
+                    validate_paths(
+                        (path,),
+                        config_root=path.parent,
+                        env_template=env_template,
+                        model_lock=MODEL_LOCK,
+                    )[0]
                 )
         gateway_errors = []
         for gateway_class in gateway_classes:
@@ -1487,7 +1712,9 @@ class RuntimeBoundaryTests(unittest.TestCase):
         # Act
         with patch.dict(os.environ, isolated_environment, clear=True):
             before_environment = os.environ.copy()
-            result = validate_paths((path,), config_root=FIXTURES, env_template=ENV_TEMPLATE)[0]
+            result = validate_paths(
+                (path,), config_root=FIXTURES, env_template=ENV_TEMPLATE, model_lock=MODEL_LOCK
+            )[0]
             after_environment = os.environ.copy()
             after_directory = Path.cwd()
 
