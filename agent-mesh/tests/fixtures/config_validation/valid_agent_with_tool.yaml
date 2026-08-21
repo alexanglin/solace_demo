@@ -4,8 +4,8 @@ apps:
     broker:
       dev_mode: false
       broker_url: ${SOLACE_BROKER_URL}
-      broker_username: ${SOLACE_BROKER_USERNAME}
-      broker_password: ${SOLACE_BROKER_PASSWORD}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       broker_vpn: ${SOLACE_BROKER_VPN}
       temporary_queue: true
     app_config:
@@ -25,8 +25,8 @@ apps:
               broker_config:
                 dev_mode: false
                 broker_url: ${SOLACE_BROKER_URL}
-                broker_username: ${SOLACE_BROKER_USERNAME}
-                broker_password: ${SOLACE_BROKER_PASSWORD}
+                broker_username: ${SOLACE_EVENT_MESH_TOOL_USERNAME}
+                broker_password: ${SOLACE_EVENT_MESH_TOOL_PASSWORD}
                 broker_vpn: ${SOLACE_BROKER_VPN}
                 temporary_queue: true
               request_expiry_ms: 1000

@@ -79,6 +79,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0059](0059-keep-the-verification-authority-able-to-report.md) | Keep the verification authority able to report a verdict | Accepted |
 | [0060](0060-postgresql-18-and-its-data-directory-layout.md) | Move the durable store to PostgreSQL 18 and adopt its data-directory layout | Accepted |
 | [0061](0061-least-privilege-broker-principals-and-topic-authorization.md) | Give each component a least-privilege broker identity and deny topic access by default | Accepted |
+| [0062](0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) | Type-check the Agent Mesh domain from its own directory, over its whole tree | Accepted |
 
 ## Decisions still open
 
