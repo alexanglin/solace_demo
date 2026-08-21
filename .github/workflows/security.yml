@@ -23,6 +23,7 @@ on:
       - "dependency-waivers.toml"
       - "scripts/security/**"
       - "scripts/hooks/deploy/**"
+      - "apps/dashboard/**"
       - "tools/image_inventory.py"
       - "tools/dependency_waiver_gate.py"
       - ".github/workflows/security.yml"
@@ -59,6 +60,22 @@ jobs:
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: v0.74.0
+
+      # dependency-audit.sh audits the dashboard through pnpm once apps/dashboard holds a
+      # manifest, and ADR-0019 makes a missing tool a failure rather than a skip. Without
+      # this the daily audit would fail closed the day that manifest lands.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24.19.0"
+
+      - name: Enable pnpm for the dashboard audit
+        run: |
+          corepack enable
+          if [ -f apps/dashboard/package.json ]; then
+            pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+          else
+            echo "apps/dashboard/package.json absent; nothing to install yet."
+          fi
 
       - name: Synchronize locked Python dependencies
         run: |
