@@ -30,6 +30,7 @@ Read the authority for the concern before editing it:
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
 | Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 | Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
+| Command dispatch states and the send budget that bounds them | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -55,6 +56,7 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/__init__.py` | Shared structured `DomainError` base and package intent |
 | `src/aerial_rescue_domain/approvals.py` | Approval lifecycle, proposal binding, expiry, and consumption |
 | `src/aerial_rescue_domain/authority.py` | Closed command kinds and deny-by-default execution policy |
+| `src/aerial_rescue_domain/commands.py` | Command dispatch lifecycle and the counted send budget |
 | `src/aerial_rescue_domain/connectivity.py` | Pure drone-connectivity state fold |
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |

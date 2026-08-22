@@ -10,6 +10,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A dispatched command has named states, and what bounds its retrying is a count, not a clock.**
+  `docs/CONTRACTS.md` already required a bounded acknowledgement timeout, retries with exponential
+  backoff and jitter, and retries reusing the original command identifier, but no document named a
+  single command state, and the timeout, backoff base, and jitter bound have no rows in
+  `docs/operating-parameters.md` at all.
+
+  `packages/domain/src/aerial_rescue_domain/commands.py` is a table over `ACCEPTED`, `IN_FLIGHT`,
+  `ACKNOWLEDGED`, `SUCCEEDED`, `FAILED`, and `ABANDONED`, plus one counted bound. Five pairs are
+  legal and the other twenty-five of the thirty are refused
+  ([ADR-0074](docs/adr/0074-command-dispatch-lifecycle.md)).
+
+  The domain counts sends and the adapter owns the timer, which is the split
+  [ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md) already made for heartbeats:
+  a package forbidden to read a clock cannot enforce a duration. `SEND` is the only event that
+  increments the count, `TIME_OUT` is the only event that reads the budget, and `ABANDONED` is
+  therefore the one state no table row targets.
+
+  `SEND` deliberately carries no budget guard of its own. After `TIME_OUT` has abandoned a command
+  at the budget there is no legal fold that reaches `ACCEPTED` with an exhausted count, so such a
+  guard's refusal would be unreachable and would survive as an unkillable mutant — the same
+  reasoning [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) used to keep its
+  own table minimal. The budget comparison as written is reachable in both directions from a legal
+  fold, and both directions are asserted.
+
+  The budget itself is not set here. No measurement stands behind any number, so it joins the four
+  queue parameters as an `open` row in `docs/operating-parameters.md`, and the record is injected
+  with no default so nothing can silently default — the position the approval time to live held
+  before [ADR-0042](docs/adr/0042-approval-time-to-live.md) measured it.
+
 - **A sector has named states, and losing a drone is what imperils one.** The documentation set
   named no sector state. The closest it came was the lowercase phrase "marked at risk" inside one
   scenario step, and the topic grammar still has no `sectorId` level.
