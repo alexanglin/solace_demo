@@ -241,6 +241,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   the client retries forever. That is how the first `mesh` run failed. `AgentMeshContainerScopeTests`
   reads every `${SOLACE_*}` the mounted configuration names and requires compose to pass each one in.
 
+- **The browser gets a normalized dashboard event, and the transport stops at the server.**
+  [CONTRACTS.md](docs/CONTRACTS.md) defined `GET /api/v1/events` as an "SSE stream for normalized
+  dashboard events" and said nothing further: no shape, no schema, no rule for what a client does
+  with one. Nothing named the normalized form, so the browser, the recorder, and the replay oracle
+  had nothing to agree on.
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) names it, and
+  `packages/contracts/view.py` projects one accepted envelope into one dashboard event carrying the
+  kind, the class, the mission, the instant, and the projected fields. `id`, `source`, `sequence`,
+  `dataschema`, `traceparent`, and `tracestate` do not cross, so the browser reads an event without
+  the CloudEvents profile or the topic grammar; an event type nothing projects is refused as
+  `UNPROJECTED`, in the same shape ADR-0037 already refuses an unbound type.
+
+  Every event carries exactly one class, and the class alone decides whether a server under
+  back-pressure may discard it. `TELEMETRY` is droppable because routine telemetry already uses
+  direct delivery and a newer position supersedes a stale one; `CONNECTIVITY`, `MISSION`, `COMMAND`,
+  `EVIDENCE`, `APPROVAL`, and `AUDIT` never are, and a buffer still full after discarding what it may
+  closes the stream rather than dropping an approval. The reduced state the record also names is not
+  built yet, so `Context.REPLAY_STATE` stays unused and the ADR-0009 determinism oracle is still owed.
+
 - **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
   untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
   Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and
