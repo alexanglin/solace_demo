@@ -270,10 +270,14 @@ contract, and operator-flow evidence.
   ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)), and the evidence lifecycle
   ([ADR-0075](adr/0075-evidence-lifecycle-states.md)) in `packages/domain`. All five Tier 1 domain
   state machines [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names now exist.
-- Implement the evidence score, its named ordinal bands, and the corroboration floor that keeps the
-  escalating band unreachable from a single model-generated observation. ADR-0017 carries evidence
-  scoring as a Tier 1 row of its own, separate from the state machines. Then drive the five machines
-  through the Tier 2 fleet-simulator adapter.
+- **Done:** the evidence score, its named ordinal bands, and the corroboration floor that keeps the
+  escalating band unreachable from a single model-generated observation
+  ([ADR-0076](adr/0076-evidence-score-bands.md)). ADR-0017 carries evidence scoring as a Tier 1 row
+  of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
+  the evidence service's use of them is still owed. The band boundaries and the command send budget
+  are open rows in [operating-parameters.md](operating-parameters.md).
+- Drive the five domain state machines and the evidence score through the Tier 2 fleet-simulator
+  adapter.
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
   an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
   lint, format, test, coverage, duplication, and production-build gates from

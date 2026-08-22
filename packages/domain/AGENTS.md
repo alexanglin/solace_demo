@@ -32,6 +32,7 @@ Read the authority for the concern before editing it:
 | Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Command dispatch states and the send budget that bounds them | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
 | Evidence lifecycle states, and abstention as a state rather than a score | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
+| Evidence score, ordinal bands, and the corroboration floor closing B31 and B32 | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -64,6 +65,7 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
 | `src/aerial_rescue_domain/principals.py` | Closed broker roles and total publish/subscribe grant tables |
 | `src/aerial_rescue_domain/sectors.py` | Deny-by-default sector lifecycle table and terminal set |
+| `src/aerial_rescue_domain/scoring.py` | Evidence score, ordinal bands, and the two escalation gates |
 | `tests/` | Unit, refusal, boundary, totality, and property evidence for the package |
 
 Keep the public surface deliberate. New domain behavior belongs in a focused module with explicit

@@ -10,6 +10,38 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The escalating evidence band is now unreachable by construction, not because of where a number
+  sits.** `docs/LIMITATIONS.md` claimed the escalating band was "deliberately unreachable from a
+  single model-generated observation alone" and the approval-bypass catalogue recorded B32 as
+  "impossible by construction of the evidence-score band rule". Neither the bands, their boundaries,
+  nor what "corroborating" counted as existed. The word doing the work in B32 is *construction*: a
+  rule whose escalating outcome is prevented only by where a boundary happens to sit is impossible
+  until somebody edits a number, which is not the same claim.
+
+  `packages/domain/src/aerial_rescue_domain/scoring.py` closes both cases structurally
+  ([ADR-0076](docs/adr/0076-evidence-score-bands.md)). The escalating band requires contributions
+  from at least two distinct sources, and that rule reads neither the boundaries nor the origins, so
+  one source is capped one step below it at any score and under any boundary values — asserted at
+  the maximum score, at the lowest boundaries the range permits, and as a property over arbitrary
+  weights and arbitrary valid boundaries (B32). A contribution whose origin is `RECORDED` refuses
+  the computation outright and names the source, rather than scoring zero, so a replayed
+  contribution is an audited denial instead of a silent nothing and cannot count toward the source
+  floor either (B31).
+
+  The two rules are independent, so neither can mask the other: removing the source floor is caught
+  by a single-source case at a high score, and removing the recorded refusal by a recorded
+  contribution at any score, including a score of zero.
+
+  The bands are `NONE`, `WEAK`, `SUPPORTED`, and `CORROBORATED`, and the score is the weights summed
+  in integer hundredths, saturating at 100 — integers because
+  [ADR-0027](docs/adr/0027-integer-only-canonical-serialization.md) makes no floating-point value
+  representable where a digest can reach, and summing rather than averaging because an average is
+  not monotonic in the contributions admitted, which would give an operator a reason to suppress a
+  weak corroborating observation. The three boundaries are injected with no defaults and join the
+  send budget and the queue parameters as an open row in `docs/operating-parameters.md`; the
+  two-source floor is fixed in the record instead, because it is the reading of a safety claim
+  rather than a measurement.
+
 - **Evidence has named states, and an abstention is not a weak result.** This is the fifth and last
   of the Tier 1 domain state machines
   [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md) names; the other four landed in
