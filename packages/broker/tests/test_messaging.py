@@ -6,13 +6,18 @@ the type check: they assert what is passed, in what order, and with what convers
 fakes in place of the client's builder chain. Nothing here opens a socket.
 
 The one exception is `build_service`, which builds a real messaging service without
-connecting it, the way `semp.connect` returns an unopened connection.
+connecting it, the way `semp.connect` returns an unopened connection. The client requires
+the trust-store path to exist when it builds the session, so that test supplies a temporary
+directory rather than `deploy/certs`: the per-checkout authority of ADR-0046 is generated
+and untracked, and a test in the blocking suite cannot depend on it. An empty directory is
+enough, because the certificates are read when the session connects and this one never does.
 """
 
 from __future__ import annotations
 
 import unittest
 from collections.abc import Mapping, Sequence
+from tempfile import TemporaryDirectory
 from typing import Final
 
 import pytest
@@ -225,9 +230,12 @@ class BuildServiceTests(unittest.TestCase):
     def test_a_service_is_built_without_connecting_to_anything(self) -> None:
         # Arrange
         role = Principal.COMMAND_GATEWAY
+        endpoint = BrokerEndpoint(
+            url=ENDPOINT.url, vpn=ENDPOINT.vpn, trust_store=self.enterContext(TemporaryDirectory())
+        )
 
         # Act
-        service = build_service(ENDPOINT, role, CREDENTIAL)
+        service = build_service(endpoint, role, CREDENTIAL)
 
         # Assert
         self.assertTrue(hasattr(service, "connect"))
