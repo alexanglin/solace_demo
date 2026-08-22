@@ -19,7 +19,10 @@ from aerial_rescue_contracts import canonical, instant
 from aerial_rescue_contracts.envelope import (
     BINDINGS,
     DATASCHEMA_PATTERN,
+    MAX_SEQUENCE,
     REQUIRED_MEMBERS,
+    SEQUENCE_DIGITS,
+    SEQUENCE_PATTERN,
     Binding,
     Envelope,
     EnvelopeError,
@@ -29,6 +32,7 @@ from aerial_rescue_contracts.envelope import (
     decode_envelope,
     envelope_document,
     parse_envelope,
+    sequence_text,
 )
 from aerial_rescue_contracts.topics import (
     IDENTIFIER_PATTERN,
@@ -716,6 +720,51 @@ class ReservedReplyMissionTests(unittest.TestCase):
         self.assertEqual(
             (EnvelopeRefusal.RESERVED_MISSION, "subject", RESERVED_REPLY_MISSION), outcome
         )
+
+
+class SequenceTextTests(unittest.TestCase):
+    def test_a_representable_sequence_is_zero_padded_to_the_declared_width(self) -> None:
+        # Arrange
+        values = (0, 42, MAX_SEQUENCE)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual(("000000000000000", "000000000000042", "999999999999999"), rendered)
+
+    def test_a_sequence_the_form_cannot_carry_yields_no_text(self) -> None:
+        # Arrange
+        values = (-1, MAX_SEQUENCE + 1)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual((None, None), rendered)
+
+    def test_every_rendered_sequence_satisfies_the_pattern_the_profile_requires(self) -> None:
+        # Arrange
+        values = (0, 1, MAX_SEQUENCE)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual(
+            (True,) * len(values),
+            tuple(re.fullmatch(SEQUENCE_PATTERN, text or "") is not None for text in rendered),
+        )
+
+    def test_the_maximum_is_the_largest_value_the_declared_width_holds(self) -> None:
+        # Arrange
+        expected = 10**SEQUENCE_DIGITS - 1
+
+        # Act
+        maximum = MAX_SEQUENCE
+
+        # Assert
+        self.assertEqual(expected, maximum)
 
 
 class DocumentTests(unittest.TestCase):

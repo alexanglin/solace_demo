@@ -15,13 +15,12 @@ from typing import Final, cast
 import pytest
 from aerial_rescue_command_gateway import event_source
 from aerial_rescue_command_gateway.record import (
-    MAX_SEQUENCE,
     RecordError,
     RecordRefusal,
     RecordStamp,
     response_record,
 )
-from aerial_rescue_contracts.envelope import EnvelopeRefusal, parse_envelope
+from aerial_rescue_contracts.envelope import MAX_SEQUENCE, EnvelopeRefusal, parse_envelope
 from aerial_rescue_contracts.rpc import GatewayResponse, Outcome
 from aerial_rescue_contracts.topics import RESERVED_REPLY_MISSION
 

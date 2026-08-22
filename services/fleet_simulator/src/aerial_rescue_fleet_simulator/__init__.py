@@ -15,8 +15,33 @@ documents, so one handler audits every denied value.
 
 from __future__ import annotations
 
+from typing import Final
+
+from aerial_rescue_contracts import TOPIC_NAMESPACE_ROOT
 from aerial_rescue_domain import DomainError
+
+URN_SCHEME: Final = "urn"
+URN_SEPARATOR: Final = ":"
+PRODUCER_KIND: Final = "drone"
+"""The ``producerKind`` level of a simulated drone's CloudEvents ``source``.
+
+One process simulates many producers, so unlike the command gateway the identity in an
+event is not this process's broker role. It is the drone, which is what the committed
+golden fixture for drone telemetry already fixes:
+``fixtures/golden/v1/event/drone-telemetry/baseline.json`` carries
+``urn:aerial-rescue:drone:drone-vision-01``.
+"""
 
 
 class FleetSimulatorError(DomainError):
     """A value the fleet simulator refuses, carrying the refusal as structured data."""
+
+
+def event_source(drone_id: str) -> str:
+    """Return the CloudEvents ``source`` one simulated drone publishes under.
+
+    The producer is the drone rather than the process, because the producer is what scopes
+    the envelope's ``sequence`` (``docs/CONTRACTS.md``) and each drone reports its own
+    stream.
+    """
+    return URN_SEPARATOR.join((URN_SCHEME, TOPIC_NAMESPACE_ROOT, PRODUCER_KIND, drone_id))
