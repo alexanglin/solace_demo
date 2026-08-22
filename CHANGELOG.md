@@ -10,6 +10,58 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **One salient CloudEvent now becomes one structured A2A task, and the Phase 0 kill criterion's
+  ingress half is answered.** The official Event Mesh Gateway 1.1.0 runs as a fifth app under
+  `agent-mesh/configs/`, on its own `event-mesh-gateway` identity, and
+  [`release-evidence/phase-0/event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md)
+  records the run. `mesh-first-run.md` had noted that no application CloudEvent had ever been
+  published on any of the eleven families; this is the first, and the transformation took 0.43 s.
+
+  The broker is what proves the identity split: nine connections on `agent-mesh-agent` and four on
+  `event-mesh-gateway`, and 47 topic exceptions — unchanged, because
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) had already
+  granted this role the drone-event family to read and the agent-response family to write, before
+  either existed. The fifth app costs 37 MiB.
+
+  Structured invocation without splicing untrusted text. `target_workflow_name` is the documented
+  route to it, but reaching the MissionResponse workflow's `inputSchema {report: string}` would mean
+  building JSON out of a template with the drone's free-text `detail` inside it. The plugin turns
+  structured invocation on for `structured_invocation.input_schema` alone, whatever the target, so
+  the handler declares that schema, targets the agent, and passes the payload as an object:
+  `[TranslateInput] Created structured input artifact`.
+
+  Three assertions of different kinds — a model-independent transformation, a bounded
+  model-dependent answer routed back onto the agent-response family, and an undecodable event that
+  must produce no task. The event they publish is built as an `Envelope`, checked against its topic,
+  and serialised by the canonical encoder, so "validated" is a claim rather than a description.
+
+  Two defects found. The gateway reads `default_user_identity` from the **handler**, never the
+  identically named app-level parameter its schema also declares, and discards the message when
+  neither yields one — visible only as a single ERROR line. And `OutboundMessageBuilder.build` takes
+  a `bytearray` or a `str`, never `bytes`, which is what the canonical encoder emits.
+
+- **The salient drone event is bound to a payload schema.** `envelope.BINDINGS` held one row, so
+  `aerial-rescue.v1.drone.telemetry` was the only event type the profile accepted and any other was
+  refused as `UNKNOWN_TYPE` before it reached a topic. The new row lands with the payload schema,
+  the composed event schema, ten negative fixtures each failing for exactly one reason, and the
+  manifest entry. It adds no definition to `canonical.schema.json`: every member refs one that
+  already exists. `observation` stays an open `kind` rather than an enum, because closing a value
+  set is a decision with an ADR behind it.
+
+- **The pinned plugins are proven inside the built image.** `scripts/probes/agent-mesh-image-probe.sh`
+  runs three pin checks, the gateway entry point, the tool's module-path import, and seven runtime
+  symbols on the image's own CPython 3.13.11 — not the 3.13.15 in `agent-mesh/.venv`. A shell script
+  rather than a test: the image carries no pytest, and
+  [ADR-0025](docs/adr/0025-narrow-ruff-subprocess-waivers.md) fixes at four the files that may own a
+  subprocess call. It clears a `TECH_DEBT.md` §6 row that had stood since the stack was defined.
+
+- **A gate now holds the container to the credentials its configuration names.** The validator
+  resolves `${...}` against the host-scope `.env.example` while the runtime resolves them inside the
+  container, so a name in one and not the other passes every gate and then fails silently — the
+  reference expands to empty, the broker refuses the client as the shutdown factory `default`, and
+  the client retries forever. That is how the first `mesh` run failed. `AgentMeshContainerScopeTests`
+  reads every `${SOLACE_*}` the mounted configuration names and requires compose to pass each one in.
+
 - **The Agent Mesh runtime is running, and the Phase 0 kill criterion is answered.** The `mesh`
   profile started for the first time on 2026-08-21 and is recorded in
   [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md). Four apps
@@ -460,6 +512,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- **The no-loss claim is narrower, and honest**
+  ([ADR-0067](docs/adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+  `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes
+  `broker_queue_name` with a per-process UUID, `create_queue_on_start: True`, and
+  `temporary_queue: True`; none of the 25 parameters in its schema names the queue, so no
+  configuration changes it, and [ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)
+  forbids forking a supported component without a proving test.
+
+  Waiting for the four open queue parameters would buy nothing — the plugin would still bind a
+  temporary queue afterwards. So the claim moves instead: it covers the application data plane and
+  excludes the A2A ingress hop. What carries the weight is stated with it — the application topic is
+  the authoritative record, the recorder and evidence service read it on their own identities, and no
+  command, approval, or audit record runs through the gateway. The gap it leaves is real and now
+  visible: a restart silently drops any salient event published during it.
 
 - The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
   `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets
