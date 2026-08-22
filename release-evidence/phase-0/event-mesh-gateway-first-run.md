@@ -106,7 +106,7 @@ maxRedeliveryExceededToDmqMsgCount:     0
 ```
 
 This is the queue
-[ADR-0067](../../docs/adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)
+[ADR-0071](../../docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)
 describes, observed rather than argued: temporary, named by the plugin with a per-process UUID, and
 owned by the least-privilege role. After the rejected event the spool is empty and every redelivery
 counter is zero, so the rejection was settled once rather than left to redeliver — which is the
@@ -155,7 +155,7 @@ and all ten authorization probes still hold.
   is still a scaffold.
 - **Durability of agent ingress.** The queue above is temporary. An event published while the
   gateway is disconnected reaches no queue and is never redelivered
-  ([ADR-0067](../../docs/adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+  ([ADR-0071](../../docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
   Nothing here measures a restart.
 - **Redelivery and dead-message behaviour.** `maxRedeliveryCount` is 0 and `#DEAD_MSG_QUEUE` does
   not exist. No durable queue exists, so the no-loss claim remains unenforced at the broker and the

@@ -361,12 +361,33 @@ repos:
         language: system
         files: ^apps/dashboard/.*\.(ts|tsx)$
 
+      # The affected unit tests ADR-0012 asks for at this stage, selected from the import
+      # graph tools/affected_tests builds (docs/adr/0066). A staged Python file narrows to
+      # the tests that reach it; anything else the suites read -- a hook script, a workflow,
+      # a manifest, a registry -- takes the selector's `:all:` path and runs the whole
+      # deterministic suite, which is what it did for every change before this.
+      #
+      # The trigger excludes rather than enumerates, so a file added at the top level runs
+      # tests by default instead of silently skipping them. Prose documentation is out;
+      # CONTRIBUTING.md and docs/operating-parameters.md stay in, because
+      # test_uv_version_pin.py and test_typescript_policy_gate.py read their numbers.
       - id: pytest-unit-fast
-        name: pytest (unit, related packages)
+        name: pytest (affected tests)
         entry: scripts/hooks/python/pytest-related.sh
         language: script
-        types_or: [python, pyi]
-        exclude: ^agent-mesh/
+        exclude: ^(agent-mesh/|dist/|release-evidence/|docs/(?!operating-parameters\.md)|(AGENTS|CHANGELOG|CLAUDE|README|TECH_DEBT)\.md$|LICENSE$|NOTICE$)
+        pass_filenames: true
+        require_serial: true
+
+      # The Agent Mesh domain ran no test at this stage at all before ADR-0066: the hook
+      # above excludes it, and its suite ran only at pre-push. Selection uses the root
+      # project's pure selector; execution stays on the 3.13 interpreter inside agent-mesh/
+      # (docs/adr/0029, docs/adr/0062).
+      - id: pytest-agent-mesh-fast
+        name: pytest (agent-mesh, affected tests)
+        entry: scripts/hooks/agent-mesh/pytest-agent-mesh-related.sh
+        language: script
+        files: ^agent-mesh/
         pass_filenames: true
         require_serial: true
 

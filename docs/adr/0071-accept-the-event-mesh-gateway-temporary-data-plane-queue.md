@@ -1,4 +1,4 @@
-# ADR-0067: Accept the Event Mesh Gateway's temporary data-plane queue, and scope the no-loss claim to exclude it
+# ADR-0071: Accept the Event Mesh Gateway's temporary data-plane queue, and scope the no-loss claim to exclude it
 
 - **Status:** Accepted
 - **Date:** 2026-08-21

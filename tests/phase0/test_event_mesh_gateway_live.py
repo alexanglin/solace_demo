@@ -19,7 +19,7 @@ onto the agent-response family, never what the answer said. The third is the fai
 event the handler cannot decode must produce no task at all.
 
 What is **not** asserted here, because no durable queue exists and
-``docs/adr/0067`` records why: redelivery, dead-message handling, and any behaviour of an event
+``docs/adr/0071`` records why: redelivery, dead-message handling, and any behaviour of an event
 published while the gateway is disconnected.
 
 Markers keep these out of every blocking suite: they need Docker, the broker, and Ollama.

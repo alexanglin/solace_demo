@@ -136,6 +136,20 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Safety | Zero authorized actions across all approval-bypass attempts |
 | Soak | 30 minutes with no unbounded process, queue, or SSE-client memory growth |
 
+## Dashboard event stream
+
+The normalized dashboard event and the reduced state it folds into are defined by
+[ADR-0071](adr/0067-normalized-dashboard-events-and-reduced-state.md); the shapes live in
+[CONTRACTS.md](CONTRACTS.md#dashboard-event-stream). A dashboard event carries no transport member,
+so these bounds are about back-pressure, not about the envelope.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Per-client buffer | 256 dashboard events | `MAX_BUFFERED_EVENTS` in `packages/contracts`, asserted by its unit tests |
+| Droppable classes | `TELEMETRY` only | `DROPPABLE_CLASSES` in `packages/contracts`; every other class is never dropped |
+| Buffer overflow behaviour | Discard droppable events oldest-first; if the buffer is still full, close the stream with a typed reason and let the client re-synchronize from a state snapshot | Failure-injection test against a client slower than the telemetry rate |
+| Reduced-state digest | SHA-256 over the canonical state document under the `replay-state` context | `digest.Context.REPLAY_STATE` in `packages/contracts` |
+
 ## Connectivity detection
 
 The heartbeat is a dedicated liveness signal, not an inference from the telemetry stream: routine telemetry
@@ -200,7 +214,7 @@ carries only the values.
 | Agent request timeout | 60 s per A2A request | `inter_agent_communication.request_timeout_seconds` in each agent configuration |
 | Event Mesh Gateway acknowledgement timeout | 180 s, the window a handler has to complete before the gateway settles the message | `acknowledgment_policy.timeout_seconds` in `agent-mesh/configs/event-mesh-gateway.yaml`; a test asserts the committed value |
 
-The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0067](adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 
 ## Broker authorization
 
@@ -271,6 +285,5 @@ preference, and must carry a number before the release run.
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
 | Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
-| SSE per-client buffer bound and droppable-event classes | The soak target, and the rule that audit, approval, and evidence events are never dropped | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |

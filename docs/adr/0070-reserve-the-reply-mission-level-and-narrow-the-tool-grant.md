@@ -40,7 +40,7 @@ would never receive a reply.
 **Only `response_topic_prefix` is configurable.** It is a `SessionConfig` field the tool passes
 through from `event_mesh_config`. The UUID, the `/>` subscription, and the temporary reply queue are
 not configurable, the same way the Event Mesh Gateway's data-plane queue is not
-([ADR-0067](0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)), and
+([ADR-0071](0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)), and
 [ADR-0007](0007-solace-first-implementation-policy.md) forbids forking a supported component without
 a proving test.
 

@@ -62,6 +62,40 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   the client retries forever. That is how the first `mesh` run failed. `AgentMeshContainerScopeTests`
   reads every `${SOLACE_*}` the mounted configuration names and requires compose to pass each one in.
 
+- **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
+  untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
+  Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and
+  `pre-push` runs the full suite. Only the push half was built. `pytest-related.sh` declared
+  `pass_filenames: true` and never read `"$@"`, so it discarded the staged paths and ran all 942 root
+  tests on every Python commit; its own comment said a narrower selector had to wait for "a
+  project-owned dependency map", and none existed.
+
+  `tools/affected_tests.py` is that map. It derives each owned file's module name the way mypy and
+  pytest do, parses every file with `ast`, resolves absolute and relative imports against that index,
+  and inverts the edges; the transitive closure of dependents, restricted to test files, is what runs.
+  A one-file change under `packages/domain/src/` now selects 94 of 988 tests and takes ~5 s where the
+  whole suite takes ~29 s, measured back-to-back so both saw the same load
+  ([ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md)).
+
+  It fails safe rather than guessing: a staged path that is not a Python file in the graph, is a
+  `conftest.py`, has an ambiguous module name, or does not parse, widens the run to the whole suite.
+  The trigger is now an exclusion rather than `types_or: [python, pyi]`, so a hook script, a workflow,
+  a manifest, or a committed registry reaches the tests that read it — before, those changes ran no
+  test at this stage at all. `CONTRIBUTING.md` and `docs/operating-parameters.md` stay in the trigger
+  because `test_uv_version_pin.py` and `test_typescript_policy_gate.py` read their numbers.
+
+  The same gap existed for the Agent Mesh domain and was wider: the root hook carries
+  `exclude: ^agent-mesh/`, so a commit touching only that tree ran nothing before `pre-push`. A second
+  commit-stage hook now selects its affected tests too. Selection uses the root project's pure
+  selector because parsing source is not verifying it; execution stays inside `agent-mesh/` on its own
+  3.13 interpreter, so [ADR-0029](docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)
+  still holds.
+
+  Narrowing here is only safe while the push stage stays whole, so that is now asserted rather than
+  assumed: a test holds `pytest-full`, `agent-mesh-test-full`, and `dashboard-test-full` at
+  `stages: [pre-push]`, `always_run: true`, `pass_filenames: false`, and fails if any of them starts
+  selecting a subset.
+
 - **The Agent Mesh runtime is running, and the Phase 0 kill criterion is answered.** The `mesh`
   profile started for the first time on 2026-08-21 and is recorded in
   [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md). Four apps
@@ -514,7 +548,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 ### Changed
 
 - **The no-loss claim is narrower, and honest**
-  ([ADR-0067](docs/adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+  ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
   `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes
   `broker_queue_name` with a per-process UUID, `create_queue_on_start: True`, and
   `temporary_queue: True`; none of the 25 parameters in its schema names the queue, so no

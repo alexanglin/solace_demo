@@ -60,7 +60,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 
 | Stage | What | Budget |
 | --- | --- | --- |
-| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, related tests | **≤ 60 s** |
+| `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
 | `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, test and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
@@ -68,6 +68,15 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
 **~2.7 s**. Re-measure when the suite grows; if it approaches the budget, move work to `pre-push` rather
 than letting people start using `--no-verify`.
+
+Since [ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md) the commit stage runs
+the tests your change reaches rather than all of them, so its cost varies with the diff. A one-file
+change under `packages/domain/src/` selects 94 of 988 tests and runs in ~5 s where the whole suite takes
+~29 s. A staged path the selector cannot narrow — a hook script, a workflow, a manifest, a registry —
+runs the whole suite, which is what every change did before. The worst case is a commit that widens both
+Python trees at once; it stays inside the budget, but not by much, so re-measure before adding to this
+stage. `pre-push` still runs every unit test in all three toolchains, and that is what makes narrowing
+here safe.
 
 Run them yourself at any time:
 

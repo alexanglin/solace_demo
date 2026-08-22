@@ -213,6 +213,46 @@ requests remain subject to Host validation. The complete rationale is in
 [ADR-0024](adr/0024-local-operator-api-boundary.md), and the credential entropy is in
 [operating-parameters.md](operating-parameters.md#local-operator-credential).
 
+## Dashboard event stream
+
+`GET /api/v1/events` streams **dashboard events**: the normalized projection of validated
+application envelopes ([ADR-0071](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
+shapes below lie inside the canonical profile of the next section, so one canonicalizer, one
+decoder, and one fixture oracle serve them, and TypeScript reimplements them from this section
+alone. The bounds are in [operating-parameters.md](operating-parameters.md#dashboard-event-stream).
+
+A dashboard event has five members: `kind`, the projection's name; `eventClass`, one of `TELEMETRY`,
+`CONNECTIVITY`, `MISSION`, `COMMAND`, `EVIDENCE`, `APPROVAL`, `AUDIT`; `mission`, the mission
+identifier; `time`, the source envelope's canonical instant; and `data`, the projected fields
+repeating every identifier the source topic named except the mission, which `mission` already
+carries. **No transport member crosses this boundary** — `id`, `source`, `sequence`, `dataschema`,
+`traceparent`, and `tracestate` are absent, so a browser reads a dashboard event without the
+envelope profile or the topic grammar. An envelope whose `type` has no projection is refused as
+`UNPROJECTED`, in the same shape as the unbound-`type` refusal of the envelope profile.
+
+The **reduced dashboard state** is the fold of every dashboard event so far by a pure total
+function. It is the replay determinism oracle of
+[ADR-0009](adr/0009-isolated-side-effect-free-replay.md), and its determinism is structural: the
+state carries no wall-clock instant, no event identifier, and no trace context, because those
+legitimately differ between runs of one seeded scenario. Where the timeline needs an order, the
+state carries the append-only audit ordinal of
+[ADR-0003](adr/0003-postgres-durable-mission-store.md), which is an integer. Collections inside the
+state are arrays in ascending byte order of their identifier, never objects keyed by it, because a
+canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen.
+Array order is semantic, so that sort is part of the contract: two states differing only in
+insertion order must produce one digest.
+
+The determinism hash is taken over the canonical state document under the `replay-state` context,
+so state bytes cannot be replayed as proposal bytes.
+
+Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses
+direct delivery that may already be dropped and a newer position supersedes a stale one. Every other
+class is never dropped: a buffer that is still full after discarding droppable events closes the
+stream with a typed reason, and the client re-synchronizes from a state snapshot.
+
+Adding an application event type is one change: a projection row, a state rule, golden fixtures, and
+a manifest entry land together, or the type is refused as unprojected.
+
 ## Canonical serialization
 
 The approval proposal digest, the replay determinism hash, evidence hashing, and the idempotency record's
@@ -280,7 +320,7 @@ exactly one reason. `schemas/contract-manifest.toml` registers every schema and 
 ## Delivery and failure semantics
 
 - Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope.
-- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0067](adr/0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
 - Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter.
 - Retries reuse the original command ID.
