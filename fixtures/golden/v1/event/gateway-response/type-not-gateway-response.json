@@ -1,0 +1,23 @@
+{
+  "specversion": "1.0",
+  "id": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6d",
+  "source": "urn:aerial-rescue:service:command-gateway",
+  "type": "aerial-rescue.v1.drone.telemetry",
+  "subject": "m-2026-0001",
+  "time": "2026-08-22T09:14:52.310Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json",
+  "data": {
+    "rpcVersion": 1,
+    "missionId": "m-2026-0001",
+    "requestId": "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+    "operation": "command-authority",
+    "commandType": "escalate-rescue",
+    "outcome": "answered",
+    "actuated": false,
+    "authority": "operator-approval"
+  },
+  "sequence": "000000000000001",
+  "correlationid": "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4737-b7ad6b7169203333-01"
+}

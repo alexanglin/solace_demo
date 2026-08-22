@@ -64,6 +64,11 @@ check-deploy-config:
 check-image-pins:
     scripts/security/check-image-pins.sh
 
+# Run the pinned-plugin probe inside the built Agent Mesh image, on the image's own
+# interpreter rather than agent-mesh/.venv. Needs Docker and a built image.
+probe-image:
+    scripts/probes/agent-mesh-image-probe.sh
+
 # Build the derived images and scan every stack image with Trivy. Needs Docker and trivy.
 scan-images:
     docker compose --env-file .env.example -f deploy/compose.yaml --profile mesh --profile services build agent-mesh dashboard-api

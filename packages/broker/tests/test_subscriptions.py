@@ -22,9 +22,16 @@ from aerial_rescue_broker.subscriptions import (
     SubscriptionError,
     SubscriptionRefusal,
     a2a_subscription,
+    reply_subscription,
     subscription_for,
 )
-from aerial_rescue_contracts.topics import MAX_TOPIC_BYTES, Family, Topic, format_topic
+from aerial_rescue_contracts.topics import (
+    MAX_TOPIC_BYTES,
+    RESERVED_REPLY_MISSION,
+    Family,
+    Topic,
+    format_topic,
+)
 
 PATTERNS = {
     Family.OPERATOR_COMMAND: "aerial-rescue/v1/*/operator/command/*",
@@ -152,6 +159,58 @@ class SubscriptionForTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), tuple(size for size in sizes if size > MAX_TOPIC_BYTES))
+
+
+class ReplySubscriptionTests(unittest.TestCase):
+    """The one exception outside the family model besides A2A (ADR-0070)."""
+
+    def test_the_reply_subscription_is_the_reserved_channel_and_everything_beneath_it(
+        self,
+    ) -> None:
+        # Arrange
+        expected = "aerial-rescue/v1/reply/gateway/response/>"
+
+        # Act
+        text = reply_subscription()
+
+        # Assert
+        self.assertEqual(expected, text)
+
+    def test_the_reply_subscription_covers_the_topic_the_connector_binds(self) -> None:
+        # Arrange
+        requestor = "a9cfb2dc-ebc9-433b-9b35-45c2ca5c43cd"
+        bound = (
+            f"aerial-rescue/v1/{RESERVED_REPLY_MISSION}/gateway/response/{requestor}",
+            f"aerial-rescue/v1/{RESERVED_REPLY_MISSION}/gateway/response/{requestor}/>",
+        )
+
+        # Act
+        covered = tuple(topic.startswith(reply_subscription()[:-1]) for topic in bound)
+
+        # Assert
+        self.assertEqual((True, True), covered)
+
+    def test_the_reply_subscription_reaches_no_mission_s_gateway_responses(self) -> None:
+        # Arrange
+        published = format_topic(
+            Topic(Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": "r-1"})
+        )
+
+        # Act
+        covered = published.startswith(reply_subscription()[:-1])
+
+        # Assert
+        self.assertFalse(covered)
+
+    def test_the_reply_subscription_is_within_the_broker_topic_bound(self) -> None:
+        # Arrange
+        text = reply_subscription()
+
+        # Act
+        size = len(text.encode())
+
+        # Assert
+        self.assertLessEqual(size, MAX_TOPIC_BYTES)
 
 
 class A2aSubscriptionTests(unittest.TestCase):

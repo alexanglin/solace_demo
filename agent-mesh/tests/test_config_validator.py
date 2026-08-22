@@ -52,7 +52,10 @@ def _event_mesh_tool() -> dict[str, object]:
         "component_module": "sam_event_mesh_tool.tools",
         "class_name": "EventMeshTool",
         "tool_config": {
-            "event_mesh_config": {"broker_config": _broker()},
+            "event_mesh_config": {
+                "broker_config": _broker(),
+                "response_topic_prefix": "aerial-rescue/v1/reply/gateway/response",
+            },
             "tool_name": "SubmitCommandProposal",
             "description": "Submit a non-actuating command proposal.",
             "parameters": [
@@ -513,7 +516,7 @@ class CommittedConfigurationTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(4, len(results))
+        self.assertEqual(5, len(results))
         self.assertTrue(all(result.valid for result in results), results)
 
     def test_exactly_one_committed_file_serves_the_readiness_probe(self) -> None:
@@ -1098,6 +1101,32 @@ class PluginPolicyTests(unittest.TestCase):
         # Assert
         self.assertTrue(
             all("TOOL_TOPIC" in {issue.rule for issue in result.issues} for result in results),
+            results,
+        )
+
+    def test_event_mesh_tool_replies_must_arrive_on_the_reserved_channel(self) -> None:
+        # Arrange
+        source = (FIXTURES / "valid_agent_with_tool.yaml").read_text(encoding="utf-8")
+        declared = "              response_topic_prefix: aerial-rescue/v1/reply/gateway/response\n"
+        candidates = (
+            source.replace(declared, ""),
+            source.replace(declared, "              response_topic_prefix: reply\n"),
+            source.replace(
+                declared,
+                "              response_topic_prefix: aerial-rescue/v1/m-1/gateway/response\n",
+            ),
+            source.replace(
+                declared,
+                "              response_topic_prefix: aerial-rescue/v1/reply/gateway/response/\n",
+            ),
+        )
+
+        # Act
+        results = tuple(_validate_text(content) for content in candidates)
+
+        # Assert
+        self.assertTrue(
+            all("TOOL_REPLY" in {issue.rule for issue in result.issues} for result in results),
             results,
         )
 

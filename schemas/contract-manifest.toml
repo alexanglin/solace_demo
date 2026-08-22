@@ -95,6 +95,79 @@ invalid = [
 ]
 
 [[contracts]]
+schema = "schemas/v1/payload/drone-event-salient.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/drone-event-salient/baseline.json",
+  "fixtures/golden/v1/payload/drone-event-salient/all-lower-bounds.json",
+  "fixtures/golden/v1/payload/drone-event-salient/all-upper-bounds.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/drone-event-salient/latitude-one-over.json",
+  "fixtures/golden/v1/payload/drone-event-salient/longitude-one-under.json",
+  "fixtures/golden/v1/payload/drone-event-salient/latitude-not-integer.json",
+  "fixtures/golden/v1/payload/drone-event-salient/observation-uppercase.json",
+  "fixtures/golden/v1/payload/drone-event-salient/observation-33-characters.json",
+  "fixtures/golden/v1/payload/drone-event-salient/missing-drone-id.json",
+  "fixtures/golden/v1/payload/drone-event-salient/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/drone-event-salient.schema.json"
+valid = [
+  "fixtures/golden/v1/event/drone-event-salient/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/drone-event-salient/type-not-salient.json",
+  "fixtures/golden/v1/event/drone-event-salient/dataschema-not-salient.json",
+  "fixtures/golden/v1/event/drone-event-salient/data-fails-payload.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/rpc/gateway-request.schema.json"
+valid = [
+  "fixtures/golden/v1/rpc/gateway-request/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/rpc/gateway-request/rpc-version-2.json",
+  "fixtures/golden/v1/rpc/gateway-request/mission-id-uppercase.json",
+  "fixtures/golden/v1/rpc/gateway-request/operation-uppercase.json",
+  "fixtures/golden/v1/rpc/gateway-request/command-type-with-space.json",
+  "fixtures/golden/v1/rpc/gateway-request/command-type-33-characters.json",
+  "fixtures/golden/v1/rpc/gateway-request/missing-command-type.json",
+  "fixtures/golden/v1/rpc/gateway-request/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/payload/gateway-response.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/gateway-response/baseline.json",
+  "fixtures/golden/v1/payload/gateway-response/refused.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/gateway-response/rpc-version-2.json",
+  "fixtures/golden/v1/payload/gateway-response/outcome-unknown.json",
+  "fixtures/golden/v1/payload/gateway-response/actuated-not-boolean.json",
+  "fixtures/golden/v1/payload/gateway-response/authority-uppercase.json",
+  "fixtures/golden/v1/payload/gateway-response/refusal-with-space.json",
+  "fixtures/golden/v1/payload/gateway-response/neither-authority-nor-refusal.json",
+  "fixtures/golden/v1/payload/gateway-response/missing-actuated.json",
+  "fixtures/golden/v1/payload/gateway-response/unknown-member.json",
+  "fixtures/golden/v1/payload/gateway-response/request-id-uppercase.json",
+  "fixtures/golden/v1/payload/gateway-response/missing-request-id.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/gateway-response.schema.json"
+valid = [
+  "fixtures/golden/v1/event/gateway-response/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/gateway-response/type-not-gateway-response.json",
+  "fixtures/golden/v1/event/gateway-response/dataschema-not-gateway-response.json",
+  "fixtures/golden/v1/event/gateway-response/data-fails-payload.json",
+]
+
+[[contracts]]
 schema = "schemas/v1/topic-cases.schema.json"
 valid = [
   "fixtures/golden/v1/topics/accepted.json",

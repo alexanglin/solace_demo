@@ -80,6 +80,7 @@ no-ignore = true
 [tool.uv.sources]
 aerial-rescue-domain = { workspace = true }
 aerial-rescue-contracts = { workspace = true }
+aerial-rescue-broker = { workspace = true }
 
 # --------------------------------------------------------------------------- ruff ---
 # Carries the complexity ceilings docs/adr/0011 requires "set at their intended values

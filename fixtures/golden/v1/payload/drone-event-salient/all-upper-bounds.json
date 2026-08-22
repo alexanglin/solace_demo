@@ -1,0 +1,8 @@
+{
+  "missionId": "m-2026-0001",
+  "droneId": "drone-vision-01",
+  "observation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "latitudeMicrodegrees": 90000000,
+  "longitudeMicrodegrees": 180000000,
+  "detail": "A persistent warm signature under canopy, held across three passes."
+}

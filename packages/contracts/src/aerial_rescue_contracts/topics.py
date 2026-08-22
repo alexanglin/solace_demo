@@ -38,6 +38,15 @@ AGENT_NAME_PATTERN: Final = "^[A-Za-z0-9_]{1,64}$"
 TYPE_PATTERN: Final = "^aerial-rescue\\.v1(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*){2,3}$"
 """The form of a CloudEvents ``type`` derived from a topic."""
 
+RESERVED_REPLY_MISSION: Final = "reply"
+"""The mission level of the command-gateway reply channel, which names no mission.
+
+Solace AI Connector fixes a requestor's reply topic once per session, before any mission
+exists, so the level cannot carry one (``docs/adr/0070``). It is refused as an envelope
+``subject`` rather than as a topic level, because the reply channel's own topic has to stay
+formattable and parseable by the component that publishes to it.
+"""
+
 DECISIONS: Final = frozenset({"approve", "reject"})
 WILDCARD_CHARACTERS: Final = frozenset({"*", ">"})
 MISSION_PARAMETER: Final = "missionId"
