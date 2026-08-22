@@ -86,6 +86,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0067](0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) | Accept the Event Mesh Gateway's temporary data-plane queue, and scope the no-loss claim to exclude it | Accepted |
 | [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
 | [0069](0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md) | Close the gateway-operation set with a deny-by-default operation table | Accepted |
+| [0070](0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) | Reserve `reply` as the reply channel's mission level, and narrow the Event Mesh Tool's grant to it | Accepted |
 
 ## Decisions still open
 

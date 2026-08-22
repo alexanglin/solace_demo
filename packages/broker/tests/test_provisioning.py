@@ -29,9 +29,19 @@ from aerial_rescue_broker.provisioning import (
     describe,
     desired_state,
 )
-from aerial_rescue_broker.subscriptions import a2a_subscription, subscription_for
+from aerial_rescue_broker.subscriptions import (
+    a2a_subscription,
+    reply_subscription,
+    subscription_for,
+)
 from aerial_rescue_contracts.topics import Family
-from aerial_rescue_domain.principals import Access, Principal, grants, may_use_a2a
+from aerial_rescue_domain.principals import (
+    Access,
+    Principal,
+    grants,
+    may_use_a2a,
+    may_use_reply_channel,
+)
 
 VPN = "default"
 NAMESPACE = "acme/dev"
@@ -108,6 +118,8 @@ def _expected_exceptions(role: Principal, access: Access) -> frozenset[str]:
     topics = {subscription_for(family) for family in grants(role, access)}
     if may_use_a2a(role):
         topics.add(a2a_subscription(NAMESPACE))
+    if access is Access.SUBSCRIBE and may_use_reply_channel(role):
+        topics.add(reply_subscription())
     return frozenset(topics)
 
 
@@ -208,10 +220,62 @@ class DesiredStateTests(unittest.TestCase):
                     for role in Principal
                     for access in Access
                     for topic in _exceptions_of(state, role, access)
-                    if topic.endswith("/>")
+                    if topic.endswith("/>") and topic != reply_subscription()
                 ),
             ),
         )
+
+    def test_only_the_event_mesh_tool_carries_the_reply_channel_exception(self) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        reply = reply_subscription()
+
+        # Act
+        carrying = frozenset(
+            role
+            for role in Principal
+            for access in Access
+            if reply in _exceptions_of(state, role, access)
+        )
+
+        # Assert
+        self.assertEqual(frozenset({Principal.EVENT_MESH_TOOL}), carrying)
+
+    def test_the_reply_channel_exception_is_a_subscribe_grant_only(self) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        reply = reply_subscription()
+
+        # Act
+        held = (
+            reply in _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE),
+            reply in _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.PUBLISH),
+        )
+
+        # Assert
+        self.assertEqual((True, False), held)
+
+    def test_the_tool_holds_the_reply_channel_instead_of_the_gateway_response_family(
+        self,
+    ) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+
+        # Act
+        subscribed = _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE)
+
+        # Assert
+        self.assertEqual(frozenset({reply_subscription(), a2a_subscription(NAMESPACE)}), subscribed)
+
+    def test_an_unset_namespace_still_leaves_the_reply_channel_exception(self) -> None:
+        # Arrange
+        reply = reply_subscription()
+
+        # Act
+        state = desired_state(VPN, CREDENTIALS, None)
+
+        # Assert
+        self.assertIn(reply, _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE))
 
     def test_the_recorder_profile_reads_every_family_and_writes_none(self) -> None:
         # Arrange

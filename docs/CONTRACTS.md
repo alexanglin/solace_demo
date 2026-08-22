@@ -143,6 +143,31 @@ the members present. That last rule is validator-only, as are the schema and sub
 the schema asserts that a reply names at least one of `authority` and `refusal`, and which of the two
 goes with which outcome is checked in `packages/contracts` alone.
 
+### The reply channel
+
+The reply does not go to the gateway-response topic of its mission. Solace AI Connector fixes a
+requestor's reply topic once per session, before any mission exists, as
+`{response_topic_prefix}/{requestorId}`, and binds a temporary queue to both that topic and the same
+topic followed by `>`. Neither the identifier nor the extra subscription is configurable
+([ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)).
+
+The mission level of the reply channel is therefore the reserved identifier `reply`, and the channel
+is `aerial-rescue/v1/reply/gateway/response/{requestorId}`. It is inside the topic grammar and the
+gateway-response family, and it names no mission: `envelope.parse_envelope` refuses an envelope
+whose `subject` is the reserved identifier, so no mission can be called `reply` and no application
+event can be published there. The `event-mesh-tool` role holds no gateway-response family grant at
+all; it holds one exception scoped to `aerial-rescue/v1/reply/gateway/response/>`, which is strictly
+less authority than the family it replaces.
+
+Two user properties carry the correlation, both set by the requestor and therefore untrusted input.
+`__solace_ai_connector_broker_request_response_topic__` names the reply topic; the command gateway
+refuses any value that is not a gateway-response topic on the reserved identifier, which is what
+stops an injected value aiming the sole publisher of executable commands at another topic.
+`__solace_ai_connector_broker_request_reply_metadata__` is a JSON array whose last entry carries the
+`request_id`; the command gateway echoes the value back verbatim and never interprets it beyond
+reading that identifier, which must itself be an IDENTIFIER before it becomes the record's topic
+level.
+
 The command gateway publishes each reply twice. The requestor receives it on the reply channel, and
 the same body is republished as the `data` of a CloudEvent on
 `aerial-rescue/v1/{missionId}/gateway/response/{requestId}`, so the recorder, the dashboard, and the

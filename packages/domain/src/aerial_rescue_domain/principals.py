@@ -106,7 +106,7 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
     Principal.RECORDER: frozenset(Family),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.DRONE_EVENT}),
-    Principal.EVENT_MESH_TOOL: frozenset({Family.GATEWAY_RESPONSE}),
+    Principal.EVENT_MESH_TOOL: frozenset(),
     Principal.AGENT_MESH_AGENT: frozenset(),
     Principal.DISCOVERY: frozenset(),
 }
@@ -115,7 +115,10 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
 ``RECORDER`` reads every family because the replay fixtures it writes must be able to
 reproduce the whole mission; it holds no publish grant, so the breadth costs nothing.
 ``AGENT_MESH_AGENT`` reads nothing here because agents receive work over A2A rather than
-over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``).
+over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``), and
+``EVENT_MESH_TOOL`` reads nothing here because the only thing it consumes is its own
+reply channel, which is narrower than a family and is granted below
+(``docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md``).
 """
 
 _GRANTS: Final[Mapping[Access, Mapping[Principal, frozenset[Family]]]] = {
@@ -127,6 +130,15 @@ _A2A: Final[frozenset[Principal]] = frozenset(
     {Principal.AGENT_MESH_AGENT, Principal.EVENT_MESH_GATEWAY, Principal.EVENT_MESH_TOOL}
 )
 """The roles that may reach the Agent Mesh A2A namespace at all (ADR-0014)."""
+
+_REPLY_CHANNEL: Final[frozenset[Principal]] = frozenset({Principal.EVENT_MESH_TOOL})
+"""The roles that may consume the command-gateway reply channel (ADR-0070).
+
+The channel is one topic beneath a reserved identifier rather than a family, so it cannot
+be expressed in the tables above. It replaces the gateway-response family grant this role
+used to hold, and is strictly less authority: the tool can reach its own replies and no
+mission's answers.
+"""
 
 _BY_NAME: Final[Mapping[str, Principal]] = {member.value: member for member in Principal}
 
@@ -162,6 +174,11 @@ def may_use(role: Principal, access: Access, family: Family) -> bool:
 def may_use_a2a(role: Principal) -> bool:
     """Return whether ``role`` may reach the Agent Mesh A2A namespace at all."""
     return role in _A2A
+
+
+def may_use_reply_channel(role: Principal) -> bool:
+    """Return whether ``role`` may consume the command-gateway reply channel (ADR-0070)."""
+    return role in _REPLY_CHANNEL
 
 
 def authorize(role: Principal, access: Access, family: Family) -> Family:

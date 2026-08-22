@@ -37,9 +37,19 @@ from enum import Enum
 from typing import Final, Protocol
 from urllib.parse import quote
 
-from aerial_rescue_domain.principals import Access, Principal, grants, may_use_a2a
+from aerial_rescue_domain.principals import (
+    Access,
+    Principal,
+    grants,
+    may_use_a2a,
+    may_use_reply_channel,
+)
 
-from aerial_rescue_broker.subscriptions import a2a_subscription, subscription_for
+from aerial_rescue_broker.subscriptions import (
+    a2a_subscription,
+    reply_subscription,
+    subscription_for,
+)
 
 FACTORY_CLIENT_USERNAME: Final = "default"
 """The client username the broker image ships enabled, on an allow-everything profile."""
@@ -158,10 +168,17 @@ def describe(request: Request) -> str:
 
 
 def _exceptions_for(role: Principal, access: Access, namespace: object | None) -> frozenset[str]:
-    """Return the topic exceptions ``role`` needs in one direction, A2A included when set."""
+    """Return the topic exceptions ``role`` needs in one direction.
+
+    Two of them lie outside the family tables: the A2A namespace, which is withheld until a
+    namespace is supplied, and the command-gateway reply channel, which is not, because it
+    is a fixed topic that no configuration varies (ADR-0070).
+    """
     topics = {subscription_for(family) for family in grants(role, access)}
     if namespace is not None and may_use_a2a(role):
         topics.add(a2a_subscription(namespace))
+    if access is Access.SUBSCRIBE and may_use_reply_channel(role):
+        topics.add(reply_subscription())
     return frozenset(topics)
 
 

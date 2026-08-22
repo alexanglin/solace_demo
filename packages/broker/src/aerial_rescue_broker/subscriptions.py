@@ -28,7 +28,12 @@ from enum import Enum
 from typing import Final
 
 from aerial_rescue_contracts import TOPIC_NAMESPACE_ROOT, namespace_prefix
-from aerial_rescue_contracts.topics import MAX_TOPIC_BYTES, WILDCARD_CHARACTERS, Family
+from aerial_rescue_contracts.topics import (
+    MAX_TOPIC_BYTES,
+    RESERVED_REPLY_MISSION,
+    WILDCARD_CHARACTERS,
+    Family,
+)
 
 LEVEL_SEPARATOR: Final = "/"
 SINGLE_LEVEL_WILDCARD: Final = "*"
@@ -81,6 +86,31 @@ def subscription_for(family: Family) -> str:
         *(_wildcarded(level) for level in family.levels),
     )
     return LEVEL_SEPARATOR.join(levels)
+
+
+def reply_subscription() -> str:
+    """Return the subscription covering the command-gateway reply channel and nothing else.
+
+    The second exception outside the family model, and for the same kind of reason as the
+    first: Solace AI Connector binds a requestor's temporary reply queue to both its reply
+    topic and that topic followed by ``>``, and neither the requestor identifier nor the
+    extra subscription is configurable. A ``*`` at the last level would cover the first and
+    not the second, so the bind would be denied
+    (``docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md``).
+
+    The levels beneath a requestor identifier are unreachable by the topic grammar, so the
+    ``>`` grants authority over topics no producer can publish. What it does not reach is a
+    mission: the reserved identifier sits where a mission identifier would, and no event
+    may claim it.
+    """
+    return LEVEL_SEPARATOR.join(
+        (
+            namespace_prefix(),
+            RESERVED_REPLY_MISSION,
+            *Family.GATEWAY_RESPONSE.levels[:-1],
+            MULTI_LEVEL_WILDCARD,
+        )
+    )
 
 
 def a2a_subscription(namespace: object) -> str:

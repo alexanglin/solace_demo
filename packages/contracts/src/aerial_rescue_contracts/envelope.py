@@ -22,6 +22,7 @@ from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.instant import INSTANT_PATTERN, InstantError, parse_instant
 from aerial_rescue_contracts.topics import (
     IDENTIFIER_PATTERN,
+    RESERVED_REPLY_MISSION,
     TYPE_PATTERN,
     Family,
     Rule,
@@ -87,6 +88,7 @@ class EnvelopeRefusal(Enum):
     MISSING_ATTRIBUTE = "required attribute is absent"
     ATTRIBUTE_FORM = "attribute outside its rule"
     DATA_PROFILE = "data outside the canonical profile"
+    RESERVED_MISSION = "subject is the reserved reply identifier, which names no mission"
     UNKNOWN_TYPE = "type has no bound payload schema"
     DATASCHEMA_BINDING = "dataschema is not the schema bound to the type"
     SUBJECT_BINDING = "subject does not equal the payload mission identifier"
@@ -213,6 +215,12 @@ def _forms(members: Mapping[object, object]) -> dict[str, str]:
     return texts
 
 
+def _reserved(texts: Mapping[str, str]) -> None:
+    """Refuse an event that claims the identifier the reply channel occupies (ADR-0070)."""
+    if texts["subject"] == RESERVED_REPLY_MISSION:
+        raise EnvelopeError(EnvelopeRefusal.RESERVED_MISSION, "subject", texts["subject"])
+
+
 def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
     """Refuse an envelope whose type, schema, and subject do not agree."""
     binding = binding_for(texts["type"])
@@ -226,8 +234,9 @@ def parse_envelope(document: object) -> Envelope:
     """Validate a decoded JSON document as an application event envelope.
 
     Refusals come in a fixed order: not an object; an unknown member; a missing required
-    member; a member outside its rule; data outside the canonical profile; an unbound
-    type; a schema other than the bound one; a subject that is not the payload's mission.
+    member; a member outside its rule; a subject that is the reserved reply identifier;
+    data outside the canonical profile; an unbound type; a schema other than the bound
+    one; a subject that is not the payload's mission.
 
     Args:
         document: A decoded JSON value, normally from :func:`decode_envelope`.
@@ -240,6 +249,7 @@ def parse_envelope(document: object) -> Envelope:
     """
     members = _members(document)
     texts = _forms(members)
+    _reserved(texts)
     data = _data(members["data"])
     _bind(texts, data)
     return Envelope(

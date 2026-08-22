@@ -30,7 +30,13 @@ from aerial_rescue_contracts.envelope import (
     envelope_document,
     parse_envelope,
 )
-from aerial_rescue_contracts.topics import Family, Topic, parse_event_type
+from aerial_rescue_contracts.topics import (
+    IDENTIFIER_PATTERN,
+    RESERVED_REPLY_MISSION,
+    Family,
+    Topic,
+    parse_event_type,
+)
 
 TELEMETRY_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
 BASELINE: dict[str, object] = cast(
@@ -669,6 +675,46 @@ class GatewayResponseBindingTests(unittest.TestCase):
         self.assertEqual(
             ("requestId", EnvelopeRefusal.TOPIC_BINDING, "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"),
             outcome,
+        )
+
+
+class ReservedReplyMissionTests(unittest.TestCase):
+    """No event may claim the identifier the reply channel occupies (ADR-0070)."""
+
+    def test_the_reserved_identifier_is_inside_the_identifier_rule(self) -> None:
+        # Arrange
+        value = RESERVED_REPLY_MISSION
+
+        # Act
+        matched = re.fullmatch(IDENTIFIER_PATTERN, value)
+
+        # Assert
+        self.assertIsNotNone(matched)
+
+    def test_an_envelope_whose_subject_is_the_reserved_identifier_is_refused(self) -> None:
+        # Arrange
+        data = dict(BASELINE_DATA)
+        data["missionId"] = RESERVED_REPLY_MISSION
+        document = _with(subject=RESERVED_REPLY_MISSION, data=data)
+
+        # Act
+        outcome = _refusal_of(document)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.RESERVED_MISSION, "subject", RESERVED_REPLY_MISSION), outcome
+        )
+
+    def test_the_reserved_identifier_is_refused_before_the_payload_is_examined(self) -> None:
+        # Arrange
+        document = _with(subject=RESERVED_REPLY_MISSION, data={"missionId": "m-2026-0001"})
+
+        # Act
+        outcome = _refusal_of(document)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.RESERVED_MISSION, "subject", RESERVED_REPLY_MISSION), outcome
         )
 
 

@@ -28,6 +28,7 @@ from aerial_rescue_domain.principals import (
     grants,
     may_use,
     may_use_a2a,
+    may_use_reply_channel,
     principal,
 )
 
@@ -151,7 +152,7 @@ class GrantTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            ((3, 1), (3, 5), (2, 7), (1, 2), (0, 11), (1, 1), (1, 1), (2, 0), (0, 0)), sizes
+            ((3, 1), (3, 5), (2, 7), (1, 2), (0, 11), (1, 1), (1, 0), (2, 0), (0, 0)), sizes
         )
 
     def test_each_family_has_exactly_the_documented_publishers(self) -> None:
@@ -233,6 +234,36 @@ class GrantTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((frozenset(), frozenset(), False), held)
+
+    def test_the_event_mesh_tool_subscribes_to_no_family_at_all(self) -> None:
+        # Arrange
+        role = Principal.EVENT_MESH_TOOL
+
+        # Act
+        subscribed = grants(role, Access.SUBSCRIBE)
+
+        # Assert
+        self.assertEqual(frozenset(), subscribed)
+
+    def test_the_event_mesh_tool_cannot_read_a_mission_s_gateway_responses(self) -> None:
+        # Arrange
+        role = Principal.EVENT_MESH_TOOL
+
+        # Act
+        reachable = may_use(role, Access.SUBSCRIBE, Family.GATEWAY_RESPONSE)
+
+        # Assert
+        self.assertFalse(reachable)
+
+    def test_only_the_event_mesh_tool_may_use_the_reply_channel(self) -> None:
+        # Arrange
+        roles = tuple(Principal)
+
+        # Act
+        allowed = frozenset(role for role in roles if may_use_reply_channel(role))
+
+        # Assert
+        self.assertEqual(frozenset({Principal.EVENT_MESH_TOOL}), allowed)
 
     def test_only_the_three_agent_mesh_roles_may_use_the_a2a_namespace(self) -> None:
         # Arrange
