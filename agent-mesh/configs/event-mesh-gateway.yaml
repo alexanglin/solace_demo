@@ -59,6 +59,13 @@ apps:
               qos: 1
           payload_encoding: utf-8
           payload_format: json
+          # Read per handler, not from the app-level default above: the gateway's claim
+          # extraction consults the handler's own expression and then the handler's own
+          # default, and discards the message when neither yields an identity. A drone is not
+          # an operator, so there is no per-event identity to extract and the default is the
+          # whole of it. The operator identity that matters is the one the approval endpoint
+          # derives from its bearer, and nothing here can supply it (docs/adr/0024).
+          default_user_identity: aerial-rescue-fleet
           # The validated CloudEvent's payload, passed as an object rather than spliced into a
           # template. `detail` is free text a drone reported, so it is untrusted input; keeping
           # it a JSON string value means it cannot break out of the structure around it.

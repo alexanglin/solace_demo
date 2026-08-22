@@ -82,6 +82,20 @@ class GatewayIdentityTests(QualityGateTestCase):
         # Assert
         self.assertIs(False, enabled)
 
+    def test_every_handler_carries_its_own_identity(self) -> None:
+        """A handler without one is discarded before it becomes a task, and only debug says so."""
+        # Arrange
+        handlers = _mappings(_config()["event_handlers"])
+
+        # Act
+        identified = tuple(
+            bool(handler.get("user_identity_expression") or handler.get("default_user_identity"))
+            for handler in handlers
+        )
+
+        # Assert
+        self.assertEqual(tuple(True for _ in handlers), identified)
+
 
 class GatewaySettlementTests(QualityGateTestCase):
     def test_the_gateway_settles_on_completion_and_rejects_on_failure(self) -> None:
