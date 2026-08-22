@@ -31,6 +31,7 @@ Read the authority for the concern before editing it:
 | Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 | Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Command dispatch states and the send budget that bounds them | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
+| Evidence lifecycle states, and abstention as a state rather than a score | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -58,6 +59,7 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/authority.py` | Closed command kinds and deny-by-default execution policy |
 | `src/aerial_rescue_domain/commands.py` | Command dispatch lifecycle and the counted send budget |
 | `src/aerial_rescue_domain/connectivity.py` | Pure drone-connectivity state fold |
+| `src/aerial_rescue_domain/evidence.py` | Evidence lifecycle table, abstention, and manual review |
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
 | `src/aerial_rescue_domain/principals.py` | Closed broker roles and total publish/subscribe grant tables |

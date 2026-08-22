@@ -10,6 +10,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Evidence has named states, and an abstention is not a weak result.** This is the fifth and last
+  of the Tier 1 domain state machines
+  [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md) names; the other four landed in
+  the four commits before it, and none of the five had a single state name written anywhere in the
+  documentation set beforehand.
+
+  `packages/domain/src/aerial_rescue_domain/evidence.py` is a deny-by-default table over
+  `REQUESTED`, `OBSERVED`, `VALIDATED`, `MANUAL_REVIEW`, `CONTRIBUTING`, `ABSTAINED`, and
+  `REJECTED`. Eight pairs are legal and the other forty-one of the forty-nine are refused
+  ([ADR-0075](docs/adr/0075-evidence-lifecycle-states.md)).
+
+  `ABSTAINED` and `REJECTED` are separate terminals because they have opposite causes: an
+  abstention is the agent declining to assert, a rejection is the system refusing what was
+  asserted. Making abstention a state rather than a score of zero is what satisfies the plan's
+  requirement that it be visually distinct from a low evidence score
+  ([ADR-0008](docs/adr/0008-abstention-over-recorded-substitution.md)) — a component cannot confuse
+  it with a weak result, because there is no number to confuse it with. A property test holds the
+  strong form: an agent that declined can never be counted, whatever events follow.
+
+  `CONTRIBUTING` is terminal, so an admitted observation is never withdrawn. A contradicting
+  observation is a new item with its own lifecycle, which keeps the score monotonic in the items
+  admitted — the property `docs/LIMITATIONS.md` claims for it — and keeps this table free of the
+  retraction-ordering problem.
+
+  The score itself is not here. Its named ordinal bands and the corroboration floor that closes
+  bypass case B32 are a separate Tier 1 row in ADR-0017 and a separate decision.
+
 - **A dispatched command has named states, and what bounds its retrying is a count, not a clock.**
   `docs/CONTRACTS.md` already required a bounded acknowledgement timeout, retries with exponential
   backoff and jitter, and retries reusing the original command identifier, but no document named a
