@@ -10,7 +10,6 @@ SCAFFOLDED_MEMBERS = (
     "packages/store",
     "services/dashboard_api",
     "services/evidence_service",
-    "services/fleet_simulator",
     "services/recorder",
     "services/scenario_service",
 )
@@ -19,6 +18,7 @@ ACTIVE_MEMBERS = (
     "packages/contracts",
     "packages/domain",
     "services/command_gateway",
+    "services/fleet_simulator",
 )
 
 
@@ -140,7 +140,7 @@ class MemberScaffoldPredicateTests(QualityGateTestCase):
 
 
 class RepositoryScaffoldTests(QualityGateTestCase):
-    def test_the_seven_declared_scaffolds_are_scaffolds_and_the_tested_members_are_not(
+    def test_the_six_declared_scaffolds_are_scaffolds_and_the_tested_members_are_not(
         self,
     ) -> None:
         # Arrange

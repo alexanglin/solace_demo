@@ -3,7 +3,13 @@ name = "aerial-rescue-fleet-simulator"
 version = "0.0.0"
 description = "Deterministic fleet physics and adapters around domain state machines."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+# The wire contracts and the deny-by-default machines. There is no broker dependency and
+# no console script yet: a process entry point needs a scenario, and ADR-0077 leaves
+# producing one to the scenario service.
+dependencies = [
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+]
 
 [build-system]
 requires = ["hatchling"]

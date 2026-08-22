@@ -88,6 +88,16 @@ source = { editable = "services/evidence_service" }
 name = "aerial-rescue-fleet-simulator"
 version = "0.0.0"
 source = { editable = "services/fleet_simulator" }
+dependencies = [
+    { name = "aerial-rescue-contracts" },
+    { name = "aerial-rescue-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "aerial-rescue-domain", editable = "packages/domain" },
+]
 
 [[package]]
 name = "aerial-rescue-mesh"
