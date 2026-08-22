@@ -94,7 +94,7 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 | Profile | Services | State |
 | --- | --- | --- |
 | default | `broker` (PubSub+ Standard 10.26.0), `postgres` (PostgreSQL 18.6) | Runnable; the only services with behaviour today |
-| `mesh` | `agent-mesh`, built on the official `solace/solace-agent-mesh:1.28.7` image with the two pinned Event Mesh wheels installed by hash | Inert until the first configuration lands under `agent-mesh/configs/`, which is when it moves to the default profile |
+| `mesh` | `agent-mesh`, built on the official `solace/solace-agent-mesh:1.28.7` image with the two pinned Event Mesh wheels installed by hash | Runnable, first started 2026-08-21. Four apps: the Orchestrator, the MissionCoordinator agent, the MissionResponse workflow, and the HTTP/SSE Web UI. It stays an explicit profile rather than joining the default one, because it needs a local model |
 | `services` | the six application services and the dashboard API, built from one Python 3.14.7 image | Inert: each command imports its package and exits, because no entrypoint exists yet |
 | `event-portal` | the Event Management Agent for Event Portal runtime discovery, an amd64-only image run under emulation | Non-gating showcase support ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
 

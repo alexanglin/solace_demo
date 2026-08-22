@@ -11,18 +11,20 @@ action?**
 
 ## Status
 
-**No operational demonstration runs yet.** This is a repository under construction. The
-Agent Mesh semantic-configuration gate runs as verification tooling, but it starts no Agent
-Mesh process, broker client, application, or model.
+**No operational demonstration runs yet.** This is a repository under construction. The Agent
+Mesh runtime now starts and its agents discover and delegate to each other, but no mission,
+no drone, no evidence, and no approval exists: none of the application services has an
+entrypoint, and no application event has ever been published.
 
 | Area | State |
 | --- | --- |
 | Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
-| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); inert until the first owned configuration |
+| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: four configurations under `agent-mesh/configs/` |
 | Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the default profile's **first live run is recorded** in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
 | Broker authorization | Nine least-privilege client usernames on deny-by-default ACL profiles, **applied to the running container**; approval-bypass cases B17, B18, and B19 pass against it ([`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md)) |
-| Live Ollama messaging and the Agent Mesh runtime | Next Phase 0 evidence: the `mesh` profile; not yet demonstrated |
+| Live Ollama messaging and the Agent Mesh runtime | **Running.** The `mesh` profile carries the Orchestrator, a specialised agent, a versioned workflow, and the HTTP/SSE Web UI on a digest-locked local model; agent-card discovery, structured workflow invocation, and one model-chosen A2A delegation are asserted against the running broker ([`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md)) |
+| Application events, durable queues, and the command gateway | Not started: no queue exists, no application CloudEvent has been published, and the Event Mesh Gateway and Tool are unconfigured |
 | Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
 | Solace Cloud | A non-gating showcase profile for the Cloud console; no gate depends on it |
 | Everything else | Typed package manifests with no runtime behaviour |

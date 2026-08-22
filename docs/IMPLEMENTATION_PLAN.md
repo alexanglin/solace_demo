@@ -3,7 +3,7 @@
 ## Document status
 
 - **Status:** Active build plan
-- **Last updated:** August 20, 2026
+- **Last updated:** August 21, 2026
 - **Release model:** Incremental, test-driven delivery
 - **Primary audience:** Engineering contributors and search-and-rescue stakeholders
 - **Repository:** Public reference implementation
@@ -220,10 +220,10 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Pin `solace-agent-mesh==1.28.7` in the isolated Python 3.13.15 `agent-mesh/` project and record the upstream source revision.
 - Pin and hash `sam-event-mesh-gateway==1.1.0` and `sam-event-mesh-tool==0.1.1`; prove those exact independently released wheels are compatible with Agent Mesh 1.28.7 before treating the combination as supported.
 - **Done offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, configuration models, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
-- **Next:** bring up `deploy/compose.yaml` for the first time — pull the pinned images, generate the per-checkout authority with `just secrets`, confirm the broker's healthcheck command and the Agent Mesh image's plugin compatibility inside the container — then connect the pinned runtime to local Ollama and the container without exposing either service publicly or recording a credential ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+- **Done:** the compose stack is up, including the `mesh` profile, and the pinned runtime is connected to local Ollama and to the container. All four apps run on the image's own Python 3.13.11 ([mesh-first-run.md](../release-evidence/phase-0/mesh-first-run.md)). Still owed from this bullet: the dedicated plugin-compatibility probe run *inside* the built image.
 - **Identities and ACL profiles done:** nine least-privilege client usernames and nine deny-by-default ACL profiles are provisioned on the container over SEMP, the factory `default` username is disabled, and catalogue cases B17, B18, and B19 pass against the running broker ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [broker-authorization.md](../release-evidence/phase-0/broker-authorization.md)). Still owed: the queues, which wait on the four unset queue parameters in [operating-parameters.md](operating-parameters.md); reproducing the same definitions on the Developer-class Solace Cloud service for the showcase; and the fleet's connection count against that service's limit of 100 ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - Capture redacted Cloud-console evidence for the three showcase surfaces: Broker Manager and Cluster Manager, Event Portal Designer and Catalog, and Event Portal runtime discovery of the container through the Event Management Agent.
-- Run the built-in Orchestrator, one specialized agent, one minimal YAML workflow, and the HTTP/SSE Web UI; prove agent-card discovery, structured workflow invocation, and one A2A delegation in Broker Manager.
+- **Done:** the built-in Orchestrator, a MissionCoordinator agent, a versioned MissionResponse workflow, and the HTTP/SSE Web UI all run under `agent-mesh/configs/`. Agent-card discovery, structured workflow invocation, and one A2A delegation are asserted by `tests/phase0/test_agent_mesh_live.py` against the running broker rather than read off Broker Manager. The delegation the kill criterion turns on is the model-chosen one: a task to the Orchestrator produced a request on the MissionCoordinator topic, which it can only reach through a tool call ([mesh-first-run.md](../release-evidence/phase-0/mesh-first-run.md)).
 - Configure the thinnest official Event Mesh Gateway and Event Mesh Tool spike: one validated salient CloudEvent becomes one structured A2A task, and one tool request produces one validated, non-actuating command-gateway response.
 - Stop and revise the architecture if the selected Ollama model cannot provide reliable structured output/tool use, the container cannot carry the required A2A traffic, or the pinned plugins cannot enforce the domain boundary.
 - **Settled by waiver:** the locked dependency audit ran against the 251-package lock and reports eleven advisories across five packages that Agent Mesh 1.28.7 pins exactly; the `google-adk` override was attempted and is unsatisfiable. Each advisory is recorded with its reachability statement and compensating control as an expiring waiver in `dependency-waivers.toml`, all expiring 2026-09-18, and the accepted risk is carried in [TECH_DEBT.md](../TECH_DEBT.md) ([ADR-0031](adr/0031-reject-the-google-adk-version-override.md)).
@@ -238,7 +238,7 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Enforce Ruff complexity, cognitive complexity, multi-language duplication, and independent per-module
   Tier 1 mutation scoring before production behavior lands.
 - Create the separate Python 3.14.7 application and Python 3.13.15 Agent Mesh environments and verify both lockfiles from a clean checkout.
-- Capture redacted, reproducible Agent Mesh YAML, agent cards, model parameters, and plugin metadata.
+- **Done:** the Agent Mesh YAML is `agent-mesh/configs/`, the agent cards are declared there and read back from the running mesh, and the model parameters are pinned by digest in `agent-mesh/model-lock.toml` ([ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md)). Plugin metadata is still owed, with the Event Mesh Gateway and Tool spike.
 
 ### Phase 2: Contracts and broker
 

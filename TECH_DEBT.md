@@ -163,19 +163,27 @@ them on every run and the daily workflow keeps the list current.
 **Clears when:** each publisher rebuilds. The pin check is the instrument, and it needs no human to
 notice.
 
-## 5. Owed before the first Agent Mesh configuration
+## 5. Owed after the first Agent Mesh configuration
 
-The semantic-configuration validator
-[ADR-0032](docs/adr/0032-agent-mesh-semantic-configuration-validator.md) required exists at
-`agent-mesh/tools/agent_mesh_config_validator.py` and arms with the first file under
-`agent-mesh/configs/`. What is still owed is the local-model lock representation: every `ollama`
-model identifier fails `MODEL_LOCK_REQUIRED` until the digest form, its home, and the check are
-decided with the first live Ollama configuration
-([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). The rules the validator
-enforces more narrowly than ADR-0032 states them are listed under "Known gaps" in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The local-model lock representation that
+[ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) demanded is now recorded and
+enforced: [ADR-0063](docs/adr/0063-lock-local-models-by-manifest-digest.md) fixes the digest form, its
+home in `agent-mesh/model-lock.toml`, and the comparison. `MODEL_LOCK_REQUIRED` no longer refuses every
+local identifier; it means "not listed in the lock". What that record could not do, and what remains
+owed, is below.
 
-**Clears when:** the lock representation is recorded and the validator checks it.
+| Item | Why it is accepted for now | Clears when |
+| --- | --- | --- |
+| The digest is never compared against a running daemon | Ollama is addressable only as `name:tag`, so the offline gate can prove membership and form but not that the bytes are present. A re-pulled tag is caught by no gate today | A readiness check reads `GET /api/tags` and refuses a local-model run whose digest differs from the lock |
+| `ollama_chat/qwen3:4b` is a spike input, not a measured choice | It was selected for tool capability at 2.50 GB. The `general` and `planning` roles are still an open question in [docs/adr/README.md](docs/adr/README.md) | The Phase 0 evaluation measures capability per dollar and Phase 4 pins the three models |
+| The A2A namespace refusal rules exist twice | The configuration validator runs on Python 3.13 and `packages/broker` on 3.14 ([ADR-0029](docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), so they cannot share code. Only `packages/broker` enforces them today; the validator does not check `namespace` at all | A committed data file both interpreters read, or a decision that one side alone is authoritative |
+| Configuration environment references are checked in the wrong scope | The validator resolves `${...}` against the host-scope `.env.example`, while the runtime resolves them inside the container. A name declared in one and absent in the other passes the gate and fails at runtime as a silent connection retry -- which is exactly how the first `mesh` run failed | The validator checks references against what `deploy/compose.yaml` actually passes into the container |
+
+ADR-0035's **second** refusal still stands and is unaffected: every `tool_type: python` other than the
+pinned `sam_event_mesh_tool.tools:EventMeshTool`, and every `app_package`, `app_base_path`, or
+alternate loader field, is refused until an owned-plugin registry exists under `agent-mesh/plugins/`.
+
+**Clears when:** the readiness digest comparison exists and the model roles are pinned.
 
 ## 6. Container stack defined but not yet exercised
 
@@ -190,9 +198,9 @@ rather than a measurement:
 | --- | --- | --- |
 | The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15 | Upstream builds the image; a project-owned image would re-implement upstream's Dockerfile ([ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)) | The plugin-compatibility probe is run inside the built image and recorded |
 | No durable queue exists, so guaranteed delivery has no endpoint | The four queue parameters -- maximum spool, maximum redelivery, message time-to-live, and dead-message-queue target -- are unset, and setting them needs the backlog-recovery measurement ([ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)) | The parameters carry numbers and the provisioner creates the queues |
-| The three Agent Mesh roles hold no A2A grant | `NAMESPACE` is blank, and [ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) fixes it with the first Agent Mesh configuration. Withholding under-grants rather than over-grants | The namespace is fixed and the provisioner is re-run |
+| ~~The three Agent Mesh roles hold no A2A grant~~ **Cleared 2026-08-21:** [ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) fixed the namespace and the provisioner wrote the six withheld exceptions, taking the broker from 41 to 47 | -- | Cleared |
 | The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
-| Full-stack memory and the fleet's connection count are unmeasured | Both are Phase 0 measurements by decision. The allocation and the default profile's cost are now measured; the two components that make the figure interesting, Agent Mesh and the emulated discovery agent, have not run | The `mesh` profile runs and the showcase measurement lands in `docs/operating-parameters.md` |
+| The fleet's connection count against the showcase service is unmeasured | The `mesh` profile's cost is now measured at 2.16 GiB for the whole stack, and four apps were seen to open nine broker connections against a ceiling of 100. The showcase service itself has not been touched | The showcase measurement lands in `docs/operating-parameters.md` |
 | The official Agent Mesh image's `/opt/venv` carries `asteval` 1.0.6 | The override in [ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) changes the lock, not upstream's image; Trivy reports the finding at MEDIUM, below the blocking threshold, so every daily scan prints it as information | Upstream publishes an image with `asteval` at or above 1.0.9 |
 | Neither Dockerfile declares a `HEALTHCHECK`, so `trivy config` reports `DS-0026` at LOW on both | The compose policy gate requires the healthcheck in `deploy/compose.yaml`, which is where Compose reads it; the finding is informational on every pre-push run | A recorded decision settles where the healthcheck lives |
 
@@ -209,7 +217,13 @@ LibreSSL 3.3.6, and the nine tests that drive it now pass on the Linux runner ag
 they could not do before, because the job they run in had never completed
 ([ADR-0059](docs/adr/0059-keep-the-verification-authority-able-to-report.md)).
 
-**Clears when:** the `mesh`, `services`, and `event-portal` profiles are started and recorded under
+**The `mesh` profile was started on 2026-08-21** and is recorded in
+[`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md), which also
+lists three defects the run found and what it does not settle. One new row belongs here: a
+bind-mounted configuration change does not restart the container, so `up --wait` reports the old
+container healthy and `--force-recreate` is required.
+
+**Clears when:** the `services` and `event-portal` profiles are started and recorded under
 `release-evidence/`.
 
 ## 7. Instrument definitions and unset parameters
