@@ -6,8 +6,9 @@ These instructions apply to every file under `services/fleet_simulator/`. Read t
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control rules
 still apply.
 
-This member is the planned deterministic adapter between committed scenarios, the pure domain machines,
-and the application data plane. It is not implemented yet. Read the authority for each concern before
+This member is the deterministic adapter between an accepted scenario, the pure domain machines, and the
+application data plane. Its scenario boundary and its tick semantics are implemented; its command intake,
+evidence publication, and process entry point are not. Read the authority for each concern before
 changing it:
 
 | Concern | Authority or reference |
@@ -50,42 +51,32 @@ delivery claim, run-mode boundary, scenario shape, physics rule, or verification
 constant or comment. Put each fact in its canonical authority and make the coordinated change required by
 the root guide.
 
-## 2. Preserve the current scaffold truth
+## 2. What the member owns, and what it still does not
 
-Apart from this guide and its symlink, the member contains only:
-
-| Path | Current responsibility |
+| Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, build backend, and Tier 2 status |
-| `src/aerial_rescue_fleet_simulator/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_fleet_simulator/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | The package shell, the Python range, Tier 2, and the two workspace dependencies |
+| `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
+| `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
+| `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
+| `tests/` | Member-local unit, refusal, boundary, and property evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no scenario file or adapter, simulated drone, physics model, clock port,
-random source, failure schedule, command consumer, telemetry producer, broker client, composition root,
-or member-local test. No workspace member declares this package as a dependency or imports it.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
+The member is **active**: `tools/member_scaffold.py` classifies it as such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
+pins that. Tier 2 coverage applies to every statement and branch here.
 
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
+Still absent, and each blocked by something named rather than by effort:
 
-An unreadable or syntactically invalid Python source is also non-scaffold. Any activating input restores
-normal fail-closed coverage behavior: executable Python is measured at the declared Tier 2; a tests-only
-or non-Python activation with no measurable Python fails as `no measurable source`. Never add a dummy
-drone, placeholder test, no-op publisher, empty abstraction, or import-only entry point to make the member
-look started. The first behavior lands through red-green-refactor with member-local tests.
+| Not here | What it waits on |
+| --- | --- |
+| A console script and a runnable Compose command | A scenario to run. ADR-0077 leaves producing one to the scenario service, and `deploy/compose.yaml` keeps its import-and-exit shell |
+| Command intake and the command dispatch lifecycle | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md), and a durable queue the broker package does not yet provide |
+| Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
+| Command-result events | No payload or event schema binds that family, and an ACL grant is not a wire contract |
+| Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
 
-The `fleet-simulator` service in `deploy/compose.yaml` is also a shell. Its command imports this package
-and exits, and the inherited healthcheck imports the contracts package. The configured least-privilege
-broker identity and a green Compose policy test prove configuration shape only; they do not prove that a
-simulator starts, remains ready, advances a clock, consumes a command, publishes telemetry, handles
-cancellation, or shuts down. `AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and do not
-activate the scaffold.
+Never add a dummy drone, placeholder test, no-op publisher, empty abstraction, or import-only entry point
+to make an absent capability look started. Each lands through red-green-refactor with member-local tests.
 
 ## 3. Keep simulation, policy, representation, and effects separate
 
