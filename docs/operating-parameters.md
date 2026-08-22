@@ -168,8 +168,26 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Generated secret length | 32 random bytes, rendered as 64 hexadecimal characters | `scripts/broker-secrets.sh` |
 | Docker Desktop memory allocation | 7.652 GiB on the reference workstation, measured 2026-08-21 | [`release-evidence/phase-0/first-live-run.md`](../release-evidence/phase-0/first-live-run.md) |
 | Default profile memory at rest | 1.58 GiB: broker 1.543 GiB, Postgres 35.71 MiB | [`release-evidence/phase-0/first-live-run.md`](../release-evidence/phase-0/first-live-run.md) |
-| Docker Desktop memory for the full stack | (provisional -- confirm in Phase 0) | Phase 0 resource measurement, once the `mesh` profile runs |
-| Fleet connection count against the Developer-class limit of 100 | (provisional -- confirm in Phase 0) | Phase 0 measurement on the showcase service |
+| Docker Desktop memory for the default and `mesh` profiles | 2.16 GiB: broker 1.575 GiB, Agent Mesh 556.8 MiB, Postgres 31.47 MiB, measured 2026-08-21 | [`release-evidence/phase-0/mesh-first-run.md`](../release-evidence/phase-0/mesh-first-run.md). The `services` and `event-portal` profiles are still unmeasured |
+| Broker connections opened by the four Agent Mesh apps | 9, all on one client username, measured 2026-08-21 against a Message VPN ceiling of 100 | [`release-evidence/phase-0/mesh-first-run.md`](../release-evidence/phase-0/mesh-first-run.md) |
+| Fleet connection count against the Developer-class limit of 100 | (provisional -- confirm in Phase 0) | Phase 0 measurement on the showcase service. The row above is the first datum: connections exceed identities by a large factor |
+
+## Agent Mesh runtime
+
+The A2A namespace is [ADR-0064](adr/0064-fix-the-agent-mesh-a2a-namespace.md), the Web UI's admission
+to the configuration validator is [ADR-0065](adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md),
+and the local-model lock is [ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md). This section
+carries only the values.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| A2A namespace | `aerial-rescue-mesh`, one level, no trailing slash | `NAMESPACE` in `.env.example`; a gate test holds it equal to the subscription `a2a_subscription()` renders |
+| A2A topic exceptions after the grant | 47, up from 41 while the namespace was blank | the provisioner's own report, recorded in [`release-evidence/phase-0/mesh-first-run.md`](../release-evidence/phase-0/mesh-first-run.md) |
+| Management server port and readiness path | 8080 and `/readyz`, declared in exactly one configuration file | the `agent-mesh` healthcheck in `deploy/compose.yaml`; a test asserts the single declaration |
+| Agent card publishing interval | 30 s per agent | `agent_card_publishing.interval_seconds` in each agent configuration |
+| Web UI allowed browser origins | loopback only; a wildcard, an empty list, or any other host is refused | the `WEBUI_EXPOSURE` rule in the configuration validator |
+| Local model digest form | `sha256:` and 64 lowercase hexadecimal characters, the Ollama manifest digest | the `MODEL_LOCK` rule offline; `GET /api/tags` at readiness, which is still owed |
+| Orchestration model for the Phase 0 spike | `ollama_chat/qwen3:4b`, 2.50 GB resident, reporting `completion`, `tools`, `thinking` | `agent-mesh/model-lock.toml`. Provisional: the roles are pinned by the Phase 4 model selection |
 
 ## Broker authorization
 

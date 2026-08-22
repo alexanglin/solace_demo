@@ -29,7 +29,11 @@ apps:
         You may only propose. You cannot assign a sector, dispatch a drone, or escalate a
         rescue. Represent the subject anonymously and never infer identity.
       session_service: {type: memory}
-      artifact_service: {type: memory}
+      # Filesystem rather than memory, and one path for all four apps. A memory artifact
+      # service is per-app even inside one connector process, so a workflow node that hands
+      # its input to a peer agent by artifact reference fails with "Artifact ... not found".
+      # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
+      artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
         description: Assesses and prioritises search sectors for a wilderness search area.
         defaultInputModes: [text]

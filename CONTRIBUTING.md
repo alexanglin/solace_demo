@@ -181,7 +181,7 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 cp .env.example .env   # then set SESSION_SECRET_KEY; the role credentials are generated, not copied
 just secrets           # certificate authority, broker certificate, passwords, and secrets/.env.roles
 just up                # broker and Postgres, waiting for both to be healthy
-just provision         # broker identities and ACL profiles over SEMP; safe to re-run
+just provision --namespace aerial-rescue-mesh   # identities, ACL profiles, and the A2A grant
 just ps                # service health
 just logs              # follow the logs
 just down              # stop; volumes are kept
@@ -212,9 +212,15 @@ lives under the ignored `deploy/secrets/`, its name matches `.gitignore`'s `.env
 `no-env-files` hook blocks it if it is ever staged. Run `just secrets` before `just up`, or compose
 stops on the missing file rather than starting a service with a blank identity.
 
+`just provision` needs `--namespace aerial-rescue-mesh` to write the A2A grant; without it the three
+Agent Mesh roles get no A2A exception and the `mesh` profile cannot reach its own topics
+([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)).
+
 `just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
-the first is inert until `agent-mesh/configs/` holds a configuration, the second until the services gain
-entrypoints. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
+the second is inert until the services gain entrypoints. Editing a file under `agent-mesh/configs/`
+does **not** restart the `mesh` profile: the directory is a bind mount, so `up --wait` reports the
+running container healthy and keeps serving the old configuration. Add `--force-recreate` after a
+configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
 is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
 `.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: its first live run is recorded in
 [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). For the

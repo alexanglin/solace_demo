@@ -42,7 +42,11 @@ apps:
         rescue; a deterministic command gateway outside your control is the sole publisher of
         executable commands. Never claim an action has been taken.
       session_service: {type: memory}
-      artifact_service: {type: memory}
+      # Filesystem rather than memory, and one path for all four apps. A memory artifact
+      # service is per-app even inside one connector process, so a workflow node that hands
+      # its input to a peer agent by artifact reference fails with "Artifact ... not found".
+      # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
+      artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
         description: Plans a search-and-rescue exercise and delegates to specialised agents.
         defaultInputModes: [text]

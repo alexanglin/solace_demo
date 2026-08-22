@@ -138,8 +138,17 @@ services:
       # The runtime's own identity. The Event Mesh Gateway and Tool are separate roles with
       # separate credentials, named by their own configuration under agent-mesh/configs/
       # when it lands (docs/adr/0061, docs/adr/0032).
+      #
+      # Both spellings are passed. The generic pair is what the image's own defaults read; the
+      # role-named pair is what agent-mesh/configs/ references, because a configuration that
+      # names the role it runs as can be reviewed against the authorization matrix, while
+      # `SOLACE_BROKER_USERNAME` cannot. Without the role-named pair inside the container the
+      # reference expands to empty and the broker refuses the connection as the shutdown
+      # factory `default` username, retrying forever without an error (docs/adr/0061).
       SOLACE_BROKER_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
       SOLACE_BROKER_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      SOLACE_AGENT_MESH_AGENT_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      SOLACE_AGENT_MESH_AGENT_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       TRUST_STORE: ${TRUST_STORE}
       USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}

@@ -10,6 +10,31 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Agent Mesh runtime is running, and the Phase 0 kill criterion is answered.** The `mesh`
+  profile started for the first time on 2026-08-21 and is recorded in
+  [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md). Four apps
+  connect on the `agent-mesh-agent` identity, the provisioner wrote the six withheld A2A exceptions to
+  take the broker from 41 to 47, and the whole stack costs 2.16 GiB of the 7.652 GiB allocation.
+
+  `tests/phase0/test_agent_mesh_live.py` asserts the three things the plan asked for, against the
+  running broker rather than by reading Broker Manager: the three configured agent cards are reported
+  and reach `aerial-rescue-mesh/a2a/v1/discovery/agentcards`, a task submitted to the workflow produces
+  a request on its node's topic, and that node delegates to its named peer. The delegation the kill
+  criterion actually turns on was observed separately and is the stronger one: a task to the
+  Orchestrator produced a request on the MissionCoordinator topic, which the Orchestrator can only
+  reach through a tool call. `qwen3:4b` made it; `llama3:8b`, the only model previously pulled, reports
+  `completion` alone and could not have.
+
+  The run found three defects, none of them in the mesh. Compose mapped the role-named credentials onto
+  generic `SOLACE_BROKER_*` names, so a configuration naming its own role expanded to an empty username
+  and the broker refused it as the shutdown factory `default` — visible only in the broker's event log,
+  because the client retried forever without logging an error. A memory artifact service turned out to
+  be per-app even inside one connector process, so a workflow node handing its input to a peer failed
+  to load it and retried without bound; all four configs now share a filesystem store. And the
+  configuration validator checks environment references against the host-scope `.env.example` while the
+  runtime resolves them inside the container, so a name can be declared in one and absent in the other
+  — which is exactly how the first run failed. That gap is carried in [TECH_DEBT.md](TECH_DEBT.md).
+
 - **`agent-mesh/configs/` exists, so the `mesh` profile has something to run.** Four
   self-contained files: the built-in Orchestrator, a MissionCoordinator agent it may delegate to,
   a versioned MissionResponse workflow with typed input and output schemas, and the HTTP/SSE Web UI.
