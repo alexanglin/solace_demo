@@ -94,6 +94,8 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0074](0074-command-dispatch-lifecycle.md) | Name the command dispatch lifecycle and bound it by a send budget, not a clock | Accepted |
 | [0075](0075-evidence-lifecycle-states.md) | Name the evidence lifecycle states and keep abstention distinct from rejection | Accepted |
 | [0076](0076-evidence-score-bands.md) | Make the escalating evidence band unreachable by construction, not by a threshold | Accepted |
+| [0077](0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) | The fleet scenario is a frozen value the composition root supplies, not a file the simulator reads | Accepted |
+| [0078](0078-one-tick-is-one-observation-per-drone.md) | One tick is one observation per drone, ordered by drone identifier | Accepted |
 
 ## Decisions still open
 
