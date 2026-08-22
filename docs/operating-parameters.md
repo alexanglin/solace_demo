@@ -232,6 +232,19 @@ over the roles and names every family's publisher set; this section carries only
 | SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
 
+## Broker data plane
+
+The delivery semantics are [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics) and the typed
+facade over the pinned client is [ADR-0028](adr/0028-untyped-solace-client-boundary.md). Routine
+telemetry is direct and supersedable; the queue, redelivery, message-expiry, and dead-message rows
+that guaranteed delivery needs are still open at the end of this document.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Guaranteed publication timeout | 10 s per publication | `PUBLISH_TIMEOUT_MILLISECONDS` in `packages/broker/src/aerial_rescue_broker/messaging.py`, asserted by a publisher test |
+| Direct publisher buffer capacity | 0, so a publication is refused when the transport is full rather than queued or buffered without bound | `DIRECT_BUFFER_CAPACITY` in the same module, asserted by a publisher test |
+| Client connection retries and reconnection attempts | 0 each, so an absent or refusing broker fails the caller instead of retrying without a log line | `CONNECTION_RETRIES` and `RECONNECTION_ATTEMPTS` in the same module, asserted by a properties test |
+
 ## Model spend budget
 
 Enforced before each paid call, not reconciled afterwards. A persisted ledger in the durable store records

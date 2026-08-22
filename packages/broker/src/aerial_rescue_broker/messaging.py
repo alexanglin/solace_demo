@@ -6,10 +6,12 @@ call into it is lost. The compensating control it names is this module: a typed 
 the rest of the tree talks to, so the untyped calls are confined to one file with tests
 rather than spread across every service.
 
-The three ports below are what owned code depends on. ``InboundMessage`` is named for the
+The four ports below are what owned code depends on. ``InboundMessage`` is named for the
 methods the upstream message object already has, so a real message satisfies it without a
-wrapper; the publisher and receiver are owned classes, because their upstream shapes are
-builder chains rather than the operations a caller wants.
+wrapper; the publishers and the receiver are owned classes, because their upstream shapes
+are builder chains rather than the operations a caller wants. There are two publisher
+ports because there are two delivery guarantees, and ``docs/CONTRACTS.md`` decides which
+families get which.
 
 Nothing here decides anything. Which topic an answer may go to, and what an answer says,
 belong to the command gateway (``docs/adr/0005-deterministic-command-gateway.md``).
@@ -40,6 +42,16 @@ from solace.messaging.resources.topic_subscription import TopicSubscription
 
 PUBLISH_TIMEOUT_MILLISECONDS: Final = 10_000
 """Bound on one guaranteed publication; see docs/operating-parameters.md."""
+
+DIRECT_BUFFER_CAPACITY: Final = 0
+"""No internal buffer on the direct publisher; see docs/operating-parameters.md.
+
+Zero is the absence of a queue rather than a tuned queue depth, so it needs no
+measurement, and it is the same posture as the two retry counts below. Routine telemetry
+is droppable under ``docs/CONTRACTS.md``, so refusing a publication when the transport is
+full is the honest outcome; buffering it elastically would turn a congested broker into
+unbounded process memory.
+"""
 
 CONNECTION_RETRIES: Final = 0
 RECONNECTION_ATTEMPTS: Final = 0
@@ -95,6 +107,25 @@ class MessagePublisher(Protocol):
 
     def publish(self, topic: str, payload: bytes, properties: Mapping[str, object], /) -> None:
         """Publish one message and wait for the broker to acknowledge it.
+
+        The parameters are positional-only so an implementation may name them as it likes.
+        """
+
+
+class DirectPublisher(Protocol):
+    """Somewhere to send one message that the broker never acknowledges.
+
+    The method is deliberately not named ``publish``. A protocol is satisfied
+    structurally, so a direct publisher sharing that name would also satisfy
+    :class:`MessagePublisher` and could be passed wherever an acknowledged publication is
+    required -- silently downgrading an audit record to a droppable one. The name is the
+    control, and it says at every call site which guarantee the caller is getting.
+    """
+
+    def publish_unacknowledged(
+        self, topic: str, payload: bytes, properties: Mapping[str, object], /
+    ) -> None:
+        """Publish one message without waiting for the broker to acknowledge it.
 
         The parameters are positional-only so an implementation may name them as it likes.
         """
@@ -190,6 +221,47 @@ class SolacePublisher:
         self._publisher.terminate()
 
 
+class SolaceDirectPublisher:
+    """A :class:`DirectPublisher` backed by a direct Solace publisher.
+
+    ``docs/CONTRACTS.md`` puts routine telemetry on direct delivery, because a current
+    position supersedes a stale one. The client takes the payload itself rather than a
+    built message, so there is no outbound message builder here and nothing to keep in
+    step with the persistent path above.
+    """
+
+    def __init__(self, service: MessagingService) -> None:
+        """Start a direct publisher that refuses rather than buffers, on a connected service."""
+        self._publisher = (
+            service.create_direct_message_publisher_builder()
+            .on_back_pressure_reject(buffer_capacity=DIRECT_BUFFER_CAPACITY)
+            .build()
+        )
+        self._publisher.start()
+
+    def publish_unacknowledged(
+        self, topic: str, payload: bytes, properties: Mapping[str, object]
+    ) -> None:
+        """Publish one message without waiting for the broker to acknowledge it.
+
+        The builder takes a ``bytearray`` or a ``str`` and never ``bytes``, which is what
+        the canonical encoder emits, so the conversion is here rather than at every caller.
+
+        Raises:
+            MessagingError: With ``PUBLISH_REFUSED`` when the client reports a failure,
+                which includes the overflow a full transport raises, so a caller catches
+                one owned type rather than an untyped upstream one.
+        """
+        try:
+            self._publisher.publish(bytearray(payload), SolaceTopic.of(topic), dict(properties))
+        except PubSubPlusClientError as error:
+            raise MessagingError(MessagingRefusal.PUBLISH_REFUSED, topic) from error
+
+    def close(self) -> None:
+        """Terminate the publisher, so shutdown is explicit rather than collected."""
+        self._publisher.terminate()
+
+
 class SolaceReceiver:
     """A :class:`MessageReceiver` backed by a direct Solace receiver.
 
@@ -232,6 +304,43 @@ class BrokerSession:
         self.publisher.close()
         self.receiver.close()
         self._service.disconnect()
+
+
+@dataclass(frozen=True)
+class PublishingSession:
+    """A connected direct publisher, and the one call that shuts it down.
+
+    Publish-only because a role that may not yet consume anything should not hold a
+    receiver: the fleet simulator's single subscribe grant is the drone command family,
+    and consuming it needs the durable queue ``TECH_DEBT.md`` section 6 records as absent.
+    An unused receiver would be authority the process cannot justify holding.
+    """
+
+    publisher: SolaceDirectPublisher
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the publisher and disconnect, in that order."""
+        self.publisher.close()
+        self._service.disconnect()
+
+
+def open_publishing_session(
+    endpoint: BrokerEndpoint, role: Principal, credential: str
+) -> PublishingSession:
+    """Connect on one role and return a direct publisher that consumes nothing.
+
+    Args:
+        endpoint: Where the broker is and what signs its certificate.
+        role: The authorization role to authenticate as.
+        credential: That role's password, which is never logged.
+
+    Returns:
+        The session. Shutting it down is the caller's job and is explicit.
+    """
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    return PublishingSession(publisher=SolaceDirectPublisher(service), _service=service)
 
 
 def open_session(
