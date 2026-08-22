@@ -89,9 +89,18 @@ def _read(path: Path) -> str:
         raise DeploymentError(DeploymentRefusal.MISSING_MATERIAL, str(path)) from error
 
 
+def read_credential(deploy: Path, role: Principal) -> str:
+    """Return one role's generated credential, refusing a path not yet written.
+
+    A process that authenticates as a single role needs only its own credential, and
+    should not have to know how the generator encodes the file.
+    """
+    return _read(credential_path(deploy, role))
+
+
 def read_credentials(deploy: Path) -> dict[Principal, str]:
     """Return one credential per role, refusing the whole set if any is absent."""
-    return {role: _read(credential_path(deploy, role)) for role in Principal}
+    return {role: read_credential(deploy, role) for role in Principal}
 
 
 def endpoint(deploy: Path, host: str, port: int) -> SempEndpoint:

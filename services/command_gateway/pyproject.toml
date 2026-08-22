@@ -11,6 +11,11 @@ dependencies = [
     "aerial-rescue-domain",
 ]
 
+# The process entry point. There is no __main__.py: a two-line module has no function
+# body, and the mutation gate fails a tier-one module it cannot score (ADR-0017).
+[project.scripts]
+aerial-rescue-command-gateway = "aerial_rescue_command_gateway.service:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

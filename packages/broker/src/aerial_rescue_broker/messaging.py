@@ -93,14 +93,17 @@ class InboundMessage(Protocol):
 class MessagePublisher(Protocol):
     """Somewhere to send one message, with the user properties it must carry."""
 
-    def publish(self, topic: str, payload: bytes, properties: Mapping[str, object]) -> None:
-        """Publish one message and wait for the broker to acknowledge it."""
+    def publish(self, topic: str, payload: bytes, properties: Mapping[str, object], /) -> None:
+        """Publish one message and wait for the broker to acknowledge it.
+
+        The parameters are positional-only so an implementation may name them as it likes.
+        """
 
 
 class MessageReceiver(Protocol):
     """Somewhere one message arrives from."""
 
-    def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
+    def receive(self, timeout_milliseconds: int, /) -> InboundMessage | None:
         """Return the next message, or ``None`` when the window passes with none."""
 
 
@@ -214,3 +217,45 @@ class SolaceReceiver:
     def close(self) -> None:
         """Terminate the receiver, so shutdown is explicit rather than collected."""
         self._receiver.terminate()
+
+
+@dataclass(frozen=True)
+class BrokerSession:
+    """A connected publisher and receiver, and the one call that shuts both down."""
+
+    publisher: SolacePublisher
+    receiver: SolaceReceiver
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate both endpoints and disconnect, in that order."""
+        self.publisher.close()
+        self.receiver.close()
+        self._service.disconnect()
+
+
+def open_session(
+    endpoint: BrokerEndpoint,
+    role: Principal,
+    credential: str,
+    subscriptions: Sequence[str],
+) -> BrokerSession:
+    """Connect on one role and return its publisher and receiver.
+
+    Args:
+        endpoint: Where the broker is and what signs its certificate.
+        role: The authorization role to authenticate as.
+        credential: That role's password, which is never logged.
+        subscriptions: The patterns the receiver binds, built by
+            :mod:`aerial_rescue_broker.subscriptions` and never by hand.
+
+    Returns:
+        The session. Shutting it down is the caller's job and is explicit.
+    """
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    return BrokerSession(
+        publisher=SolacePublisher(service),
+        receiver=SolaceReceiver(service, subscriptions),
+        _service=service,
+    )
