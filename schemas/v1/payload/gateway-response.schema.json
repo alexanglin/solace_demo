@@ -6,6 +6,7 @@
   "required": [
     "rpcVersion",
     "missionId",
+    "requestId",
     "operation",
     "commandType",
     "outcome",
@@ -17,6 +18,10 @@
       "const": 1
     },
     "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "requestId": {
+      "description": "The request this answers, so the record binds to the gateway-response topic it is published on and a requestor can check the reply against what it asked.",
       "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
     },
     "operation": {

@@ -41,7 +41,7 @@ VERSION_MEMBER: Final = "rpcVersion"
 REQUEST_MEMBERS: Final = (VERSION_MEMBER, "missionId", "operation", "commandType")
 """Every member of a gateway request, all of them required."""
 
-RESPONSE_REQUIRED_MEMBERS: Final = (*REQUEST_MEMBERS, "outcome", "actuated")
+RESPONSE_REQUIRED_MEMBERS: Final = (*REQUEST_MEMBERS, "requestId", "outcome", "actuated")
 RESPONSE_OPTIONAL_MEMBERS: Final = ("authority", "refusal")
 
 _REQUEST_ALLOWED: Final = frozenset(REQUEST_MEMBERS)
@@ -52,8 +52,14 @@ _RESPONSE_ALLOWED: Final = frozenset(RESPONSE_REQUIRED_MEMBERS) | frozenset(
 _IDENTIFIER_RULE: Final = (IDENTIFIER_PATTERN, MAX_IDENTIFIER_LENGTH)
 _KIND_RULE: Final = (KIND_PATTERN, MAX_KIND_LENGTH)
 
-_TEXT_RULES: Final = {
+_REQUEST_TEXT_RULES: Final = {
     "missionId": _IDENTIFIER_RULE,
+    "operation": _KIND_RULE,
+    "commandType": _KIND_RULE,
+}
+_RESPONSE_TEXT_RULES: Final = {
+    "missionId": _IDENTIFIER_RULE,
+    "requestId": _IDENTIFIER_RULE,
     "operation": _KIND_RULE,
     "commandType": _KIND_RULE,
 }
@@ -112,6 +118,7 @@ class GatewayResponse:
     """
 
     mission_id: str
+    request_id: str
     operation: str
     command_type: str
     outcome: Outcome
@@ -165,10 +172,13 @@ def _text(members: Mapping[object, object], name: str, rule: tuple[str, int]) ->
     return value
 
 
-def _texts(members: Mapping[object, object]) -> dict[str, str]:
-    """Validate the version and the three text members both bodies share."""
+def _texts(
+    members: Mapping[object, object],
+    rules: Mapping[str, tuple[str, int]],
+) -> dict[str, str]:
+    """Validate the version, then every text member the body declares."""
     _version(members)
-    return {name: _text(members, name, rule) for name, rule in _TEXT_RULES.items()}
+    return {name: _text(members, name, rule) for name, rule in rules.items()}
 
 
 def _outcome(members: Mapping[object, object]) -> Outcome:
@@ -219,7 +229,7 @@ def parse_gateway_request(document: object) -> GatewayRequest:
         RpcError: If the document is not a gateway request.
     """
     members = _members(document, "request", _REQUEST_ALLOWED, REQUEST_MEMBERS)
-    texts = _texts(members)
+    texts = _texts(members, _REQUEST_TEXT_RULES)
     return GatewayRequest(
         mission_id=texts["missionId"],
         operation=texts["operation"],
@@ -240,13 +250,14 @@ def parse_gateway_response(document: object) -> GatewayResponse:
         RpcError: If the document is not a gateway response.
     """
     members = _members(document, "response", _RESPONSE_ALLOWED, RESPONSE_REQUIRED_MEMBERS)
-    texts = _texts(members)
+    texts = _texts(members, _RESPONSE_TEXT_RULES)
     outcome = _outcome(members)
     actuated = _actuated(members)
     optionals = _optionals(members)
     _binding(outcome, optionals)
     return GatewayResponse(
         mission_id=texts["missionId"],
+        request_id=texts["requestId"],
         operation=texts["operation"],
         command_type=texts["commandType"],
         outcome=outcome,
@@ -275,6 +286,7 @@ def gateway_response_document(response: GatewayResponse) -> dict[str, object]:
     document: dict[str, object] = {
         VERSION_MEMBER: RPC_VERSION,
         "missionId": response.mission_id,
+        "requestId": response.request_id,
         "operation": response.operation,
         "commandType": response.command_type,
         _OUTCOME_MEMBER: response.outcome.value,

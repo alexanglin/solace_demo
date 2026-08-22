@@ -54,6 +54,23 @@ SALIENT_TOPIC = Topic(
     Family.DRONE_EVENT, "m-2026-0001", {"droneId": "drone-vision-01", "eventType": "salient"}
 )
 
+GATEWAY_RESPONSE_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
+)
+GATEWAY_RESPONSE_TYPE = "aerial-rescue.v1.gateway.response"
+GATEWAY_RESPONSE_REQUEST_ID = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
+GATEWAY_RESPONSE_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads(
+        Path(__file__).with_name("gateway_response_baseline.json").read_text(encoding="utf-8")
+    ),
+)
+"""The command gateway's own record of an answer, committed as its golden fixture."""
+
+GATEWAY_RESPONSE_TOPIC = Topic(
+    Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": GATEWAY_RESPONSE_REQUEST_ID}
+)
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
@@ -63,6 +80,11 @@ def _baseline() -> dict[str, object]:
 def _salient_baseline() -> dict[str, object]:
     """Return a fresh copy of the salient drone event document."""
     return deepcopy(SALIENT_BASELINE)
+
+
+def _gateway_response_baseline() -> dict[str, object]:
+    """Return a fresh copy of the command-gateway response record."""
+    return deepcopy(GATEWAY_RESPONSE_BASELINE)
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -602,6 +624,51 @@ class SalientEventBindingTests(unittest.TestCase):
         self.assertEqual(
             (SALIENT_TYPE, SALIENT_SCHEMA, "m-2026-0001", True),
             (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+
+class GatewayResponseBindingTests(unittest.TestCase):
+    """The third bound type: the command gateway's record of an answer it sent (ADR-0068)."""
+
+    def test_binding_for_returns_the_gateway_response_binding(self) -> None:
+        # Arrange
+        expected = Binding(GATEWAY_RESPONSE_TYPE, Family.GATEWAY_RESPONSE, GATEWAY_RESPONSE_SCHEMA)
+
+        # Act
+        binding = binding_for(GATEWAY_RESPONSE_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_gateway_response_baseline_parses_and_binds_to_the_topic_it_arrives_on(
+        self,
+    ) -> None:
+        # Arrange
+        document = _gateway_response_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, GATEWAY_RESPONSE_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (GATEWAY_RESPONSE_TYPE, GATEWAY_RESPONSE_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_record_whose_payload_names_another_request_does_not_bind(self) -> None:
+        # Arrange
+        document = _gateway_response_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["requestId"] = "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), GATEWAY_RESPONSE_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            ("requestId", EnvelopeRefusal.TOPIC_BINDING, "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"),
+            outcome,
         )
 
 

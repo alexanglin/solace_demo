@@ -246,6 +246,7 @@ class ResponseParsingTests(unittest.TestCase):
         self.assertEqual(
             GatewayResponse(
                 mission_id="m-2026-0001",
+                request_id="b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
                 operation="command-authority",
                 command_type="escalate-rescue",
                 outcome=Outcome.ANSWERED,
@@ -293,6 +294,26 @@ class ResponseParsingTests(unittest.TestCase):
             (RpcRefusal.NOT_AN_OBJECT, "response", document),
             (captured.value.refusal, captured.value.member, captured.value.value),
         )
+
+    def test_a_response_names_the_request_it_answers(self) -> None:
+        # Arrange
+        document = _response(requestId="d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80")
+
+        # Act
+        parsed = parse_gateway_response(document)
+
+        # Assert
+        self.assertEqual("d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80", parsed.request_id)
+
+    def test_a_request_identifier_outside_its_rule_is_refused(self) -> None:
+        # Arrange
+        document = _response(requestId="B3F1C2D4")
+
+        # Act
+        outcome = _response_refusal(document)
+
+        # Assert
+        self.assertEqual((RpcRefusal.MEMBER_FORM, "requestId", "B3F1C2D4"), outcome)
 
     def test_a_member_outside_the_response_profile_is_refused(self) -> None:
         # Arrange
@@ -405,7 +426,7 @@ class ResponseParsingTests(unittest.TestCase):
         self.assertEqual(
             b'{"actuated":false,"authority":"operator-approval","commandType":"escalate-rescue",'
             b'"missionId":"m-2026-0001","operation":"command-authority","outcome":"answered",'
-            b'"rpcVersion":1}',
+            b'"requestId":"b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e","rpcVersion":1}',
             encoded,
         )
 

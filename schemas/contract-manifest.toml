@@ -152,6 +152,19 @@ invalid = [
   "fixtures/golden/v1/payload/gateway-response/neither-authority-nor-refusal.json",
   "fixtures/golden/v1/payload/gateway-response/missing-actuated.json",
   "fixtures/golden/v1/payload/gateway-response/unknown-member.json",
+  "fixtures/golden/v1/payload/gateway-response/request-id-uppercase.json",
+  "fixtures/golden/v1/payload/gateway-response/missing-request-id.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/gateway-response.schema.json"
+valid = [
+  "fixtures/golden/v1/event/gateway-response/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/gateway-response/type-not-gateway-response.json",
+  "fixtures/golden/v1/event/gateway-response/dataschema-not-gateway-response.json",
+  "fixtures/golden/v1/event/gateway-response/data-fails-payload.json",
 ]
 
 [[contracts]]
