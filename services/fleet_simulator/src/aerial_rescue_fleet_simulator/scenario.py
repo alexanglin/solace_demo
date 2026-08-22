@@ -45,6 +45,7 @@ class ScenarioRefusal(Enum):
 
     EMPTY_ROSTER = "a scenario with no drones folds nothing"
     DUPLICATE_DRONE = "two roster entries name the same drone"
+    DUPLICATE_SECTOR = "two roster entries hold the same sector"
     IDENTIFIER_FORM = "identifier outside the topic identifier form"
     OUT_OF_RANGE = "value outside the telemetry payload bound"
     NON_POSITIVE = "count must be at least one"
@@ -164,14 +165,23 @@ def _check_drone(start: DroneStart) -> None:
 
 
 def _check_roster(drones: Sequence[DroneStart]) -> frozenset[str]:
-    """Return the roster's drone identifiers, refusing an empty roster and a repeat."""
+    """Return the roster's drone identifiers, refusing an empty or non-bijective roster.
+
+    One drone holds one sector and one sector has one holder. ``docs/adr/0073`` speaks of
+    "the holding drone" throughout and its machine carries no holder set, so a sector with
+    two drones over it would have no defined answer to whether it is being swept.
+    """
     if not drones:
         raise ScenarioError(ScenarioRefusal.EMPTY_ROSTER, ())
     seen: set[str] = set()
+    held: set[str] = set()
     for drone in drones:
         if drone.drone_id in seen:
             raise ScenarioError(ScenarioRefusal.DUPLICATE_DRONE, drone.drone_id)
+        if drone.sector_id in held:
+            raise ScenarioError(ScenarioRefusal.DUPLICATE_SECTOR, drone.sector_id)
         seen.add(drone.drone_id)
+        held.add(drone.sector_id)
     return frozenset(seen)
 
 
