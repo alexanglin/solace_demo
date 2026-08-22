@@ -98,15 +98,25 @@ class AcceptedScenarioTests(unittest.TestCase):
         # Assert
         self.assertEqual(("drone-thermal-02", "drone-vision-01"), order)
 
-    def test_the_sectors_are_the_distinct_assignments_in_ascending_order(self) -> None:
+    def test_the_sectors_are_the_held_assignments_in_ascending_order(self) -> None:
         # Arrange
-        third = replace(DRONE, drone_id="drone-audio-03", sector_id="sector-east")
+        third = replace(DRONE, drone_id="drone-audio-03", sector_id="sector-west")
 
         # Act
         assigned = sectors(_scenario(drones=(DRONE, OTHER, third)))
 
         # Assert
-        self.assertEqual(("sector-east", "sector-north"), assigned)
+        self.assertEqual(("sector-east", "sector-north", "sector-west"), assigned)
+
+    def test_two_roster_entries_holding_one_sector_are_refused(self) -> None:
+        # Arrange
+        shared = (DRONE, replace(OTHER, sector_id=DRONE.sector_id))
+
+        # Act
+        refusal = _refusal(lambda: _scenario(drones=shared))
+
+        # Assert
+        self.assertEqual((ScenarioRefusal.DUPLICATE_SECTOR, DRONE.sector_id), refusal)
 
     def test_a_stationary_drone_declaring_no_ground_speed_is_accepted(self) -> None:
         # Arrange
