@@ -42,10 +42,14 @@ verification mechanism.
 | `v1/envelope.schema.json` | Structural closed-member CloudEvents envelope profile |
 | `v1/payload/` | Application-event payload shapes |
 | `v1/event/` | Composed schemas binding an envelope's `type`, `dataschema`, and `data` |
+| `v1/rpc/` | Request/reply bodies that are not application events ([ADR-0068](../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)) |
 | `v1/topic-cases.schema.json` | Common shape of accepted and refused topic case files |
 
 Keep reusable wire definitions in `canonical.schema.json` and reference them instead of copying patterns
-or bounds into payloads. Every application-event payload has a matching composed event schema. The
+or bounds into payloads. Every application-event payload has a matching composed event schema. A body
+under `v1/rpc/` has neither, because it is a question rather than a statement that something happened;
+a reply that is *also* republished as an event lives under `v1/payload/` and carries the composed
+schema, so one definition serves both uses. The
 payload schema has its own `$id`, which the envelope `dataschema` and Python binding name; the composed
 event schema has a distinct event-schema `$id` and constrains the payload, event type, and schema binding
 together.
