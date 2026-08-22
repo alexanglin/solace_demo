@@ -5,8 +5,9 @@
 These instructions apply to every file under `tests/`. Read the repository-root
 [`AGENTS.md`](../AGENTS.md) first. Its safety, TDD, documentation, security, and version-control rules
 still apply. Read every more-specific guide that governs a package, schema, fixture, deployment artifact,
-or evidence record a test exercises before changing that test or its subject. Fixture work currently
-inherits the schema and contracts guides because `fixtures/` has no local guide.
+or evidence record a test exercises before changing that test or its subject. Tests that exercise golden
+fixtures also inherit [`fixtures/AGENTS.md`](../fixtures/AGENTS.md), the schema guide, and the contracts
+guide.
 
 Use the canonical source for the fact under test instead of treating an assertion as its owner:
 
