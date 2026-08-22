@@ -513,7 +513,7 @@ class CommittedConfigurationTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(4, len(results))
+        self.assertEqual(5, len(results))
         self.assertTrue(all(result.valid for result in results), results)
 
     def test_exactly_one_committed_file_serves_the_readiness_probe(self) -> None:

@@ -149,6 +149,13 @@ services:
       SOLACE_BROKER_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       SOLACE_AGENT_MESH_AGENT_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
       SOLACE_AGENT_MESH_AGENT_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      # The Event Mesh Gateway runs in this same connector process but is a separate role,
+      # so it connects on its own identity on both the control plane and the data plane
+      # (agent-mesh/configs/event-mesh-gateway.yaml, docs/adr/0061). A gate test holds this
+      # list to every credential the mounted configuration names, because the validator
+      # checks those references against the host-scope .env.example and cannot see in here.
+      SOLACE_EVENT_MESH_GATEWAY_USERNAME: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
+      SOLACE_EVENT_MESH_GATEWAY_PASSWORD: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       TRUST_STORE: ${TRUST_STORE}
       USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}

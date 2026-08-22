@@ -1,0 +1,99 @@
+# The official Event Mesh Gateway 1.1.0, carrying one salient drone event from the application
+# data plane into the mesh as one structured A2A task. This is the ingress half of the Phase 0
+# Event Mesh spike; the Event Mesh Tool egress half is a separate configuration.
+#
+# It runs on its own `event-mesh-gateway` identity rather than the runtime's, on both the control
+# plane and the data plane, because that role may subscribe to the drone-event family and publish
+# the agent-response family and nothing else (docs/adr/0061). The broker enforces that
+# independently of everything below.
+#
+# The data-plane queue is temporary and the gateway names it itself; neither is configurable, so
+# a salient event published while this app is down reaches no queue. That is accepted and scoped
+# in docs/adr/0067, and it is why the application topic, not this gateway, is the authoritative
+# record of a salient event.
+apps:
+  - name: event-mesh-gateway-app
+    app_module: sam_event_mesh_gateway.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
+      broker_password: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      gateway_id: aerial-rescue-event-mesh-gateway
+      authorization_service: {type: none}
+      default_user_identity: aerial-rescue-fleet
+      # The same filesystem path all four other apps share. A structured invocation hands its
+      # input to the agent as an artifact reference, and a memory artifact service is per-app
+      # even inside one connector process, so the agent would fail to load it.
+      artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
+      # No card. tests/phase0/test_agent_mesh_live.py holds the mesh to exactly three agent
+      # cards, and this is a gateway rather than an agent: it is reached over a topic, not asked.
+      gateway_card_publishing: {enabled: false}
+      # Deferred rejection, at the gateway and in every handler, is fixed by docs/CONTRACTS.md
+      # and refused as GATEWAY_POLICY by the configuration validator on anything else. The
+      # timeout is derived in docs/operating-parameters.md, not measured.
+      acknowledgment_policy:
+        mode: on_completion
+        on_failure:
+          action: nack
+          nack_outcome: rejected
+        timeout_seconds: 180
+      event_mesh_broker_config:
+        dev_mode: false
+        broker_url: ${SOLACE_BROKER_URL}
+        broker_username: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
+        broker_password: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
+        broker_vpn: ${SOLACE_BROKER_VPN}
+        temporary_queue: true
+      event_handlers:
+        - name: salient-drone-event
+          # One family, one event type. `*` is the Solace single-level wildcard, and the literal
+          # last level keeps routine telemetry and every other drone event out of a model, which
+          # docs/ARCHITECTURE.md requires. The role's ACL grants no more than this either.
+          subscriptions:
+            - topic: aerial-rescue/v1/*/drone/*/event/salient
+              qos: 1
+          payload_encoding: utf-8
+          payload_format: json
+          # The validated CloudEvent's payload, passed as an object rather than spliced into a
+          # template. `detail` is free text a drone reported, so it is untrusted input; keeping
+          # it a JSON string value means it cannot break out of the structure around it.
+          input_expression: input:payload:data
+          # Declaring an input schema is what puts the plugin into structured invocation for an
+          # agent target. It is a hint to the agent, deliberately naming the members without
+          # restating their bounds; the authoritative contract is
+          # schemas/v1/payload/drone-event-salient.schema.json, validated before publication.
+          structured_invocation:
+            input_schema:
+              type: object
+              required:
+                - missionId
+                - droneId
+                - observation
+                - latitudeMicrodegrees
+                - longitudeMicrodegrees
+                - detail
+          target_agent_name: MissionCoordinator
+          on_success: salient-event-assessment
+          on_error: salient-event-failure
+          forward_context:
+            # aerial-rescue/v1/{missionId}/drone/{droneId}/event/salient -- level 2.
+            missionId: input.topic_levels:2
+      # Both routes publish inside the agent-response family, the only family this role may
+      # publish. They are non-authoritative: an agent proposes, and only the deterministic
+      # command gateway publishes an executable command (docs/adr/0005).
+      output_handlers:
+        - name: salient-event-assessment
+          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
+          payload_expression: task_response:text
+          payload_encoding: utf-8
+          payload_format: text
+        - name: salient-event-failure
+          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
+          payload_expression: task_response:a2a_task_response.error
+          payload_encoding: utf-8
+          payload_format: json
