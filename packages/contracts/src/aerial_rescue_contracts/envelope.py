@@ -42,8 +42,14 @@ SOURCE_PATTERN: Final = (
 """``urn:aerial-rescue:<producerKind>:<producerId>``; the producer scopes the sequence."""
 
 DATASCHEMA_PATTERN: Final = "^https://aerial-rescue\\.invalid/schemas/v1/payload/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.schema\\.json$"
-SEQUENCE_PATTERN: Final = "^[0-9]{15}$"
-"""Zero-padded so string order is numeric order; the maximum is below 2^53 - 1."""
+SEQUENCE_DIGITS: Final = 15
+SEQUENCE_PATTERN: Final = f"^[0-9]{{{SEQUENCE_DIGITS}}}$"
+MAX_SEQUENCE: Final = 10**SEQUENCE_DIGITS - 1
+"""Zero-padded so string order is numeric order; the maximum is below 2^53 - 1.
+
+The width is the one home for this fact. Every producer of an envelope renders its own
+sequence, so before this constant existed the rule was written out again in each of them.
+"""
 
 TRACEPARENT_PATTERN: Final = "^00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$"
 TRACESTATE_PATTERN: Final = "^[\\x20-\\x7e]{1,512}$"
@@ -228,6 +234,25 @@ def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
         raise EnvelopeError(EnvelopeRefusal.DATASCHEMA_BINDING, "dataschema", texts["dataschema"])
     if data.get(_MISSION_KEY) != texts["subject"]:
         raise EnvelopeError(EnvelopeRefusal.SUBJECT_BINDING, "subject", texts["subject"])
+
+
+def sequence_text(value: int) -> str | None:
+    """Return the zero-padded producer sequence, or ``None`` when the form cannot carry it.
+
+    Returning ``None`` rather than raising keeps the refusal with the producer. The command
+    gateway and the fleet simulator each name their own structured reason, and this module
+    has no business deciding which service's error a caller sees.
+
+    Args:
+        value: The producer's next sequence number.
+
+    Returns:
+        The rendered sequence, satisfying :data:`SEQUENCE_PATTERN`, or ``None`` for a value
+        outside the representable range.
+    """
+    if value < 0 or value > MAX_SEQUENCE:
+        return None
+    return f"{value:0{SEQUENCE_DIGITS}d}"
 
 
 def parse_envelope(document: object) -> Envelope:

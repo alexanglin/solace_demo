@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final
 
 from aerial_rescue_contracts.envelope import (
     Envelope,
@@ -27,15 +26,12 @@ from aerial_rescue_contracts.envelope import (
     check_topic_binding,
     envelope_document,
     parse_envelope,
+    sequence_text,
 )
 from aerial_rescue_contracts.rpc import GatewayResponse, gateway_response_document
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
 
 from aerial_rescue_command_gateway import CommandGatewayError, event_source
-
-SEQUENCE_DIGITS: Final = 15
-MAX_SEQUENCE: Final = 10**SEQUENCE_DIGITS - 1
-"""The largest producer sequence the envelope's fifteen-digit form can carry."""
 
 
 class RecordRefusal(Enum):
@@ -61,9 +57,10 @@ class RecordStamp:
 
 def _sequence_text(value: int) -> str:
     """Return the zero-padded producer sequence, refusing one the form cannot carry."""
-    if value < 0 or value > MAX_SEQUENCE:
+    rendered = sequence_text(value)
+    if rendered is None:
         raise RecordError(RecordRefusal.SEQUENCE_RANGE, value)
-    return f"{value:0{SEQUENCE_DIGITS}d}"
+    return rendered
 
 
 def response_record(
