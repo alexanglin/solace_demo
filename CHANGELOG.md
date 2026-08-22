@@ -10,6 +10,43 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **One Event Mesh Tool request now produces one validated, non-actuating command-gateway
+  response, and the Phase 0 kill criterion is answered in full.** The egress half joins the
+  ingress half recorded in `event-mesh-gateway-first-run.md`, and
+  [`release-evidence/phase-0/event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)
+  records the run: five assertions, three of which involve no model at all and pass in 31.21 s.
+
+  Two identities appeared that had never connected: `event-mesh-tool` and `command-gateway`,
+  one connection each. The tool runs *inside* the MissionCoordinator app, in the same connector
+  process as the nine `agent-mesh-agent` connections, and still authenticates as itself. Topic
+  exceptions stayed at 47 — one out, one in — because
+  [ADR-0070](docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)
+  *replaced* the tool's gateway-response family grant with one scoped to the reserved reply
+  channel, which is strictly less authority.
+
+  The request cannot be a CloudEvent, and reading the plugin is what showed it. The tool composes
+  its payload from a context lookup, a model argument, or a configured literal, so it can produce
+  none of `id`, `time`, `sequence`, or `traceparent`. `ADR-0068` therefore scopes the envelope
+  rule to the nine notification families and gives the two gateway families schema-bound RPC,
+  with the answer republished as a CloudEvent record so the recorder and the audit timeline still
+  see it.
+
+  Where the reply goes was not the project's choice either. Solace AI Connector fixes a
+  requestor's reply topic once per session and binds a queue to both that topic *and* the topic
+  followed by `>`; the mission level cannot carry a mission, and the old `*` exception did not
+  cover the `>`. ADR-0070 reserves `reply` for it. The broker confirmed the prediction verbatim
+  on the first attempt, with `SOLCLIENT_SUBCODE_SUBSCRIPTION_ACL_DENIED` — an ordering defect
+  now carried in [TECH_DEBT.md](TECH_DEBT.md), because the provisioner must run before the
+  container and nothing said so.
+
+  `services/command_gateway` is the first service with real code, and it is the safety boundary
+  [ADR-0005](docs/adr/0005-deterministic-command-gateway.md) describes. Three pure modules and a
+  loop: it answers from two deny-by-default tables, refuses any reply topic that is not on the
+  reserved channel — the guard that stops an injected value aiming the sole publisher of
+  executable commands anywhere it likes — and reports `actuated: false`, which the live test
+  asserts on the wire *and* by watching the drone-command family stay silent. It is a tier-one
+  member at 100% statement and branch coverage with 368 of 368 mutants killed.
+
 - **One salient CloudEvent now becomes one structured A2A task, and the Phase 0 kill criterion's
   ingress half is answered.** The official Event Mesh Gateway 1.1.0 runs as a fifth app under
   `agent-mesh/configs/`, on its own `event-mesh-gateway` identity, and

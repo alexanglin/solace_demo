@@ -58,8 +58,25 @@ if [ ! -s "$selected" ]; then
 	exit 0
 fi
 
+# Selection is by import graph and exclusion is by marker, and the two are independent: a
+# change that touches only tests carrying an excluded marker -- every tests/phase0/*_live.py
+# file, for instance -- selects files in which nothing is collectable. pytest reports that as
+# exit code 5, which is not a failure of this stage. Every other status is propagated.
+run_selected() {
+	set +e
+	uv run --frozen pytest -m "$EXCLUDE" -q -x --no-header -p no:cacheprovider "$@"
+	status=$?
+	set -e
+	if [ "$status" -eq 5 ]; then
+		printf 'affected tests: every selected test carries an excluded marker\n'
+		return 0
+	fi
+	return "$status"
+}
+
 if [ "$(cat "$selected")" = ':all:' ]; then
-	exec uv run --frozen pytest -m "$EXCLUDE" -q -x --no-header -p no:cacheprovider
+	run_selected
+	exit $?
 fi
 
 set --
@@ -67,4 +84,5 @@ while IFS= read -r selection; do
 	set -- "$@" "$selection"
 done <"$selected"
 
-exec uv run --frozen pytest -m "$EXCLUDE" -q -x --no-header -p no:cacheprovider "$@"
+run_selected "$@"
+exit $?
