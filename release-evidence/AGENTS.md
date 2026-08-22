@@ -36,6 +36,8 @@ four distinct boundaries:
 | `first-live-run.md` | The local default Compose profile, TLS handshakes, and PostgreSQL startup |
 | `broker-authorization.md` | Live local broker identity and publish/connect authorization controls |
 | `mesh-first-run.md` | Local Agent Mesh discovery plus Ollama-backed invocation and delegation |
+| `event-mesh-gateway-first-run.md` | Live Event Mesh Gateway ingress: one salient CloudEvent becoming one structured A2A task |
+| `event-mesh-tool-first-run.md` | Live Event Mesh Tool egress: one request becoming one non-actuating command-gateway response |
 
 The record itself owns the dated observation. Current capability claims belong in `README.md`, phase
 status and unfinished delivery risks belong in the implementation plan, measured parameters belong in

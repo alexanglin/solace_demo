@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json",
+  "description": "One answer from the deterministic command gateway. The same body is published twice: to the requestor's reply topic as the RPC reply, and as the data member of a CloudEvent on the gateway-response family so the recorder and the dashboard observe it (ADR-0068). An answered response names the authority the command type falls under; a refused one names the refusal, so at least one of the two is always present. Which of the two goes with which outcome is a validator-only rule: tying it to the outcome here would make every negative fixture that touches outcome fail for two reasons at once, and the keyword set fixed by CONTRACTS.md cannot forbid the member that does not belong.",
+  "type": "object",
+  "required": [
+    "rpcVersion",
+    "missionId",
+    "requestId",
+    "operation",
+    "commandType",
+    "outcome",
+    "actuated"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rpcVersion": {
+      "const": 1
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "requestId": {
+      "description": "The request this answers, so the record binds to the gateway-response topic it is published on and a requestor can check the reply against what it asked.",
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "operation": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    },
+    "commandType": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "answered",
+        "refused"
+      ]
+    },
+    "actuated": {
+      "description": "Whether publishing an executable command followed from this request. The command gateway is the sole publisher of such commands (ADR-0005), so it is the only component entitled to set this.",
+      "type": "boolean"
+    },
+    "authority": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    },
+    "refusal": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    }
+  },
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "authority"
+      ]
+    },
+    {
+      "type": "object",
+      "required": [
+        "refusal"
+      ]
+    }
+  ]
+}

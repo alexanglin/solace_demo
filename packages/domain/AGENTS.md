@@ -63,7 +63,8 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/evidence.py` | Evidence lifecycle table, abstention, and manual review |
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
-| `src/aerial_rescue_domain/principals.py` | Closed broker roles and total publish/subscribe grant tables |
+| `src/aerial_rescue_domain/operations.py` | Closed command-gateway operations and their actuation table |
+| `src/aerial_rescue_domain/principals.py` | Closed broker roles, total publish/subscribe grant tables, and the A2A and reply-channel scopes |
 | `src/aerial_rescue_domain/sectors.py` | Deny-by-default sector lifecycle table and terminal set |
 | `src/aerial_rescue_domain/scoring.py` | Evidence score, ordinal bands, and the two escalation gates |
 | `tests/` | Unit, refusal, boundary, totality, and property evidence for the package |
@@ -126,9 +127,13 @@ contract; do not simulate persistence inside this package.
 
 ## 5. Authority and principal tables
 
-`authority.py` and `principals.py` are executable security policy, not convenience mappings.
+`authority.py`, `operations.py`, and `principals.py` are executable security policy, not convenience
+mappings.
 
-- Keep command kinds, principal roles, topic families, and grants closed and exactly spelled.
+- Keep command kinds, gateway operations, principal roles, topic families, and grants closed and
+  exactly spelled. An operation is reached by a language model, so an invented spelling is the
+  expected input rather than the exceptional one
+  ([ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)).
 - Keep every authority and grant table total over its enums and deny by default. Add explicit totality
   tests whenever a dimension changes.
 - A rescue escalation is publishable only after the matching approval has been consumed and is in the
@@ -138,8 +143,10 @@ contract; do not simulate persistence inside this package.
 - Application topic families and Agent Mesh A2A access are separate policy surfaces. Wildcard
   subscription construction belongs in the broker adapter; concrete topic grammar remains in the
   contracts package.
-- Adding a command kind or changing a role grant requires a new or superseding ADR, a complete table
-  update, positive and negative tests, and coordinated broker provisioning and deployment evidence.
+- Adding a command kind or a gateway operation, or changing a role grant, requires a new or
+  superseding ADR, a complete table update, positive and negative tests, and coordinated broker
+  provisioning and deployment evidence. Every row of the operation actuation table is `False` today;
+  a row that becomes `True` changes the ADR-0005 boundary and needs its own record.
   Never grant a broad wildcard to make an integration test pass.
 
 Role changes cross several trees. Inspect the broker adapter, `deploy/`, broker-secret generation,

@@ -95,6 +95,15 @@ The grammar that uses these bounds is in [CONTRACTS.md](CONTRACTS.md#topic-taxon
 | Producer identifier in `source` | 1 to 64 characters | `packages/contracts` envelope validator plus JSON Schema |
 | Sequence | Exactly 15 decimal digits, zero-padded; the maximum is below 2^53 - 1 | `packages/contracts` envelope validator plus JSON Schema |
 | Trace state | 1 to 512 printable ASCII characters | `packages/contracts` envelope validator plus JSON Schema |
+| Command-gateway reply metadata | At most 4096 bytes of UTF-8 | `MAX_REPLY_METADATA_BYTES` in `services/command_gateway`, checked before the value is parsed |
+
+The reply-metadata bound is derived rather than measured. The value is Solace AI Connector's own
+correlation stack, one entry per requestor in a delegation chain, and an entry is a `request_id` of
+at most 64 characters and a `response_topic` of at most 250 — under 340 bytes with its punctuation.
+The bound therefore admits a chain of at least ten requestors, which is far beyond the two the
+architecture has, and it is checked before the value is parsed so an oversized string is refused
+rather than decoded. It is not a safety parameter: exceeding it costs one answer, never a command
+([ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)).
 
 ## Telemetry payload bounds
 
@@ -202,6 +211,10 @@ carries only the values.
 | Web UI allowed browser origins | loopback only; a wildcard, an empty list, or any other host is refused | the `WEBUI_EXPOSURE` rule in the configuration validator |
 | Local model digest form | `sha256:` and 64 lowercase hexadecimal characters, the Ollama manifest digest | the `MODEL_LOCK` rule offline; `GET /api/tags` at readiness, which is still owed |
 | Orchestration model for the Phase 0 spike | `ollama_chat/qwen3:4b`, 2.50 GB resident, reporting `completion`, `tools`, `thinking` | `agent-mesh/model-lock.toml`. Provisional: the roles are pinned by the Phase 4 model selection |
+| Agent request timeout | 60 s per A2A request | `inter_agent_communication.request_timeout_seconds` in each agent configuration |
+| Event Mesh Gateway acknowledgement timeout | 180 s, the window a handler has to complete before the gateway settles the message | `acknowledgment_policy.timeout_seconds` in `agent-mesh/configs/event-mesh-gateway.yaml`; a test asserts the committed value |
+
+The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 
 ## Broker authorization
 

@@ -209,6 +209,30 @@ class SelectionRegistrationTests(QualityGateTestCase):
         self.assertNotIn("types_or: [python, pyi]", block)
         self.assertIn("exclude:", block)
 
+    def test_a_selection_whose_tests_all_carry_an_excluded_marker_passes(self) -> None:
+        # Arrange
+        stage = (REPOSITORY_ROOT / "scripts" / "hooks" / "python" / "pytest-related.sh").read_text(
+            encoding="utf-8"
+        )
+
+        # Act
+        tolerated = ('"$status" -eq 5' in stage, "every selected test carries an excluded" in stage)
+
+        # Assert
+        self.assertEqual((True, True), tolerated)
+
+    def test_every_other_status_from_the_selected_run_is_propagated(self) -> None:
+        # Arrange
+        stage = (REPOSITORY_ROOT / "scripts" / "hooks" / "python" / "pytest-related.sh").read_text(
+            encoding="utf-8"
+        )
+
+        # Act
+        propagated = ('return "$status"' in stage, "exit $?" in stage)
+
+        # Assert
+        self.assertEqual((True, True), propagated)
+
     def test_the_root_selector_keeps_the_agent_mesh_tree_out_of_its_graph(self) -> None:
         # Arrange
         expected = ":(exclude)agent-mesh/*"

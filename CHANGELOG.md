@@ -152,6 +152,95 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   decide whether that command may be published. Terminality is derived from the table rather than
   declared beside it, so there is one rule to mutate rather than two that can drift apart.
 
+- **One Event Mesh Tool request now produces one validated, non-actuating command-gateway
+  response, and the Phase 0 kill criterion is answered in full.** The egress half joins the
+  ingress half recorded in `event-mesh-gateway-first-run.md`, and
+  [`release-evidence/phase-0/event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)
+  records the run: five assertions, three of which involve no model at all and pass in 31.21 s.
+
+  Two identities appeared that had never connected: `event-mesh-tool` and `command-gateway`,
+  one connection each. The tool runs *inside* the MissionCoordinator app, in the same connector
+  process as the nine `agent-mesh-agent` connections, and still authenticates as itself. Topic
+  exceptions stayed at 47 — one out, one in — because
+  [ADR-0070](docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)
+  *replaced* the tool's gateway-response family grant with one scoped to the reserved reply
+  channel, which is strictly less authority.
+
+  The request cannot be a CloudEvent, and reading the plugin is what showed it. The tool composes
+  its payload from a context lookup, a model argument, or a configured literal, so it can produce
+  none of `id`, `time`, `sequence`, or `traceparent`. `ADR-0068` therefore scopes the envelope
+  rule to the nine notification families and gives the two gateway families schema-bound RPC,
+  with the answer republished as a CloudEvent record so the recorder and the audit timeline still
+  see it.
+
+  Where the reply goes was not the project's choice either. Solace AI Connector fixes a
+  requestor's reply topic once per session and binds a queue to both that topic *and* the topic
+  followed by `>`; the mission level cannot carry a mission, and the old `*` exception did not
+  cover the `>`. ADR-0070 reserves `reply` for it. The broker confirmed the prediction verbatim
+  on the first attempt, with `SOLCLIENT_SUBCODE_SUBSCRIPTION_ACL_DENIED` — an ordering defect
+  now carried in [TECH_DEBT.md](TECH_DEBT.md), because the provisioner must run before the
+  container and nothing said so.
+
+  `services/command_gateway` is the first service with real code, and it is the safety boundary
+  [ADR-0005](docs/adr/0005-deterministic-command-gateway.md) describes. Three pure modules and a
+  loop: it answers from two deny-by-default tables, refuses any reply topic that is not on the
+  reserved channel — the guard that stops an injected value aiming the sole publisher of
+  executable commands anywhere it likes — and reports `actuated: false`, which the live test
+  asserts on the wire *and* by watching the drone-command family stay silent. It is a tier-one
+  member at 100% statement and branch coverage with 368 of 368 mutants killed.
+
+- **One salient CloudEvent now becomes one structured A2A task, and the Phase 0 kill criterion's
+  ingress half is answered.** The official Event Mesh Gateway 1.1.0 runs as a fifth app under
+  `agent-mesh/configs/`, on its own `event-mesh-gateway` identity, and
+  [`release-evidence/phase-0/event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md)
+  records the run. `mesh-first-run.md` had noted that no application CloudEvent had ever been
+  published on any of the eleven families; this is the first, and the transformation took 0.43 s.
+
+  The broker is what proves the identity split: nine connections on `agent-mesh-agent` and four on
+  `event-mesh-gateway`, and 47 topic exceptions — unchanged, because
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) had already
+  granted this role the drone-event family to read and the agent-response family to write, before
+  either existed. The fifth app costs 37 MiB.
+
+  Structured invocation without splicing untrusted text. `target_workflow_name` is the documented
+  route to it, but reaching the MissionResponse workflow's `inputSchema {report: string}` would mean
+  building JSON out of a template with the drone's free-text `detail` inside it. The plugin turns
+  structured invocation on for `structured_invocation.input_schema` alone, whatever the target, so
+  the handler declares that schema, targets the agent, and passes the payload as an object:
+  `[TranslateInput] Created structured input artifact`.
+
+  Three assertions of different kinds — a model-independent transformation, a bounded
+  model-dependent answer routed back onto the agent-response family, and an undecodable event that
+  must produce no task. The event they publish is built as an `Envelope`, checked against its topic,
+  and serialised by the canonical encoder, so "validated" is a claim rather than a description.
+
+  Two defects found. The gateway reads `default_user_identity` from the **handler**, never the
+  identically named app-level parameter its schema also declares, and discards the message when
+  neither yields one — visible only as a single ERROR line. And `OutboundMessageBuilder.build` takes
+  a `bytearray` or a `str`, never `bytes`, which is what the canonical encoder emits.
+
+- **The salient drone event is bound to a payload schema.** `envelope.BINDINGS` held one row, so
+  `aerial-rescue.v1.drone.telemetry` was the only event type the profile accepted and any other was
+  refused as `UNKNOWN_TYPE` before it reached a topic. The new row lands with the payload schema,
+  the composed event schema, ten negative fixtures each failing for exactly one reason, and the
+  manifest entry. It adds no definition to `canonical.schema.json`: every member refs one that
+  already exists. `observation` stays an open `kind` rather than an enum, because closing a value
+  set is a decision with an ADR behind it.
+
+- **The pinned plugins are proven inside the built image.** `scripts/probes/agent-mesh-image-probe.sh`
+  runs three pin checks, the gateway entry point, the tool's module-path import, and seven runtime
+  symbols on the image's own CPython 3.13.11 — not the 3.13.15 in `agent-mesh/.venv`. A shell script
+  rather than a test: the image carries no pytest, and
+  [ADR-0025](docs/adr/0025-narrow-ruff-subprocess-waivers.md) fixes at four the files that may own a
+  subprocess call. It clears a `TECH_DEBT.md` §6 row that had stood since the stack was defined.
+
+- **A gate now holds the container to the credentials its configuration names.** The validator
+  resolves `${...}` against the host-scope `.env.example` while the runtime resolves them inside the
+  container, so a name in one and not the other passes every gate and then fails silently — the
+  reference expands to empty, the broker refuses the client as the shutdown factory `default`, and
+  the client retries forever. That is how the first `mesh` run failed. `AgentMeshContainerScopeTests`
+  reads every `${SOLACE_*}` the mounted configuration names and requires compose to pass each one in.
+
 - **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
   untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
   Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and
@@ -636,6 +725,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- **The no-loss claim is narrower, and honest**
+  ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+  `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes
+  `broker_queue_name` with a per-process UUID, `create_queue_on_start: True`, and
+  `temporary_queue: True`; none of the 25 parameters in its schema names the queue, so no
+  configuration changes it, and [ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)
+  forbids forking a supported component without a proving test.
+
+  Waiting for the four open queue parameters would buy nothing — the plugin would still bind a
+  temporary queue afterwards. So the claim moves instead: it covers the application data plane and
+  excludes the A2A ingress hop. What carries the weight is stated with it — the application topic is
+  the authoritative record, the recorder and evidence service read it on their own identities, and no
+  command, approval, or audit record runs through the gateway. The gap it leaves is real and now
+  visible: a restart silently drops any salient event published during it.
 
 - The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
   `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets

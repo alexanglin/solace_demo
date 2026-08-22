@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/gateway-response.schema.json",
+  "description": "The command gateway's record of an answer it sent: the envelope with its type, schema, and payload bound together. The payload is the same body the requestor received as the RPC reply (ADR-0068).",
+  "allOf": [
+    {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "aerial-rescue.v1.gateway.response"
+        },
+        "dataschema": {
+          "const": "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
+        },
+        "data": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
+        }
+      }
+    }
+  ]
+}

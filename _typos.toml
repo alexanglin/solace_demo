@@ -12,6 +12,13 @@ extend-exclude = [
   "fixtures/golden/",
 ]
 
+[default]
+# A W3C trace parent is 32 and 16 hexadecimal digits, and typos tokenizes runs of
+# them into words: `00f067aa0ba902b7` yields a `ba` it reports as a typo of "by".
+# Scoped to the trace-parent shape rather than to hexadecimal generally, so a real
+# typo in ordinary prose still fails.
+extend-ignore-re = ["00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}"]
+
 [default.extend-words]
 # Domain and product vocabulary that is not a typo.
 Solace = "Solace"

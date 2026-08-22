@@ -45,7 +45,8 @@ requires a decision record.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions and the isolated A2A subscription |
+| `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions, the isolated A2A subscription, and the reserved command-gateway reply channel |
+| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, publisher, receiver, and session lifecycle |
 | `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles and usernames, and reconcile their exceptions |
 | `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads, response parsing, and failure redaction |
 | `src/aerial_rescue_broker/deployment.py` | Read generated local material and compose the operator-facing provision command |
@@ -99,14 +100,21 @@ exceptions. Preserve all of these properties:
 - Every application pattern must match its own family and no other family, including adversarial values
   that collide with another family's literal levels. Never use the multi-level wildcard for an
   application family.
-- The A2A multi-level wildcard is the sole intentional exception. Bound it beneath the exact namespace
-  fixed by ADR-0064 and reject a namespace that overlaps the application root. Preserve tested refusal
-  precedence unless an authorized behavior change updates the evidence.
+- Two multi-level wildcards are intentional, and there are no others. The A2A one is bounded beneath
+  the exact namespace fixed by ADR-0064, and rejects a namespace that overlaps the application root;
+  preserve its tested refusal precedence unless an authorized behavior change updates the evidence.
+  The command-gateway reply channel is the second, bounded beneath the reserved `reply` identifier
+  fixed by [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md).
+  It exists because Solace AI Connector binds a requestor's temporary reply queue one level deeper
+  than its reply topic, and the levels beneath a requestor identifier are unreachable by the topic
+  grammar, so it grants authority over topics no producer can publish and reaches no mission.
 - The deployed namespace is `aerial-rescue-mesh`. The defensive `None` path under-grants rather than
   over-grants, but it is not the configured steady state and must never be reported as satisfying the
   Agent Mesh deployment.
-- Derive every profile's exceptions only from `grants()` and `may_use_a2a()`. Keep the projection total
-  across every `Principal`, `Access`, and contracts `Family` value.
+- Derive every profile's exceptions only from `grants()`, `may_use_a2a()`, and
+  `may_use_reply_channel()`. Keep the projection total across every `Principal`, `Access`, and
+  contracts `Family` value. The A2A exception is withheld until a namespace is supplied; the reply
+  channel is not, because it is a fixed topic that no configuration varies.
 - Keep publish, subscribe, and shared-subscription defaults at deny. On the managed local broker, each
   deployed process must use an explicitly created identity bound to its role profile and generated
   credential. The current provisioner does not inventory arbitrary pre-existing usernames, so readback

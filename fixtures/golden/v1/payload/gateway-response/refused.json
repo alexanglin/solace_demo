@@ -1,0 +1,10 @@
+{
+  "rpcVersion": 1,
+  "missionId": "m-2026-0001",
+  "requestId": "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+  "operation": "command-authority",
+  "commandType": "escalate-rescue",
+  "outcome": "refused",
+  "actuated": false,
+  "refusal": "unknown-operation"
+}
