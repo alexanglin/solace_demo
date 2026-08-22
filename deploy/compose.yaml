@@ -156,6 +156,11 @@ services:
       # checks those references against the host-scope .env.example and cannot see in here.
       SOLACE_EVENT_MESH_GATEWAY_USERNAME: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
       SOLACE_EVENT_MESH_GATEWAY_PASSWORD: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
+      # The Event Mesh Tool runs inside the MissionCoordinator app but opens its own
+      # request/reply session on its own identity, which may publish the gateway-request
+      # family and consume only the reserved reply channel (docs/adr/0070).
+      SOLACE_EVENT_MESH_TOOL_USERNAME: ${SOLACE_EVENT_MESH_TOOL_USERNAME}
+      SOLACE_EVENT_MESH_TOOL_PASSWORD: ${SOLACE_EVENT_MESH_TOOL_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       TRUST_STORE: ${TRUST_STORE}
       USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}
