@@ -22,10 +22,13 @@ from typing import Final
 
 import pytest
 from aerial_rescue_broker.messaging import (
+    DIRECT_BUFFER_CAPACITY,
     PUBLISH_TIMEOUT_MILLISECONDS,
     BrokerEndpoint,
     MessagingError,
     MessagingRefusal,
+    PublishingSession,
+    SolaceDirectPublisher,
     SolacePublisher,
     SolaceReceiver,
     build_service,
@@ -39,6 +42,7 @@ from solace.messaging.config.solace_properties import (
     transport_layer_properties as transport,
 )
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
+from solace.messaging.resources.topic import Topic as SolaceTopic
 
 ENDPOINT: Final = BrokerEndpoint(
     url="tcps://localhost:55443", vpn="default", trust_store="deploy/certs"
@@ -129,6 +133,56 @@ class FakeReceiverBuilder:
         return self._receiver
 
 
+class FakeDirectPublisher:
+    """The client's direct publisher, recording its lifecycle and publications."""
+
+    def __init__(self, order: list[str], failing: bool = False) -> None:
+        """Record the shared order log and whether this publisher reports a failure."""
+        self.started = 0
+        self.terminated = 0
+        self.published: list[tuple[object, SolaceTopic, Mapping[str, object] | None]] = []
+        self._order = order
+        self._failing = failing
+
+    def start(self) -> None:
+        """Record that the publisher was started."""
+        self.started += 1
+
+    def publish(
+        self,
+        message: object,
+        destination: SolaceTopic,
+        additional_message_properties: Mapping[str, object] | None = None,
+    ) -> None:
+        """Record one publication, or raise the way the client does."""
+        if self._failing:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
+        self.published.append((message, destination, additional_message_properties))
+
+    def terminate(self) -> None:
+        """Record that the publisher was terminated, and when."""
+        self.terminated += 1
+        self._order.append("terminate")
+
+
+class FakeDirectPublisherBuilder:
+    """The client's direct publisher builder, recording the back-pressure it was given."""
+
+    def __init__(self, publisher: FakeDirectPublisher) -> None:
+        """Record which publisher this builder yields."""
+        self.capacities: list[int] = []
+        self._publisher = publisher
+
+    def on_back_pressure_reject(self, buffer_capacity: int) -> FakeDirectPublisherBuilder:
+        """Record the capacity and return self, the way the client's builder does."""
+        self.capacities.append(buffer_capacity)
+        return self
+
+    def build(self) -> FakeDirectPublisher:
+        """Return the publisher."""
+        return self._publisher
+
+
 class FakeBuilder:
     """A builder whose ``build`` returns one fixed object."""
 
@@ -145,13 +199,19 @@ class FakeService:
     """Enough of the client's messaging service for the adapter to be exercised."""
 
     def __init__(
-        self, publisher: FakePublisher | None = None, receiver: FakeReceiver | None = None
+        self,
+        publisher: FakePublisher | None = None,
+        receiver: FakeReceiver | None = None,
+        direct_failing: bool = False,
     ) -> None:
         """Record the publisher and receiver this service hands out."""
         self.messages = FakeMessages()
+        self.order: list[str] = []
         self.publisher = publisher or FakePublisher()
         self.receiver = receiver or FakeReceiver(())
         self.receiver_builder = FakeReceiverBuilder(self.receiver)
+        self.direct_publisher = FakeDirectPublisher(self.order, failing=direct_failing)
+        self.direct_publisher_builder = FakeDirectPublisherBuilder(self.direct_publisher)
 
     def message_builder(self) -> FakeMessages:
         """Return the outbound message builder."""
@@ -161,9 +221,17 @@ class FakeService:
         """Return a builder for the persistent publisher."""
         return FakeBuilder(self.publisher)
 
+    def create_direct_message_publisher_builder(self) -> FakeDirectPublisherBuilder:
+        """Return a builder for the direct publisher."""
+        return self.direct_publisher_builder
+
     def create_direct_message_receiver_builder(self) -> FakeReceiverBuilder:
         """Return a builder for the direct receiver."""
         return self.receiver_builder
+
+    def disconnect(self) -> None:
+        """Record that the service was disconnected, and when."""
+        self.order.append("disconnect")
 
 
 class ConnectionPropertyTests(unittest.TestCase):
@@ -365,6 +433,100 @@ class SolaceReceiverTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, service.receiver.terminated)
+
+
+class SolaceDirectPublisherTests(unittest.TestCase):
+    def test_the_publisher_rejects_rather_than_buffering_and_is_started(self) -> None:
+        # Arrange
+        service = FakeService()
+
+        # Act
+        SolaceDirectPublisher(service)
+
+        # Assert
+        self.assertEqual(
+            ([DIRECT_BUFFER_CAPACITY], 1),
+            (service.direct_publisher_builder.capacities, service.direct_publisher.started),
+        )
+
+    def test_the_capacity_is_zero_so_a_full_transport_refuses_rather_than_queues(self) -> None:
+        # Arrange
+        expected = 0
+
+        # Act
+        capacity = DIRECT_BUFFER_CAPACITY
+
+        # Assert
+        self.assertEqual(expected, capacity)
+
+    def test_the_payload_reaches_the_client_as_a_bytearray_with_its_topic(self) -> None:
+        # Arrange
+        service = FakeService()
+        publisher = SolaceDirectPublisher(service)
+        topic = "aerial-rescue/v1/m-1/drone/d-1/telemetry"
+
+        # Act
+        publisher.publish_unacknowledged(topic, b"{}", {"k": "v"})
+
+        # Assert
+        self.assertEqual(
+            [(bytearray(b"{}"), topic, {"k": "v"})],
+            [
+                (message, destination.get_name(), dict(properties or {}))
+                for message, destination, properties in service.direct_publisher.published
+            ],
+        )
+
+    def test_nothing_is_built_through_the_outbound_message_builder(self) -> None:
+        # Arrange
+        service = FakeService()
+        publisher = SolaceDirectPublisher(service)
+
+        # Act
+        publisher.publish_unacknowledged("aerial-rescue/v1/m-1/drone/d-1/telemetry", b"{}", {})
+
+        # Assert
+        self.assertEqual([], service.messages.built)
+
+    def test_a_client_failure_becomes_one_owned_refusal(self) -> None:
+        # Arrange
+        service = FakeService(direct_failing=True)
+        publisher = SolaceDirectPublisher(service)
+        topic = "aerial-rescue/v1/m-1/drone/d-1/telemetry"
+
+        # Act
+        with pytest.raises(MessagingError) as captured:
+            publisher.publish_unacknowledged(topic, b"{}", {})
+
+        # Assert
+        self.assertEqual(
+            (MessagingRefusal.PUBLISH_REFUSED, topic),
+            (captured.value.refusal, captured.value.value),
+        )
+
+    def test_closing_terminates_the_publisher_rather_than_leaving_it_collected(self) -> None:
+        # Arrange
+        service = FakeService()
+        publisher = SolaceDirectPublisher(service)
+
+        # Act
+        publisher.close()
+
+        # Assert
+        self.assertEqual(1, service.direct_publisher.terminated)
+
+
+class PublishingSessionTests(unittest.TestCase):
+    def test_closing_terminates_the_publisher_before_disconnecting(self) -> None:
+        # Arrange
+        service = FakeService()
+        session = PublishingSession(SolaceDirectPublisher(service), service)
+
+        # Act
+        session.close()
+
+        # Assert
+        self.assertEqual(["terminate", "disconnect"], service.order)
 
 
 if __name__ == "__main__":

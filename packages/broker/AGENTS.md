@@ -46,7 +46,7 @@ requires a decision record.
 | Path | Responsibility |
 | --- | --- |
 | `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions, the isolated A2A subscription, and the reserved command-gateway reply channel |
-| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, publisher, receiver, and session lifecycle |
+| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, the guaranteed and direct publishers, the receiver, and session lifecycle |
 | `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles and usernames, and reconcile their exceptions |
 | `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads, response parsing, and failure redaction |
 | `src/aerial_rescue_broker/deployment.py` | Read generated local material and compose the operator-facing provision command |
@@ -209,12 +209,21 @@ recreation and a complete reapply so credentials, clients, and ACLs agree.
 
 ## 7. Data-plane boundary
 
-The package does not yet contain the application data plane or queues. When that implementation lands,
-keep it here, contain the untyped vendor client behind a typed façade, and prove the official Solace
-client satisfies the need before adding a project-owned transport. Implement the exact current
-`CONTRACTS.md` delivery and failure semantics and `ARCHITECTURE.md` boundary rather than copying them
-into this guide. Require Pydantic ingress, deterministic fakes, failure injection, and authorized live
-broker evidence before claiming publisher, consumer, acknowledgement, reconnect, or shutdown behavior.
+The package contains the direct half of the application data plane and no queues. `SolacePublisher`
+is the guaranteed publisher, `SolaceDirectPublisher` is the direct one that routine telemetry uses,
+and `PublishingSession` is a publish-only session for a role whose subscribe grant is not yet
+consumable. The two publisher ports carry deliberately different method names: a protocol is satisfied
+structurally, so `publish` on both would let a direct publisher stand in wherever an acknowledged
+publication is required. Preserve that distinction.
+
+Still absent: every queue, the guaranteed consumer, explicit acknowledgement, settlement, redelivery,
+reconnect, and the bounded outbox. When that implementation lands, keep it here, contain the untyped
+vendor client behind the typed façade, and prove the official Solace client satisfies the need before
+adding a project-owned transport. Implement the exact current `CONTRACTS.md` delivery and failure
+semantics and `ARCHITECTURE.md` boundary rather than copying them into this guide. Require Pydantic
+ingress, deterministic fakes, failure injection, and authorized live broker evidence before claiming
+consumer, acknowledgement, reconnect, or shutdown behavior. The offline suite proves what the adapter
+passes to the client, never that the broker accepted it.
 
 ## 8. Testing and cross-tree coordination
 
