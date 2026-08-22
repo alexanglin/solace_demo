@@ -639,6 +639,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- Both gate stages were red on `main`. `typos` splits the W3C traceparent example's span identifier
+  `00f067aa0ba902b7` into words and reads one of those words as a misspelling of `by` or `be`, so
+  `packages/contracts/tests/test_view.py` failed the hook from the moment it landed, and every
+  `pre-commit run --all-files` at either stage reported it. `_typos.toml` now allows that exact
+  identifier through `[default.extend-identifiers]`, which matches whole identifiers rather than
+  words, so those same two letters standing alone in any file are still reported. Verified both
+  ways against a throwaway file carrying both spellings.
+
 - The `pre-push hooks` job had never once completed. Eight runs, every one stalled immediately after
   `gitleaks (full history)` and killed at the 60-minute cap with orphan `git` and `pager` processes in
   the cleanup log — so whole-tree type checking, the full test suite and its coverage gates, mutation
