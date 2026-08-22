@@ -13,9 +13,12 @@
 
 ## Event envelope
 
-Every application event is a CloudEvents 1.0 JSON object in structured mode, carried as the broker
+Every application **event** is a CloudEvents 1.0 JSON object in structured mode, carried as the broker
 message payload, with a **closed** member set: twelve required members, two optional members, and
-nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). A JSON `null` is never read as
+nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). That governs the nine notification
+families below. The two gateway families carry request/reply RPC rather than events, defined under
+[Command-gateway request and reply](#command-gateway-request-and-reply)
+([ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)). A JSON `null` is never read as
 absence; an optional member is present or omitted. `packages/contracts` validates the profile as a pure
 function, `envelope.parse_envelope`, and every refusal is a typed value naming the member at fault. The
 bounds live in [operating-parameters.md](operating-parameters.md#topic-and-envelope-bounds).
@@ -78,7 +81,7 @@ is the only producer and parser of these topics:
 | Rule | Levels | Form |
 | --- | --- | --- |
 | IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
-| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)); `eventType`, `proposalType`, `recordType`, and `operation` stay open until the domain modules that define them land |
+| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table and `operation` by the gateway-operation table, both in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)); `eventType`, `proposalType`, and `recordType` stay open until the domain modules that define them land |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
@@ -101,6 +104,51 @@ Routine telemetry uses direct delivery because current position updates supersed
 Consumers must tolerate duplicates and out-of-order events. State changes reject stale sequence numbers within a producer's own stream, and command handlers return the prior result when they receive a known command ID. Approval consumption is excluded from that replay-as-success rule: a repeat is denied, not replayed.
 
 Agent Mesh owns its standard A2A namespace, including discovery, agent request, gateway status, and gateway response topics. Application code must use the upstream A2A APIs and gateway abstractions rather than publishing framework messages directly. Keep the A2A namespace distinct from `aerial-rescue/v1/...`, while carrying task, correlation, and causation identifiers across the SAR gateway boundary for traceability.
+
+## Command-gateway request and reply
+
+The two gateway families carry request/reply RPC rather than application events
+([ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)). The requestor is the
+official Event Mesh Tool, which composes its payload from a lookup into the agent's A2A context, an
+argument the model supplied, or a configured literal. None of those is a clock or an identifier
+source, so it can produce none of `id`, `time`, `sequence`, or `traceparent`, and the request cannot
+be an envelope. A request is also a question awaiting an answer rather than a statement that
+something happened, which the nine notification families all are.
+
+Both bodies lie inside the canonical profile below, are decoded through the canonical decoder so a
+repeated key is refused rather than merged, and carry `rpcVersion`, an integer, inside the hashed
+bytes — an RPC body has no `dataschema` member to identify itself by. `packages/contracts`
+validates them as pure functions, `rpc.parse_gateway_request` and `rpc.parse_gateway_response`, and
+every refusal is a typed value naming the member at fault.
+
+| Body | Member | Required | Rule |
+| --- | --- | --- | --- |
+| request | `rpcVersion` | yes | the constant `1` |
+| request | `missionId` | yes | an IDENTIFIER; equals the topic's mission level |
+| request | `operation` | yes | a KIND, closed by the gateway-operation table ([ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)) |
+| request | `commandType` | yes | a KIND; the command type the operation asks about |
+| reply | `rpcVersion` | yes | the constant `1` |
+| reply | `missionId` | yes | an IDENTIFIER |
+| reply | `requestId` | yes | an IDENTIFIER naming the request answered |
+| reply | `operation` | yes | a KIND, echoed from the request |
+| reply | `commandType` | yes | a KIND, echoed from the request |
+| reply | `outcome` | yes | exactly `answered` or `refused` |
+| reply | `actuated` | yes | a boolean: whether publishing an executable command followed ([ADR-0005](adr/0005-deterministic-command-gateway.md)) |
+| reply | `authority` | when answered | a KIND naming the authority the command type falls under |
+| reply | `refusal` | when refused | a KIND naming why the request was not answered |
+
+Refusals come in a fixed order: not an object; an unknown member; a missing required member; an
+unsupported `rpcVersion`; a member outside its rule; and, for a reply, an outcome that disagrees with
+the members present. That last rule is validator-only, as are the schema and subject bindings above:
+the schema asserts that a reply names at least one of `authority` and `refusal`, and which of the two
+goes with which outcome is checked in `packages/contracts` alone.
+
+The command gateway publishes each reply twice. The requestor receives it on the reply channel, and
+the same body is republished as the `data` of a CloudEvent on
+`aerial-rescue/v1/{missionId}/gateway/response/{requestId}`, so the recorder, the dashboard, and the
+audit timeline observe every answer without knowing anything about the Event Mesh Tool or about
+Solace request/reply. The record is the weaker of the two: losing it costs an audit line, never an
+answer or a command.
 
 ## Local HTTP API
 
