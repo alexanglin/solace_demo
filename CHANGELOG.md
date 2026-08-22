@@ -10,6 +10,36 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A mission has named states.** [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md)
+  places the mission lifecycle in the Tier 1 core and `docs/ARCHITECTURE.md` names it as one of five
+  pure state machines the fleet simulator exists to drive, but nothing in the documentation set named
+  a mission state. A sweep of every uppercase state token across `docs/` returned the connectivity
+  machine's three and the approval protocol's six, and nothing else.
+
+  `packages/domain/src/aerial_rescue_domain/mission.py` is one deny-by-default transition table over
+  `PLANNED`, `SEARCHING`, `ESCALATED`, `COMPLETED`, `EXHAUSTED`, and `ABORTED`. Seven pairs are legal
+  and the other twenty-three of the thirty are refused; one test enumerates all thirty against the
+  table, so a row cannot be dropped, added, or retargeted silently. All eight generated mutants are
+  killed ([ADR-0072](docs/adr/0072-mission-lifecycle-states.md)).
+
+  Two of its decisions are worth reading. `EXHAUSTED` exists because a wilderness search that sweeps
+  its area and finds nothing is a real outcome, and recording that as `ABORTED` would read in the
+  audit trail as an operator decision nobody made. The price is that `COMPLETE` is reachable only
+  from `ESCALATED`, so the only mission that completes is one that handed a subject to a rescue. And
+  reset is not an edge: `POST /api/v1/scenarios/current/reset` ends the mission and creates a new one,
+  because returning a terminal mission to `PLANNED` would rewind the append-only audit ordinal
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) orders the timeline by, and would make
+  the reduced dashboard state
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) hashes for replay
+  determinism non-monotonic.
+
+  `ESCALATED` records that an `escalate-rescue` command was published and authorizes nothing. The
+  machine never reads an approval, because two copies of an authorization fact can disagree, and
+  [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) and
+  [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) remain the only things that
+  decide whether that command may be published. Terminality is derived from the table rather than
+  declared beside it, so there is one rule to mutate rather than two that can drift apart.
+
 - **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
   untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
   Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and

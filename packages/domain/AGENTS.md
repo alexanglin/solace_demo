@@ -28,6 +28,7 @@ Read the authority for the concern before editing it:
 | Closed, deny-by-default command authority | [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md) |
 | Approval time-to-live decision | [ADR-0042](../../docs/adr/0042-approval-time-to-live.md) |
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -55,6 +56,7 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/authority.py` | Closed command kinds and deny-by-default execution policy |
 | `src/aerial_rescue_domain/connectivity.py` | Pure drone-connectivity state fold |
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
+| `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
 | `src/aerial_rescue_domain/principals.py` | Closed broker roles and total publish/subscribe grant tables |
 | `tests/` | Unit, refusal, boundary, totality, and property evidence for the package |
 
