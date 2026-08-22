@@ -113,9 +113,15 @@ the same shape as the gateway's data-plane queue, and accepted for the same reas
 | A task to the coordinator produces a gateway request | `qwen3:4b` chooses to call `ask_command_gateway`, and the request reaches the family | **yes** |
 | The tool identity is denied a real mission's gateway responses | The reply channel is a narrowing: the role cannot read another mission's answers | no |
 
-`escalate-rescue` is reported as `operator-approval` and `assign-sector` as `gateway-policy`, which
-is [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md)'s table answering
-through two hops and a broker.
+The denial has a permitted positive control through the same path and on the same identity: every
+one of the first three assertions subscribes `event-mesh-tool` to its *own* reply topic and receives
+on it. A broker that refused this role every subscription would fail those three, so the denial is
+evidence about the topic rather than about the identity.
+
+The one command type this run asked about, `escalate-rescue`, came back as `operator-approval`,
+which is [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md)'s table answering
+through two hops and a broker. The table's other row, `assign-sector` under `gateway-policy`, is
+covered by unit tests and was **not** exercised live here.
 
 ## Two defects this run found
 
