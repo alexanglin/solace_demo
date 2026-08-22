@@ -10,6 +10,30 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A sector has named states, and losing a drone is what imperils one.** The documentation set
+  named no sector state. The closest it came was the lowercase phrase "marked at risk" inside one
+  scenario step, and the topic grammar still has no `sectorId` level.
+
+  `packages/domain/src/aerial_rescue_domain/sectors.py` is a deny-by-default table over
+  `UNASSIGNED`, `ASSIGNED`, `AT_RISK`, and `SEARCHED`. Five pairs are legal and the other fifteen of
+  the twenty are refused ([ADR-0073](docs/adr/0073-sector-lifecycle-states.md)).
+
+  It is deliberately cyclic where the mission machine is acyclic: a sector may be imperilled and
+  reassigned as often as the fleet loses drones over it, so its property module asserts absorption
+  and reachability where the mission module asserts progress. A sector at risk cannot be swept,
+  because the drone that would report the sweep is the one whose link was lost.
+
+  `IMPERIL` fires when the holding drone's connectivity machine enters `OFFLINE` and `RECOVER` when
+  it leaves — not on `DEGRADED`, which exists precisely to absorb a marginal link without flapping
+  ([ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md)). Three tests drive the real
+  connectivity machine and apply that edge mapping, so the coupling is exercised rather than
+  asserted in prose: a drone that goes offline and returns leaves its sector assigned, one that
+  stays offline leaves it at risk, and one that only degrades does not move it at all.
+
+  `REASSIGN` and `RECOVER` both land in `ASSIGNED` and stay distinct because different facts cause
+  them. Which drone holds a sector belongs to the durable store, so a `REASSIGN` naming the same
+  drone is indistinguishable at this layer; the command gateway is what refuses that, not the table.
+
 - **A mission has named states.** [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md)
   places the mission lifecycle in the Tier 1 core and `docs/ARCHITECTURE.md` names it as one of five
   pure state machines the fleet simulator exists to drive, but nothing in the documentation set named

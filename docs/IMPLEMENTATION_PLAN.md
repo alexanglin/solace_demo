@@ -265,9 +265,10 @@ contract, and operator-flow evidence.
   the producer-scoped sequence and known-identifier rules, the approval record with dual-clock consumption
   ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)), and the deny-by-default
   command-authority table ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)), and the
-  mission lifecycle ([ADR-0072](adr/0072-mission-lifecycle-states.md)) in `packages/domain`.
+  mission lifecycle ([ADR-0072](adr/0072-mission-lifecycle-states.md)), and the sector lifecycle
+  ([ADR-0073](adr/0073-sector-lifecycle-states.md)) in `packages/domain`.
 - Implement the remaining Tier 1 domain state machines
-  [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names — sector, command, and evidence
+  [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names — the command and evidence
   lifecycles — then drive them through the Tier 2 fleet-simulator adapter.
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
   an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,

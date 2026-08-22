@@ -29,6 +29,7 @@ Read the authority for the concern before editing it:
 | Approval time-to-live decision | [ADR-0042](../../docs/adr/0042-approval-time-to-live.md) |
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
 | Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
+| Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -58,6 +59,7 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
 | `src/aerial_rescue_domain/principals.py` | Closed broker roles and total publish/subscribe grant tables |
+| `src/aerial_rescue_domain/sectors.py` | Deny-by-default sector lifecycle table and terminal set |
 | `tests/` | Unit, refusal, boundary, totality, and property evidence for the package |
 
 Keep the public surface deliberate. New domain behavior belongs in a focused module with explicit
