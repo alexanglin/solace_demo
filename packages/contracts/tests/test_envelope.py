@@ -42,10 +42,27 @@ BASELINE: dict[str, object] = cast(
 BASELINE_DATA: dict[str, object] = cast("dict[str, object]", BASELINE["data"])
 TELEMETRY_TOPIC = Topic(Family.DRONE_TELEMETRY, "m-2026-0001", {"droneId": "drone-vision-01"})
 
+SALIENT_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-salient.schema.json"
+SALIENT_TYPE = "aerial-rescue.v1.drone.event.salient"
+SALIENT_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads(Path(__file__).with_name("salient_baseline.json").read_text(encoding="utf-8")),
+)
+"""The salient drone event, committed as its golden fixture for the same reason."""
+
+SALIENT_TOPIC = Topic(
+    Family.DRONE_EVENT, "m-2026-0001", {"droneId": "drone-vision-01", "eventType": "salient"}
+)
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
     return deepcopy(BASELINE)
+
+
+def _salient_baseline() -> dict[str, object]:
+    """Return a fresh copy of the salient drone event document."""
+    return deepcopy(SALIENT_BASELINE)
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -558,6 +575,34 @@ class BindingTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tuple((binding.family, True) for binding in bindings), facts)
+
+
+class SalientEventBindingTests(unittest.TestCase):
+    """The second bound event type, which the Event Mesh Gateway carries into the mesh."""
+
+    def test_binding_for_returns_the_salient_drone_event_binding(self) -> None:
+        # Arrange
+        expected = Binding(SALIENT_TYPE, Family.DRONE_EVENT, SALIENT_SCHEMA)
+
+        # Act
+        binding = binding_for(SALIENT_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_salient_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _salient_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, SALIENT_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (SALIENT_TYPE, SALIENT_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
 
 
 class DocumentTests(unittest.TestCase):

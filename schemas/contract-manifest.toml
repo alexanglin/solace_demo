@@ -95,6 +95,34 @@ invalid = [
 ]
 
 [[contracts]]
+schema = "schemas/v1/payload/drone-event-salient.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/drone-event-salient/baseline.json",
+  "fixtures/golden/v1/payload/drone-event-salient/all-lower-bounds.json",
+  "fixtures/golden/v1/payload/drone-event-salient/all-upper-bounds.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/drone-event-salient/latitude-one-over.json",
+  "fixtures/golden/v1/payload/drone-event-salient/longitude-one-under.json",
+  "fixtures/golden/v1/payload/drone-event-salient/latitude-not-integer.json",
+  "fixtures/golden/v1/payload/drone-event-salient/observation-uppercase.json",
+  "fixtures/golden/v1/payload/drone-event-salient/observation-33-characters.json",
+  "fixtures/golden/v1/payload/drone-event-salient/missing-drone-id.json",
+  "fixtures/golden/v1/payload/drone-event-salient/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/drone-event-salient.schema.json"
+valid = [
+  "fixtures/golden/v1/event/drone-event-salient/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/drone-event-salient/type-not-salient.json",
+  "fixtures/golden/v1/event/drone-event-salient/dataschema-not-salient.json",
+  "fixtures/golden/v1/event/drone-event-salient/data-fails-payload.json",
+]
+
+[[contracts]]
 schema = "schemas/v1/topic-cases.schema.json"
 valid = [
   "fixtures/golden/v1/topics/accepted.json",

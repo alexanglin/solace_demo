@@ -119,6 +119,11 @@ BINDINGS: Final[Mapping[str, Binding]] = {
         Family.DRONE_TELEMETRY,
         SCHEMA_ID_BASE + "schemas/v1/payload/drone-telemetry.schema.json",
     ),
+    "aerial-rescue.v1.drone.event.salient": Binding(
+        "aerial-rescue.v1.drone.event.salient",
+        Family.DRONE_EVENT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-event-salient.schema.json",
+    ),
 }
 """A new row lands together with its payload schema, event schema, fixtures, and manifest entry."""
 
