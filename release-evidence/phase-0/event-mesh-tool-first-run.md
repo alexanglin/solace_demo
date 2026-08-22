@@ -1,7 +1,16 @@
 # Phase 0 evidence: one Event Mesh Tool request through the command gateway
 
 - **Recorded:** 2026-08-22
+- **Revision:** `1dd939e2641258addcd644dda9a38089ef1b13d4`, worktree clean. The first run of this suite
+  was made against the same code while it was still uncommitted; it was rerun in full against this
+  committed revision, and the timings below distinguish the two.
 - **Host:** Apple Silicon, macOS arm64. Docker Desktop, 7.652 GiB allocated to the virtual machine.
+- **Versions:** Agent Mesh 1.28.7, `sam-event-mesh-gateway` 1.1.0, `sam-event-mesh-tool` 0.1.1, and
+  Solace AI Connector 3.3.12 on the image's CPython 3.13.11; the command gateway on the application
+  runtime's Python 3.14.7; `ollama_chat/qwen3:4b` on the host, pinned by digest in
+  `agent-mesh/model-lock.toml`.
+- **Prerequisites:** the broker and Agent Mesh containers already healthy, the authorization matrix
+  applied, and the credentials `scripts/broker-secrets.sh` generated already on disk.
 - **Scope:** the **default and `mesh` profiles**, plus the deterministic command gateway running on
   the host on its own `command-gateway` identity. This covers the **egress half** of the Phase 0
   Event Mesh spike. It does **not** cover the `services` or `event-portal` profiles, durable queues,
@@ -43,8 +52,10 @@ work and is not claimed here.
 
 ## Result
 
-`tests/phase0/test_event_mesh_tool_live.py` passed all five assertions in **213.71 s**. The three
-that involve no model passed in **31.21 s** when run alone. That split matters: the spike's central
+`tests/phase0/test_event_mesh_tool_live.py` passed all five assertions, exit status 0, on both runs:
+**213.71 s** on the uncommitted first run with a cold model, and **56.94 s** on the rerun against the
+committed revision with the model warm. The three that involve no model passed in **31.21 s** when
+run alone. That split matters: the spike's central
 claim — a request is answered — is a transformation through two deny-by-default tables and does not
 depend on `qwen3:4b` being fast or being right.
 
@@ -165,3 +176,12 @@ reason, and that is worth remembering when writing the next one.
   never the timeline's ordering authority, so this is bounded until the durable store lands.
 - **One mission, one requestor, one request at a time.** Nothing here measures concurrency,
   throughput, or what happens when two tool sessions share the reply namespace.
+- **Only one row of the command-authority table was asked about.** `escalate-rescue` was; the
+  `assign-sector` row was exercised only by unit tests.
+
+## Final state and cleanup
+
+The broker, Agent Mesh, and PostgreSQL containers were left running and healthy, as they were before
+the run. The host command-gateway process was stopped after the rerun. No volume, credential, or
+broker definition was removed, and nothing was rotated. The temporary reply and data-plane queues are
+deleted by the broker when their clients disconnect; no durable endpoint was created at any point.
