@@ -83,6 +83,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0063](0063-lock-local-models-by-manifest-digest.md) | Lock local Ollama models by manifest digest in a committed lock file | Accepted |
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
+| [0066](0066-select-commit-stage-tests-from-an-import-graph.md) | Select commit-stage tests from a project-owned import graph | Accepted |
 
 ## Decisions still open
 
