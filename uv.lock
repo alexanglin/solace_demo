@@ -45,6 +45,18 @@ requires-dist = [
 name = "aerial-rescue-command-gateway"
 version = "0.0.0"
 source = { editable = "services/command_gateway" }
+dependencies = [
+    { name = "aerial-rescue-broker" },
+    { name = "aerial-rescue-contracts" },
+    { name = "aerial-rescue-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aerial-rescue-broker", editable = "packages/broker" },
+    { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "aerial-rescue-domain", editable = "packages/domain" },
+]
 
 [[package]]
 name = "aerial-rescue-contracts"

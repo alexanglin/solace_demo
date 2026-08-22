@@ -3,7 +3,13 @@ name = "aerial-rescue-command-gateway"
 version = "0.0.0"
 description = "Deterministic command gateway: policy, approval consumption, dispatch."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+# The typed Solace façade, the wire contracts, and the deny-by-default tables. The
+# untyped client itself is reached only through aerial-rescue-broker (docs/adr/0028).
+dependencies = [
+    "aerial-rescue-broker",
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+]
 
 [build-system]
 requires = ["hatchling"]
