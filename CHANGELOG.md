@@ -10,6 +10,148 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The escalating evidence band is now unreachable by construction, not because of where a number
+  sits.** `docs/LIMITATIONS.md` claimed the escalating band was "deliberately unreachable from a
+  single model-generated observation alone" and the approval-bypass catalogue recorded B32 as
+  "impossible by construction of the evidence-score band rule". Neither the bands, their boundaries,
+  nor what "corroborating" counted as existed. The word doing the work in B32 is *construction*: a
+  rule whose escalating outcome is prevented only by where a boundary happens to sit is impossible
+  until somebody edits a number, which is not the same claim.
+
+  `packages/domain/src/aerial_rescue_domain/scoring.py` closes both cases structurally
+  ([ADR-0076](docs/adr/0076-evidence-score-bands.md)). The escalating band requires contributions
+  from at least two distinct sources, and that rule reads neither the boundaries nor the origins, so
+  one source is capped one step below it at any score and under any boundary values — asserted at
+  the maximum score, at the lowest boundaries the range permits, and as a property over arbitrary
+  weights and arbitrary valid boundaries (B32). A contribution whose origin is `RECORDED` refuses
+  the computation outright and names the source, rather than scoring zero, so a replayed
+  contribution is an audited denial instead of a silent nothing and cannot count toward the source
+  floor either (B31).
+
+  The two rules are independent, so neither can mask the other: removing the source floor is caught
+  by a single-source case at a high score, and removing the recorded refusal by a recorded
+  contribution at any score, including a score of zero.
+
+  The bands are `NONE`, `WEAK`, `SUPPORTED`, and `CORROBORATED`, and the score is the weights summed
+  in integer hundredths, saturating at 100 — integers because
+  [ADR-0027](docs/adr/0027-integer-only-canonical-serialization.md) makes no floating-point value
+  representable where a digest can reach, and summing rather than averaging because an average is
+  not monotonic in the contributions admitted, which would give an operator a reason to suppress a
+  weak corroborating observation. The three boundaries are injected with no defaults and join the
+  send budget and the queue parameters as an open row in `docs/operating-parameters.md`; the
+  two-source floor is fixed in the record instead, because it is the reading of a safety claim
+  rather than a measurement.
+
+- **Evidence has named states, and an abstention is not a weak result.** This is the fifth and last
+  of the Tier 1 domain state machines
+  [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md) names; the other four landed in
+  the four commits before it, and none of the five had a single state name written anywhere in the
+  documentation set beforehand.
+
+  `packages/domain/src/aerial_rescue_domain/evidence.py` is a deny-by-default table over
+  `REQUESTED`, `OBSERVED`, `VALIDATED`, `MANUAL_REVIEW`, `CONTRIBUTING`, `ABSTAINED`, and
+  `REJECTED`. Eight pairs are legal and the other forty-one of the forty-nine are refused
+  ([ADR-0075](docs/adr/0075-evidence-lifecycle-states.md)).
+
+  `ABSTAINED` and `REJECTED` are separate terminals because they have opposite causes: an
+  abstention is the agent declining to assert, a rejection is the system refusing what was
+  asserted. Making abstention a state rather than a score of zero is what satisfies the plan's
+  requirement that it be visually distinct from a low evidence score
+  ([ADR-0008](docs/adr/0008-abstention-over-recorded-substitution.md)) — a component cannot confuse
+  it with a weak result, because there is no number to confuse it with. A property test holds the
+  strong form: an agent that declined can never be counted, whatever events follow.
+
+  `CONTRIBUTING` is terminal, so an admitted observation is never withdrawn. A contradicting
+  observation is a new item with its own lifecycle, which keeps the score monotonic in the items
+  admitted — the property `docs/LIMITATIONS.md` claims for it — and keeps this table free of the
+  retraction-ordering problem.
+
+  The score itself is not here. Its named ordinal bands and the corroboration floor that closes
+  bypass case B32 are a separate Tier 1 row in ADR-0017 and a separate decision.
+
+- **A dispatched command has named states, and what bounds its retrying is a count, not a clock.**
+  `docs/CONTRACTS.md` already required a bounded acknowledgement timeout, retries with exponential
+  backoff and jitter, and retries reusing the original command identifier, but no document named a
+  single command state, and the timeout, backoff base, and jitter bound have no rows in
+  `docs/operating-parameters.md` at all.
+
+  `packages/domain/src/aerial_rescue_domain/commands.py` is a table over `ACCEPTED`, `IN_FLIGHT`,
+  `ACKNOWLEDGED`, `SUCCEEDED`, `FAILED`, and `ABANDONED`, plus one counted bound. Five pairs are
+  legal and the other twenty-five of the thirty are refused
+  ([ADR-0074](docs/adr/0074-command-dispatch-lifecycle.md)).
+
+  The domain counts sends and the adapter owns the timer, which is the split
+  [ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md) already made for heartbeats:
+  a package forbidden to read a clock cannot enforce a duration. `SEND` is the only event that
+  increments the count, `TIME_OUT` is the only event that reads the budget, and `ABANDONED` is
+  therefore the one state no table row targets.
+
+  `SEND` deliberately carries no budget guard of its own. After `TIME_OUT` has abandoned a command
+  at the budget there is no legal fold that reaches `ACCEPTED` with an exhausted count, so such a
+  guard's refusal would be unreachable and would survive as an unkillable mutant — the same
+  reasoning [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) used to keep its
+  own table minimal. The budget comparison as written is reachable in both directions from a legal
+  fold, and both directions are asserted.
+
+  The budget itself is not set here. No measurement stands behind any number, so it joins the four
+  queue parameters as an `open` row in `docs/operating-parameters.md`, and the record is injected
+  with no default so nothing can silently default — the position the approval time to live held
+  before [ADR-0042](docs/adr/0042-approval-time-to-live.md) measured it.
+
+- **A sector has named states, and losing a drone is what imperils one.** The documentation set
+  named no sector state. The closest it came was the lowercase phrase "marked at risk" inside one
+  scenario step, and the topic grammar still has no `sectorId` level.
+
+  `packages/domain/src/aerial_rescue_domain/sectors.py` is a deny-by-default table over
+  `UNASSIGNED`, `ASSIGNED`, `AT_RISK`, and `SEARCHED`. Five pairs are legal and the other fifteen of
+  the twenty are refused ([ADR-0073](docs/adr/0073-sector-lifecycle-states.md)).
+
+  It is deliberately cyclic where the mission machine is acyclic: a sector may be imperilled and
+  reassigned as often as the fleet loses drones over it, so its property module asserts absorption
+  and reachability where the mission module asserts progress. A sector at risk cannot be swept,
+  because the drone that would report the sweep is the one whose link was lost.
+
+  `IMPERIL` fires when the holding drone's connectivity machine enters `OFFLINE` and `RECOVER` when
+  it leaves — not on `DEGRADED`, which exists precisely to absorb a marginal link without flapping
+  ([ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md)). Three tests drive the real
+  connectivity machine and apply that edge mapping, so the coupling is exercised rather than
+  asserted in prose: a drone that goes offline and returns leaves its sector assigned, one that
+  stays offline leaves it at risk, and one that only degrades does not move it at all.
+
+  `REASSIGN` and `RECOVER` both land in `ASSIGNED` and stay distinct because different facts cause
+  them. Which drone holds a sector belongs to the durable store, so a `REASSIGN` naming the same
+  drone is indistinguishable at this layer; the command gateway is what refuses that, not the table.
+
+- **A mission has named states.** [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md)
+  places the mission lifecycle in the Tier 1 core and `docs/ARCHITECTURE.md` names it as one of five
+  pure state machines the fleet simulator exists to drive, but nothing in the documentation set named
+  a mission state. A sweep of every uppercase state token across `docs/` returned the connectivity
+  machine's three and the approval protocol's six, and nothing else.
+
+  `packages/domain/src/aerial_rescue_domain/mission.py` is one deny-by-default transition table over
+  `PLANNED`, `SEARCHING`, `ESCALATED`, `COMPLETED`, `EXHAUSTED`, and `ABORTED`. Seven pairs are legal
+  and the other twenty-three of the thirty are refused; one test enumerates all thirty against the
+  table, so a row cannot be dropped, added, or retargeted silently. All eight generated mutants are
+  killed ([ADR-0072](docs/adr/0072-mission-lifecycle-states.md)).
+
+  Two of its decisions are worth reading. `EXHAUSTED` exists because a wilderness search that sweeps
+  its area and finds nothing is a real outcome, and recording that as `ABORTED` would read in the
+  audit trail as an operator decision nobody made. The price is that `COMPLETE` is reachable only
+  from `ESCALATED`, so the only mission that completes is one that handed a subject to a rescue. And
+  reset is not an edge: `POST /api/v1/scenarios/current/reset` ends the mission and creates a new one,
+  because returning a terminal mission to `PLANNED` would rewind the append-only audit ordinal
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) orders the timeline by, and would make
+  the reduced dashboard state
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) hashes for replay
+  determinism non-monotonic.
+
+  `ESCALATED` records that an `escalate-rescue` command was published and authorizes nothing. The
+  machine never reads an approval, because two copies of an authorization fact can disagree, and
+  [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) and
+  [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) remain the only things that
+  decide whether that command may be published. Terminality is derived from the table rather than
+  declared beside it, so there is one rule to mutate rather than two that can drift apart.
+
 - **One Event Mesh Tool request now produces one validated, non-actuating command-gateway
   response, and the Phase 0 kill criterion is answered in full.** The egress half joins the
   ingress half recorded in `event-mesh-gateway-first-run.md`, and
@@ -742,6 +884,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Fixed
+
+- Both gate stages were red on `main`. `typos` splits the W3C traceparent example's span identifier
+  `00f067aa0ba902b7` into words and reads one of those words as a misspelling of `by` or `be`, so
+  `packages/contracts/tests/test_view.py` failed the hook from the moment it landed, and every
+  `pre-commit run --all-files` at either stage reported it. `_typos.toml` now allows that exact
+  identifier through `[default.extend-identifiers]`, which matches whole identifiers rather than
+  words, so those same two letters standing alone in any file are still reported. Verified both
+  ways against a throwaway file carrying both spellings.
 
 - The `pre-push hooks` job had never once completed. Eight runs, every one stalled immediately after
   `gitleaks (full history)` and killed at the 60-minute cap with orphan `git` and `pager` processes in

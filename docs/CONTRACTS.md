@@ -216,7 +216,7 @@ requests remain subject to Host validation. The complete rationale is in
 ## Dashboard event stream
 
 `GET /api/v1/events` streams **dashboard events**: the normalized projection of validated
-application envelopes ([ADR-0071](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
+application envelopes ([ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
 shapes below lie inside the canonical profile of the next section, so one canonicalizer, one
 decoder, and one fixture oracle serve them, and TypeScript reimplements them from this section
 alone. The bounds are in [operating-parameters.md](operating-parameters.md#dashboard-event-stream).

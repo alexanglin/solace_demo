@@ -139,7 +139,7 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 ## Dashboard event stream
 
 The normalized dashboard event and the reduced state it folds into are defined by
-[ADR-0071](adr/0067-normalized-dashboard-events-and-reduced-state.md); the shapes live in
+[ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md); the shapes live in
 [CONTRACTS.md](CONTRACTS.md#dashboard-event-stream). A dashboard event carries no transport member,
 so these bounds are about back-pressure, not about the envelope.
 
@@ -285,5 +285,7 @@ preference, and must carry a number before the release run.
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
 | Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
+| Command send budget: how many times the gateway may put one command on the wire | The bounded retry policy in [CONTRACTS.md](CONTRACTS.md) and the `ABANDONED` state of [ADR-0074](adr/0074-command-dispatch-lifecycle.md) | open |
+| Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |

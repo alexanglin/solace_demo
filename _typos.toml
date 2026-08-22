@@ -37,3 +37,10 @@ nd = "nd"
 # "PNGs" tokenizes to PN + Gs, and typos reports the PN token as a typo of
 # "ON". The key must be the offending token, not the full word.
 PN = "PN"
+
+[default.extend-identifiers]
+# The W3C traceparent example from the specification, used as a test constant. typos splits
+# the span identifier into words and reads its "ba" as a typo of "by" or "be". The key must
+# be the whole identifier rather than the word, so this allows exactly this hexadecimal
+# string and leaves "ba" reportable everywhere else.
+"00f067aa0ba902b7" = "00f067aa0ba902b7"
