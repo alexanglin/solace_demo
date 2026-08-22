@@ -1,0 +1,8 @@
+{
+  "rpcVersion": 1,
+  "missionId": "m-2026-0001",
+  "operation": "command-authority",
+  "commandType": "escalate-rescue",
+  "outcome": "answered",
+  "authority": "operator-approval"
+}

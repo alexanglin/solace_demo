@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/gateway-request.schema.json",
+  "description": "One question put to the deterministic command gateway over the gateway-request family. This is request/reply RPC rather than an application event, because the Event Mesh Tool that sends it holds no clock and no identifier source and so cannot build a CloudEvents envelope (ADR-0068). The version travels inside the bytes because an RPC body carries no dataschema member.",
+  "type": "object",
+  "required": [
+    "rpcVersion",
+    "missionId",
+    "operation",
+    "commandType"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rpcVersion": {
+      "const": 1
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "operation": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    },
+    "commandType": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    }
+  }
+}

@@ -84,6 +84,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
 | [0067](0067-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) | Accept the Event Mesh Gateway's temporary data-plane queue, and scope the no-loss claim to exclude it | Accepted |
+| [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
 
 ## Decisions still open
 
