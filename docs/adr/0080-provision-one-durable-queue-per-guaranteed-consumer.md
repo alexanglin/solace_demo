@@ -63,9 +63,12 @@ only after reconnect, durable processing, and acknowledgement."
   composition boundary.
 - **Names.** `aerial-rescue/v1/{role}/{familySuffix}` for a family queue and
   `aerial-rescue/v1/fleet-simulator/drone.command/{droneId}` for a per-drone one, where `familySuffix`
-  is the same string the CloudEvents type derivation already produces, so there is one derivation and
-  not two. The rendered name is bounded and a drone identifier is validated by the same IDENTIFIER
-  rule the topic grammar uses.
+  is the family's literal template levels joined with dots — `operator.approval`, `drone.command`,
+  `audit` — rendered by `packages/contracts` so the family is spelled there and not a second time in
+  the broker. It is deliberately not the CloudEvents type suffix, which keeps the kind and decision
+  placeholders because an event type fills them with the value that event carried; one queue covers
+  every kind in its family and so carries none of them. The rendered name is bounded and a drone
+  identifier is validated by the same IDENTIFIER rule the topic grammar uses.
 - **Ownership is a second control, independent of the ACL.** `owner` is the consuming role's client
   username; `permission` stays at the factory `no-access`; `accessType` is `exclusive`; `maxBindCount`
   is `1`. The ACL decides which topics a role may subscribe to. The queue decides which identity may
