@@ -27,6 +27,7 @@ from aerial_rescue_broker.semp import (
     REQUEST_TIMEOUT_SECONDS,
     RETRY_COUNT,
     SEMP_CONFIG_PATH,
+    SEMP_MONITOR_PATH,
     SempEndpoint,
     SempError,
     SempFailure,
@@ -323,6 +324,66 @@ class ReadAllTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((SempFailure.PAGING, MAX_PAGES), (captured.failure, len(endless.calls)))
+
+
+class ReadMonitorTests(unittest.TestCase):
+    """The monitor plane: the same bounded walk, a different root, and no way to write."""
+
+    def test_a_monitor_collection_is_read_from_the_monitor_root(self) -> None:
+        # Arrange
+        connection = FakeConnection(FakeResponse(200, _document([])))
+
+        # Act
+        SempSession(connection, ENDPOINT).read_monitor("msgVpns/default/queues/q/msgs")
+
+        # Assert
+        self.assertTrue(connection.calls[0][1].startswith(f"{SEMP_MONITOR_PATH}/"))
+
+    def test_a_monitor_collection_longer_than_one_page_is_followed_to_its_last_row(self) -> None:
+        """The depth a backlog measurement reads is larger than one page, so this is the defect."""
+        # Arrange
+        pages = PagingConnection(
+            [
+                _document([{"msgId": index} for index in range(PAGE_SIZE)], cursor="page/2"),
+                _document([{"msgId": index} for index in range(PAGE_SIZE)], cursor="page/3"),
+                _document([{"msgId": index} for index in range(7)]),
+            ]
+        )
+
+        # Act
+        read = SempSession(pages, ENDPOINT).read_monitor("msgVpns/default/queues/q/msgs")
+
+        # Assert
+        self.assertEqual((PAGE_SIZE * 2 + 7, 3), (len(read), len(pages.calls)))
+
+    def test_a_monitor_cursor_that_never_runs_out_is_refused_rather_than_looped_on(self) -> None:
+        # Arrange
+        endless = PagingConnection(
+            [_document([{"msgId": 1}], cursor="never ends")] * (MAX_PAGES + 2)
+        )
+
+        # Act
+        try:
+            SempSession(endless, ENDPOINT).read_monitor("msgVpns/default/queues/q/msgs")
+        except SempError as error:
+            captured = error
+        else:
+            message = "an endless monitor cursor was followed to the end"
+            raise AssertionError(message)
+
+        # Assert
+        self.assertEqual((SempFailure.PAGING, MAX_PAGES), (captured.failure, len(endless.calls)))
+
+    def test_the_configuration_plane_stays_where_it_was(self) -> None:
+        """The two roots are separate, so a monitor read can never reach a writable path."""
+        # Arrange
+        connection = FakeConnection(FakeResponse(200, _document([])))
+
+        # Act
+        SempSession(connection, ENDPOINT).read_all("msgVpns/default/aclProfiles")
+
+        # Assert
+        self.assertTrue(connection.calls[0][1].startswith(f"{SEMP_CONFIG_PATH}/"))
 
 
 class HeaderTests(unittest.TestCase):

@@ -29,6 +29,7 @@ from aerial_rescue_broker.provisioning import (
     apply,
     describe,
     desired_state,
+    message_count,
 )
 from aerial_rescue_broker.queues import (
     DEAD_MESSAGE_QUEUE,
@@ -102,6 +103,11 @@ class FakeBroker:
 
     def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
         """Return the whole collection, as a paging-aware transport would."""
+        self.issued.append(Request(Method.GET, path, {}))
+        return tuple(self.collections.get(path, ()))
+
+    def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return the whole monitor collection, as a paging-aware transport would."""
         self.issued.append(Request(Method.GET, path, {}))
         return tuple(self.collections.get(path, ()))
 
@@ -460,6 +466,48 @@ class ApplyTests(unittest.TestCase):
                 for request in broker.issued
                 if request.method is Method.PUT and "clientUsernames" in request.path
             },
+        )
+
+
+class MessageCountTests(unittest.TestCase):
+    """How many messages a queue is holding, read from the monitor plane."""
+
+    def test_every_message_across_every_page_is_counted(self) -> None:
+        """The instrument a backlog measurement reads has to survive past one page."""
+        # Arrange
+        broker = FakeBroker()
+        queue = drone_queue_name("drone-backlog-01")
+        path = f"msgVpns/default/queues/{quote(queue, safe='')}/msgs"
+        broker.collections[path] = [{"msgId": index} for index in range(137)]
+
+        # Act
+        counted = message_count(broker, "default", queue)
+
+        # Assert
+        self.assertEqual(137, counted)
+
+    def test_a_queue_holding_nothing_counts_zero_rather_than_refusing(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        counted = message_count(broker, "default", drone_queue_name("drone-backlog-01"))
+
+        # Assert
+        self.assertEqual(0, counted)
+
+    def test_the_queue_name_is_percent_encoded_into_the_path(self) -> None:
+        """Unencoded, `#DEAD_MSG_QUEUE` would truncate the path at a fragment."""
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        message_count(broker, "default", DEAD_MESSAGE_QUEUE)
+
+        # Assert
+        self.assertEqual(
+            f"msgVpns/default/queues/{quote(DEAD_MESSAGE_QUEUE, safe='')}/msgs",
+            broker.issued[-1].path,
         )
 
 
