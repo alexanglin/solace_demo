@@ -34,9 +34,16 @@ from aerial_rescue_contracts.topics import IDENTIFIER_PATTERN
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+BASELINES = Path(__file__).parent / "baselines"
+"""Committed wire-contract documents, each byte-identical to its golden fixture.
+
+They sit in their own directory so ``tests/`` stays inside the fan-out bound as more
+contracts are bound (``docs/adr/0033-bound-directory-fan-out.md``).
+"""
+
 BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("envelope_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "envelope_baseline.json").read_text(encoding="utf-8")),
 )
 BASELINE_DATA: dict[str, object] = cast("dict[str, object]", BASELINE["data"])
 TELEMETRY = BINDINGS["aerial-rescue.v1.drone.telemetry"]

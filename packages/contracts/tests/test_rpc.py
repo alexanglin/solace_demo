@@ -34,15 +34,22 @@ from aerial_rescue_contracts.rpc import (
 )
 from aerial_rescue_contracts.topics import MAX_KIND_LENGTH
 
+BASELINES = Path(__file__).parent / "baselines"
+"""Committed wire-contract documents, each byte-identical to its golden fixture.
+
+They sit in their own directory so ``tests/`` stays inside the fan-out bound as more
+contracts are bound (``docs/adr/0033-bound-directory-fan-out.md``).
+"""
+
 REQUEST_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("rpc_request_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "rpc_request_baseline.json").read_text(encoding="utf-8")),
 )
 """The same request committed as its golden fixture, so both suites judge one document."""
 
 RESPONSE_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("rpc_response_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "rpc_response_baseline.json").read_text(encoding="utf-8")),
 )
 """The same reply committed as its golden fixture, for the same reason."""
 
