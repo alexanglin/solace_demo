@@ -331,12 +331,13 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   `MODEL_LOCK_REQUIRED` until the lock representation is decided
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
-- `services/command_gateway` contains no mutation-eligible behavior or co-located tests yet, and neither
-  do the Tier 2 members. This no longer turns the pre-push tier red: a member with nothing to measure is
-  reported as `SCAFFOLD` rather than failed
+- The Tier 2 members contain no co-located mutation tests, and the scaffolds contain no
+  mutation-eligible behavior at all. This does not turn the pre-push tier red: a member with nothing to
+  measure is reported as `SCAFFOLD` rather than failed
   ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)), and both
-  the coverage and mutation gates pass on `main` today. `packages/contracts` and `packages/domain` are
-  fully scored. What remains is the AAA checker's three modules, carried as a row in
+  the coverage and mutation gates pass on `main` today. All three Tier 1 members --
+  `packages/contracts`, `packages/domain`, and `services/command_gateway` -- are fully scored. What
+  remains is the AAA checker's three modules, carried as a row in
   [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
 - The `mesh`, `services`, and `event-portal` profiles are defined and held to the policy gate but have
   never been started, so the Agent Mesh management-server probe and the Event Management Agent's secret
