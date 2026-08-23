@@ -53,6 +53,7 @@ from aerial_rescue_fleet_simulator.scenario import DroneStart, FleetScenario
 from aerial_rescue_fleet_simulator.service import (
     CountingStamps,
     IntakeBounds,
+    MonotonicPacer,
     PublishOutcome,
     Runtime,
     run,
@@ -162,6 +163,7 @@ class FleetSimulatorLiveTests(unittest.TestCase):
                     running=Countdown(TICKS),
                     send_budget=SendBudget(max_sends=5),
                     intake=IntakeBounds(commands_per_drone_per_tick=3),
+                    pacer=MonotonicPacer(),
                 )
             )
             cls.payloads = _drain(reader)

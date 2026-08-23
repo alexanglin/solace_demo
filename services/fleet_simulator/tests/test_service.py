@@ -41,6 +41,8 @@ from aerial_rescue_fleet_simulator.service import (
     CountingStamps,
     IntakeBounds,
     IntakeOutcome,
+    MonotonicPacer,
+    PaceOutcome,
     PublishOutcome,
     Runtime,
     ServeReport,
@@ -197,6 +199,38 @@ class FakeQueueReceiver:
         self.settled.append((message, outcome))
 
 
+class FakePacer:
+    """A monotonic clock a test scripts, and a record of every wait one run asked for.
+
+    ``work`` is how long each tick's own work takes. Each tick reads the clock twice, so
+    one scripted duration becomes the pair of advances that bracket that tick: nothing
+    before it, and the tick's work after it.
+    """
+
+    def __init__(self, order: list[str], work: Sequence[int] = ()) -> None:
+        """Record where the run's effects are noted, and what each tick's work costs."""
+        self.waits: list[int] = []
+        self.waited_after: list[int] = []
+        self._order = order
+        self._now = 0
+        self._advances = iter([step for milliseconds in work for step in (0, milliseconds)])
+
+    def now_milliseconds(self) -> int:
+        """Return the reading, having advanced it by the step this call is scripted."""
+        self._now += next(self._advances, 0)
+        return self._now
+
+    def wait(self, milliseconds: int) -> None:
+        """Record one wait and how many effects preceded it, then pass the clock through.
+
+        Deliberately reads the order of effects rather than appending to it: a pacer that
+        wrote into that list would change what every other test's ordering assertion sees.
+        """
+        self.waits.append(milliseconds)
+        self.waited_after.append(len(self._order))
+        self._now += milliseconds
+
+
 class FakeSession:
     """A fleet session: two publishers, one receiver per drone, and one shutdown."""
 
@@ -344,6 +378,7 @@ class Fleet:
     telemetry: FakeDirectPublisher
     results: FakeResultPublisher
     receivers: Mapping[str, FakeQueueReceiver]
+    pacer: FakePacer
     order: list[str]
 
 
@@ -370,6 +405,7 @@ class Given:
     refuse: Refusals = NO_REFUSALS
     stamps: StampSource | None = None
     bounds: IntakeBounds = BOUNDS
+    work: Sequence[int] = ()
 
 
 DEFAULT: Final = Given()
@@ -386,6 +422,7 @@ def _fleet(given: Given = DEFAULT) -> Fleet:
         for drone in (VISION_ID, THERMAL_ID)
     }
     opener = FakeOpener(FakeSession(resolved, results, receivers), refusing=given.refuse.binding)
+    pacer = FakePacer(order, given.work)
     runtime = Runtime(
         endpoint=ENDPOINT,
         credential=CREDENTIAL,
@@ -395,8 +432,9 @@ def _fleet(given: Given = DEFAULT) -> Fleet:
         running=Countdown(given.asks),
         send_budget=BUDGET,
         intake=given.bounds,
+        pacer=pacer,
     )
-    return Fleet(runtime, opener, resolved, results, receivers, order)
+    return Fleet(runtime, opener, resolved, results, receivers, pacer, order)
 
 
 def _runtime(
@@ -501,6 +539,82 @@ class EndingTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((3, 6), (report.state.tick, len(publisher.published)))
+
+
+class PacingTests(unittest.TestCase):
+    def test_a_tick_waits_out_the_interval_its_scenario_declares(self) -> None:
+        """ADR-0077 gives the scenario an interval; this is what reads it."""
+        # Arrange
+        fleet = _fleet(Given(asks=4, scenario=_scenario(ticks_to_sweep=99), work=(0, 0, 0, 0)))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            ([1_000, 1_000, 1_000, 1_000], {PaceOutcome.ON_TIME: 4}),
+            (fleet.pacer.waits, dict(report.pacing)),
+        )
+
+    def test_a_tick_that_overruns_its_interval_is_counted_rather_than_waited_for(self) -> None:
+        """A fleet that cannot hold its rate says so, instead of quietly running slow."""
+        # Arrange
+        fleet = _fleet(Given(asks=1, scenario=_scenario(ticks_to_sweep=99), work=(1_500,)))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(([], {PaceOutcome.OVERRAN: 1}), (fleet.pacer.waits, dict(report.pacing)))
+
+    def test_an_overrun_does_not_shorten_the_interval_of_the_tick_after_it(self) -> None:
+        """A lost interval stays lost: catching up would burst ticks at no declared rate."""
+        # Arrange
+        fleet = _fleet(Given(asks=2, scenario=_scenario(ticks_to_sweep=99), work=(1_500, 0)))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            ([1_000], {PaceOutcome.OVERRAN: 1, PaceOutcome.ON_TIME: 1}),
+            (fleet.pacer.waits, dict(report.pacing)),
+        )
+
+    def test_the_wait_falls_after_the_tick_s_commands_are_answered_and_settled(self) -> None:
+        """The drain is inside the tick, so the interval covers the work rather than trailing it."""
+        # Arrange
+        fleet = _fleet(
+            Given(
+                asks=1,
+                scenario=_scenario(ticks_to_sweep=99),
+                queued={VISION_ID: (_message(),)},
+                work=(0,),
+            )
+        )
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            (["publish", "publish", "settle-accepted"], [3]),
+            (fleet.order, fleet.pacer.waited_after),
+        )
+
+
+class MonotonicPacerTests(unittest.TestCase):
+    def test_the_clock_never_reads_earlier_after_a_wait_than_before_it(self) -> None:
+        """The one real pacer, waited for no time at all so the test costs none."""
+        # Arrange
+        pacer = MonotonicPacer()
+        before = pacer.now_milliseconds()
+
+        # Act
+        pacer.wait(0)
+
+        # Assert
+        self.assertGreaterEqual(pacer.now_milliseconds(), before)
 
 
 class RefusedPublicationTests(unittest.TestCase):

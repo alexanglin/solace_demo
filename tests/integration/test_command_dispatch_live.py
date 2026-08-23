@@ -82,6 +82,7 @@ from aerial_rescue_fleet_simulator.service import (
     CountingStamps,
     IntakeBounds,
     IntakeOutcome,
+    MonotonicPacer,
     Runtime,
     run,
 )
@@ -347,6 +348,7 @@ class CommandDispatchLiveTests(unittest.TestCase):
                 running=Countdown(TICKS),
                 send_budget=SendBudget(max_sends=5),
                 intake=IntakeBounds(commands_per_drone_per_tick=3),
+                pacer=MonotonicPacer(),
             )
         )
         cls.intake = report.intake
@@ -438,6 +440,7 @@ class UnreadableCommandLiveTests(unittest.TestCase):
                 running=Countdown(TICKS),
                 send_budget=SendBudget(max_sends=5),
                 intake=IntakeBounds(commands_per_drone_per_tick=3),
+                pacer=MonotonicPacer(),
             )
         )
         cls.intake = report.intake
