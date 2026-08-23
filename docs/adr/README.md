@@ -100,6 +100,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0080](0080-provision-one-durable-queue-per-guaranteed-consumer.md) | Provision one durable queue per guaranteed consumer, owned by its client username | Accepted |
 | [0081](0081-give-command-dispatch-one-interval.md) | Give command dispatch one interval, and let jitter only add | Accepted |
 | [0082](0082-bind-the-drone-command-and-its-result-to-payload-schemas.md) | Bind the drone command and its result to payload schemas, one schema per command type | Accepted |
+| [0083](0083-pace-the-tick-loop-at-a-fixed-rate.md) | Pace the tick loop at a fixed rate, and count what overruns | Accepted |
 
 ## Decisions still open
 
