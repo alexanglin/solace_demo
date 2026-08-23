@@ -235,15 +235,54 @@ over the roles and names every family's publisher set; this section carries only
 ## Broker data plane
 
 The delivery semantics are [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics) and the typed
-facade over the pinned client is [ADR-0028](adr/0028-untyped-solace-client-boundary.md). Routine
-telemetry is direct and supersedable; the queue, redelivery, message-expiry, and dead-message rows
-that guaranteed delivery needs are still open at the end of this document.
+facade over the pinned client is [ADR-0028](adr/0028-untyped-solace-client-boundary.md). Which
+guarantee each topic family is owed is a total table in `packages/contracts`
+([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)); routine telemetry is
+direct and supersedable, and the endpoints that carry the guaranteed families are the section below.
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Guaranteed publication timeout | 10 s per publication | `PUBLISH_TIMEOUT_MILLISECONDS` in `packages/broker/src/aerial_rescue_broker/messaging.py`, asserted by a publisher test |
 | Direct publisher buffer capacity | 0, so a publication is refused when the transport is full rather than queued or buffered without bound | `DIRECT_BUFFER_CAPACITY` in the same module, asserted by a publisher test |
 | Client connection retries and reconnection attempts | 0 each, so an absent or refusing broker fails the caller instead of retrying without a log line | `CONNECTION_RETRIES` and `RECONNECTION_ATTEMPTS` in the same module, asserted by a properties test |
+
+## Guaranteed-delivery endpoints
+
+One durable queue per consuming role and guaranteed family, plus one command queue per simulated
+drone and one dead-message queue
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)). Every value below is
+written explicitly into each queue rather than inherited, because each corresponding broker default
+is wrong for this system: redelivery retries forever, expiry is ignored, the per-queue spool exceeds
+the whole message VPN's, and the default dead-message target names a queue that does not exist.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Queue maximum spool | 10 MB per queue | `MAX_SPOOL_MEGABYTES` in `packages/broker/src/aerial_rescue_broker/queues.py`, written into every queue and asserted by a provisioning test |
+| Queue maximum redelivery | 3 attempts, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module |
+| Queue message expiry | 300 s, with expiry respected rather than the factory `false` | `MAX_TTL_SECONDS` in the same module, written together with `respectTtlEnabled` |
+| Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads |
+| Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
+| Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
+| Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
+| Endpoints the reference fleet needs | 44: 20 family queues, 23 per-drone command queues, and the dead-message queue | derived from the subscribe grants; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
+
+The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
+in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
+that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
+a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
+and 44 queues reserve 440 MB against the VPN's measured 1500 MB. **Expiry** follows from the worst
+declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
+case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,
+so a queue's expiry never stands in for the approval protocol's own two-clock consumption
+([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)); a shorter value would
+have made a queue depth quietly do safety work an approval record owns. **Redelivery** is bounded so
+that a message a consumer cannot settle leaves an exclusive queue instead of holding the 10 s drain
+behind it, and it is a different fact from the command send budget, which counts the times the gateway
+put a command on the wire ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
+
+None of these gates safety: exceeding any one costs a delivery and leaves a counted dead-message
+entry, never a command published without an approval. The backlog-recovery row itself remains
+unmeasured, and is now blocked by the absence of a consumer rather than by the absence of an endpoint.
 
 ## Model spend budget
 
@@ -297,7 +336,6 @@ preference, and must carry a number before the release run.
 | --- | --- | --- |
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
-| Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
 | Command send budget: how many times the gateway may put one command on the wire | The bounded retry policy in [CONTRACTS.md](CONTRACTS.md) and the `ABANDONED` state of [ADR-0074](adr/0074-command-dispatch-lifecycle.md) | open |
 | Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |

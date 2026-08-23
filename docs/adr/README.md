@@ -97,6 +97,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0077](0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) | The fleet scenario is a frozen value the composition root supplies, not a file the simulator reads | Accepted |
 | [0078](0078-one-tick-is-one-observation-per-drone.md) | One tick is one observation per drone, ordered by drone identifier | Accepted |
 | [0079](0079-bind-each-topic-family-to-its-delivery-guarantee.md) | Bind each topic family to its delivery guarantee, and give the gateway RPC families their own value | Accepted |
+| [0080](0080-provision-one-durable-queue-per-guaranteed-consumer.md) | Provision one durable queue per guaranteed consumer, owned by its client username | Accepted |
 
 ## Decisions still open
 
