@@ -55,9 +55,9 @@ The current suites have these deliberately different boundaries:
 | --- | --- |
 | `contract/test_schema_identity.py` | Offline schema inventory, identity, reference, constant, binding, and contract-gate agreement |
 | `contract/test_golden_fixture_oracle.py` | Offline manifest polarity plus schema, Python, canonicalizer, topic, and refusal agreement |
-| `phase0/test_solace_messaging_runtime.py` | Offline Python 3.14 native-client compatibility without connecting to a broker |
-| `phase0/test_first_live_stack.py` | Live loopback TLS handshakes and a Postgres TCP reachability probe |
-| `phase0/test_agent_mesh_live.py` | Live Web UI, A2A discovery, and resource-dependent workflow-dispatch probes |
+| `contract/test_command_vocabulary.py` | Offline agreement between command-result schema words, dispatch states, and the fleet-simulator publishing table |
+| [`phase0/`](phase0/AGENTS.md) | Offline native-client compatibility and explicitly authorized live stack, Agent Mesh, and Event Mesh feasibility probes |
+| [`integration/`](integration/AGENTS.md) | Explicitly authorized live fleet telemetry, guaranteed-delivery, and command-dispatch probes |
 | `security/test_broker_authorization.py` | Live positive and negative broker publish/connect authorization controls |
 
 All files here execute in the root Python 3.14 workspace, including the client-side Agent Mesh live
@@ -190,20 +190,16 @@ prompt-injection or delegation case; treat it as public and keep secrets, person
 out of it. Synthetic mission identifiers, public project role names, and public topic shapes are not
 credentials, but still keep output to what the assertion needs.
 
-The live broker-authorization tests connect and publish acknowledged persistent messages. The Agent Mesh
-probe submits a synthetic task and observes broker traffic; the running mesh may attempt to invoke local
-Ollama, but the test does not observe or assert that invocation. Expect transient broker, model, and
-application side effects even when the test passes. Config bind-mount changes require the documented mesh
-recreation before a result is meaningful; never silently test an old container configuration.
+The live broker-authorization tests connect and publish acknowledged persistent messages. Phase 0 probes
+have distinct broker, model, application, temporary-endpoint, and persistent-message side effects; their
+local guide owns the exact boundaries.
 
 Confirm the exact prerequisite set for the selected file rather than applying one blanket setup:
 
-- `test_first_live_stack.py` needs the generated per-checkout authority and secrets plus a healthy default
-  stack; its oracle does not require broker ACL provisioning.
+- Files under `phase0/` use the per-file prerequisite and ordering matrix in
+  [`phase0/AGENTS.md`](phase0/AGENTS.md).
 - `test_broker_authorization.py` additionally needs a completed
   `just provision --namespace aerial-rescue-mesh` against that stack.
-- `test_agent_mesh_live.py` needs that namespace provisioning, host Ollama serving the locked `qwen3:4b`
-  artifact, and a healthy mesh profile. Recreate the mesh profile as documented after config changes.
 
 Preserve certificate-chain and hostname verification. Never switch a probe to plaintext, disable
 hostname checks, trust an arbitrary certificate, or fall back from a missing local authority. Keep
@@ -232,29 +228,14 @@ Keep every report within what the present assertions establish:
   canonicalizer acceptance or refusal, topic, and gate agreement. They do not prove expected canonical
   bytes, independent semantic correctness, runtime consumer behavior, or TypeScript parity that has not
   been exercised.
-- The offline Solace compatibility probe establishes the pinned Python 3.14 native library surfaces it
-  invokes. Its placeholder plaintext property is never connected and is not transport precedent. The
-  probe does not establish broker connectivity, TLS, callback invocation or delivery, acknowledgement,
-  reconnect, or delivery semantics.
-- The first-live-stack probe establishes hostname-validated TLS handshakes to the two tested loopback
-  ports and TCP acceptance on the tested Postgres port. It does not itself prove the absence of
-  non-loopback exposure, container health, image pins, protocol semantics, database authentication,
-  schema, or durability.
-- The Agent Mesh probe establishes the configured cards returned by the Web UI, at least one observed
-  discovery card consistent with that set, and a request on the MissionCoordinator agent-request topic
-  after submitting to the `MissionResponse` workflow. It does not prove that every card published on the
-  observed topic, an Ollama invocation or completion, Orchestrator tool choice, a final response, model
-  quality, structured output, safety, or plugin settlement. Its HTTP helper does not assert status or
-  media type, so a green shape assertion is not full HTTP-contract evidence.
+- The Phase 0 suites establish only the file-specific offline or live observations listed in
+  [`phase0/AGENTS.md`](phase0/AGENTS.md). That guide owns their exact claim ceilings, including the Event
+  Mesh Gateway and Event Mesh Tool probes; do not infer durability, causation, model quality, or complete
+  authorization coverage from their class name.
 - The broker-authorization suite establishes only its current allowed and denied publish/connect cases
   against the local projection. It does not establish subscription denial, every grant, A2A policy,
   queues or redelivery, stale-identity deletion, per-process identity separation, TLS-downgrade closure,
   or Cloud parity.
-
-Static Compose validation and live runtime probes answer different questions. Do not repeat the
-first-live-stack module's broader “nowhere else” wording as a live-test conclusion; static bind policy
-and appropriate runtime inspection own that claim. Likewise, a receive window longer than an upstream
-publish interval improves the chance of observation but does not prove that a message “always” arrives.
 
 ## 8. Required verification
 
@@ -281,20 +262,19 @@ scripts/hooks/python/pytest-full.sh
 
 `scripts/hooks/python/pytest-full.sh` is the authoritative root deterministic suite with per-member
 coverage; a focused command is fast feedback, not a replacement. `just check-contracts` validates the
-manifest artifacts but does not execute both root contract test files, so run the focused contract suite
-as well when those oracles change.
+manifest artifacts but does not execute all three root contract test files, so run the focused contract
+suite as well when those oracles change.
 
-Only after explicit authorization and current runbook preparation, invoke the intended live probe by
-exact file rather than by a broad class selector:
+The Phase 0 guide lists its exact-file commands. Only after explicit authorization and current runbook
+preparation, invoke the separate broker-authorization probe with:
 
 ```sh
-uv run --frozen pytest -q tests/phase0/test_first_live_stack.py
 uv run --frozen pytest -q tests/security/test_broker_authorization.py
-uv run --frozen pytest -q tests/phase0/test_agent_mesh_live.py
 ```
 
 Run only the file whose prerequisites and side effects were authorized. Do not infer permission for the
-other two or for setup, reprovisioning, rotation, teardown, Cloud access, or paid calls.
+other Phase 0 or security probes, or for setup, reprovisioning, rotation, teardown, Cloud access, or paid
+calls.
 
 For a guide-only change, pass the new files explicitly to file-based hooks because Git diff discovery
 does not see untracked paths:
