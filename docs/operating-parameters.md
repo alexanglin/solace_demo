@@ -258,7 +258,7 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Queue maximum spool | 10 MB per queue | `MAX_SPOOL_MEGABYTES` in `packages/broker/src/aerial_rescue_broker/queues.py`, written into every queue and asserted by a provisioning test |
-| Queue maximum redelivery | 3 attempts, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module |
+| Queue maximum redelivery | 3 redeliveries after the first delivery, so at most 4 arrivals, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module; the live probe reads `MAX_REDELIVERY_COUNT + 1` arrivals before the dead-message queue |
 | Queue message expiry | 300 s, with expiry respected rather than the factory `false` | `MAX_TTL_SECONDS` in the same module, written together with `respectTtlEnabled` |
 | Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads |
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
@@ -327,6 +327,63 @@ recovery, a 10 s backlog drain, and a 2 s connected command path give a document
 42 s and leave 18 s of margin. Moving it is a superseding record, because the parameter gates safety
 behaviour.
 
+## Command dispatch
+
+How long one dispatched command waits for its acknowledgement, how the waits grow, and how many times the
+gateway may put it on the wire before `ABANDONED`
+([ADR-0074](adr/0074-command-dispatch-lifecycle.md), [ADR-0081](adr/0081-give-command-dispatch-one-interval.md)).
+Command dispatch has one interval, not three: the acknowledgement timeout is also the backoff base and the
+jitter bound. The domain counts sends and reads no clock, so all three durations belong to the command
+gateway.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Command acknowledgement timeout | 6 s per send, from the publication to the arriving command-result. Distinct from the Event Mesh Gateway timeout above, which settles a message rather than completing a command | `ACKNOWLEDGEMENT_TIMEOUT_SECONDS` in `services/command_gateway/src/aerial_rescue_command_gateway/dispatch.py`, asserted by a member test |
+| Retry backoff | The acknowledgement timeout doubled per timeout: 6 s, 12 s, 24 s, 48 s | `BACKOFF_BASE_SECONDS` in the same module; a schedule test asserts the four waits |
+| Retry jitter | Added and never subtracted, uniform over 0 s to the backoff base, drawn from the injected random source | `JITTER_BOUND_SECONDS` in the same module, equal to `BACKOFF_BASE_SECONDS`; a schedule test asserts the bound and the sign |
+| Command send budget | 5 sends per command identifier; the fifth acknowledgement timeout abandons it | `SendBudget` in `packages/domain/src/aerial_rescue_domain/commands.py` takes it as an injected count with no default and refuses a count below one; `MAX_COMMAND_SENDS` in the module above is what the composition root supplies |
+| Worst case before `ABANDONED` | 120 s without jitter and at most 144 s with it, against the 300 s queue message expiry above | a test folds the four rows rather than restating the number |
+
+The four rows [ADR-0074](adr/0074-command-dispatch-lifecycle.md) left unset are derived from the
+service-level rows above rather than measured, in the same position as the four queue parameters and the
+gateway acknowledgement timeout. The rows above pin durations and not counts, so the budget cannot be
+derived on its own: five is the answer only once the acknowledgement timeout and the backoff are fixed,
+which is why all four land together and why three of them are rows rather than adapter constants.
+
+The **acknowledgement timeout** follows from two rows pulling in opposite directions. The connected
+command path is a p95 of at most 2 seconds, so a 2-second window would time out on its own declared tail.
+Offline detection puts a drone in `OFFLINE` within 6 seconds of heartbeat loss, which is the instant at
+which silence stops meaning slow and starts meaning gone. Six seconds is the shortest window that cannot
+fire while the system still calls the drone `CONNECTED`, and it is three times the p95 it must not trip
+over.
+
+The **backoff base and the jitter bound are that same 6 seconds**, because neither has a row of its own.
+The jitter is added rather than centred, so the schedule without it is an exact floor on the instant a
+command is abandoned and the arithmetic below holds for every draw.
+
+The **budget** then follows from the worst declared fault. A command issued as its drone drops must
+survive a 60-second edge disconnect, a 30-second restart recovery, and a 10-second backlog drain, and its
+acknowledgement must still cross the 2-second command path: 102 seconds, the construction the queue expiry
+uses with the command path added. A budget of N abandons at 6N + 6(2^(N-1) - 1) seconds, so 36 seconds at
+three sends, 66 at four, 120 at five, and 222 at six. Five is the smallest budget whose abandon instant
+clears 102 seconds, and 144 seconds at the largest jitter draws still leaves every published copy inside
+the 300-second queue expiry, so the gateway never waits on a command the broker has already sent to the
+dead-message queue. Six clears it too, at twice the fault envelope, for no row that asks.
+
+The budget is a different fact from the queue's redelivery bound, which counts what the broker did with
+one published copy. Five sends against three redeliveries means one command identifier may reach one drone
+as many as twenty times, and nineteen of those are answered from the prior persisted result by the
+known-command rule in [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics).
+
+None of these gates safety. Abandonment is a verdict the gateway records, not a cancellation: copies
+already published stay on the drone's own durable queue until they expire, and one may still be delivered
+and executed after the gateway has stopped waiting. What keeps an escalation from executing without an
+approval is the atomic single-use consumption before the first publication
+([ADR-0006](adr/0006-proposal-bound-single-use-approvals.md),
+[ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)), which happens once
+whatever the budget is. Exceeding any row here costs a command's completion report, never its
+authorization.
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
@@ -336,7 +393,6 @@ preference, and must carry a number before the release run.
 | --- | --- | --- |
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
-| Command send budget: how many times the gateway may put one command on the wire | The bounded retry policy in [CONTRACTS.md](CONTRACTS.md) and the `ABANDONED` state of [ADR-0074](adr/0074-command-dispatch-lifecycle.md) | open |
 | Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |
