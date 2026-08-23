@@ -60,6 +60,9 @@ the root guide.
 | `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
 | `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
+| `src/aerial_rescue_fleet_simulator/intake.py` | What a drone accepts off its own command queue, and the order it refuses in |
+| `src/aerial_rescue_fleet_simulator/protocol.py` | The drone's half of the dispatch lifecycle, folded through `packages/domain` ([ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md)) |
+| `src/aerial_rescue_fleet_simulator/results.py` | One report becomes a schema-bound command-result CloudEvent ([ADR-0082](../../docs/adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)) |
 | `tests/` | Member-local unit, refusal, boundary, and property evidence |
 
 The member is **active**: `tools/member_scaffold.py` classifies it as such, and
@@ -71,10 +74,9 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A console script and a runnable Compose command | A scenario to run. ADR-0077 leaves producing one to the scenario service, and `deploy/compose.yaml` keeps its import-and-exit shell |
-| Command intake and the command dispatch lifecycle | A wire contract. The durable queue exists and the parameters are set: `packages/broker` provisions one command queue per declared drone and binds it with explicit settlement ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)), and the send budget, acknowledgement timeout, backoff, and jitter are derived rows ([ADR-0081](../../docs/adr/0081-give-command-dispatch-one-interval.md)). What is missing is the row below |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
-| Command-result events | No payload or event schema binds that family, and an ACL grant is not a wire contract |
 | Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
+| Exactly-once command effects, backlog recovery, and reconnect reconciliation | The same scaffold. Intake settles after publisher confirmation, and its receipts die with the process, so the claim is at-least-once with duplicates possible across a restart |
 
 Never add a dummy drone, placeholder test, no-op publisher, empty abstraction, or import-only entry point
 to make an absent capability look started. Each lands through red-green-refactor with member-local tests.
