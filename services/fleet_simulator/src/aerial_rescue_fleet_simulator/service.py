@@ -39,6 +39,7 @@ on ``packages/store``.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -91,6 +92,9 @@ _MINIMUM_PER_TICK: Final = 1
 _POLL_MILLISECONDS: Final = 0
 """A non-blocking poll, so intake never becomes the tick loop's pacer."""
 
+_MILLISECONDS_PER_SECOND: Final = 1_000
+_NANOSECONDS_PER_MILLISECOND: Final = 1_000_000
+
 
 class PublishOutcome(Enum):
     """What became of one reading."""
@@ -110,6 +114,13 @@ class IntakeOutcome(Enum):
     UNANSWERABLE = "the result could not be built, so the command was rejected"
     RESULT_REFUSED = "the transport did not accept a result; returned for redelivery"
     SETTLEMENT_REFUSED = "the transport did not accept the settlement; nothing was settled"
+
+
+class PaceOutcome(Enum):
+    """What became of one tick's interval."""
+
+    ON_TIME = "the tick finished inside its interval, and the loop waited out the remainder"
+    OVERRAN = "the tick took longer than its interval, so there was no remainder to wait"
 
 
 class IntakeBoundRefusal(Enum):
@@ -161,6 +172,22 @@ class StampSource(Protocol):
         """Return the stamp for the next command result ``producer`` publishes."""
 
 
+class Pacer(Protocol):
+    """The clock the tick loop keeps time by, and the wait it keeps it with.
+
+    Deliberately monotonic and deliberately not the stamp source's clock. A stamp records
+    when an event happened and belongs on the wall clock; an interval measures how long a
+    tick took, and a wall clock that steps backwards over a leap second or an adjustment
+    would make a tick look instantaneous.
+    """
+
+    def now_milliseconds(self) -> int:
+        """Return a monotonic reading in whole milliseconds."""
+
+    def wait(self, milliseconds: int) -> None:
+        """Block for ``milliseconds``."""
+
+
 class FleetSessionPort(Protocol):
     """The part of a fleet broker session this root uses.
 
@@ -190,11 +217,12 @@ SessionOpener = Callable[[BrokerEndpoint, Principal, str, Mapping[str, str]], Fl
 
 @dataclass(frozen=True)
 class ServeReport:
-    """The state one run reached, what became of each reading, and of each command."""
+    """The state one run reached, what became of each reading, command, and interval."""
 
     state: FleetState
     outcomes: Mapping[PublishOutcome, int]
     intake: Mapping[IntakeOutcome, int]
+    pacing: Mapping[PaceOutcome, int]
 
 
 @dataclass
@@ -255,6 +283,23 @@ class CountingStamps:
         )
 
 
+class MonotonicPacer:
+    """The real pacer: the only wall-clock sleep and monotonic read in this member.
+
+    Milliseconds are whole, because the interval it is measured against is an integer
+    member of the scenario and a fractional remainder would have no meaning the fold
+    could use.
+    """
+
+    def now_milliseconds(self) -> int:
+        """Return the monotonic clock in whole milliseconds."""
+        return time.monotonic_ns() // _NANOSECONDS_PER_MILLISECOND
+
+    def wait(self, milliseconds: int) -> None:
+        """Block for ``milliseconds``, the only place this member gives up the processor."""
+        time.sleep(milliseconds / _MILLISECONDS_PER_SECOND)
+
+
 @dataclass(frozen=True, repr=False)
 class Runtime:
     """Every boundary the root would otherwise cross on its own.
@@ -273,6 +318,7 @@ class Runtime:
     running: Callable[[], bool]
     send_budget: SendBudget
     intake: IntakeBounds
+    pacer: Pacer
 
     @override
     def __repr__(self) -> str:
@@ -429,6 +475,37 @@ def _drain_drone(
         counted[outcome] = counted.get(outcome, 0) + 1
 
 
+def _pace(pacer: Pacer, interval_milliseconds: int, started: int) -> PaceOutcome:
+    """Wait out what is left of this tick's interval, or report that nothing was left.
+
+    The interval is measured from the start of the tick rather than from the end of the
+    last wait, so the loop targets one tick per interval instead of one wait per tick --
+    the difference between holding a declared rate and drifting slower by however long the
+    work took.
+
+    An overrun is counted and never made up. Shortening a later interval to recover the
+    lost one would publish two observations closer together than any declared rate, and
+    ``docs/adr/0078`` gives one tick one observation per drone with no rate at which a
+    burst of them means anything.
+    """
+    remaining = interval_milliseconds - (pacer.now_milliseconds() - started)
+    if remaining <= 0:
+        return PaceOutcome.OVERRAN
+    pacer.wait(remaining)
+    return PaceOutcome.ON_TIME
+
+
+def _drain_fleet(
+    session: FleetSessionPort,
+    runtime: Runtime,
+    inboxes: Mapping[str, DroneInbox],
+    counted: dict[IntakeOutcome, int],
+) -> None:
+    """Drain every drone's own queue, in the ascending order ``docs/adr/0078`` fixes."""
+    for drone_id, inbox in inboxes.items():
+        _drain_drone(session, runtime, drone_id, inbox, counted)
+
+
 def serve(
     session: FleetSessionPort,
     runtime: Runtime,
@@ -448,15 +525,18 @@ def serve(
     counted: dict[PublishOutcome, int] = {}
     taken: dict[IntakeOutcome, int] = {}
     inboxes = {drone.drone_id: DroneInbox() for drone in ordered_drones(scenario)}
+    paced: dict[PaceOutcome, int] = {}
     while runtime.running() and not mission_is_terminal(state.mission):
+        started = runtime.pacer.now_milliseconds()
         tick = advance_tick(scenario, state)
         state = tick.state
         for reading in tick.readings:
             outcome = _publish(session.telemetry, scenario.mission_id, reading, runtime.stamps)
             counted[outcome] = counted.get(outcome, 0) + 1
-        for drone_id, inbox in inboxes.items():
-            _drain_drone(session, runtime, drone_id, inbox, taken)
-    return ServeReport(state, counted, taken)
+        _drain_fleet(session, runtime, inboxes, taken)
+        kept = _pace(runtime.pacer, scenario.tick_interval_milliseconds, started)
+        paced[kept] = paced.get(kept, 0) + 1
+    return ServeReport(state, counted, taken, paced)
 
 
 def run(runtime: Runtime) -> ServeReport:
