@@ -54,6 +54,7 @@ from aerial_rescue_broker.messaging import (
 )
 from aerial_rescue_broker.queues import (
     DEAD_MESSAGE_QUEUE,
+    MAX_REDELIVERY_COUNT,
     drone_queue_name,
     family_queue_name,
 )
@@ -91,6 +92,7 @@ FILLED_QUEUES: Final = ((Principal.FLEET_SIMULATOR, PROBE_QUEUE), *COLLATERAL_QU
 
 MONITOR_PATH: Final = f"/SEMP/v2/monitor/msgVpns/{DEFAULT_VPN}"
 MESSAGE_PAGE: Final = 100
+DELIVERY_ATTEMPT_LIMIT: Final = MAX_REDELIVERY_COUNT + 3
 
 RECEIVE_WINDOW_MILLISECONDS: Final = 5_000
 DRAIN_WINDOW_MILLISECONDS: Final = 500
@@ -178,6 +180,29 @@ def _consume_one(role: Principal, queue: str, outcome: Outcome) -> bytes | None:
     finally:
         receiver.close()
         service.disconnect()
+
+
+def _fail_until_abandoned() -> int:
+    """Settle every delivery ``FAILED`` and return how many times the message arrived.
+
+    One binding, because a message settled ``FAILED`` is returned for redelivery on the
+    same flow. The loop is bounded well above the configured limit so a broker that really
+    did retry forever fails this test rather than hanging it.
+    """
+    service = _service(Principal.FLEET_SIMULATOR)
+    receiver = SolacePersistentReceiver(service, PROBE_QUEUE)
+    deliveries = 0
+    try:
+        for _ in range(DELIVERY_ATTEMPT_LIMIT):
+            message = receiver.receive(RECEIVE_WINDOW_MILLISECONDS)
+            if message is None:
+                break
+            receiver.settle(message, Outcome.FAILED)
+            deliveries += 1
+    finally:
+        receiver.close()
+        service.disconnect()
+    return deliveries
 
 
 def _drain(role: Principal, queue: str) -> int:
@@ -281,6 +306,26 @@ class GuaranteedDeliveryTests(unittest.TestCase):
             (1, 0, dead + 1),
             (
                 queued,
+                _settled_depth(PROBE_QUEUE, 0),
+                _settled_depth(DEAD_MESSAGE_QUEUE, dead + 1),
+            ),
+        )
+
+    def test_a_message_no_consumer_can_settle_stops_being_redelivered(self) -> None:
+        """The bound is why `maxRedeliveryCount` is written: the default retries forever."""
+        # Arrange
+        _publish_one_command()
+        _settled_depth(PROBE_QUEUE, 1)
+        dead = _depth(DEAD_MESSAGE_QUEUE)
+
+        # Act
+        deliveries = _fail_until_abandoned()
+
+        # Assert
+        self.assertEqual(
+            (MAX_REDELIVERY_COUNT + 1, 0, dead + 1),
+            (
+                deliveries,
                 _settled_depth(PROBE_QUEUE, 0),
                 _settled_depth(DEAD_MESSAGE_QUEUE, dead + 1),
             ),
