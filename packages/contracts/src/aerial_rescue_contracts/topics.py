@@ -38,13 +38,25 @@ AGENT_NAME_PATTERN: Final = "^[A-Za-z0-9_]{1,64}$"
 TYPE_PATTERN: Final = "^aerial-rescue\\.v1(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*){2,3}$"
 """The form of a CloudEvents ``type`` derived from a topic."""
 
+RESERVED_REPLY_MISSION: Final = "reply"
+"""The mission level of the command-gateway reply channel, which names no mission.
+
+Solace AI Connector fixes a requestor's reply topic once per session, before any mission
+exists, so the level cannot carry one (``docs/adr/0070``). It is refused as an envelope
+``subject`` rather than as a topic level, because the reply channel's own topic has to stay
+formattable and parseable by the component that publishes to it.
+"""
+
 DECISIONS: Final = frozenset({"approve", "reject"})
 WILDCARD_CHARACTERS: Final = frozenset({"*", ">"})
 MISSION_PARAMETER: Final = "missionId"
+DRONE_PARAMETER: Final = "droneId"
 
 _PREFIX_LEVELS: Final = tuple(namespace_prefix().split("/"))
 _TYPE_PREFIX: Final = namespace_prefix().replace("/", ".") + "."
-_IDENTIFIER_PARAMETERS: Final = frozenset({MISSION_PARAMETER, "droneId", "commandId", "requestId"})
+_IDENTIFIER_PARAMETERS: Final = frozenset(
+    {MISSION_PARAMETER, DRONE_PARAMETER, "commandId", "requestId"}
+)
 
 
 class Rule(Enum):
@@ -110,6 +122,16 @@ class Family(Enum):
         return tuple(_placeholder(level) for level in self.levels if _is_placeholder(level))
 
     @property
+    def literal_suffix(self) -> str:
+        """Return the template's literal levels joined with dots, which names the family.
+
+        Distinct from :attr:`type_suffix`, which keeps the kind and decision placeholders
+        because a CloudEvents type fills them with the value the event carried. A name for
+        the family itself carries none of them: one name covers every kind in the family.
+        """
+        return ".".join(level for level in self.levels if not _is_placeholder(level))
+
+    @property
     def type_suffix(self) -> str:
         """Return the CloudEvents type suffix: the template without its instance levels."""
         kept = (
@@ -118,6 +140,50 @@ class Family(Enum):
             if not (_is_placeholder(level) and rule_for(_placeholder(level)) in _INSTANCE_RULES)
         )
         return ".".join(kept)
+
+
+class Delivery(Enum):
+    """What delivery guarantee a family is owed (ADR-0079)."""
+
+    DIRECT = "direct"
+    GUARANTEED = "guaranteed"
+    REQUEST_REPLY = "request-reply"
+
+
+_DELIVERY: Final[Mapping[Family, Delivery]] = {
+    Family.OPERATOR_COMMAND: Delivery.GUARANTEED,
+    Family.OPERATOR_APPROVAL: Delivery.GUARANTEED,
+    Family.DRONE_TELEMETRY: Delivery.DIRECT,
+    Family.DRONE_EVENT: Delivery.GUARANTEED,
+    Family.DRONE_COMMAND: Delivery.GUARANTEED,
+    Family.DRONE_COMMAND_RESULT: Delivery.GUARANTEED,
+    Family.GATEWAY_REQUEST: Delivery.REQUEST_REPLY,
+    Family.GATEWAY_RESPONSE: Delivery.REQUEST_REPLY,
+    Family.AGENT_PROPOSAL: Delivery.GUARANTEED,
+    Family.AGENT_RESPONSE: Delivery.GUARANTEED,
+    Family.AUDIT: Delivery.GUARANTEED,
+}
+"""Total over the families; a test asserts it.
+
+``DRONE_TELEMETRY`` is direct because a current position supersedes a stale one, which is
+what ``docs/CONTRACTS.md`` has always said. The two gateway families are neither: their
+reply queue is a temporary one Solace AI Connector names and binds itself, so this project
+provisions no endpoint for them
+(``docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md``).
+"""
+
+
+def delivery_for(family: Family) -> Delivery:
+    """Return the delivery guarantee a family is owed.
+
+    Args:
+        family: The topic family.
+
+    Returns:
+        The guarantee. The lookup is total, so there is no refusal: a family added
+        without a row fails the table's own test rather than falling back here.
+    """
+    return _DELIVERY[family]
 
 
 class TopicRefusal(Enum):
@@ -177,8 +243,25 @@ def _conforms(rule: Rule, value: str) -> bool:
     return value in DECISIONS
 
 
-def _validated(parameter: str, value: str) -> str:
-    """Return a level value, refusing it by the rule of the parameter it occupies."""
+def validated_level(parameter: str, value: str) -> str:
+    """Return a level value, refusing it by the rule of the parameter it occupies.
+
+    Public because the broker adapter builds subscription strings, which the topic grammar
+    refuses to build itself, and a subscription carrying a concrete identifier level must
+    hold that level to the same rule a published topic would. Applying the rule there
+    instead would put the identifier form in a second home.
+
+    Args:
+        parameter: The template parameter the level occupies, such as ``droneId``.
+        value: The candidate level.
+
+    Returns:
+        The value, unchanged, when it obeys the parameter's rule.
+
+    Raises:
+        TopicError: With the refusal belonging to that parameter's rule, naming both the
+            parameter and the value.
+    """
     rule = rule_for(parameter)
     if not _conforms(rule, value):
         raise TopicError(_REFUSAL_BY_RULE[rule], value, parameter)
@@ -199,11 +282,11 @@ def format_topic(topic: Topic) -> str:
     """
     if set(topic.parameters) != set(topic.family.parameters):
         raise TopicError(TopicRefusal.PARAMETER_SET, tuple(sorted(topic.parameters)))
-    levels = [namespace_prefix(), _validated(MISSION_PARAMETER, topic.mission_id)]
+    levels = [namespace_prefix(), validated_level(MISSION_PARAMETER, topic.mission_id)]
     for level in topic.family.levels:
         if _is_placeholder(level):
             name = _placeholder(level)
-            levels.append(_validated(name, topic.parameters[name]))
+            levels.append(validated_level(name, topic.parameters[name]))
         else:
             levels.append(level)
     return "/".join(levels)
@@ -222,7 +305,7 @@ def _matches_template(template: tuple[str, ...], levels: list[str]) -> bool:
 def _bind(template: tuple[str, ...], levels: list[str]) -> dict[str, str]:
     """Validate and bind every placeholder of a template, in template order."""
     return {
-        _placeholder(expected): _validated(_placeholder(expected), levels[index])
+        _placeholder(expected): validated_level(_placeholder(expected), levels[index])
         for index, expected in enumerate(template)
         if _is_placeholder(expected)
     }
@@ -262,7 +345,7 @@ def parse_topic(text: object) -> Topic:
     if tuple(levels[:2]) != _PREFIX_LEVELS:
         raise TopicError(TopicRefusal.PREFIX, text)
     family = _family_for(levels[3:], text)
-    mission_id = _validated(MISSION_PARAMETER, levels[2])
+    mission_id = validated_level(MISSION_PARAMETER, levels[2])
     return Topic(family, mission_id, _bind(family.levels, levels[3:]))
 
 
@@ -272,7 +355,7 @@ def event_type(topic: Topic) -> str:
     for level in topic.family.type_suffix.split("."):
         if _is_placeholder(level):
             name = _placeholder(level)
-            segments.append(_validated(name, topic.parameters[name]))
+            segments.append(validated_level(name, topic.parameters[name]))
         else:
             segments.append(level)
     return _TYPE_PREFIX + ".".join(segments)

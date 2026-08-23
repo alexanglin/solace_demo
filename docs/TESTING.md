@@ -184,6 +184,34 @@ integration, provider integration, or black-box compatibility. Live PubSub+ and 
 the next Phase 0 evidence for A2A behaviour, plugin delivery and settlement, ACL denial, and
 structured model output.
 
+## Which tests run at which stage
+
+[ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) splits execution by cost: the commit stage runs
+the tests the change affects, and the push stage runs all of them. Both halves are enforced, and
+`tools/quality_gate_tests/selection/` fails if either is removed.
+
+**Commit stage — affected tests, in all three toolchains.** `tools/affected_tests.py` builds an import
+graph over the owned tree, resolves each staged Python path to a module, and selects the test files
+that transitively import it
+([ADR-0066](adr/0066-select-commit-stage-tests-from-an-import-graph.md)). The root tree and the Agent
+Mesh tree are selected separately, because the Agent Mesh domain carries its own `tools` package and
+its tests run on their own 3.13 interpreter
+([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)). The dashboard uses
+`vitest related` on staged `.ts` and `.tsx` files.
+
+The selector fails safe rather than guessing. A staged path that is not a Python file in the graph, is
+a `conftest.py`, has an ambiguous module name, or does not parse, widens the run to the whole
+deterministic suite. That is what makes a change to a hook script, a workflow, a manifest, or a
+committed registry run the tests that read it, none of which any import names.
+
+**Push stage — every unit test, unconditionally.** `pytest-full.sh` runs the root suite with the
+per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its own interpreter,
+and `dashboard-test-full.sh` runs the dashboard suite with all four coverage dimensions. None of the
+three selects a subset, and a test asserts that none of them ever starts to.
+
+Narrowing the commit stage is only safe while the push stage stays whole. Selection is fast feedback;
+`pre-push` and continuous integration remain the authority.
+
 ## Tooling
 
 Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, strict mypy, Complexipy

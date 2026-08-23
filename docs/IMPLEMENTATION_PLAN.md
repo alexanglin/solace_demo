@@ -44,7 +44,7 @@ decision has no ADR yet and one is owed.
 | Agent integration plugins | Official `sam-event-mesh-gateway` 1.1.0 and `sam-event-mesh-tool` 0.1.1, pinned and locked | [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) |
 | Event broker | The PubSub+ software event broker container, pinned by digest under `deploy/compose.yaml`, is the broker for development, integration, continuous integration, acceptance, and release; the Developer-class Solace Cloud service is a non-gating showcase profile selected by environment alone | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Application event namespace | Application CloudEvents use `aerial-rescue/v1/...`, separate from the A2A namespace | [ADR-0014](adr/0014-application-events-separate-from-a2a.md) |
-| Delivery semantics | Direct delivery for routine telemetry; guaranteed delivery with queues and explicit acknowledgement for commands, results, evidence, failures, approvals, and audit records | — |
+| Delivery semantics | Each topic family is bound to its guarantee by a total table; the guaranteed families get one durable queue per consuming role, owned by that role's client username, plus one command queue per drone and one dead-message queue | [ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Agent models | Local Ollama for the three edge agents. The Agent Mesh `general` and `planning` roles may use a paid Anthropic or OpenAI model; provider, model, and split are selected by the Phase 0 evaluation | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Model budget | USD $50 total for the initial release, enforced before each call in tranches, with a persisted spend ledger. Local-only operation stays a supported, tested configuration and no release gate depends on a paid API | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Local environment | Apple Silicon MacBook, 64 GB RAM, Docker Desktop, and Ollama on the host; every other component runs under Docker Compose from digest-pinned images | [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
@@ -147,9 +147,10 @@ mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
   dashboard/
-services/                      (scaffold) six typed service package shells
+services/                      (scaffold) four typed service package shells
   dashboard_api/
-  fleet_simulator/
+  fleet_simulator/             (exists)  scenario boundary, tick fold, telemetry, composition root
+    tests/                     (exists)  member-local unit and property tests
   command_gateway/
     tests/                               member-local mutation tests
   scenario_service/
@@ -186,15 +187,15 @@ schemas/                       (exists)  contract-manifest.toml and the v1 JSON 
 fixtures/
   golden/                      (exists)  golden fixtures, one directory per schema
 scenarios/
-release-evidence/                        per-phase acceptance evidence, redacted
+release-evidence/              (exists)  per-phase acceptance evidence, redacted
 tests/
   phase0/                      (exists)  feasibility probes against the pinned runtimes
   unit/
   contract/                    (exists)  schema identity and the golden-fixture oracle
-  integration/
+  integration/                 (exists)  the fleet simulator against the running broker
   e2e/
   performance/
-  security/
+  security/                    (exists)  broker authorization against the running broker
 docs/
   IMPLEMENTATION_PLAN.md       (exists)  sequenced delivery, risks, release criteria
   adr/                         (exists)  authoritative decision log
@@ -215,16 +216,22 @@ Prefer shared packages over copied logic, but do not create abstractions until a
 
 Milestones are capability-based. A phase is complete only when its tests, documentation, and quality gates pass; calendar dates do not redefine completion.
 
+The HTTP/SSE Web UI exercised in Phase 0 is the upstream Agent Mesh engineering surface described in
+[ARCHITECTURE.md](ARCHITECTURE.md#solace-operational-surfaces), not the authoritative Aerial Rescue Mesh
+operator dashboard. Phases 1 and 2 establish the dashboard's quality and contract prerequisites. Beginning
+with Phase 3, every capability phase delivers the corresponding operator-interface increment and its unit,
+contract, and operator-flow evidence.
+
 ### Phase 0: Open-source Agent Mesh feasibility gate
 
 - Pin `solace-agent-mesh==1.28.7` in the isolated Python 3.13.15 `agent-mesh/` project and record the upstream source revision.
 - Pin and hash `sam-event-mesh-gateway==1.1.0` and `sam-event-mesh-tool==0.1.1`; prove those exact independently released wheels are compatible with Agent Mesh 1.28.7 before treating the combination as supported.
 - **Done offline:** enforce the semantic-configuration gate from [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) with the exact pinned parsers, configuration models, plugin symbols, include rules, model policy, topic authority, environment references, and secret hygiene. The gate starts no runtime or external client and is not live compatibility evidence.
-- **Done:** the compose stack is up, including the `mesh` profile, and the pinned runtime is connected to local Ollama and to the container. All four apps run on the image's own Python 3.13.11 ([mesh-first-run.md](../release-evidence/phase-0/mesh-first-run.md)). Still owed from this bullet: the dedicated plugin-compatibility probe run *inside* the built image.
-- **Identities and ACL profiles done:** nine least-privilege client usernames and nine deny-by-default ACL profiles are provisioned on the container over SEMP, the factory `default` username is disabled, and catalogue cases B17, B18, and B19 pass against the running broker ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [broker-authorization.md](../release-evidence/phase-0/broker-authorization.md)). Still owed: the queues, which wait on the four unset queue parameters in [operating-parameters.md](operating-parameters.md); reproducing the same definitions on the Developer-class Solace Cloud service for the showcase; and the fleet's connection count against that service's limit of 100 ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- **Done:** the compose stack is up, including the `mesh` profile, and the pinned runtime is connected to local Ollama and to the container. All four apps run on the image's own Python 3.13.11 ([mesh-first-run.md](../release-evidence/phase-0/mesh-first-run.md)). The dedicated plugin-compatibility probe has now been run *inside* the built image too: `scripts/probes/agent-mesh-image-probe.sh` checks the three pins, the gateway entry point, the tool's module-path import, and seven runtime symbols on the image's own CPython 3.13.11 with no network, and all five pass ([event-mesh-gateway-first-run.md](../release-evidence/phase-0/event-mesh-gateway-first-run.md)).
+- **Identities and ACL profiles done:** nine least-privilege client usernames and nine deny-by-default ACL profiles are provisioned on the container over SEMP, the factory `default` username is disabled, and catalogue cases B17, B18, and B19 pass against the running broker ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [broker-authorization.md](../release-evidence/phase-0/broker-authorization.md)). Still owed: reproducing the identities, ACL profiles, and queues on the Developer-class Solace Cloud service for the showcase, and the fleet's connection count against that service's limit of 100 ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - Capture redacted Cloud-console evidence for the three showcase surfaces: Broker Manager and Cluster Manager, Event Portal Designer and Catalog, and Event Portal runtime discovery of the container through the Event Management Agent.
 - **Done:** the built-in Orchestrator, a MissionCoordinator agent, a versioned MissionResponse workflow, and the HTTP/SSE Web UI all run under `agent-mesh/configs/`. Agent-card discovery, structured workflow invocation, and one A2A delegation are asserted by `tests/phase0/test_agent_mesh_live.py` against the running broker rather than read off Broker Manager. The delegation the kill criterion turns on is the model-chosen one: a task to the Orchestrator produced a request on the MissionCoordinator topic, which it can only reach through a tool call ([mesh-first-run.md](../release-evidence/phase-0/mesh-first-run.md)).
-- Configure the thinnest official Event Mesh Gateway and Event Mesh Tool spike: one validated salient CloudEvent becomes one structured A2A task, and one tool request produces one validated, non-actuating command-gateway response.
+- **Done, both halves.** *Ingress:* one validated salient CloudEvent becomes one structured A2A task. The official Event Mesh Gateway 1.1.0 runs as a fifth app on its own `event-mesh-gateway` identity, subscribes to `aerial-rescue/v1/*/drone/*/event/salient`, and submits a structured invocation carrying the payload as a typed artifact ([event-mesh-gateway-first-run.md](../release-evidence/phase-0/event-mesh-gateway-first-run.md)). *Egress:* one Event Mesh Tool request produces one validated, non-actuating command-gateway response. The tool runs inside the MissionCoordinator on its own `event-mesh-tool` identity, and `services/command_gateway` answers it from two deny-by-default tables, replies on the reserved channel, and republishes the answer as a CloudEvent record. `tests/phase0/test_event_mesh_tool_live.py` asserts the reply, the non-actuation claim both on the wire and by observation, a refusal by name, the model actually reaching the tool, and the ACL denial that makes the reply channel a narrowing ([event-mesh-tool-first-run.md](../release-evidence/phase-0/event-mesh-tool-first-run.md), [ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), [ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)). Both gateway queues are temporary and not configurable, which [ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) accepts and scopes.
 - Stop and revise the architecture if the selected Ollama model cannot provide reliable structured output/tool use, the container cannot carry the required A2A traffic, or the pinned plugins cannot enforce the domain boundary.
 - **Settled by waiver:** the locked dependency audit ran against the 251-package lock and reports eleven advisories across five packages that Agent Mesh 1.28.7 pins exactly; the `google-adk` override was attempted and is unsatisfiable. Each advisory is recorded with its reachability statement and compensating control as an expiring waiver in `dependency-waivers.toml`, all expiring 2026-09-18, and the accepted risk is carried in [TECH_DEBT.md](../TECH_DEBT.md) ([ADR-0031](adr/0031-reject-the-google-adk-version-override.md)).
 
@@ -238,53 +245,153 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Enforce Ruff complexity, cognitive complexity, multi-language duplication, and independent per-module
   Tier 1 mutation scoring before production behavior lands.
 - Create the separate Python 3.14.7 application and Python 3.13.15 Agent Mesh environments and verify both lockfiles from a clean checkout.
-- **Done:** the Agent Mesh YAML is `agent-mesh/configs/`, the agent cards are declared there and read back from the running mesh, and the model parameters are pinned by digest in `agent-mesh/model-lock.toml` ([ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md)). Plugin metadata is still owed, with the Event Mesh Gateway and Tool spike.
+- **Done:** the Agent Mesh YAML is `agent-mesh/configs/`, the agent cards are declared there and read back from the running mesh, and the model parameters are pinned by digest in `agent-mesh/model-lock.toml` ([ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md)). The Event Mesh Gateway and the Event Mesh Tool are both configured there and both proven live against the broker.
+- **Done:** establish and self-test the dashboard TypeScript policy and whole-tree verification stages. They
+  remain inert until Phase 3 creates `apps/dashboard`, then fail closed on an incomplete configuration
+  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)).
 
 ### Phase 2: Contracts and broker
 
 - **Done:** the topic grammar, the CloudEvents envelope profile, the v1 JSON Schemas with golden fixtures, and the contract manifest ([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md), [ADR-0037](adr/0037-cloudevents-envelope-profile.md), [ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)).
-- **Done:** broker identities and ACLs ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md)). Still owed: delivery semantics and the queues that carry them.
+- **Done:** broker identities and ACLs ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md)).
+- **Done:** the delivery semantics and the queues that carry them. Each family is bound to its
+  guarantee by a total table ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)),
+  and the queue set is a projection of the subscribe grants intersected with it, so a queue narrows
+  authority and can never widen it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+  Twenty-two queues are live on the container, written with every value explicit because five broker
+  defaults are wrong for this system. Spooling with nothing bound, fan-out to every matching queue,
+  removal only on acknowledgement, rejection to the dead-message queue, the redelivery bound ending
+  rather than looping, and a role holding the topic grant still being refused another role's queue
+  are all asserted against the broker
+  ([guaranteed-delivery-first-run.md](../release-evidence/phase-2/guaranteed-delivery-first-run.md)).
+  Still owed: the backlog-recovery measurement, whose consumer now exists so that what is left is
+  the measurement itself, and message expiry, which is configured and unobserved.
 - Build the Python broker adapter test-first against the PubSub+ container in `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- Complete the browser-consumed event and local HTTP/SSE contracts, schemas, and golden fixtures needed for
+  generated TypeScript types and cross-language runtime validation. The dashboard must consume these
+  artifacts rather than define a second wire contract
+  ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
 
-### Phase 3: Simulator and dashboard baseline
+### Phase 3: Simulator and operator-dashboard foundation
 
 - **Done:** the drone connectivity machine ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)),
   the producer-scoped sequence and known-identifier rules, the approval record with dual-clock consumption
   ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)), and the deny-by-default
-  command-authority table ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)) in
-  `packages/domain`.
-- Implement the remaining Tier 1 domain state machines
-  [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names — mission, sector, command, and evidence
-  lifecycles — then drive them through the Tier 2 fleet-simulator adapter.
-- Implement FastAPI, SSE, the initial map, fleet status, timeline, and record/replay path.
+  command-authority table ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)), and the
+  mission lifecycle ([ADR-0072](adr/0072-mission-lifecycle-states.md)), and the sector lifecycle
+  ([ADR-0073](adr/0073-sector-lifecycle-states.md)), the command dispatch lifecycle
+  ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)), and the evidence lifecycle
+  ([ADR-0075](adr/0075-evidence-lifecycle-states.md)) in `packages/domain`. All five Tier 1 domain
+  state machines [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names now exist.
+- **Done:** the evidence score, its named ordinal bands, and the corroboration floor that keeps the
+  escalating band unreachable from a single model-generated observation
+  ([ADR-0076](adr/0076-evidence-score-bands.md)). ADR-0017 carries evidence scoring as a Tier 1 row
+  of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
+  the evidence service's use of them is still owed. The band boundaries are an open row in
+  [operating-parameters.md](operating-parameters.md).
+- **Four of five done.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
+  composition-boundary value ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)),
+  folds one heartbeat-or-miss observation per drone per tick in ascending identifier order
+  ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and drives the mission, sector, and
+  connectivity machines from it. Each tick publishes one schema-bound telemetry CloudEvent through a
+  direct publisher, proven live on the least-privilege `fleet-simulator` identity with a
+  `dashboard-api` reader as the positive control
+  ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)).
+- **Done: the command dispatch lifecycle, drone side.** The drone-command and command-result
+  families are bound to payload and event schemas
+  ([ADR-0082](adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)), and the send
+  budget, acknowledgement timeout, backoff, and jitter are derived rows
+  ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)). Each tick is followed by a bounded
+  drain of every drone's own durable queue: the simulator folds `packages/domain`'s machine over
+  what arrives, publishes an acknowledgement and then a resolution, and settles only after both are
+  on the wire. It is the first process in this repository to bind a durable queue in production
+  ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)).
+  What the plan recorded as this capability's blocker -- the send budget -- turned out not to be
+  one: every edge a drone applies is blind to it, and a property test asserts that. The blocker was
+  the wire contract.
+  Still owed on this lifecycle: the **gateway's half**, which needs `packages/store`, because
+  `ACCEPTED` in [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
+  `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised, the intake claim is at-least-once
+  with duplicates possible across a restart, and the backlog-recovery measurement is now possible
+  rather than done.
+- Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
+  open row in [operating-parameters.md](operating-parameters.md).
+- Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
+  an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
+  lint, format, test, coverage, duplication, and production-build gates from
+  [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md).
+- Generate and commit dashboard contract types from the versioned schemas, freshness-gate them, validate
+  every HTTP/SSE input at runtime, and prove Python and TypeScript refusal parity with the shared golden
+  fixtures ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
+- Implement the FastAPI dashboard API and the first tested operator vertical slice: scenario selection and
+  mission start and reset, a persistent run-mode and readiness region, the MapLibre search map, fleet status,
+  the ordered mission timeline, and the record/replay adapter. Reduce normalized domain events into
+  presentation state, and cover loading, empty, retrying, failure, and recovered states from this first slice.
+  Deliver the current API process's bearer through the local startup path, and re-establish that runtime
+  context after an API restart before retrying a mutation
+  ([ADR-0024](adr/0024-local-operator-api-boundary.md)).
 
-### Phase 4: Edge intelligence
+### Phase 4: Edge intelligence and evidence interface
 
 - Pull and pin the three Ollama models.
 - Implement typed edge-agent prompts, image analysis, evidence events, timeouts, abstention, and replay-only fixtures.
+- Add the evidence panel and edge-agent interface states for prepared-artifact provenance, validated
+  observations, evidence-score contributors, corroboration, timeouts, invalid output, abstention, manual
+  review, and rejection. Make abstention visually distinct from a low evidence score
+  ([ADR-0008](adr/0008-abstention-over-recorded-substitution.md)).
 
-### Phase 5: Agent Mesh expansion
+### Phase 5: Agent Mesh expansion and orchestration interface
 
 - Configure and evaluate the Mission Response workflow, Mission Coordinator, Evidence Fusion, and three independently deployed edge agents using the pinned Agent Mesh evaluation tooling.
 - Productionize and verify the pinned Event Mesh Gateway, Event Mesh Tool, and deterministic command-gateway boundary.
 - Verify agent discovery, delegation, structured outputs, allowlists, timeouts, and failure behavior against the pinned runtime.
-- Exercise the complete mission against the container, then run the showcase profile against the Solace Cloud service and capture redacted console evidence ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- Exercise the orchestration path through a validated, non-actuating proposal against the container, then run the showcase profile against the Solace Cloud service and capture redacted console evidence ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
+- Extend the operator dashboard's timeline, proposal, and health surfaces with validated Agent Mesh responses
+  and the task, correlation, causation, proposal, and command identifiers needed to trace orchestration. Keep
+  the upstream Agent Mesh Web UI an engineering surface rather than an approval or dispatch surface.
+- Display the active orchestration configuration (paid provider or local-only), the model-spend warning
+  state, budget exhaustion, and any audited fallback to local-only operation
+  ([ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md),
+  [operating-parameters.md](operating-parameters.md#model-spend-budget)).
 
-### Phase 6: Resilience and safety
+### Phase 6: Resilience, safety, and approval interface
 
 - Add connectivity loss, durable edge outboxes, guaranteed command handling, retries, proposal-bound approval enforcement, broker, Agent Mesh, and Ollama failure behaviour, and replay isolation verification.
+- Implement the protected approval experience: show the proposal, digest, and action being decided; make the
+  consequences explicit, expose every approval lifecycle outcome, make the control keyboard accessible and
+  screen-reader labeled, disable it after submission, and visibly surface a denied repeat
+  ([SAFETY.md](SAFETY.md), [security/approval-bypass-catalogue.md](security/approval-bypass-catalogue.md)).
+- Make live simulation, degraded live simulation, and replay unmistakable. Render connectivity loss,
+  reassignment, backlog, offline, failure, and recovered states while preserving telemetry and bounded
+  operator control. Replay uses the same dashboard-facing event path but exposes no approval or escalation
+  action path
+  ([ADR-0008](adr/0008-abstention-over-recorded-substitution.md),
+  [ADR-0009](adr/0009-isolated-side-effect-free-replay.md)).
+- Exercise the complete live-simulation operator flow through approval and simulated rescue escalation with focused
+  component and Playwright tests written alongside the behavior.
 
-### Phase 7: Release qualification and security
+### Phase 7: Release qualification, security, and user acceptance
 
 - Qualify every completed member against its declared coverage, complexity, duplication, mutation, and
   test-inventory gates.
 - Complete integration, E2E, Playwright UAT, agent evaluations, performance checks, threat model, and dependency/secret scanning.
+- Qualify the mode-appropriate operator workflows in live simulation, degraded live simulation, and replay
+  at the reference MacBook's normal resolution without developer tools. Playwright acceptance covers the
+  accessible proposal-bound approval in the live modes and an unavailable approval control in replay while
+  recorded approval events remain visible; loading, empty, degraded, offline, retrying, failure, and
+  recovered states; mode labeling; map attribution; and the visible server-side refusals required by
+  [CONTRACTS.md](CONTRACTS.md), [SAFETY.md](SAFETY.md), and the applicable
+  [approval-bypass catalogue](security/approval-bypass-catalogue.md) cases.
 
 ### Phase 8: Initial release readiness
 
-- Verify one-command startup, readiness checks, live simulation, degraded live simulation, and isolated replay from a clean checkout.
+- Serve the production dashboard bundle through the dashboard API, then verify one-command startup,
+  readiness checks, live simulation, degraded live simulation, isolated replay, and the mode-appropriate
+  operator workflows from a clean checkout without Vite or browser developer tools
+  ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
 - Complete setup, operations, recovery, and troubleshooting runbooks.
 - Run the complete acceptance, performance, soak, safety, and security suites in the supported reference environment.
+- Capture redacted user-interface acceptance evidence and verify asset licensing and map attribution.
 - Record known limitations and create prioritized follow-on work without weakening initial-release gates.
 
 ### Phase 9: Ongoing evolution
@@ -293,6 +400,8 @@ Milestones are capability-based. A phase is complete only when its tests, docume
 - Evaluate additional deployment targets, including an explicitly authorized AWS architecture, without changing the local reference path implicitly.
 - Reassess model selection, operating cost, performance, upstream Agent Mesh releases, and a possible managed Agent Mesh deployment as dependencies and access evolve.
 - Maintain backward-compatible contracts or publish explicit versioned migrations.
+- Evolve the dashboard through versioned normalized events and reducers. Do not hard-code scenario business
+  rules in components, and add extension-specific presentation only after its contracts are versioned.
 
 ## 7. Definition of done
 
@@ -311,6 +420,10 @@ The initial release is ready only when:
 - No secrets or improperly licensed assets exist in Git history or the working tree.
 - Architecture and workflow documentation includes editable diagram sources and generated PNGs.
 - Setup and recovery instructions work on the reference MacBook from a clean checkout.
+- The mode-appropriate operator flows pass at the reference MacBook's normal resolution without developer
+  tools, with an always-visible operating mode, accessible proposal-bound approval in live modes, an
+  unavailable approval control but visible recorded approval events in replay, loading, empty, degraded,
+  offline, retrying, failure, and recovered states, and preserved map attribution.
 - Local-only operation passes the complete scenario, so no release gate depends on a paid model API.
 - Total paid model spend is within the USD $50 cap, with the spend ledger committed as release evidence.
 - No release gate depends on the Solace Cloud service; the showcase profile is evidence of demonstration, never of correctness ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).

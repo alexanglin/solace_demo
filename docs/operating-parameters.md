@@ -95,6 +95,15 @@ The grammar that uses these bounds is in [CONTRACTS.md](CONTRACTS.md#topic-taxon
 | Producer identifier in `source` | 1 to 64 characters | `packages/contracts` envelope validator plus JSON Schema |
 | Sequence | Exactly 15 decimal digits, zero-padded; the maximum is below 2^53 - 1 | `packages/contracts` envelope validator plus JSON Schema |
 | Trace state | 1 to 512 printable ASCII characters | `packages/contracts` envelope validator plus JSON Schema |
+| Command-gateway reply metadata | At most 4096 bytes of UTF-8 | `MAX_REPLY_METADATA_BYTES` in `services/command_gateway`, checked before the value is parsed |
+
+The reply-metadata bound is derived rather than measured. The value is Solace AI Connector's own
+correlation stack, one entry per requestor in a delegation chain, and an entry is a `request_id` of
+at most 64 characters and a `response_topic` of at most 250 — under 340 bytes with its punctuation.
+The bound therefore admits a chain of at least ten requestors, which is far beyond the two the
+architecture has, and it is checked before the value is parsed so an oversized string is refused
+rather than decoded. It is not a safety parameter: exceeding it costs one answer, never a command
+([ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)).
 
 ## Telemetry payload bounds
 
@@ -126,6 +135,20 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Replay determinism | Identical hash of the canonical reduced dashboard state across 10 runs. Raw event streams are not compared: event IDs and timestamps legitimately differ between runs ([ADR-0009](adr/0009-isolated-side-effect-free-replay.md)) |
 | Safety | Zero authorized actions across all approval-bypass attempts |
 | Soak | 30 minutes with no unbounded process, queue, or SSE-client memory growth |
+
+## Dashboard event stream
+
+The normalized dashboard event and the reduced state it folds into are defined by
+[ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md); the shapes live in
+[CONTRACTS.md](CONTRACTS.md#dashboard-event-stream). A dashboard event carries no transport member,
+so these bounds are about back-pressure, not about the envelope.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Per-client buffer | 256 dashboard events | `MAX_BUFFERED_EVENTS` in `packages/contracts`, asserted by its unit tests |
+| Droppable classes | `TELEMETRY` only | `DROPPABLE_CLASSES` in `packages/contracts`; every other class is never dropped |
+| Buffer overflow behaviour | Discard droppable events oldest-first; if the buffer is still full, close the stream with a typed reason and let the client re-synchronize from a state snapshot | Failure-injection test against a client slower than the telemetry rate |
+| Reduced-state digest | SHA-256 over the canonical state document under the `replay-state` context | `digest.Context.REPLAY_STATE` in `packages/contracts` |
 
 ## Connectivity detection
 
@@ -188,6 +211,10 @@ carries only the values.
 | Web UI allowed browser origins | loopback only; a wildcard, an empty list, or any other host is refused | the `WEBUI_EXPOSURE` rule in the configuration validator |
 | Local model digest form | `sha256:` and 64 lowercase hexadecimal characters, the Ollama manifest digest | the `MODEL_LOCK` rule offline; `GET /api/tags` at readiness, which is still owed |
 | Orchestration model for the Phase 0 spike | `ollama_chat/qwen3:4b`, 2.50 GB resident, reporting `completion`, `tools`, `thinking` | `agent-mesh/model-lock.toml`. Provisional: the roles are pinned by the Phase 4 model selection |
+| Agent request timeout | 60 s per A2A request | `inter_agent_communication.request_timeout_seconds` in each agent configuration |
+| Event Mesh Gateway acknowledgement timeout | 180 s, the window a handler has to complete before the gateway settles the message | `acknowledgment_policy.timeout_seconds` in `agent-mesh/configs/event-mesh-gateway.yaml`; a test asserts the committed value |
+
+The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 
 ## Broker authorization
 
@@ -204,6 +231,59 @@ over the roles and names every family's publisher set; this section carries only
 | Topic exceptions written | 16 publish and 31 subscribe across the nine profiles, the A2A grant included | asserted by the apply test in `packages/broker/tests/test_provisioning.py` |
 | SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
+
+## Broker data plane
+
+The delivery semantics are [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics) and the typed
+facade over the pinned client is [ADR-0028](adr/0028-untyped-solace-client-boundary.md). Which
+guarantee each topic family is owed is a total table in `packages/contracts`
+([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)); routine telemetry is
+direct and supersedable, and the endpoints that carry the guaranteed families are the section below.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Guaranteed publication timeout | 10 s per publication | `PUBLISH_TIMEOUT_MILLISECONDS` in `packages/broker/src/aerial_rescue_broker/messaging.py`, asserted by a publisher test |
+| Direct publisher buffer capacity | 0, so a publication is refused when the transport is full rather than queued or buffered without bound | `DIRECT_BUFFER_CAPACITY` in the same module, asserted by a publisher test |
+| Client connection retries and reconnection attempts | 0 each, so an absent or refusing broker fails the caller instead of retrying without a log line | `CONNECTION_RETRIES` and `RECONNECTION_ATTEMPTS` in the same module, asserted by a properties test |
+
+## Guaranteed-delivery endpoints
+
+One durable queue per consuming role and guaranteed family, plus one command queue per simulated
+drone and one dead-message queue
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)). Every value below is
+written explicitly into each queue rather than inherited, because each corresponding broker default
+is wrong for this system: redelivery retries forever, expiry is ignored, the per-queue spool exceeds
+the whole message VPN's, and the default dead-message target names a queue that does not exist.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Queue maximum spool | 10 MB per queue | `MAX_SPOOL_MEGABYTES` in `packages/broker/src/aerial_rescue_broker/queues.py`, written into every queue and asserted by a provisioning test |
+| Queue maximum redelivery | 3 redeliveries after the first delivery, so at most 4 arrivals, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module; the live probe reads `MAX_REDELIVERY_COUNT + 1` arrivals before the dead-message queue |
+| Queue message expiry | 300 s, with expiry respected rather than the factory `false` | `MAX_TTL_SECONDS` in the same module, written together with `respectTtlEnabled` |
+| Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads |
+| Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
+| Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
+| Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
+| Endpoints the reference fleet needs | 44: 20 family queues, 23 per-drone command queues, and the dead-message queue | derived from the subscribe grants; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
+
+The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
+in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
+that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
+a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
+and 44 queues reserve 440 MB against the VPN's measured 1500 MB. **Expiry** follows from the worst
+declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
+case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,
+so a queue's expiry never stands in for the approval protocol's own two-clock consumption
+([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)); a shorter value would
+have made a queue depth quietly do safety work an approval record owns. **Redelivery** is bounded so
+that a message a consumer cannot settle leaves an exclusive queue instead of holding the 10 s drain
+behind it, and it is a different fact from the command send budget, which counts the times the gateway
+put a command on the wire ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
+
+None of these gates safety: exceeding any one costs a delivery and leaves a counted dead-message
+entry, never a command published without an approval. The backlog-recovery row itself remains
+unmeasured. The consumer it waited on now exists -- the fleet simulator drains its own drones'
+queues -- so what is left is the measurement rather than a component to measure.
 
 ## Model spend budget
 
@@ -248,6 +328,91 @@ recovery, a 10 s backlog drain, and a 2 s connected command path give a document
 42 s and leave 18 s of margin. Moving it is a superseding record, because the parameter gates safety
 behaviour.
 
+## Command dispatch
+
+How long one dispatched command waits for its acknowledgement, how the waits grow, and how many times the
+gateway may put it on the wire before `ABANDONED`
+([ADR-0074](adr/0074-command-dispatch-lifecycle.md), [ADR-0081](adr/0081-give-command-dispatch-one-interval.md)).
+Command dispatch has one interval, not three: the acknowledgement timeout is also the backoff base and the
+jitter bound. The domain counts sends and reads no clock, so all three durations belong to the command
+gateway.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Command acknowledgement timeout | 6 s per send, from the publication to the arriving command-result. Distinct from the Event Mesh Gateway timeout above, which settles a message rather than completing a command | `ACKNOWLEDGEMENT_TIMEOUT_SECONDS` in `services/command_gateway/src/aerial_rescue_command_gateway/dispatch.py`, asserted by a member test |
+| Retry backoff | The acknowledgement timeout doubled per timeout: 6 s, 12 s, 24 s, 48 s | `BACKOFF_BASE_SECONDS` in the same module; a schedule test asserts the four waits |
+| Retry jitter | Added and never subtracted, uniform over 0 s to the backoff base, drawn from the injected random source | `JITTER_BOUND_SECONDS` in the same module, equal to `BACKOFF_BASE_SECONDS`; a schedule test asserts the bound and the sign |
+| Command send budget | 5 sends per command identifier; the fifth acknowledgement timeout abandons it | `SendBudget` in `packages/domain/src/aerial_rescue_domain/commands.py` takes it as an injected count with no default and refuses a count below one; `MAX_COMMAND_SENDS` in the module above is what the composition root supplies |
+| Worst case before `ABANDONED` | 120 s without jitter and at most 144 s with it, against the 300 s queue message expiry above | a test folds the four rows rather than restating the number |
+
+The four rows [ADR-0074](adr/0074-command-dispatch-lifecycle.md) left unset are derived from the
+service-level rows above rather than measured, in the same position as the four queue parameters and the
+gateway acknowledgement timeout. The rows above pin durations and not counts, so the budget cannot be
+derived on its own: five is the answer only once the acknowledgement timeout and the backoff are fixed,
+which is why all four land together and why three of them are rows rather than adapter constants.
+
+The **acknowledgement timeout** follows from two rows pulling in opposite directions. The connected
+command path is a p95 of at most 2 seconds, so a 2-second window would time out on its own declared tail.
+Offline detection puts a drone in `OFFLINE` within 6 seconds of heartbeat loss, which is the instant at
+which silence stops meaning slow and starts meaning gone. Six seconds is the shortest window that cannot
+fire while the system still calls the drone `CONNECTED`, and it is three times the p95 it must not trip
+over.
+
+The **backoff base and the jitter bound are that same 6 seconds**, because neither has a row of its own.
+The jitter is added rather than centred, so the schedule without it is an exact floor on the instant a
+command is abandoned and the arithmetic below holds for every draw.
+
+The **budget** then follows from the worst declared fault. A command issued as its drone drops must
+survive a 60-second edge disconnect, a 30-second restart recovery, and a 10-second backlog drain, and its
+acknowledgement must still cross the 2-second command path: 102 seconds, the construction the queue expiry
+uses with the command path added. A budget of N abandons at 6N + 6(2^(N-1) - 1) seconds, so 36 seconds at
+three sends, 66 at four, 120 at five, and 222 at six. Five is the smallest budget whose abandon instant
+clears 102 seconds, and 144 seconds at the largest jitter draws still leaves every published copy inside
+the 300-second queue expiry, so the gateway never waits on a command the broker has already sent to the
+dead-message queue. Six clears it too, at twice the fault envelope, for no row that asks.
+
+The budget is a different fact from the queue's redelivery bound, which counts what the broker did with
+one published copy. Five sends against three redeliveries means one command identifier may reach one drone
+as many as twenty times, and nineteen of those are answered from the prior persisted result by the
+known-command rule in [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics).
+
+None of these gates safety. Abandonment is a verdict the gateway records, not a cancellation: copies
+already published stay on the drone's own durable queue until they expire, and one may still be delivered
+and executed after the gateway has stopped waiting. What keeps an escalation from executing without an
+approval is the atomic single-use consumption before the first publication
+([ADR-0006](adr/0006-proposal-bound-single-use-approvals.md),
+[ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md)), which happens once
+whatever the budget is. Exceeding any row here costs a command's completion report, never its
+authorization.
+
+## Command intake
+
+How much command work one tick may do. The fleet simulator drains each drone's own durable
+command queue after folding a tick, and the bound is what decides whether the backlog-recovery
+target above is reachable at all
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Commands taken per drone per tick | 3 | `IntakeBounds` in `services/fleet_simulator/src/aerial_rescue_fleet_simulator/service.py`, injected with no default and refusing a bound below one; a member test asserts the refusal and the cap |
+| Command receive window | 0 ms, a non-blocking poll | `_POLL_MILLISECONDS` in the same module; a member test asserts the window every receive is given |
+
+Both rows are derived from the service-level rows above rather than measured. The **per-drone
+cap** follows from the backlog-recovery target: 500 critical messages must drain within 10
+seconds, and 23 drones at 1 Hz give 230 opportunities in that window, so a cap of at least
+500 / 230, which is 2.18, is needed. One command per drone per tick gives 23 a second and a
+21.7-second drain, which fails the target outright; three gives 69 a second and 7.2 seconds,
+which clears it. Four would clear it too, at no benefit any row asks for.
+
+The **receive window** is zero because intake must not become the tick loop's pacer. A blocking
+window would make the tick rate depend on how much command traffic arrived -- fast under load and
+slow when idle, which is backwards -- and the loop has no pacing of its own to fall back on. A
+poll adds no wall clock to a tick, and the per-drone cap is what bounds the work instead.
+
+Neither gates safety, and neither is the measurement. The backlog-recovery row stays unmeasured;
+what changed is that a consumer now exists to measure it against, which is the obligation
+ADR-0080 recorded when it provisioned the endpoints.
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
@@ -257,7 +422,6 @@ preference, and must carry a number before the release run.
 | --- | --- | --- |
 | Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
 | Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
-| Queue maximum spool, maximum redelivery, message TTL, dead-message-queue target | The no-loss claim's fault envelope | open |
-| SSE per-client buffer bound and droppable-event classes | The soak target, and the rule that audit, approval, and evidence events are never dropped | open |
+| Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |

@@ -28,7 +28,14 @@ from enum import Enum
 from typing import Final
 
 from aerial_rescue_contracts import TOPIC_NAMESPACE_ROOT, namespace_prefix
-from aerial_rescue_contracts.topics import MAX_TOPIC_BYTES, WILDCARD_CHARACTERS, Family
+from aerial_rescue_contracts.topics import (
+    DRONE_PARAMETER,
+    MAX_TOPIC_BYTES,
+    RESERVED_REPLY_MISSION,
+    WILDCARD_CHARACTERS,
+    Family,
+    validated_level,
+)
 
 LEVEL_SEPARATOR: Final = "/"
 SINGLE_LEVEL_WILDCARD: Final = "*"
@@ -81,6 +88,61 @@ def subscription_for(family: Family) -> str:
         *(_wildcarded(level) for level in family.levels),
     )
     return LEVEL_SEPARATOR.join(levels)
+
+
+def drone_command_subscription(drone_id: str) -> str:
+    """Return the subscription covering one drone's commands and no other drone's.
+
+    The only pattern here that carries a concrete level. A queue bound to the family
+    wildcard spools every drone's commands, which is right for a consumer that is the whole
+    fleet and wrong for one that simulates a drone: the drone is the unit that loses
+    connectivity, and its backlog has to be its own
+    (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
+
+    Args:
+        drone_id: The drone whose commands the subscription reaches, held to the same
+            identifier rule a published topic's drone level obeys.
+
+    Returns:
+        The subscription: the family pattern with the drone level made literal.
+
+    Raises:
+        TopicError: With ``IDENTIFIER_FORM`` for a value outside the identifier rule. It is
+            not re-wrapped, because the rule and its refusal belong to the topic grammar,
+            and a wildcard character fails it there rather than needing a check here.
+    """
+    levels = tuple(
+        validated_level(DRONE_PARAMETER, drone_id)
+        if level == "{" + DRONE_PARAMETER + "}"
+        else _wildcarded(level)
+        for level in Family.DRONE_COMMAND.levels
+    )
+    return LEVEL_SEPARATOR.join((namespace_prefix(), SINGLE_LEVEL_WILDCARD, *levels))
+
+
+def reply_subscription() -> str:
+    """Return the subscription covering the command-gateway reply channel and nothing else.
+
+    The second exception outside the family model, and for the same kind of reason as the
+    first: Solace AI Connector binds a requestor's temporary reply queue to both its reply
+    topic and that topic followed by ``>``, and neither the requestor identifier nor the
+    extra subscription is configurable. A ``*`` at the last level would cover the first and
+    not the second, so the bind would be denied
+    (``docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md``).
+
+    The levels beneath a requestor identifier are unreachable by the topic grammar, so the
+    ``>`` grants authority over topics no producer can publish. What it does not reach is a
+    mission: the reserved identifier sits where a mission identifier would, and no event
+    may claim it.
+    """
+    return LEVEL_SEPARATOR.join(
+        (
+            namespace_prefix(),
+            RESERVED_REPLY_MISSION,
+            *Family.GATEWAY_RESPONSE.levels[:-1],
+            MULTI_LEVEL_WILDCARD,
+        )
+    )
 
 
 def a2a_subscription(namespace: object) -> str:

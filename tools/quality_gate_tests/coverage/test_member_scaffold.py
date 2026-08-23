@@ -8,14 +8,18 @@ from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCas
 SCAFFOLDED_MEMBERS = (
     "packages/observability",
     "packages/store",
-    "services/command_gateway",
     "services/dashboard_api",
     "services/evidence_service",
-    "services/fleet_simulator",
     "services/recorder",
     "services/scenario_service",
 )
-ACTIVE_MEMBERS = ("packages/broker", "packages/contracts", "packages/domain")
+ACTIVE_MEMBERS = (
+    "packages/broker",
+    "packages/contracts",
+    "packages/domain",
+    "services/command_gateway",
+    "services/fleet_simulator",
+)
 
 
 def _scaffold(root: Path, *, docstring: str = '"""A component that has not started."""\n') -> Path:
@@ -136,7 +140,7 @@ class MemberScaffoldPredicateTests(QualityGateTestCase):
 
 
 class RepositoryScaffoldTests(QualityGateTestCase):
-    def test_the_eight_declared_scaffolds_are_scaffolds_and_the_tested_members_are_not(
+    def test_the_six_declared_scaffolds_are_scaffolds_and_the_tested_members_are_not(
         self,
     ) -> None:
         # Arrange

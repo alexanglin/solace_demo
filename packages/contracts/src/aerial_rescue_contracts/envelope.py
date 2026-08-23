@@ -22,6 +22,7 @@ from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.instant import INSTANT_PATTERN, InstantError, parse_instant
 from aerial_rescue_contracts.topics import (
     IDENTIFIER_PATTERN,
+    RESERVED_REPLY_MISSION,
     TYPE_PATTERN,
     Family,
     Rule,
@@ -41,8 +42,14 @@ SOURCE_PATTERN: Final = (
 """``urn:aerial-rescue:<producerKind>:<producerId>``; the producer scopes the sequence."""
 
 DATASCHEMA_PATTERN: Final = "^https://aerial-rescue\\.invalid/schemas/v1/payload/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.schema\\.json$"
-SEQUENCE_PATTERN: Final = "^[0-9]{15}$"
-"""Zero-padded so string order is numeric order; the maximum is below 2^53 - 1."""
+SEQUENCE_DIGITS: Final = 15
+SEQUENCE_PATTERN: Final = f"^[0-9]{{{SEQUENCE_DIGITS}}}$"
+MAX_SEQUENCE: Final = 10**SEQUENCE_DIGITS - 1
+"""Zero-padded so string order is numeric order; the maximum is below 2^53 - 1.
+
+The width is the one home for this fact. Every producer of an envelope renders its own
+sequence, so before this constant existed the rule was written out again in each of them.
+"""
 
 TRACEPARENT_PATTERN: Final = "^00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$"
 TRACESTATE_PATTERN: Final = "^[\\x20-\\x7e]{1,512}$"
@@ -87,6 +94,7 @@ class EnvelopeRefusal(Enum):
     MISSING_ATTRIBUTE = "required attribute is absent"
     ATTRIBUTE_FORM = "attribute outside its rule"
     DATA_PROFILE = "data outside the canonical profile"
+    RESERVED_MISSION = "subject is the reserved reply identifier, which names no mission"
     UNKNOWN_TYPE = "type has no bound payload schema"
     DATASCHEMA_BINDING = "dataschema is not the schema bound to the type"
     SUBJECT_BINDING = "subject does not equal the payload mission identifier"
@@ -118,6 +126,26 @@ BINDINGS: Final[Mapping[str, Binding]] = {
         "aerial-rescue.v1.drone.telemetry",
         Family.DRONE_TELEMETRY,
         SCHEMA_ID_BASE + "schemas/v1/payload/drone-telemetry.schema.json",
+    ),
+    "aerial-rescue.v1.drone.event.salient": Binding(
+        "aerial-rescue.v1.drone.event.salient",
+        Family.DRONE_EVENT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-event-salient.schema.json",
+    ),
+    "aerial-rescue.v1.gateway.response": Binding(
+        "aerial-rescue.v1.gateway.response",
+        Family.GATEWAY_RESPONSE,
+        SCHEMA_ID_BASE + "schemas/v1/payload/gateway-response.schema.json",
+    ),
+    "aerial-rescue.v1.drone.command.assign-sector": Binding(
+        "aerial-rescue.v1.drone.command.assign-sector",
+        Family.DRONE_COMMAND,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-assign-sector.schema.json",
+    ),
+    "aerial-rescue.v1.drone.command-result": Binding(
+        "aerial-rescue.v1.drone.command-result",
+        Family.DRONE_COMMAND_RESULT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-result.schema.json",
     ),
 }
 """A new row lands together with its payload schema, event schema, fixtures, and manifest entry."""
@@ -203,6 +231,12 @@ def _forms(members: Mapping[object, object]) -> dict[str, str]:
     return texts
 
 
+def _reserved(texts: Mapping[str, str]) -> None:
+    """Refuse an event that claims the identifier the reply channel occupies (ADR-0070)."""
+    if texts["subject"] == RESERVED_REPLY_MISSION:
+        raise EnvelopeError(EnvelopeRefusal.RESERVED_MISSION, "subject", texts["subject"])
+
+
 def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
     """Refuse an envelope whose type, schema, and subject do not agree."""
     binding = binding_for(texts["type"])
@@ -212,12 +246,32 @@ def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
         raise EnvelopeError(EnvelopeRefusal.SUBJECT_BINDING, "subject", texts["subject"])
 
 
+def sequence_text(value: int) -> str | None:
+    """Return the zero-padded producer sequence, or ``None`` when the form cannot carry it.
+
+    Returning ``None`` rather than raising keeps the refusal with the producer. The command
+    gateway and the fleet simulator each name their own structured reason, and this module
+    has no business deciding which service's error a caller sees.
+
+    Args:
+        value: The producer's next sequence number.
+
+    Returns:
+        The rendered sequence, satisfying :data:`SEQUENCE_PATTERN`, or ``None`` for a value
+        outside the representable range.
+    """
+    if value < 0 or value > MAX_SEQUENCE:
+        return None
+    return f"{value:0{SEQUENCE_DIGITS}d}"
+
+
 def parse_envelope(document: object) -> Envelope:
     """Validate a decoded JSON document as an application event envelope.
 
     Refusals come in a fixed order: not an object; an unknown member; a missing required
-    member; a member outside its rule; data outside the canonical profile; an unbound
-    type; a schema other than the bound one; a subject that is not the payload's mission.
+    member; a member outside its rule; a subject that is the reserved reply identifier;
+    data outside the canonical profile; an unbound type; a schema other than the bound
+    one; a subject that is not the payload's mission.
 
     Args:
         document: A decoded JSON value, normally from :func:`decode_envelope`.
@@ -230,6 +284,7 @@ def parse_envelope(document: object) -> Envelope:
     """
     members = _members(document)
     texts = _forms(members)
+    _reserved(texts)
     data = _data(members["data"])
     _bind(texts, data)
     return Envelope(

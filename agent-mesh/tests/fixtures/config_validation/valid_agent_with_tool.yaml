@@ -33,6 +33,7 @@ apps:
                 temporary_queue: true
               request_expiry_ms: 1000
               payload_format: json
+              response_topic_prefix: aerial-rescue/v1/reply/gateway/response
             tool_name: SubmitCommandProposal
             description: Submit a non-actuating command proposal.
             parameters:

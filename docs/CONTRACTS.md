@@ -13,9 +13,12 @@
 
 ## Event envelope
 
-Every application event is a CloudEvents 1.0 JSON object in structured mode, carried as the broker
+Every application **event** is a CloudEvents 1.0 JSON object in structured mode, carried as the broker
 message payload, with a **closed** member set: twelve required members, two optional members, and
-nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). A JSON `null` is never read as
+nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). That governs the nine notification
+families below. The two gateway families carry request/reply RPC rather than events, defined under
+[Command-gateway request and reply](#command-gateway-request-and-reply)
+([ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)). A JSON `null` is never read as
 absence; an optional member is present or omitted. `packages/contracts` validates the profile as a pure
 function, `envelope.parse_envelope`, and every refusal is a typed value naming the member at fault. The
 bounds live in [operating-parameters.md](operating-parameters.md#topic-and-envelope-bounds).
@@ -78,7 +81,7 @@ is the only producer and parser of these topics:
 | Rule | Levels | Form |
 | --- | --- | --- |
 | IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
-| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md)); `eventType`, `proposalType`, `recordType`, and `operation` stay open until the domain modules that define them land |
+| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table and `operation` by the gateway-operation table, both in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)); `eventType`, `proposalType`, and `recordType` stay open until the domain modules that define them land |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
@@ -96,11 +99,81 @@ or a trailing separator. Subscription strings, which do carry wildcards, belong 
 are never produced here. The golden case files under `fixtures/golden/v1/topics/` record accepted and
 refused topics with their refusal names, which are part of the contract.
 
-Routine telemetry uses direct delivery because current position updates supersede stale updates. Mission commands, command results, evidence, failures, approvals, and audit records use guaranteed delivery through queues and explicit acknowledgement.
+Which delivery guarantee each family is owed is a total table in `packages/contracts`, not a sentence to be read against the eleven families ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)). Routine telemetry is direct because current position updates supersede stale ones. The gateway request and response are request-reply over a temporary queue a pinned upstream component owns and names, so this project provisions no endpoint for them. Every other family is guaranteed, and its endpoint is one durable queue per consuming role ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
 
 Consumers must tolerate duplicates and out-of-order events. State changes reject stale sequence numbers within a producer's own stream, and command handlers return the prior result when they receive a known command ID. Approval consumption is excluded from that replay-as-success rule: a repeat is denied, not replayed.
 
 Agent Mesh owns its standard A2A namespace, including discovery, agent request, gateway status, and gateway response topics. Application code must use the upstream A2A APIs and gateway abstractions rather than publishing framework messages directly. Keep the A2A namespace distinct from `aerial-rescue/v1/...`, while carrying task, correlation, and causation identifiers across the SAR gateway boundary for traceability.
+
+## Command-gateway request and reply
+
+The two gateway families carry request/reply RPC rather than application events
+([ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)). The requestor is the
+official Event Mesh Tool, which composes its payload from a lookup into the agent's A2A context, an
+argument the model supplied, or a configured literal. None of those is a clock or an identifier
+source, so it can produce none of `id`, `time`, `sequence`, or `traceparent`, and the request cannot
+be an envelope. A request is also a question awaiting an answer rather than a statement that
+something happened, which the nine notification families all are.
+
+Both bodies lie inside the canonical profile below, are decoded through the canonical decoder so a
+repeated key is refused rather than merged, and carry `rpcVersion`, an integer, inside the hashed
+bytes — an RPC body has no `dataschema` member to identify itself by. `packages/contracts`
+validates them as pure functions, `rpc.parse_gateway_request` and `rpc.parse_gateway_response`, and
+every refusal is a typed value naming the member at fault.
+
+| Body | Member | Required | Rule |
+| --- | --- | --- | --- |
+| request | `rpcVersion` | yes | the constant `1` |
+| request | `missionId` | yes | an IDENTIFIER; equals the topic's mission level |
+| request | `operation` | yes | a KIND, closed by the gateway-operation table ([ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)) |
+| request | `commandType` | yes | a KIND; the command type the operation asks about |
+| reply | `rpcVersion` | yes | the constant `1` |
+| reply | `missionId` | yes | an IDENTIFIER |
+| reply | `requestId` | yes | an IDENTIFIER naming the request answered |
+| reply | `operation` | yes | a KIND, echoed from the request |
+| reply | `commandType` | yes | a KIND, echoed from the request |
+| reply | `outcome` | yes | exactly `answered` or `refused` |
+| reply | `actuated` | yes | a boolean: whether publishing an executable command followed ([ADR-0005](adr/0005-deterministic-command-gateway.md)) |
+| reply | `authority` | when answered | a KIND naming the authority the command type falls under |
+| reply | `refusal` | when refused | a KIND naming why the request was not answered |
+
+Refusals come in a fixed order: not an object; an unknown member; a missing required member; an
+unsupported `rpcVersion`; a member outside its rule; and, for a reply, an outcome that disagrees with
+the members present. That last rule is validator-only, as are the schema and subject bindings above:
+the schema asserts that a reply names at least one of `authority` and `refusal`, and which of the two
+goes with which outcome is checked in `packages/contracts` alone.
+
+### The reply channel
+
+The reply does not go to the gateway-response topic of its mission. Solace AI Connector fixes a
+requestor's reply topic once per session, before any mission exists, as
+`{response_topic_prefix}/{requestorId}`, and binds a temporary queue to both that topic and the same
+topic followed by `>`. Neither the identifier nor the extra subscription is configurable
+([ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)).
+
+The mission level of the reply channel is therefore the reserved identifier `reply`, and the channel
+is `aerial-rescue/v1/reply/gateway/response/{requestorId}`. It is inside the topic grammar and the
+gateway-response family, and it names no mission: `envelope.parse_envelope` refuses an envelope
+whose `subject` is the reserved identifier, so no mission can be called `reply` and no application
+event can be published there. The `event-mesh-tool` role holds no gateway-response family grant at
+all; it holds one exception scoped to `aerial-rescue/v1/reply/gateway/response/>`, which is strictly
+less authority than the family it replaces.
+
+Two user properties carry the correlation, both set by the requestor and therefore untrusted input.
+`__solace_ai_connector_broker_request_response_topic__` names the reply topic; the command gateway
+refuses any value that is not a gateway-response topic on the reserved identifier, which is what
+stops an injected value aiming the sole publisher of executable commands at another topic.
+`__solace_ai_connector_broker_request_reply_metadata__` is a JSON array whose last entry carries the
+`request_id`; the command gateway echoes the value back verbatim and never interprets it beyond
+reading that identifier, which must itself be an IDENTIFIER before it becomes the record's topic
+level.
+
+The command gateway publishes each reply twice. The requestor receives it on the reply channel, and
+the same body is republished as the `data` of a CloudEvent on
+`aerial-rescue/v1/{missionId}/gateway/response/{requestId}`, so the recorder, the dashboard, and the
+audit timeline observe every answer without knowing anything about the Event Mesh Tool or about
+Solace request/reply. The record is the weaker of the two: losing it costs an audit line, never an
+answer or a command.
 
 ## Local HTTP API
 
@@ -139,6 +212,46 @@ readiness, scenario discovery, and the SSE event stream — deliberately do not 
 requests remain subject to Host validation. The complete rationale is in
 [ADR-0024](adr/0024-local-operator-api-boundary.md), and the credential entropy is in
 [operating-parameters.md](operating-parameters.md#local-operator-credential).
+
+## Dashboard event stream
+
+`GET /api/v1/events` streams **dashboard events**: the normalized projection of validated
+application envelopes ([ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
+shapes below lie inside the canonical profile of the next section, so one canonicalizer, one
+decoder, and one fixture oracle serve them, and TypeScript reimplements them from this section
+alone. The bounds are in [operating-parameters.md](operating-parameters.md#dashboard-event-stream).
+
+A dashboard event has five members: `kind`, the projection's name; `eventClass`, one of `TELEMETRY`,
+`CONNECTIVITY`, `MISSION`, `COMMAND`, `EVIDENCE`, `APPROVAL`, `AUDIT`; `mission`, the mission
+identifier; `time`, the source envelope's canonical instant; and `data`, the projected fields
+repeating every identifier the source topic named except the mission, which `mission` already
+carries. **No transport member crosses this boundary** — `id`, `source`, `sequence`, `dataschema`,
+`traceparent`, and `tracestate` are absent, so a browser reads a dashboard event without the
+envelope profile or the topic grammar. An envelope whose `type` has no projection is refused as
+`UNPROJECTED`, in the same shape as the unbound-`type` refusal of the envelope profile.
+
+The **reduced dashboard state** is the fold of every dashboard event so far by a pure total
+function. It is the replay determinism oracle of
+[ADR-0009](adr/0009-isolated-side-effect-free-replay.md), and its determinism is structural: the
+state carries no wall-clock instant, no event identifier, and no trace context, because those
+legitimately differ between runs of one seeded scenario. Where the timeline needs an order, the
+state carries the append-only audit ordinal of
+[ADR-0003](adr/0003-postgres-durable-mission-store.md), which is an integer. Collections inside the
+state are arrays in ascending byte order of their identifier, never objects keyed by it, because a
+canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen.
+Array order is semantic, so that sort is part of the contract: two states differing only in
+insertion order must produce one digest.
+
+The determinism hash is taken over the canonical state document under the `replay-state` context,
+so state bytes cannot be replayed as proposal bytes.
+
+Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses
+direct delivery that may already be dropped and a newer position supersedes a stale one. Every other
+class is never dropped: a buffer that is still full after discarding droppable events closes the
+stream with a typed reason, and the client re-synchronizes from a state snapshot.
+
+Adding an application event type is one change: a projection row, a state rule, golden fixtures, and
+a manifest entry land together, or the type is refused as unprojected.
 
 ## Canonical serialization
 
@@ -206,9 +319,10 @@ exactly one reason. `schemas/contract-manifest.toml` registers every schema and 
 
 ## Delivery and failure semantics
 
-- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope.
+- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. A queue is created only for a `(role, family)` pair the subscribe grant already permits, is bound only by its named owner, and sends what it cannot deliver to the dead-message queue rather than discarding it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)); the values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
+- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
-- Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter.
+- Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter; the schedule has one interval and the jitter only adds ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)), and the values are in [operating-parameters.md](operating-parameters.md#command-dispatch).
 - Retries reuse the original command ID.
 - A drone is `CONNECTED` while heartbeats arrive; consecutive missed heartbeat intervals change it to `DEGRADED`, then `OFFLINE`, and the configured count of consecutive heartbeats returns either impaired state to `CONNECTED` ([ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md)). The heartbeat interval and the three counts are in [operating-parameters.md](operating-parameters.md#connectivity-detection).
 - A reconnecting drone reconciles commands and reports its last acknowledged sequence.

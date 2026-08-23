@@ -3,7 +3,15 @@ name = "aerial-rescue-fleet-simulator"
 version = "0.0.0"
 description = "Deterministic fleet physics and adapters around domain state machines."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+# The typed Solace facade, the wire contracts, and the deny-by-default machines. The
+# untyped client itself is reached only through aerial-rescue-broker (docs/adr/0028).
+# There is no console script: a process entry point needs a scenario, and ADR-0077
+# leaves producing one to the scenario service.
+dependencies = [
+    "aerial-rescue-broker",
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -10,6 +10,464 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A drone now receives a command, answers it, and settles it.** Twenty-two durable queues had
+  existed since the previous change and nothing in the repository bound one outside a test:
+  `packages/broker` offered a persistent receiver and a `settle`, and its only callers were its own
+  unit tests and one probe. `services/fleet_simulator` is now the first process here to bind a
+  durable queue in production, fold a Tier 1 domain machine over what arrives, publish a guaranteed
+  answer, and settle
+  ([command-dispatch-first-run.md](release-evidence/phase-3/command-dispatch-first-run.md)).
+
+  **The blocker was not the one recorded.** `docs/IMPLEMENTATION_PLAN.md` had this capability
+  "blocked by a named parameter rather than by effort", and named the command send budget. The
+  budget is read on exactly one line of `advance`, guarding `TIME_OUT`, and a drone applies neither
+  `SEND` nor `TIME_OUT` — so every edge this member folds is blind to it, which a property test now
+  asserts over budgets from one to a million. What actually blocked it was a wire contract: three
+  event types were bound, and a drone command was not one of them, so an arriving command was
+  refused as an unknown type before anything could read it.
+
+  Two families are now bound, one schema per command type rather than one discriminated by a member
+  ([ADR-0082](docs/adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)). The
+  topic grammar decided the shape rather than a preference: `commandType` is a kind level the
+  CloudEvents type keeps, so the command family is one type per command type, while both of the
+  result family's variable levels are identifiers and drop, so it is exactly one. A command carries
+  a `commandId` its own topic does not name, because the result topic is keyed by it and a drone can
+  learn it nowhere else.
+
+  **`escalate-rescue` is deliberately unbound.** Its payload members would be the action parameters
+  an approval's proposal digest is recomputed over, and the proposal family has no schema at all
+  yet, so binding it here would settle what every approval binds inside a command's schema. The
+  failure that leaves is a safe one with a name — `binding_for` refuses the type, so the sole
+  publisher of executable commands cannot publish an escalation — and a test asserts that refusal
+  rather than leaving it an accident of an absent row.
+
+  The send budget did get its number, along with the three durations ADR-0074 recorded as having no
+  rows at all. They land together because a budget alone is a number with a hidden derivation: every
+  service-level row pins a duration, so what has to clear the declared fault envelope is the instant
+  a command is abandoned, and that is a sum of intervals. Command dispatch has one interval — the
+  acknowledgement timeout is also the backoff base and the jitter bound — and the jitter only adds,
+  because full and equal jitter both put the abandon instant below the derived floor and would leave
+  the arithmetic holding only in expectation
+  ([ADR-0081](docs/adr/0081-give-command-dispatch-one-interval.md)).
+
+  Settlement has one rule, and it is what keeps a poison command out of the retries. A condition
+  that could differ on the next delivery is `FAILED`; one that cannot is `REJECTED`, which reaches
+  the dead-message queue on the first delivery rather than after the queue's four. The live probe
+  publishes bytes that are not an envelope and reads the dead-message queue move by exactly one.
+
+  Two things the live run found that no offline test could. Making the simulator bind a queue per
+  declared drone turned ADR-0080's sharpest negative — a command for a drone with no queue is
+  discarded and not refused, and nothing detected it — into a startup failure, and immediately
+  turned the existing fleet probe red because its three drones had never been provisioned. And a
+  cleanup that decodes what it drains cannot clean up after a malformed-message test: the first
+  attempt passed all eight assertions and then raised on the very message the test was about.
+
+  What this does not do is recorded too. Nothing durable: `packages/store` is a scaffold, the
+  receipts are process-local, and the claim is **at-least-once with duplicates possible across a
+  restart** — never exactly-once, zero loss, backlog recovery, or reconnect reconciliation. Nothing
+  about the gateway's half of dispatch, which needs the store, so `SEND`, `TIME_OUT`, and
+  `ABANDONED` stay unexercised and the four new values are correct and unread. Nothing at fleet
+  scale: one drone, one command, three ticks, not 23 drones at 1 Hz. And no sector state changes,
+  because reassigning a sector mid-run is a mission-coordination decision no record has made.
+
+- **Guaranteed delivery has an endpoint.** `docs/CONTRACTS.md` has put mission commands,
+  command results, evidence, failures, approvals, and audit records on guaranteed delivery
+  through queues and explicit acknowledgement since the topic taxonomy landed, and
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) closed by
+  saying plainly that none of it was enforced. Before this change the broker held **zero queues**.
+  It now holds 22, and the delivery semantics are the broker's behaviour rather than a sentence
+  ([guaranteed-delivery-first-run.md](release-evidence/phase-2/guaranteed-delivery-first-run.md)).
+
+  ADR-0061 said the four queue parameters needed the backlog-recovery measurement first. That
+  dependency is circular — draining 500 messages after a reconnect requires a queue to drain them
+  from — and waiting was not neutral, because every relevant broker default is wrong here.
+  Redelivery retries forever, expiry is ignored, the per-queue spool exceeds the whole message
+  VPN's, the dead-message target names a queue that does not exist, and both traffic directions
+  start disabled. Every value is now written rather than inherited, and the four numbers are
+  derived from the declared fault envelope and labelled as derived, the position the gateway
+  acknowledgement timeout already held
+  ([ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+
+  Two records replace a reading with a lookup. Which guarantee a family is owed is a table total
+  over the eleven families
+  ([ADR-0079](docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)), with three values
+  rather than two: the gateway request and response are `REQUEST_REPLY`, because their queue is a
+  temporary one Solace AI Connector owns, and calling that direct would assert they may be dropped
+  while calling it guaranteed would assert an endpoint this project provisions. The queue set is
+  then a projection of the subscribe grants intersected with the guaranteed families, so a queue
+  exists only where the ACL already permits the subscription: a queue can narrow authority and can
+  never widen it.
+
+  The queue is a second control, independent of the ACL, and the live probe is what shows the
+  difference. `dashboard-api` holds the drone-command subscribe grant and is still refused with
+  `SOLCLIENT_SUBCODE_PERMISSION_NOT_ALLOWED` when it binds the fleet simulator's queue, while
+  `fleet-simulator` binds the same queue in the same test. The ACL says which topics a role may
+  subscribe to; the queue says which identity may bind the endpoint.
+
+  Three things no offline test could have found turned up in the first live apply. The
+  dead-message queue refuses `maxRedeliveryCount` and `maxTtl` — neither has a meaning for the
+  endpoint that redelivery and expiry send messages *to*. A queue's `ingressEnabled` and
+  `egressEnabled` both default to `false`, so a queue with the other four values corrected would
+  have spooled nothing and delivered nothing and said nothing about it. And the monitor member
+  `spooledMsgCount` reads like a depth and is cumulative: a queue reporting 17 held zero messages,
+  which is what four passing-looking tests were actually measuring.
+
+  Consuming is deliberately awkward in one place. `AcknowledgingReceiver` requires `settle` rather
+  than standing beside `MessageReceiver`, because a protocol is satisfied structurally and a direct
+  receiver would otherwise have been accepted wherever a consumer must acknowledge what it took,
+  silently losing every message it handled. Auto-acknowledgement was available and is not used: it
+  removes a message as soon as it is handed over, which would end the guarantee at the socket
+  instead of at the durable outcome.
+
+  What this does not do is also recorded. The backlog-recovery target is still unmeasured — now
+  blocked by the absence of a consumer service rather than by the absence of an endpoint — message
+  expiry is configured and unobserved, and the bounded outbox, reconnect reconciliation, and
+  acknowledgement after a store commit all wait on `packages/store`.
+
+- **A fleet flies, and the broker carries it.** `services/fleet_simulator` had been a scaffold
+  since the repository began: a manifest, a docstring, and a `py.typed` marker. All five Tier 1
+  domain state machines existed and nothing drove any of them, so every claim about the mission,
+  the sectors, and the drone links was a claim about a plan. Twelve telemetry events now go over
+  the container on the least-privilege `fleet-simulator` identity and come back on the
+  `dashboard-api` one, in 0.542 seconds, with a drone the schedule silenced reaching `OFFLINE` and
+  its sector — and only its sector — reaching `AT_RISK`
+  ([fleet-simulator-first-run.md](release-evidence/phase-3/fleet-simulator-first-run.md)).
+
+  Two records fix what was never decided. The scenario is a frozen value the composition root
+  supplies ([ADR-0077](docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)):
+  nothing in the member reads a file, an environment variable, a broker message, a clock, or a
+  random source, because loading and versioning a scenario is the scenario service's job and that
+  service holds no broker identity by
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md). The value
+  carries no seed, because nothing in the fold is random and a seed with no consumer would be a
+  determinism promise the code does not keep.
+
+  One tick is one heartbeat-or-miss observation per drone, read from the schedule and never
+  inferred from whether telemetry was published
+  ([ADR-0078](docs/adr/0078-one-tick-is-one-observation-per-drone.md)) — `docs/operating-parameters.md`
+  already said why: telemetry is droppable, so its absence is not the drone's. Drones fold in
+  ascending identifier order, the rule
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) fixed for the reduced
+  dashboard state's collections, so one tick has exactly one event order.
+
+  Motion is integer addition of a declared per-tick displacement, with no trigonometry anywhere.
+  [ADR-0027](docs/adr/0027-integer-only-canonical-serialization.md) makes no floating-point value
+  representable where a digest can reach, and the last-bit behaviour of `cos` and `sin` differs
+  between C libraries, so a derived displacement would have made the determinism claim rest on the
+  platform rather than on the fold. A step that would leave the documented coordinate range is a
+  typed refusal naming the drone: clamping would put a position on the wire that the drone is not
+  at, and wrapping would model a circumnavigating search this project does not claim.
+
+  Three machines are driven and two are not, and the reason is a parameter rather than effort. The
+  command dispatch lifecycle needs the command send budget and evidence scoring needs the band
+  boundaries; both are `open` rows in `docs/operating-parameters.md`, and command intake is blocked
+  a second time by the absence of a durable queue.
+
+- **Routine telemetry now has the delivery guarantee the contract gives it.** `docs/CONTRACTS.md`
+  has always put routine telemetry on direct delivery and everything else on guaranteed delivery,
+  and `packages/broker` had only the guaranteed half. `SolaceDirectPublisher` is the other one. Its
+  method is named `publish_unacknowledged` rather than `publish`, and the name is the control: a
+  Protocol is satisfied structurally, so a direct publisher sharing the name would also satisfy
+  `MessagePublisher` and could be passed wherever an acknowledged publication is required, silently
+  downgrading an audit record to a droppable one. Nothing in the type system would have caught that.
+
+  Its buffer capacity is zero, so a full transport refuses a publication rather than queueing it.
+  Zero is the absence of a queue rather than a tuned depth, so it needs no measurement, and it is
+  the same posture as the two retry counts already at zero. `PublishingSession` is publish-only,
+  because the fleet simulator's single subscribe grant is the drone command family and consuming it
+  needs a durable queue that does not exist.
+
+- **The fifteen-digit producer sequence has one home again.** It had three: the pattern in
+  `envelope.py`, a re-derived width and maximum in the command gateway's `record.py`, and a third
+  copy of the width inside a contracts property test. Rather than add a fourth for the simulator,
+  `envelope.py` owns the width, derives the pattern and the maximum from it, and exposes
+  `sequence_text`. It returns `None` rather than raising, so the refusal stays with the producer and
+  each service names its own; no existing expectation changed.
+
+- **The escalating evidence band is now unreachable by construction, not because of where a number
+  sits.** `docs/LIMITATIONS.md` claimed the escalating band was "deliberately unreachable from a
+  single model-generated observation alone" and the approval-bypass catalogue recorded B32 as
+  "impossible by construction of the evidence-score band rule". Neither the bands, their boundaries,
+  nor what "corroborating" counted as existed. The word doing the work in B32 is *construction*: a
+  rule whose escalating outcome is prevented only by where a boundary happens to sit is impossible
+  until somebody edits a number, which is not the same claim.
+
+  `packages/domain/src/aerial_rescue_domain/scoring.py` closes both cases structurally
+  ([ADR-0076](docs/adr/0076-evidence-score-bands.md)). The escalating band requires contributions
+  from at least two distinct sources, and that rule reads neither the boundaries nor the origins, so
+  one source is capped one step below it at any score and under any boundary values — asserted at
+  the maximum score, at the lowest boundaries the range permits, and as a property over arbitrary
+  weights and arbitrary valid boundaries (B32). A contribution whose origin is `RECORDED` refuses
+  the computation outright and names the source, rather than scoring zero, so a replayed
+  contribution is an audited denial instead of a silent nothing and cannot count toward the source
+  floor either (B31).
+
+  The two rules are independent, so neither can mask the other: removing the source floor is caught
+  by a single-source case at a high score, and removing the recorded refusal by a recorded
+  contribution at any score, including a score of zero.
+
+  The bands are `NONE`, `WEAK`, `SUPPORTED`, and `CORROBORATED`, and the score is the weights summed
+  in integer hundredths, saturating at 100 — integers because
+  [ADR-0027](docs/adr/0027-integer-only-canonical-serialization.md) makes no floating-point value
+  representable where a digest can reach, and summing rather than averaging because an average is
+  not monotonic in the contributions admitted, which would give an operator a reason to suppress a
+  weak corroborating observation. The three boundaries are injected with no defaults and join the
+  send budget and the queue parameters as an open row in `docs/operating-parameters.md`; the
+  two-source floor is fixed in the record instead, because it is the reading of a safety claim
+  rather than a measurement.
+
+- **Evidence has named states, and an abstention is not a weak result.** This is the fifth and last
+  of the Tier 1 domain state machines
+  [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md) names; the other four landed in
+  the four commits before it, and none of the five had a single state name written anywhere in the
+  documentation set beforehand.
+
+  `packages/domain/src/aerial_rescue_domain/evidence.py` is a deny-by-default table over
+  `REQUESTED`, `OBSERVED`, `VALIDATED`, `MANUAL_REVIEW`, `CONTRIBUTING`, `ABSTAINED`, and
+  `REJECTED`. Eight pairs are legal and the other forty-one of the forty-nine are refused
+  ([ADR-0075](docs/adr/0075-evidence-lifecycle-states.md)).
+
+  `ABSTAINED` and `REJECTED` are separate terminals because they have opposite causes: an
+  abstention is the agent declining to assert, a rejection is the system refusing what was
+  asserted. Making abstention a state rather than a score of zero is what satisfies the plan's
+  requirement that it be visually distinct from a low evidence score
+  ([ADR-0008](docs/adr/0008-abstention-over-recorded-substitution.md)) — a component cannot confuse
+  it with a weak result, because there is no number to confuse it with. A property test holds the
+  strong form: an agent that declined can never be counted, whatever events follow.
+
+  `CONTRIBUTING` is terminal, so an admitted observation is never withdrawn. A contradicting
+  observation is a new item with its own lifecycle, which keeps the score monotonic in the items
+  admitted — the property `docs/LIMITATIONS.md` claims for it — and keeps this table free of the
+  retraction-ordering problem.
+
+  The score itself is not here. Its named ordinal bands and the corroboration floor that closes
+  bypass case B32 are a separate Tier 1 row in ADR-0017 and a separate decision.
+
+- **A dispatched command has named states, and what bounds its retrying is a count, not a clock.**
+  `docs/CONTRACTS.md` already required a bounded acknowledgement timeout, retries with exponential
+  backoff and jitter, and retries reusing the original command identifier, but no document named a
+  single command state, and the timeout, backoff base, and jitter bound have no rows in
+  `docs/operating-parameters.md` at all.
+
+  `packages/domain/src/aerial_rescue_domain/commands.py` is a table over `ACCEPTED`, `IN_FLIGHT`,
+  `ACKNOWLEDGED`, `SUCCEEDED`, `FAILED`, and `ABANDONED`, plus one counted bound. Five pairs are
+  legal and the other twenty-five of the thirty are refused
+  ([ADR-0074](docs/adr/0074-command-dispatch-lifecycle.md)).
+
+  The domain counts sends and the adapter owns the timer, which is the split
+  [ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md) already made for heartbeats:
+  a package forbidden to read a clock cannot enforce a duration. `SEND` is the only event that
+  increments the count, `TIME_OUT` is the only event that reads the budget, and `ABANDONED` is
+  therefore the one state no table row targets.
+
+  `SEND` deliberately carries no budget guard of its own. After `TIME_OUT` has abandoned a command
+  at the budget there is no legal fold that reaches `ACCEPTED` with an exhausted count, so such a
+  guard's refusal would be unreachable and would survive as an unkillable mutant — the same
+  reasoning [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) used to keep its
+  own table minimal. The budget comparison as written is reachable in both directions from a legal
+  fold, and both directions are asserted.
+
+  The budget itself is not set here. No measurement stands behind any number, so it joins the four
+  queue parameters as an `open` row in `docs/operating-parameters.md`, and the record is injected
+  with no default so nothing can silently default — the position the approval time to live held
+  before [ADR-0042](docs/adr/0042-approval-time-to-live.md) measured it.
+
+- **A sector has named states, and losing a drone is what imperils one.** The documentation set
+  named no sector state. The closest it came was the lowercase phrase "marked at risk" inside one
+  scenario step, and the topic grammar still has no `sectorId` level.
+
+  `packages/domain/src/aerial_rescue_domain/sectors.py` is a deny-by-default table over
+  `UNASSIGNED`, `ASSIGNED`, `AT_RISK`, and `SEARCHED`. Five pairs are legal and the other fifteen of
+  the twenty are refused ([ADR-0073](docs/adr/0073-sector-lifecycle-states.md)).
+
+  It is deliberately cyclic where the mission machine is acyclic: a sector may be imperilled and
+  reassigned as often as the fleet loses drones over it, so its property module asserts absorption
+  and reachability where the mission module asserts progress. A sector at risk cannot be swept,
+  because the drone that would report the sweep is the one whose link was lost.
+
+  `IMPERIL` fires when the holding drone's connectivity machine enters `OFFLINE` and `RECOVER` when
+  it leaves — not on `DEGRADED`, which exists precisely to absorb a marginal link without flapping
+  ([ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md)). Three tests drive the real
+  connectivity machine and apply that edge mapping, so the coupling is exercised rather than
+  asserted in prose: a drone that goes offline and returns leaves its sector assigned, one that
+  stays offline leaves it at risk, and one that only degrades does not move it at all.
+
+  `REASSIGN` and `RECOVER` both land in `ASSIGNED` and stay distinct because different facts cause
+  them. Which drone holds a sector belongs to the durable store, so a `REASSIGN` naming the same
+  drone is indistinguishable at this layer; the command gateway is what refuses that, not the table.
+
+- **A mission has named states.** [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md)
+  places the mission lifecycle in the Tier 1 core and `docs/ARCHITECTURE.md` names it as one of five
+  pure state machines the fleet simulator exists to drive, but nothing in the documentation set named
+  a mission state. A sweep of every uppercase state token across `docs/` returned the connectivity
+  machine's three and the approval protocol's six, and nothing else.
+
+  `packages/domain/src/aerial_rescue_domain/mission.py` is one deny-by-default transition table over
+  `PLANNED`, `SEARCHING`, `ESCALATED`, `COMPLETED`, `EXHAUSTED`, and `ABORTED`. Seven pairs are legal
+  and the other twenty-three of the thirty are refused; one test enumerates all thirty against the
+  table, so a row cannot be dropped, added, or retargeted silently. All eight generated mutants are
+  killed ([ADR-0072](docs/adr/0072-mission-lifecycle-states.md)).
+
+  Two of its decisions are worth reading. `EXHAUSTED` exists because a wilderness search that sweeps
+  its area and finds nothing is a real outcome, and recording that as `ABORTED` would read in the
+  audit trail as an operator decision nobody made. The price is that `COMPLETE` is reachable only
+  from `ESCALATED`, so the only mission that completes is one that handed a subject to a rescue. And
+  reset is not an edge: `POST /api/v1/scenarios/current/reset` ends the mission and creates a new one,
+  because returning a terminal mission to `PLANNED` would rewind the append-only audit ordinal
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) orders the timeline by, and would make
+  the reduced dashboard state
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) hashes for replay
+  determinism non-monotonic.
+
+  `ESCALATED` records that an `escalate-rescue` command was published and authorizes nothing. The
+  machine never reads an approval, because two copies of an authorization fact can disagree, and
+  [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) and
+  [ADR-0041](docs/adr/0041-deny-by-default-command-authority-table.md) remain the only things that
+  decide whether that command may be published. Terminality is derived from the table rather than
+  declared beside it, so there is one rule to mutate rather than two that can drift apart.
+
+- **One Event Mesh Tool request now produces one validated, non-actuating command-gateway
+  response, and the Phase 0 kill criterion is answered in full.** The egress half joins the
+  ingress half recorded in `event-mesh-gateway-first-run.md`, and
+  [`release-evidence/phase-0/event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)
+  records the run: five assertions, three of which involve no model at all and pass in 31.21 s.
+
+  Two identities appeared that had never connected: `event-mesh-tool` and `command-gateway`,
+  one connection each. The tool runs *inside* the MissionCoordinator app, in the same connector
+  process as the nine `agent-mesh-agent` connections, and still authenticates as itself. Topic
+  exceptions stayed at 47 — one out, one in — because
+  [ADR-0070](docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)
+  *replaced* the tool's gateway-response family grant with one scoped to the reserved reply
+  channel, which is strictly less authority.
+
+  The request cannot be a CloudEvent, and reading the plugin is what showed it. The tool composes
+  its payload from a context lookup, a model argument, or a configured literal, so it can produce
+  none of `id`, `time`, `sequence`, or `traceparent`. `ADR-0068` therefore scopes the envelope
+  rule to the nine notification families and gives the two gateway families schema-bound RPC,
+  with the answer republished as a CloudEvent record so the recorder and the audit timeline still
+  see it.
+
+  Where the reply goes was not the project's choice either. Solace AI Connector fixes a
+  requestor's reply topic once per session and binds a queue to both that topic *and* the topic
+  followed by `>`; the mission level cannot carry a mission, and the old `*` exception did not
+  cover the `>`. ADR-0070 reserves `reply` for it. The broker confirmed the prediction verbatim
+  on the first attempt, with `SOLCLIENT_SUBCODE_SUBSCRIPTION_ACL_DENIED` — an ordering defect
+  now carried in [TECH_DEBT.md](TECH_DEBT.md), because the provisioner must run before the
+  container and nothing said so.
+
+  `services/command_gateway` is the first service with real code, and it is the safety boundary
+  [ADR-0005](docs/adr/0005-deterministic-command-gateway.md) describes. Three pure modules and a
+  loop: it answers from two deny-by-default tables, refuses any reply topic that is not on the
+  reserved channel — the guard that stops an injected value aiming the sole publisher of
+  executable commands anywhere it likes — and reports `actuated: false`, which the live test
+  asserts on the wire *and* by watching the drone-command family stay silent. It is a tier-one
+  member at 100% statement and branch coverage with 368 of 368 mutants killed.
+
+- **One salient CloudEvent now becomes one structured A2A task, and the Phase 0 kill criterion's
+  ingress half is answered.** The official Event Mesh Gateway 1.1.0 runs as a fifth app under
+  `agent-mesh/configs/`, on its own `event-mesh-gateway` identity, and
+  [`release-evidence/phase-0/event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md)
+  records the run. `mesh-first-run.md` had noted that no application CloudEvent had ever been
+  published on any of the eleven families; this is the first, and the transformation took 0.43 s.
+
+  The broker is what proves the identity split: nine connections on `agent-mesh-agent` and four on
+  `event-mesh-gateway`, and 47 topic exceptions — unchanged, because
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) had already
+  granted this role the drone-event family to read and the agent-response family to write, before
+  either existed. The fifth app costs 37 MiB.
+
+  Structured invocation without splicing untrusted text. `target_workflow_name` is the documented
+  route to it, but reaching the MissionResponse workflow's `inputSchema {report: string}` would mean
+  building JSON out of a template with the drone's free-text `detail` inside it. The plugin turns
+  structured invocation on for `structured_invocation.input_schema` alone, whatever the target, so
+  the handler declares that schema, targets the agent, and passes the payload as an object:
+  `[TranslateInput] Created structured input artifact`.
+
+  Three assertions of different kinds — a model-independent transformation, a bounded
+  model-dependent answer routed back onto the agent-response family, and an undecodable event that
+  must produce no task. The event they publish is built as an `Envelope`, checked against its topic,
+  and serialised by the canonical encoder, so "validated" is a claim rather than a description.
+
+  Two defects found. The gateway reads `default_user_identity` from the **handler**, never the
+  identically named app-level parameter its schema also declares, and discards the message when
+  neither yields one — visible only as a single ERROR line. And `OutboundMessageBuilder.build` takes
+  a `bytearray` or a `str`, never `bytes`, which is what the canonical encoder emits.
+
+- **The salient drone event is bound to a payload schema.** `envelope.BINDINGS` held one row, so
+  `aerial-rescue.v1.drone.telemetry` was the only event type the profile accepted and any other was
+  refused as `UNKNOWN_TYPE` before it reached a topic. The new row lands with the payload schema,
+  the composed event schema, ten negative fixtures each failing for exactly one reason, and the
+  manifest entry. It adds no definition to `canonical.schema.json`: every member refs one that
+  already exists. `observation` stays an open `kind` rather than an enum, because closing a value
+  set is a decision with an ADR behind it.
+
+- **The pinned plugins are proven inside the built image.** `scripts/probes/agent-mesh-image-probe.sh`
+  runs three pin checks, the gateway entry point, the tool's module-path import, and seven runtime
+  symbols on the image's own CPython 3.13.11 — not the 3.13.15 in `agent-mesh/.venv`. A shell script
+  rather than a test: the image carries no pytest, and
+  [ADR-0025](docs/adr/0025-narrow-ruff-subprocess-waivers.md) fixes at four the files that may own a
+  subprocess call. It clears a `TECH_DEBT.md` §6 row that had stood since the stack was defined.
+
+- **A gate now holds the container to the credentials its configuration names.** The validator
+  resolves `${...}` against the host-scope `.env.example` while the runtime resolves them inside the
+  container, so a name in one and not the other passes every gate and then fails silently — the
+  reference expands to empty, the broker refuses the client as the shutdown factory `default`, and
+  the client retries forever. That is how the first `mesh` run failed. `AgentMeshContainerScopeTests`
+  reads every `${SOLACE_*}` the mounted configuration names and requires compose to pass each one in.
+
+- **The browser gets a normalized dashboard event, and the transport stops at the server.**
+  [CONTRACTS.md](docs/CONTRACTS.md) defined `GET /api/v1/events` as an "SSE stream for normalized
+  dashboard events" and said nothing further: no shape, no schema, no rule for what a client does
+  with one. Nothing named the normalized form, so the browser, the recorder, and the replay oracle
+  had nothing to agree on.
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) names it, and
+  `packages/contracts/view.py` projects one accepted envelope into one dashboard event carrying the
+  kind, the class, the mission, the instant, and the projected fields. `id`, `source`, `sequence`,
+  `dataschema`, `traceparent`, and `tracestate` do not cross, so the browser reads an event without
+  the CloudEvents profile or the topic grammar; an event type nothing projects is refused as
+  `UNPROJECTED`, in the same shape ADR-0037 already refuses an unbound type.
+
+  Every event carries exactly one class, and the class alone decides whether a server under
+  back-pressure may discard it. `TELEMETRY` is droppable because routine telemetry already uses
+  direct delivery and a newer position supersedes a stale one; `CONNECTIVITY`, `MISSION`, `COMMAND`,
+  `EVIDENCE`, `APPROVAL`, and `AUDIT` never are, and a buffer still full after discarding what it may
+  closes the stream rather than dropping an approval. The reduced state the record also names is not
+  built yet, so `Context.REPLAY_STATE` stays unused and the ADR-0009 determinism oracle is still owed.
+
+- **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
+  untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
+  Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and
+  `pre-push` runs the full suite. Only the push half was built. `pytest-related.sh` declared
+  `pass_filenames: true` and never read `"$@"`, so it discarded the staged paths and ran all 942 root
+  tests on every Python commit; its own comment said a narrower selector had to wait for "a
+  project-owned dependency map", and none existed.
+
+  `tools/affected_tests.py` is that map. It derives each owned file's module name the way mypy and
+  pytest do, parses every file with `ast`, resolves absolute and relative imports against that index,
+  and inverts the edges; the transitive closure of dependents, restricted to test files, is what runs.
+  A one-file change under `packages/domain/src/` now selects 94 of 988 tests and takes ~5 s where the
+  whole suite takes ~29 s, measured back-to-back so both saw the same load
+  ([ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md)).
+
+  It fails safe rather than guessing: a staged path that is not a Python file in the graph, is a
+  `conftest.py`, has an ambiguous module name, or does not parse, widens the run to the whole suite.
+  The trigger is now an exclusion rather than `types_or: [python, pyi]`, so a hook script, a workflow,
+  a manifest, or a committed registry reaches the tests that read it — before, those changes ran no
+  test at this stage at all. `CONTRIBUTING.md` and `docs/operating-parameters.md` stay in the trigger
+  because `test_uv_version_pin.py` and `test_typescript_policy_gate.py` read their numbers.
+
+  The same gap existed for the Agent Mesh domain and was wider: the root hook carries
+  `exclude: ^agent-mesh/`, so a commit touching only that tree ran nothing before `pre-push`. A second
+  commit-stage hook now selects its affected tests too. Selection uses the root project's pure
+  selector because parsing source is not verifying it; execution stays inside `agent-mesh/` on its own
+  3.13 interpreter, so [ADR-0029](docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)
+  still holds.
+
+  Narrowing here is only safe while the push stage stays whole, so that is now asserted rather than
+  assumed: a test holds `pytest-full`, `agent-mesh-test-full`, and `dashboard-test-full` at
+  `stages: [pre-push]`, `always_run: true`, `pass_filenames: false`, and fails if any of them starts
+  selecting a subset.
+
 - **The Agent Mesh runtime is running, and the Phase 0 kill criterion is answered.** The `mesh`
   profile started for the first time on 2026-08-21 and is recorded in
   [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md). Four apps
@@ -461,6 +919,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The no-loss claim is narrower, and honest**
+  ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+  `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes
+  `broker_queue_name` with a per-process UUID, `create_queue_on_start: True`, and
+  `temporary_queue: True`; none of the 25 parameters in its schema names the queue, so no
+  configuration changes it, and [ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)
+  forbids forking a supported component without a proving test.
+
+  Waiting for the four open queue parameters would buy nothing — the plugin would still bind a
+  temporary queue afterwards. So the claim moves instead: it covers the application data plane and
+  excludes the A2A ingress hop. What carries the weight is stated with it — the application topic is
+  the authoritative record, the recorder and evidence service read it on their own identities, and no
+  command, approval, or audit record runs through the gateway. The gap it leaves is real and now
+  visible: a restart silently drops any salient event published during it.
+
 - The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
   `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets
   `PGDATA=/var/lib/postgresql/18/docker` and declares `/var/lib/postgresql` as its volume, so keeping
@@ -604,6 +1077,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   so no release gate depends on a paid API.
 
 ### Fixed
+
+- Both gate stages were red on `main`. `typos` splits the W3C traceparent example's span identifier
+  `00f067aa0ba902b7` into words and reads one of those words as a misspelling of `by` or `be`, so
+  `packages/contracts/tests/test_view.py` failed the hook from the moment it landed, and every
+  `pre-commit run --all-files` at either stage reported it. `_typos.toml` now allows that exact
+  identifier through `[default.extend-identifiers]`, which matches whole identifiers rather than
+  words, so those same two letters standing alone in any file are still reported. Verified both
+  ways against a throwaway file carrying both spellings.
 
 - The `pre-push hooks` job had never once completed. Eight runs, every one stalled immediately after
   `gitleaks (full history)` and killed at the 60-minute cap with orphan `git` and `pager` processes in

@@ -83,6 +83,23 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0063](0063-lock-local-models-by-manifest-digest.md) | Lock local Ollama models by manifest digest in a committed lock file | Accepted |
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
+| [0066](0066-select-commit-stage-tests-from-an-import-graph.md) | Select commit-stage tests from a project-owned import graph | Accepted |
+| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Accepted |
+| [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
+| [0069](0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md) | Close the gateway-operation set with a deny-by-default operation table | Accepted |
+| [0070](0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) | Reserve `reply` as the reply channel's mission level, and narrow the Event Mesh Tool's grant to it | Accepted |
+| [0071](0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) | Accept the Event Mesh Gateway's temporary data-plane queue, and scope the no-loss claim to exclude it | Accepted |
+| [0072](0072-mission-lifecycle-states.md) | Name the mission lifecycle states and separate an exhausted search from an aborted one | Accepted |
+| [0073](0073-sector-lifecycle-states.md) | Name the sector lifecycle states and drive them from the connectivity edges | Accepted |
+| [0074](0074-command-dispatch-lifecycle.md) | Name the command dispatch lifecycle and bound it by a send budget, not a clock | Accepted |
+| [0075](0075-evidence-lifecycle-states.md) | Name the evidence lifecycle states and keep abstention distinct from rejection | Accepted |
+| [0076](0076-evidence-score-bands.md) | Make the escalating evidence band unreachable by construction, not by a threshold | Accepted |
+| [0077](0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) | The fleet scenario is a frozen value the composition root supplies, not a file the simulator reads | Accepted |
+| [0078](0078-one-tick-is-one-observation-per-drone.md) | One tick is one observation per drone, ordered by drone identifier | Accepted |
+| [0079](0079-bind-each-topic-family-to-its-delivery-guarantee.md) | Bind each topic family to its delivery guarantee, and give the gateway RPC families their own value | Accepted |
+| [0080](0080-provision-one-durable-queue-per-guaranteed-consumer.md) | Provision one durable queue per guaranteed consumer, owned by its client username | Accepted |
+| [0081](0081-give-command-dispatch-one-interval.md) | Give command dispatch one interval, and let jitter only add | Accepted |
+| [0082](0082-bind-the-drone-command-and-its-result-to-payload-schemas.md) | Bind the drone command and its result to payload schemas, one schema per command type | Accepted |
 
 ## Decisions still open
 

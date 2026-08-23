@@ -621,3 +621,47 @@ class TopicErrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FamilyNameTests(unittest.TestCase):
+    def test_each_family_is_named_by_its_literal_levels(self) -> None:
+        # Arrange
+        expected = (
+            "operator.command",
+            "operator.approval",
+            "drone.telemetry",
+            "drone.event",
+            "drone.command",
+            "drone.command-result",
+            "gateway.request",
+            "gateway.response",
+            "agent.proposal",
+            "agent.response",
+            "audit",
+        )
+
+        # Act
+        suffixes = tuple(family.literal_suffix for family in Family)
+
+        # Assert
+        self.assertEqual(expected, suffixes)
+
+    def test_no_two_families_share_a_name(self) -> None:
+        # Arrange
+        families = tuple(Family)
+
+        # Act
+        suffixes = {family.literal_suffix for family in families}
+
+        # Assert
+        self.assertEqual(len(families), len(suffixes))
+
+    def test_a_family_name_carries_no_placeholder(self) -> None:
+        # Arrange
+        braces = frozenset("{}")
+
+        # Act
+        offending = tuple(family for family in Family if braces & set(family.literal_suffix))
+
+        # Assert
+        self.assertEqual((), offending)

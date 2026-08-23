@@ -23,8 +23,8 @@ Project-owned code is reserved for the SAR scenario and simulator, strict domain
 | Agent Mesh Orchestrator | Open-ended operator questions and unexpected replanning | Delegation evaluation and task trace |
 | Agent Mesh YAML workflow | Deterministic mission-response sequence and typed agent steps | Structured input/output contract and repeatable workflow result |
 | HTTP/SSE gateway | Upstream engineering task UI | Loopback health and streamed task result |
-| Event Mesh Gateway 1.1.0 | Allowlisted salient-event ingress, transforms, structured invocation, response routing | Topic-to-task contract, deferred settlement, redelivery, success/error routes |
-| Event Mesh Tool 0.1.1 | Read-only status and action-proposal request/reply | Correlation, timeout, malformed reply, and ACL-denial tests |
+| Event Mesh Gateway 1.1.0 | Allowlisted salient-event ingress, transforms, structured invocation, response routing | **Topic-to-task contract, structured invocation, and both routes proven live** on its own `event-mesh-gateway` identity ([event-mesh-gateway-first-run.md](../release-evidence/phase-0/event-mesh-gateway-first-run.md)). Deferred settlement is configured and its failure path observed; redelivery is untestable while the data-plane queue is temporary ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)) |
+| Event Mesh Tool 0.1.1 | Read-only status and action-proposal request/reply | Correlation, timeout, malformed reply, and ACL-denial tests. Request/reply and ACL denial are proven live in `tests/phase0/test_event_mesh_tool_live.py` ([ADR-0070](adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)); timeout and malformed-reply behaviour are still owed |
 | PubSub+ Messaging API for Python | Application telemetry, guaranteed consumers, publisher confirmation, reconnect, request/reply | Real-broker integration and failure-injection suites |
 | PubSub+ software event broker container | Shared broker, topic routing, queues, spool, ACL enforcement | Broker Manager clients/subscriptions/rates and queue-depth transition |
 | Solace Cloud service (showcase) | The same identities, queues, and traffic on a Developer-class service, by environment only | Redacted Cluster Manager, Broker Manager, and Event Portal evidence ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
@@ -44,7 +44,7 @@ Editable source: [`docs/architecture/aerial-rescue-mesh-overview.dot`](architect
 - **Evidence Fusion agent** correlates structured visual, thermal, positional, and contextual evidence.
 - **Three edge agents** run as separately deployable Agent Mesh processes with distinct agent cards, Ollama models, capabilities, queues, and broker identities.
 - **HTTP/SSE Web UI gateway** provides the upstream Agent Mesh chat/task surface on loopback for direct inspection of discovered agents and streamed task results.
-- **Event Mesh Gateway 1.1.0** is the pinned official ingress plugin. It allowlists salient application topics, uses structured invocation and JSON Schemas where supported, translates events into A2A tasks, forwards correlation context, and routes success and failure outputs to non-authoritative result topics. Routine telemetry never enters this gateway.
+- **Event Mesh Gateway 1.1.0** is the pinned official ingress plugin, configured in `agent-mesh/configs/event-mesh-gateway.yaml` and running as a fifth app on the `event-mesh-gateway` identity. Its data-plane queue is temporary and not configurable, so ingress into the mesh is at-least-once only while it is connected ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)). It allowlists salient application topics, uses structured invocation and JSON Schemas where supported, translates events into A2A tasks, forwards correlation context, and routes success and failure outputs to non-authoritative result topics. Routine telemetry never enters this gateway.
 - **Event Mesh Tool 0.1.1** is the pinned official request/reply plugin for read-only status queries and action proposals. Its broker identity can publish only to command-gateway request topics and cannot publish executable or authorized command topics.
 - **The `general` and `planning` configurations** are supplied through LiteLLM-compatible model settings by either a paid provider (Anthropic or OpenAI) or local Ollama. Paid mode is the default for acceptance runs; local-only is a first-class, tested configuration so the system runs with no API key. Exactly one provider is active per run and readiness reports which. See [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md).
 
@@ -65,7 +65,18 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
 - **Fleet simulator:** Adapts the deterministic scenario to broker and clock ports, drives the pure Tier 1
   domain state machines in `packages/domain` — mission, sector, command, drone connectivity, and evidence
   lifecycles ([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md)) — injects failures, publishes
-  telemetry, and consumes commands.
+  telemetry, and consumes commands. **Partly implemented.** The scenario boundary
+  ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)), the tick fold
+  ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and direct telemetry publication run
+  live against the broker ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)),
+  driving the mission, sector, and connectivity machines. Command intake runs live too: each tick is
+  followed by a bounded drain of every drone's own durable queue, and the simulator folds the dispatch
+  machine, publishes an acknowledgement and then a resolution, and settles
+  ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)). It drives
+  only the drone-observable half of that machine: `SEND`, `TIME_OUT`, and `ABANDONED` are the dispatching
+  gateway's, and the broker's grant tables make none of the three observable here. The evidence machines
+  are not implemented, and the service in `deploy/compose.yaml` is still an import-and-exit shell because
+  a process entry point needs a scenario the scenario service does not yet produce.
 - **Command gateway:** Owns deterministic mission-command policy, idempotency, proposal-bound approval checks, durable outbox state, and executable command publication. Agent credentials cannot bypass it.
 - **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable store for mission state, inbox/outbox records, proposals, approvals, idempotency results, evidence provenance, and audit records. Access is through async SQLAlchemy 2.x with `asyncpg`, and schema is managed with Alembic migrations. Broker acknowledgement occurs only after the related durable transaction commits. An append-only audit table with a monotonic ordinal is the ordering authority for the mission timeline. See [ADR-0003](adr/0003-postgres-durable-mission-store.md).
 - **Broker adapter:** Wraps the Solace PubSub+ Messaging API for Python 1.11 (or an explicitly reviewed compatible patch) in the Python 3.14 application environment and isolates connection, publishing, subscription, acknowledgement, retry, and shutdown behavior. Agent Mesh keeps the separate PubSub+ client version resolved by its own lockfile.
@@ -98,7 +109,7 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 | `services` | the six application services and the dashboard API, built from one Python 3.14.7 image | Inert: each command imports its package and exits, because no entrypoint exists yet |
 | `event-portal` | the Event Management Agent for Event Portal runtime discovery, an amd64-only image run under emulation | Non-gating showcase support ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
 
-Verification stays native: `agent-mesh/.venv` on Python 3.13.15 runs the configuration validator and the compatibility probes ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), while the container, which carries upstream's Python 3.13.11, is the runtime. The plugin-compatibility probe must be run inside the built image before the `mesh` profile is declared supported. Ollama stays on the host; containers reach it as `http://host.docker.internal:11434`. The showcase profile is the same stack pointed at the Solace Cloud service through an ignored `.env.showcase`; no gate, hook, or release criterion depends on it.
+Verification stays native: `agent-mesh/.venv` on Python 3.13.15 runs the configuration validator and the compatibility probes ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), while the container, which carries upstream's Python 3.13.11, is the runtime. The plugin-compatibility probe is run inside the built image by `scripts/probes/agent-mesh-image-probe.sh`, which is what lets the `mesh` profile be called supported; it passed on the image's CPython 3.13.11 on 2026-08-21. Ollama stays on the host; containers reach it as `http://host.docker.internal:11434`. The showcase profile is the same stack pointed at the Solace Cloud service through an ignored `.env.showcase`; no gate, hook, or release criterion depends on it.
 
 `scripts/broker-secrets.sh` generates the per-checkout certificate authority, the broker's server certificate with subject alternative names for `localhost`, `broker`, and `127.0.0.1`, and the stack's passwords; `deploy/certs/` is the trust-store directory every client mounts, and `tcps` validation is never relaxed ([ADR-0046](adr/0046-generated-local-certificate-authority.md)).
 
