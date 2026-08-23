@@ -25,6 +25,7 @@ from enum import Enum
 from typing import Final, Protocol
 
 from aerial_rescue_domain.principals import Principal
+from solace.messaging.config.message_acknowledgement_configuration import Outcome
 from solace.messaging.config.solace_properties import (
     authentication_properties as authentication,
 )
@@ -37,6 +38,7 @@ from solace.messaging.config.solace_properties import (
 from solace.messaging.config.transport_security_strategy import TLS
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
 from solace.messaging.messaging_service import MessagingService
+from solace.messaging.resources.queue import Queue as SolaceQueue
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
@@ -63,11 +65,24 @@ event log (``release-evidence/phase-0/mesh-first-run.md``).
 """
 
 
+REQUIRED_OUTCOMES: Final = (Outcome.FAILED, Outcome.REJECTED)
+"""The negative settlements a consumer must ask for before it may send one.
+
+The client permits ``ACCEPTED`` unconditionally and refuses the other two unless the
+receiver was built asking for them, so a consumer that had not asked would discover at the
+first poison message that its only options were to accept it or to leave it redelivering.
+Both are asked for here, and which one a handler chooses is the handler's decision:
+``FAILED`` returns the message for redelivery, ``REJECTED`` sends it to the dead-message
+queue at once (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
+"""
+
+
 class MessagingRefusal(Enum):
     """Why a broker endpoint cannot be used."""
 
     INSECURE_TRANSPORT = "broker URL does not use a validated TLS transport"
     PUBLISH_REFUSED = "the broker did not acknowledge the publication"
+    SETTLE_REFUSED = "the broker did not accept the settlement"
 
 
 class MessagingError(ValueError):
@@ -136,6 +151,20 @@ class MessageReceiver(Protocol):
 
     def receive(self, timeout_milliseconds: int, /) -> InboundMessage | None:
         """Return the next message, or ``None`` when the window passes with none."""
+
+
+class AcknowledgingReceiver(MessageReceiver, Protocol):
+    """Somewhere one message arrives from that the consumer must settle explicitly.
+
+    A :class:`MessageReceiver` on its own says nothing about settlement, and a direct
+    receiver satisfies it structurally, so a caller that must acknowledge what it consumed
+    would accept one and silently lose every message it processed. Requiring
+    :meth:`settle` is what makes the two impossible to confuse, the same control the two
+    publisher ports use.
+    """
+
+    def settle(self, message: InboundMessage, outcome: Outcome, /) -> None:
+        """Settle one message, so the broker learns the work either finished or did not."""
 
 
 def connection_properties(
@@ -291,6 +320,57 @@ class SolaceReceiver:
         self._receiver.terminate()
 
 
+class SolacePersistentReceiver:
+    """An :class:`AcknowledgingReceiver` bound to one durable queue.
+
+    Durable and exclusive because that is how the queue was provisioned: a second binding
+    is a configuration error rather than a scale-out, and one consumer flow is what keeps a
+    producer's sequence order across the endpoint. Receiving is blocking rather than by
+    callback so that nothing here subclasses the untyped upstream handler
+    (``docs/adr/0028-untyped-solace-client-boundary.md``).
+
+    Nothing is settled automatically. The client offers auto-acknowledgement, which would
+    remove a message from the queue as soon as it was handed over and before the consumer
+    had committed anything, so the guarantee would end at the socket rather than at the
+    durable outcome. Client acknowledgement is asked for here and the caller settles.
+    """
+
+    def __init__(self, service: MessagingService, queue: str) -> None:
+        """Bind a persistent receiver to ``queue`` on a connected service, and start it."""
+        self._receiver = (
+            service.create_persistent_message_receiver_builder()
+            .with_required_message_outcome_support(*REQUIRED_OUTCOMES)
+            .with_message_client_acknowledgement()
+            .build(SolaceQueue.durable_exclusive_queue(queue))
+        )
+        self._receiver.start()
+
+    def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
+        """Return the next message, or ``None`` when the window passes with none."""
+        received: InboundMessage | None = self._receiver.receive_message(
+            timeout=timeout_milliseconds
+        )
+        return received
+
+    def settle(self, message: InboundMessage, outcome: Outcome) -> None:
+        """Settle one message, so the broker learns the work either finished or did not.
+
+        Raises:
+            MessagingError: With ``SETTLE_REFUSED`` when the client reports a failure, so a
+                caller catches one owned type rather than an untyped upstream one. An
+                unsettled message is redelivered, so the failure is recoverable and must
+                not be mistaken for the work being done.
+        """
+        try:
+            self._receiver.settle(message, outcome)
+        except PubSubPlusClientError as error:
+            raise MessagingError(MessagingRefusal.SETTLE_REFUSED, outcome.name) from error
+
+    def close(self) -> None:
+        """Terminate the receiver, so shutdown is explicit rather than collected."""
+        self._receiver.terminate()
+
+
 @dataclass(frozen=True)
 class BrokerSession:
     """A connected publisher and receiver, and the one call that shuts both down."""
@@ -368,3 +448,43 @@ def open_session(
         receiver=SolaceReceiver(service, subscriptions),
         _service=service,
     )
+
+
+@dataclass(frozen=True)
+class ConsumingSession:
+    """A connected persistent receiver, and the one call that shuts it down.
+
+    Consume-only because a role that binds a queue is not thereby a publisher: the
+    recorder holds no publish grant at all, and giving it a publisher would be authority
+    the process cannot justify holding
+    (``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``).
+    """
+
+    receiver: SolacePersistentReceiver
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the receiver and disconnect, in that order."""
+        self.receiver.close()
+        self._service.disconnect()
+
+
+def open_consuming_session(
+    endpoint: BrokerEndpoint, role: Principal, credential: str, queue: str
+) -> ConsumingSession:
+    """Connect on one role and return a receiver bound to one durable queue.
+
+    Args:
+        endpoint: Where the broker is and what signs its certificate.
+        role: The authorization role to authenticate as, which must be the queue's owner:
+            the queue permits no access to anyone else.
+        credential: That role's password, which is never logged.
+        queue: The queue name, built by :mod:`aerial_rescue_broker.queues` and never by
+            hand.
+
+    Returns:
+        The session. Shutting it down is the caller's job and is explicit.
+    """
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    return ConsumingSession(receiver=SolacePersistentReceiver(service, queue), _service=service)

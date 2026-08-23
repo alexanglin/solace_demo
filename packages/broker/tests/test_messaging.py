@@ -24,17 +24,21 @@ import pytest
 from aerial_rescue_broker.messaging import (
     DIRECT_BUFFER_CAPACITY,
     PUBLISH_TIMEOUT_MILLISECONDS,
+    REQUIRED_OUTCOMES,
     BrokerEndpoint,
+    ConsumingSession,
     MessagingError,
     MessagingRefusal,
     PublishingSession,
     SolaceDirectPublisher,
+    SolacePersistentReceiver,
     SolacePublisher,
     SolaceReceiver,
     build_service,
     connection_properties,
 )
 from aerial_rescue_domain.principals import Principal
+from solace.messaging.config.message_acknowledgement_configuration import Outcome
 from solace.messaging.config.solace_properties import (
     authentication_properties as authentication,
 )
@@ -42,6 +46,7 @@ from solace.messaging.config.solace_properties import (
     transport_layer_properties as transport,
 )
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
+from solace.messaging.resources.queue import Queue as SolaceQueue
 from solace.messaging.resources.topic import Topic as SolaceTopic
 
 ENDPOINT: Final = BrokerEndpoint(
@@ -49,6 +54,7 @@ ENDPOINT: Final = BrokerEndpoint(
 )
 CREDENTIAL: Final = "not-a-real-credential"
 CLIENT_FAILURE: Final = "the broker refused the publication"
+QUEUE: Final = "aerial-rescue/v1/recorder/audit"
 
 
 class FakeMessages:
@@ -183,6 +189,86 @@ class FakeDirectPublisherBuilder:
         return self._publisher
 
 
+class FakeMessage:
+    """One inbound message, carrying the members the ``InboundMessage`` port names."""
+
+    def __init__(self, payload: bytes = b"{}") -> None:
+        """Record the payload this message reports."""
+        self._payload = payload
+
+    def get_payload_as_bytes(self) -> bytes | None:
+        """Return the payload."""
+        return self._payload
+
+    def get_destination_name(self) -> str | None:
+        """Return the topic the message arrived on."""
+        return "aerial-rescue/v1/m-0001/audit/approval"
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return the user properties the producer set."""
+        return {}
+
+
+class FakePersistentReceiver:
+    """The client's persistent receiver, recording every settlement it was asked for."""
+
+    def __init__(self, scripted: Sequence[object], failing: bool = False) -> None:
+        """Record what this receiver will yield, and whether settling reports a failure."""
+        self.started = 0
+        self.terminated = 0
+        self.timeouts: list[int] = []
+        self.settled: list[tuple[object, Outcome]] = []
+        self._scripted = list(scripted)
+        self._failing = failing
+
+    def start(self) -> None:
+        """Record that the receiver was started."""
+        self.started += 1
+
+    def receive_message(self, timeout: int) -> object:
+        """Return the next scripted message, or ``None`` when the script is exhausted."""
+        self.timeouts.append(timeout)
+        return self._scripted.pop(0) if self._scripted else None
+
+    def settle(self, message: object, outcome: Outcome) -> None:
+        """Record one settlement, or raise the way the client does when it cannot send one."""
+        if self._failing:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
+        self.settled.append((message, outcome))
+
+    def terminate(self) -> None:
+        """Record that the receiver was terminated."""
+        self.terminated += 1
+
+
+class FakePersistentReceiverBuilder:
+    """The client's persistent receiver builder, recording what it was configured with."""
+
+    def __init__(self, receiver: FakePersistentReceiver) -> None:
+        """Record which receiver this builder yields."""
+        self.outcomes: tuple[Outcome, ...] = ()
+        self.client_acknowledgement = 0
+        self.endpoints: list[SolaceQueue] = []
+        self._receiver = receiver
+
+    def with_required_message_outcome_support(
+        self, *outcomes: Outcome
+    ) -> FakePersistentReceiverBuilder:
+        """Record the negative outcomes the receiver must be able to send."""
+        self.outcomes = outcomes
+        return self
+
+    def with_message_client_acknowledgement(self) -> FakePersistentReceiverBuilder:
+        """Record that the caller settles each message rather than the client doing it."""
+        self.client_acknowledgement += 1
+        return self
+
+    def build(self, endpoint_to_consume_from: SolaceQueue) -> FakePersistentReceiver:
+        """Record the queue and return the receiver."""
+        self.endpoints.append(endpoint_to_consume_from)
+        return self._receiver
+
+
 class FakeBuilder:
     """A builder whose ``build`` returns one fixed object."""
 
@@ -212,6 +298,8 @@ class FakeService:
         self.receiver_builder = FakeReceiverBuilder(self.receiver)
         self.direct_publisher = FakeDirectPublisher(self.order, failing=direct_failing)
         self.direct_publisher_builder = FakeDirectPublisherBuilder(self.direct_publisher)
+        self.persistent_receiver = FakePersistentReceiver(())
+        self.persistent_receiver_builder = FakePersistentReceiverBuilder(self.persistent_receiver)
 
     def message_builder(self) -> FakeMessages:
         """Return the outbound message builder."""
@@ -228,6 +316,10 @@ class FakeService:
     def create_direct_message_receiver_builder(self) -> FakeReceiverBuilder:
         """Return a builder for the direct receiver."""
         return self.receiver_builder
+
+    def create_persistent_message_receiver_builder(self) -> FakePersistentReceiverBuilder:
+        """Return a builder for the persistent receiver."""
+        return self.persistent_receiver_builder
 
     def disconnect(self) -> None:
         """Record that the service was disconnected, and when."""
@@ -531,3 +623,142 @@ class PublishingSessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SolacePersistentReceiverTests(unittest.TestCase):
+    def test_the_receiver_binds_the_named_durable_exclusive_queue_and_starts(self) -> None:
+        # Arrange
+        service = FakeService()
+
+        # Act
+        SolacePersistentReceiver(service, QUEUE)
+
+        # Assert
+        builder = service.persistent_receiver_builder
+        self.assertEqual(
+            (QUEUE, True, True, 1),
+            (
+                builder.endpoints[0].get_name(),
+                builder.endpoints[0].is_durable(),
+                builder.endpoints[0].is_exclusively_accessible(),
+                service.persistent_receiver.started,
+            ),
+        )
+
+    def test_the_caller_settles_each_message_rather_than_the_client(self) -> None:
+        # Arrange
+        service = FakeService()
+
+        # Act
+        SolacePersistentReceiver(service, QUEUE)
+
+        # Assert
+        self.assertEqual(1, service.persistent_receiver_builder.client_acknowledgement)
+
+    def test_both_negative_outcomes_are_requested_so_a_refusal_can_be_sent(self) -> None:
+        # Arrange
+        service = FakeService()
+
+        # Act
+        SolacePersistentReceiver(service, QUEUE)
+
+        # Assert
+        self.assertEqual(
+            (REQUIRED_OUTCOMES, (Outcome.FAILED, Outcome.REJECTED)),
+            (service.persistent_receiver_builder.outcomes, REQUIRED_OUTCOMES),
+        )
+
+    def test_receiving_passes_the_window_through_and_yields_the_message(self) -> None:
+        # Arrange
+        message = FakeMessage()
+        service = FakeService()
+        service.persistent_receiver = FakePersistentReceiver((message,))
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver
+        )
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        received = receiver.receive(250)
+
+        # Assert
+        self.assertEqual((message, [250]), (received, service.persistent_receiver.timeouts))
+
+    def test_an_empty_window_yields_none_rather_than_blocking(self) -> None:
+        # Arrange
+        service = FakeService()
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        received = receiver.receive(10)
+
+        # Assert
+        self.assertIsNone(received)
+
+    def test_accepting_a_message_removes_it_from_the_queue(self) -> None:
+        # Arrange
+        message = FakeMessage()
+        service = FakeService()
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        receiver.settle(message, Outcome.ACCEPTED)
+
+        # Assert
+        self.assertEqual([(message, Outcome.ACCEPTED)], service.persistent_receiver.settled)
+
+    def test_rejecting_a_message_sends_it_to_the_dead_message_queue(self) -> None:
+        # Arrange
+        message = FakeMessage()
+        service = FakeService()
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        receiver.settle(message, Outcome.REJECTED)
+
+        # Assert
+        self.assertEqual([(message, Outcome.REJECTED)], service.persistent_receiver.settled)
+
+    def test_a_client_failure_settling_becomes_one_owned_refusal(self) -> None:
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver = FakePersistentReceiver((), failing=True)
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver
+        )
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        with pytest.raises(MessagingError) as raised:
+            receiver.settle(FakeMessage(), Outcome.ACCEPTED)
+
+        # Assert
+        self.assertEqual(MessagingRefusal.SETTLE_REFUSED, raised.value.refusal)
+
+    def test_closing_terminates_the_receiver_rather_than_leaving_it_collected(self) -> None:
+        # Arrange
+        service = FakeService()
+        receiver = SolacePersistentReceiver(service, QUEUE)
+
+        # Act
+        receiver.close()
+
+        # Assert
+        self.assertEqual(1, service.persistent_receiver.terminated)
+
+
+class ConsumingSessionTests(unittest.TestCase):
+    def test_closing_terminates_the_receiver_before_disconnecting(self) -> None:
+        # Arrange
+        service = FakeService()
+        session = ConsumingSession(
+            receiver=SolacePersistentReceiver(service, QUEUE), _service=service
+        )
+
+        # Act
+        session.close()
+
+        # Assert
+        self.assertEqual(
+            (1, ["disconnect"]), (service.persistent_receiver.terminated, service.order)
+        )
