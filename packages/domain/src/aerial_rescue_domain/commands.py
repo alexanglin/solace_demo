@@ -1,10 +1,10 @@
 """The command dispatch lifecycle: one table over six states plus one counted bound.
 
 The states, the events, the five legal pairs, and the send budget are the decision in
-``docs/adr/0074-command-dispatch-lifecycle.md``. The budget has no default and its value is an
-open row in ``docs/operating-parameters.md``, so a composition root supplies it. The domain
-counts sends; the adapter owns the acknowledgement timer, the backoff, and the jitter, and
-applies one event per decision. This module reads no clock.
+``docs/adr/0074-command-dispatch-lifecycle.md``. The budget has no default and its value is in
+``docs/operating-parameters.md``, so a composition root supplies it. The domain counts sends;
+the adapter owns the acknowledgement timer, the backoff, and the jitter, and applies one event
+per decision. This module reads no clock.
 
 This is not the command-authority table, which closes ``commandType`` and decides who may
 publish each kind, and it is not the idempotency rule that returns a prior result for a known
@@ -61,7 +61,7 @@ class SendBudget:
     """How many times the gateway may put one command on the wire.
 
     The count is injected and has no default; its home is ``docs/operating-parameters.md``,
-    where it is still an open row.
+    where it is five, derived in ``docs/adr/0081-give-command-dispatch-one-interval.md``.
     """
 
     max_sends: int

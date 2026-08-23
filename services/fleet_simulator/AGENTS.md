@@ -71,7 +71,7 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A console script and a runnable Compose command | A scenario to run. ADR-0077 leaves producing one to the scenario service, and `deploy/compose.yaml` keeps its import-and-exit shell |
-| Command intake and the command dispatch lifecycle | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md). The durable queue now exists: `packages/broker` provisions one command queue per declared drone and binds it with explicit settlement ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)) |
+| Command intake and the command dispatch lifecycle | A wire contract. The durable queue exists and the parameters are set: `packages/broker` provisions one command queue per declared drone and binds it with explicit settlement ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)), and the send budget, acknowledgement timeout, backoff, and jitter are derived rows ([ADR-0081](../../docs/adr/0081-give-command-dispatch-one-interval.md)). What is missing is the row below |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
 | Command-result events | No payload or event schema binds that family, and an ACL grant is not a wire contract |
 | Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
@@ -203,9 +203,10 @@ Use the domain package's current public types and functions and preserve the own
   `CONTRIBUTING` state reaches scoring. Preserve the distinct-source corroboration floor and the
   recorded-origin refusal; the simulator cannot fabricate corroboration by renaming one source or
   replaying one item.
-- Treat score boundaries and the command send budget as open until their canonical parameter rows are
-  measured and decided. An open parameter blocks the behavior that needs it; it is not permission to pick
-  a convenient test default in production composition.
+- Treat score boundaries as open until their canonical parameter row is measured and decided. An
+  open parameter blocks the behavior that needs it; it is not permission to pick a convenient
+  test default in production composition. The command send budget is no longer open, and it is
+  still injected with no default rather than named here.
 
 The simulator's broker role may publish and subscribe only as ADR-0061 records. Resolve those permissions
 through the domain grant table and broker projection rather than duplicating or widening the matrix here.

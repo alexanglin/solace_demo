@@ -168,9 +168,10 @@ records; it never publishes an uncommitted object captured from a transaction.
 
 The only named outbox size bound in `docs/operating-parameters.md` is per-drone. The adjacent generic
 continuity-breach overflow rule does not say explicitly whether it also governs the central command outbox;
-resolve that scope together with the central bound, overflow-and-audit transaction, claim and
-reconciliation state machine, command send budget, and acknowledgement, retry, backoff, and jitter values.
-Add their governing parameters and decision before implementation. Do not claim guaranteed delivery, no
+resolve that scope together with the central bound, overflow-and-audit transaction, and the claim
+and reconciliation state machine. The command send budget and the acknowledgement, backoff, and
+jitter values are settled ([ADR-0081](../../docs/adr/0081-give-command-dispatch-one-interval.md)).
+Add the governing parameter and decision for anything still open before implementation. Do not claim guaranteed delivery, no
 loss, or backlog recovery until every required bound and failure test exists.
 
 ## 6. Protect audit, approval, replay, and budget facts
