@@ -10,6 +10,60 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Guaranteed delivery has an endpoint.** `docs/CONTRACTS.md` has put mission commands,
+  command results, evidence, failures, approvals, and audit records on guaranteed delivery
+  through queues and explicit acknowledgement since the topic taxonomy landed, and
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) closed by
+  saying plainly that none of it was enforced. Before this change the broker held **zero queues**.
+  It now holds 22, and the delivery semantics are the broker's behaviour rather than a sentence
+  ([guaranteed-delivery-first-run.md](release-evidence/phase-2/guaranteed-delivery-first-run.md)).
+
+  ADR-0061 said the four queue parameters needed the backlog-recovery measurement first. That
+  dependency is circular — draining 500 messages after a reconnect requires a queue to drain them
+  from — and waiting was not neutral, because every relevant broker default is wrong here.
+  Redelivery retries forever, expiry is ignored, the per-queue spool exceeds the whole message
+  VPN's, the dead-message target names a queue that does not exist, and both traffic directions
+  start disabled. Every value is now written rather than inherited, and the four numbers are
+  derived from the declared fault envelope and labelled as derived, the position the gateway
+  acknowledgement timeout already held
+  ([ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+
+  Two records replace a reading with a lookup. Which guarantee a family is owed is a table total
+  over the eleven families
+  ([ADR-0079](docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)), with three values
+  rather than two: the gateway request and response are `REQUEST_REPLY`, because their queue is a
+  temporary one Solace AI Connector owns, and calling that direct would assert they may be dropped
+  while calling it guaranteed would assert an endpoint this project provisions. The queue set is
+  then a projection of the subscribe grants intersected with the guaranteed families, so a queue
+  exists only where the ACL already permits the subscription: a queue can narrow authority and can
+  never widen it.
+
+  The queue is a second control, independent of the ACL, and the live probe is what shows the
+  difference. `dashboard-api` holds the drone-command subscribe grant and is still refused with
+  `SOLCLIENT_SUBCODE_PERMISSION_NOT_ALLOWED` when it binds the fleet simulator's queue, while
+  `fleet-simulator` binds the same queue in the same test. The ACL says which topics a role may
+  subscribe to; the queue says which identity may bind the endpoint.
+
+  Three things no offline test could have found turned up in the first live apply. The
+  dead-message queue refuses `maxRedeliveryCount` and `maxTtl` — neither has a meaning for the
+  endpoint that redelivery and expiry send messages *to*. A queue's `ingressEnabled` and
+  `egressEnabled` both default to `false`, so a queue with the other four values corrected would
+  have spooled nothing and delivered nothing and said nothing about it. And the monitor member
+  `spooledMsgCount` reads like a depth and is cumulative: a queue reporting 17 held zero messages,
+  which is what four passing-looking tests were actually measuring.
+
+  Consuming is deliberately awkward in one place. `AcknowledgingReceiver` requires `settle` rather
+  than standing beside `MessageReceiver`, because a protocol is satisfied structurally and a direct
+  receiver would otherwise have been accepted wherever a consumer must acknowledge what it took,
+  silently losing every message it handled. Auto-acknowledgement was available and is not used: it
+  removes a message as soon as it is handed over, which would end the guarantee at the socket
+  instead of at the durable outcome.
+
+  What this does not do is also recorded. The backlog-recovery target is still unmeasured — now
+  blocked by the absence of a consumer service rather than by the absence of an endpoint — message
+  expiry is configured and unobserved, and the bounded outbox, reconnect reconciliation, and
+  acknowledgement after a store commit all wait on `packages/store`.
+
 - **A fleet flies, and the broker carries it.** `services/fleet_simulator` had been a scaffold
   since the repository began: a manifest, a docstring, and a `py.typed` marker. All five Tier 1
   domain state machines existed and nothing drove any of them, so every claim about the mission,

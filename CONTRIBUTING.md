@@ -208,10 +208,12 @@ docker volume rm aerial-rescue-mesh_postgres-data
 
 `just provision` is not optional once you intend to connect anything: it applies
 [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)'s nine
-least-privilege client usernames and their deny-by-default ACL profiles, and it disables the factory
-`default` client username. Until it runs, any identity may publish any topic, including the
-executable command topics; after it runs, a client presenting `default` or an unknown username
-cannot connect at all. Re-running it changes nothing, so run it again after `just rotate-secrets`.
+least-privilege client usernames and their deny-by-default ACL profiles, applies
+[ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)'s durable queues,
+and disables the factory `default` client username. Until it runs, any identity may publish any
+topic, including the executable command topics; after it runs, a client presenting `default` or an
+unknown username cannot connect at all. Re-running it changes nothing, so run it again after
+`just rotate-secrets`.
 
 You never copy a role password by hand. `just secrets` writes `deploy/secrets/.env.roles`, holding
 each role's username and password under the names `.env.example` declares, and every compose recipe
@@ -224,6 +226,17 @@ stops on the missing file rather than starting a service with a blank identity.
 `just provision` needs `--namespace aerial-rescue-mesh` to write the A2A grant; without it the three
 Agent Mesh roles get no A2A exception and the `mesh` profile cannot reach its own topics
 ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)).
+
+It also takes `--drone <id>`, repeated once per drone, and creates one durable command queue for
+each. A drone with no queue is not an error the broker reports: a guaranteed message matching no
+endpoint is discarded, so its commands go nowhere silently
+([ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)). The summary line
+reads `no drone command queues` when none was declared. The queue set is otherwise derived from the
+grant tables, so nothing else needs naming on the command line:
+
+```sh
+just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone drone-thermal-02
+```
 
 `just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
 the second is inert until the services gain entrypoints. Editing a file under `agent-mesh/configs/`

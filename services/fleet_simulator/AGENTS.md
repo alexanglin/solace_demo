@@ -44,6 +44,7 @@ changing it:
 | Command lifecycle and injected send budget | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
 | Evidence lifecycle and explicit abstention | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 | Evidence score, bands, and corroboration floor | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
+| Durable command queues, one per drone | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 Do not settle a state transition, simulation parameter, clock or random-source policy, broker grant,
@@ -70,7 +71,7 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A console script and a runnable Compose command | A scenario to run. ADR-0077 leaves producing one to the scenario service, and `deploy/compose.yaml` keeps its import-and-exit shell |
-| Command intake and the command dispatch lifecycle | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md), and a durable queue the broker package does not yet provide |
+| Command intake and the command dispatch lifecycle | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md). The durable queue now exists: `packages/broker` provisions one command queue per declared drone and binds it with explicit settlement ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)) |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
 | Command-result events | No payload or event schema binds that family, and an ACL grant is not a wire contract |
 | Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
@@ -232,18 +233,20 @@ coordinated contracts, payload and event schemas, golden fixtures, manifest, das
 consumer work required by the contracts authority.
 
 Routine telemetry is direct and supersedable. Critical drone events and command results have stronger
-documented delivery intent, but no durable application queue or complete bounded outbox exists yet. Do not
-claim guaranteed delivery, zero loss, backlog recovery, reconnect reconciliation, or exactly-once effects
-from the current Compose service or an in-memory fake. Establish the missing queue and storage parameters,
-then prove publisher confirmation, explicit acknowledgement after durable commit, bounded redelivery,
-idempotency, interruption, and recovery against the real boundaries.
+documented delivery intent, and the durable queues that carry them now exist and are proven live. The
+bounded outbox does not, and neither does the store, so do not claim zero loss, backlog recovery,
+reconnect reconciliation, or exactly-once effects from the current Compose service or an in-memory
+fake. Prove publisher confirmation, explicit acknowledgement after durable commit, idempotency,
+interruption, and recovery against the real boundaries, and read what
+[`release-evidence/phase-2/guaranteed-delivery-first-run.md`](../../release-evidence/phase-2/guaranteed-delivery-first-run.md)
+says it did **not** settle before citing it.
 
-The broker package currently provides a persistent publisher and a direct receiver. Routine telemetry is
-contractually direct, so do not route it through that persistent publisher; add and verify a direct-publish
-path in the broker owner first. Conversely, the direct receiver has no durable endpoint or explicit
-acknowledgement and cannot satisfy guaranteed command consumption. Extend the broker owner and its
-integration evidence before wiring this service to critical command intake; do not hide a second Solace
-publisher or receiver in the simulator.
+The broker package provides both publishers, the direct receiver, and a queue-bound receiver that
+settles explicitly. Routine telemetry is contractually direct, so keep it on the direct publisher and
+do not route it through the persistent one. Command intake belongs on this drone's own durable
+queue, bound by the `fleet-simulator` identity that owns it, and settled only after the owning
+durable outcome — which the store does not yet make possible. Do not hide a second Solace publisher
+or receiver in the simulator, and do not settle a command on receipt to make intake look finished.
 
 Make process lifecycle ownership explicit:
 

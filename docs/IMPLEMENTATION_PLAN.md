@@ -44,7 +44,7 @@ decision has no ADR yet and one is owed.
 | Agent integration plugins | Official `sam-event-mesh-gateway` 1.1.0 and `sam-event-mesh-tool` 0.1.1, pinned and locked | [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) |
 | Event broker | The PubSub+ software event broker container, pinned by digest under `deploy/compose.yaml`, is the broker for development, integration, continuous integration, acceptance, and release; the Developer-class Solace Cloud service is a non-gating showcase profile selected by environment alone | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Application event namespace | Application CloudEvents use `aerial-rescue/v1/...`, separate from the A2A namespace | [ADR-0014](adr/0014-application-events-separate-from-a2a.md) |
-| Delivery semantics | Direct delivery for routine telemetry; guaranteed delivery with queues and explicit acknowledgement for commands, results, evidence, failures, approvals, and audit records | — |
+| Delivery semantics | Each topic family is bound to its guarantee by a total table; the guaranteed families get one durable queue per consuming role, owned by that role's client username, plus one command queue per drone and one dead-message queue | [ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Agent models | Local Ollama for the three edge agents. The Agent Mesh `general` and `planning` roles may use a paid Anthropic or OpenAI model; provider, model, and split are selected by the Phase 0 evaluation | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Model budget | USD $50 total for the initial release, enforced before each call in tranches, with a persisted spend ledger. Local-only operation stays a supported, tested configuration and no release gate depends on a paid API | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Local environment | Apple Silicon MacBook, 64 GB RAM, Docker Desktop, and Ollama on the host; every other component runs under Docker Compose from digest-pinned images | [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
@@ -253,7 +253,19 @@ contract, and operator-flow evidence.
 ### Phase 2: Contracts and broker
 
 - **Done:** the topic grammar, the CloudEvents envelope profile, the v1 JSON Schemas with golden fixtures, and the contract manifest ([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md), [ADR-0037](adr/0037-cloudevents-envelope-profile.md), [ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)).
-- **Done:** broker identities and ACLs ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md)). Still owed: delivery semantics and the queues that carry them.
+- **Done:** broker identities and ACLs ([ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md)).
+- **Done:** the delivery semantics and the queues that carry them. Each family is bound to its
+  guarantee by a total table ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)),
+  and the queue set is a projection of the subscribe grants intersected with it, so a queue narrows
+  authority and can never widen it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+  Twenty-two queues are live on the container, written with every value explicit because five broker
+  defaults are wrong for this system. Spooling with nothing bound, fan-out to every matching queue,
+  removal only on acknowledgement, rejection to the dead-message queue, the redelivery bound ending
+  rather than looping, and a role holding the topic grant still being refused another role's queue
+  are all asserted against the broker
+  ([guaranteed-delivery-first-run.md](../release-evidence/phase-2/guaranteed-delivery-first-run.md)).
+  Still owed: the backlog-recovery measurement, which now waits on a consumer service rather than on
+  an endpoint, and message expiry, which is configured and unobserved.
 - Build the Python broker adapter test-first against the PubSub+ container in `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - Complete the browser-consumed event and local HTTP/SSE contracts, schemas, and golden fixtures needed for
   generated TypeScript types and cross-language runtime validation. The dashboard must consume these
