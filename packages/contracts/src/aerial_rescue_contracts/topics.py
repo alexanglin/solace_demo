@@ -50,10 +50,13 @@ formattable and parseable by the component that publishes to it.
 DECISIONS: Final = frozenset({"approve", "reject"})
 WILDCARD_CHARACTERS: Final = frozenset({"*", ">"})
 MISSION_PARAMETER: Final = "missionId"
+DRONE_PARAMETER: Final = "droneId"
 
 _PREFIX_LEVELS: Final = tuple(namespace_prefix().split("/"))
 _TYPE_PREFIX: Final = namespace_prefix().replace("/", ".") + "."
-_IDENTIFIER_PARAMETERS: Final = frozenset({MISSION_PARAMETER, "droneId", "commandId", "requestId"})
+_IDENTIFIER_PARAMETERS: Final = frozenset(
+    {MISSION_PARAMETER, DRONE_PARAMETER, "commandId", "requestId"}
+)
 
 
 class Rule(Enum):
@@ -117,6 +120,16 @@ class Family(Enum):
     def parameters(self) -> tuple[str, ...]:
         """Return the placeholder names in template order, mission identifier excluded."""
         return tuple(_placeholder(level) for level in self.levels if _is_placeholder(level))
+
+    @property
+    def literal_suffix(self) -> str:
+        """Return the template's literal levels joined with dots, which names the family.
+
+        Distinct from :attr:`type_suffix`, which keeps the kind and decision placeholders
+        because a CloudEvents type fills them with the value the event carried. A name for
+        the family itself carries none of them: one name covers every kind in the family.
+        """
+        return ".".join(level for level in self.levels if not _is_placeholder(level))
 
     @property
     def type_suffix(self) -> str:
@@ -230,8 +243,25 @@ def _conforms(rule: Rule, value: str) -> bool:
     return value in DECISIONS
 
 
-def _validated(parameter: str, value: str) -> str:
-    """Return a level value, refusing it by the rule of the parameter it occupies."""
+def validated_level(parameter: str, value: str) -> str:
+    """Return a level value, refusing it by the rule of the parameter it occupies.
+
+    Public because the broker adapter builds subscription strings, which the topic grammar
+    refuses to build itself, and a subscription carrying a concrete identifier level must
+    hold that level to the same rule a published topic would. Applying the rule there
+    instead would put the identifier form in a second home.
+
+    Args:
+        parameter: The template parameter the level occupies, such as ``droneId``.
+        value: The candidate level.
+
+    Returns:
+        The value, unchanged, when it obeys the parameter's rule.
+
+    Raises:
+        TopicError: With the refusal belonging to that parameter's rule, naming both the
+            parameter and the value.
+    """
     rule = rule_for(parameter)
     if not _conforms(rule, value):
         raise TopicError(_REFUSAL_BY_RULE[rule], value, parameter)
@@ -252,11 +282,11 @@ def format_topic(topic: Topic) -> str:
     """
     if set(topic.parameters) != set(topic.family.parameters):
         raise TopicError(TopicRefusal.PARAMETER_SET, tuple(sorted(topic.parameters)))
-    levels = [namespace_prefix(), _validated(MISSION_PARAMETER, topic.mission_id)]
+    levels = [namespace_prefix(), validated_level(MISSION_PARAMETER, topic.mission_id)]
     for level in topic.family.levels:
         if _is_placeholder(level):
             name = _placeholder(level)
-            levels.append(_validated(name, topic.parameters[name]))
+            levels.append(validated_level(name, topic.parameters[name]))
         else:
             levels.append(level)
     return "/".join(levels)
@@ -275,7 +305,7 @@ def _matches_template(template: tuple[str, ...], levels: list[str]) -> bool:
 def _bind(template: tuple[str, ...], levels: list[str]) -> dict[str, str]:
     """Validate and bind every placeholder of a template, in template order."""
     return {
-        _placeholder(expected): _validated(_placeholder(expected), levels[index])
+        _placeholder(expected): validated_level(_placeholder(expected), levels[index])
         for index, expected in enumerate(template)
         if _is_placeholder(expected)
     }
@@ -315,7 +345,7 @@ def parse_topic(text: object) -> Topic:
     if tuple(levels[:2]) != _PREFIX_LEVELS:
         raise TopicError(TopicRefusal.PREFIX, text)
     family = _family_for(levels[3:], text)
-    mission_id = _validated(MISSION_PARAMETER, levels[2])
+    mission_id = validated_level(MISSION_PARAMETER, levels[2])
     return Topic(family, mission_id, _bind(family.levels, levels[3:]))
 
 
@@ -325,7 +355,7 @@ def event_type(topic: Topic) -> str:
     for level in topic.family.type_suffix.split("."):
         if _is_placeholder(level):
             name = _placeholder(level)
-            segments.append(_validated(name, topic.parameters[name]))
+            segments.append(validated_level(name, topic.parameters[name]))
         else:
             segments.append(level)
     return _TYPE_PREFIX + ".".join(segments)
