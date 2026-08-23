@@ -295,9 +295,11 @@ class SolaceDirectPublisher:
 class SolaceReceiver:
     """A :class:`MessageReceiver` backed by a direct Solace receiver.
 
-    Direct rather than guaranteed because no durable queue exists yet
-    (``TECH_DEBT.md`` section 6). Receiving is blocking rather than by callback so that
-    nothing here subclasses the untyped upstream handler (``docs/adr/0028``).
+    Direct rather than guaranteed because the families it carries are the ones ADR-0079
+    calls direct or request-reply; a guaranteed family is consumed from its own durable
+    queue by :class:`SolacePersistentReceiver`. Receiving is blocking rather than by
+    callback so that nothing here subclasses the untyped upstream handler
+    (``docs/adr/0028``).
     """
 
     def __init__(self, service: MessagingService, subscriptions: Sequence[str]) -> None:
@@ -402,10 +404,9 @@ class BrokerSession:
 class PublishingSession:
     """A connected direct publisher, and the one call that shuts it down.
 
-    Publish-only because a role that may not yet consume anything should not hold a
-    receiver: the fleet simulator's single subscribe grant is the drone command family,
-    and consuming it needs the durable queue ``TECH_DEBT.md`` section 6 records as absent.
-    An unused receiver would be authority the process cannot justify holding.
+    Publish-only because a role that consumes nothing should not hold a receiver: an
+    unused receiver would be authority the process cannot justify holding. A role that does
+    consume its own queues takes :class:`FleetSession` instead.
     """
 
     publisher: SolaceDirectPublisher
@@ -500,3 +501,94 @@ def open_consuming_session(
     service = build_service(endpoint, role, credential)
     service.connect()
     return ConsumingSession(receiver=SolacePersistentReceiver(service, queue), _service=service)
+
+
+@dataclass(frozen=True)
+class FleetSession:
+    """Two publishers and one queue-bound receiver per drone, on one connection.
+
+    One connection rather than one per queue. ``MAX_BIND_COUNT`` and the exclusive access
+    type of ``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md`` bound
+    the flows on a queue, not the services in a process, so every receiver here can share a
+    service and each queue still has exactly one flow. The reference fleet is 23 drones, and
+    a session per drone would spend 25 connections against a message VPN that permits 100.
+
+    The two publishers stay distinct types rather than one: routine telemetry is direct and
+    supersedable while a command result is guaranteed, and a caller that held one port for
+    both could downgrade a result to droppable delivery without the type system noticing.
+    """
+
+    telemetry: SolaceDirectPublisher
+    results: SolacePublisher
+    receivers: Mapping[str, SolacePersistentReceiver]
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Release every receiver, then both publishers, then disconnect, in that order.
+
+        Receivers first because disconnecting under a receiver strands whatever it has
+        taken and not yet settled; the broker redelivers it, but only after the flow times
+        out rather than at once.
+        """
+        for key in sorted(self.receivers):
+            self.receivers[key].close()
+        self.telemetry.close()
+        self.results.close()
+        self._service.disconnect()
+
+
+def fleet_session(service: MessagingService, queues: Mapping[str, str]) -> FleetSession:
+    """Compose the publishers and one receiver per queue on an already connected service.
+
+    Separated from :func:`open_fleet_session` so that the refusal path below is provable
+    without a broker: a fleet is built one binding at a time, and a refusal partway through
+    must not leave the earlier bindings and the connection behind.
+
+    Args:
+        service: A connected messaging service, which this function takes ownership of: on
+            a refused binding it disconnects the service before re-raising.
+        queues: Consumer key to queue name, the names built by
+            :mod:`aerial_rescue_broker.queues` and never by hand. Bound in key order, so
+            two runs of one fleet bind in the same order.
+
+    Raises:
+        MessagingError: With ``BIND_REFUSED`` naming the first queue the broker would not
+            give, after everything already opened has been released.
+    """
+    telemetry = SolaceDirectPublisher(service)
+    results = SolacePublisher(service)
+    receivers: dict[str, SolacePersistentReceiver] = {}
+    try:
+        for key in sorted(queues):
+            receivers[key] = SolacePersistentReceiver(service, queues[key])
+    except MessagingError:
+        for opened in receivers.values():
+            opened.close()
+        telemetry.close()
+        results.close()
+        service.disconnect()
+        raise
+    return FleetSession(telemetry=telemetry, results=results, receivers=receivers, _service=service)
+
+
+def open_fleet_session(
+    endpoint: BrokerEndpoint,
+    role: Principal,
+    credential: str,
+    queues: Mapping[str, str],
+) -> FleetSession:
+    """Connect on one role and return its publishers and one receiver per named queue.
+
+    Args:
+        endpoint: Where the broker is and what signs its certificate.
+        role: The authorization role to authenticate as, which must own every queue: each
+            permits no access to anyone but its named owner.
+        credential: That role's password, which is never logged.
+        queues: Consumer key to queue name, built by :mod:`aerial_rescue_broker.queues`.
+
+    Returns:
+        The session. Shutting it down is the caller's job and is explicit.
+    """
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    return fleet_session(service, queues)

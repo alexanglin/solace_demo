@@ -16,7 +16,7 @@ enough, because the certificates are read when the session connects and this one
 from __future__ import annotations
 
 import unittest
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from tempfile import TemporaryDirectory
 from typing import Final
 
@@ -36,6 +36,7 @@ from aerial_rescue_broker.messaging import (
     SolaceReceiver,
     build_service,
     connection_properties,
+    fleet_session,
 )
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.config.message_acknowledgement_configuration import Outcome
@@ -55,6 +56,13 @@ ENDPOINT: Final = BrokerEndpoint(
 CREDENTIAL: Final = "not-a-real-credential"
 CLIENT_FAILURE: Final = "the broker refused the publication"
 QUEUE: Final = "aerial-rescue/v1/recorder/audit"
+EARLIER_QUEUE: Final = "aerial-rescue/v1/drone/drone-thermal-02/command"
+LATER_QUEUE: Final = "aerial-rescue/v1/drone/drone-vision-01/command"
+FLEET_QUEUES: Final = {
+    "drone-vision-01": LATER_QUEUE,
+    "drone-thermal-02": EARLIER_QUEUE,
+}
+"""Two drones, deliberately not in ascending insertion order, so key order is asserted."""
 
 
 class FakeMessages:
@@ -213,7 +221,11 @@ class FakePersistentReceiver:
     """The client's persistent receiver, recording every settlement it was asked for."""
 
     def __init__(
-        self, scripted: Sequence[object], failing: bool = False, unbindable: bool = False
+        self,
+        scripted: Sequence[object],
+        failing: bool = False,
+        unbindable: bool = False,
+        order: list[str] | None = None,
     ) -> None:
         """Record what this receiver yields, and whether binding or settling refuses."""
         self.started = 0
@@ -223,6 +235,7 @@ class FakePersistentReceiver:
         self._scripted = list(scripted)
         self._failing = failing
         self._unbindable = unbindable
+        self._order = order
 
     def start(self) -> None:
         """Record the start, or raise the way the client does for a refused binding."""
@@ -242,19 +255,29 @@ class FakePersistentReceiver:
         self.settled.append((message, outcome))
 
     def terminate(self) -> None:
-        """Record that the receiver was terminated."""
+        """Record that the receiver was terminated, and when if a shared order was given."""
         self.terminated += 1
+        if self._order is not None:
+            self._order.append("receiver-terminate")
 
 
 class FakePersistentReceiverBuilder:
     """The client's persistent receiver builder, recording what it was configured with."""
 
-    def __init__(self, receiver: FakePersistentReceiver) -> None:
-        """Record which receiver this builder yields."""
+    def __init__(
+        self,
+        receiver: FakePersistentReceiver,
+        order: list[str] | None = None,
+        unbindable: Collection[str] = (),
+    ) -> None:
+        """Record which receiver this builder yields, and which queue names refuse."""
         self.outcomes: tuple[Outcome, ...] = ()
         self.client_acknowledgement = 0
         self.endpoints: list[SolaceQueue] = []
+        self.built: list[FakePersistentReceiver] = []
         self._receiver = receiver
+        self._order = order
+        self._unbindable = frozenset(unbindable)
 
     def with_required_message_outcome_support(
         self, *outcomes: Outcome
@@ -269,9 +292,19 @@ class FakePersistentReceiverBuilder:
         return self
 
     def build(self, endpoint_to_consume_from: SolaceQueue) -> FakePersistentReceiver:
-        """Record the queue and return the receiver."""
+        """Record the queue and return its receiver, minting one per queue for a fleet.
+
+        A builder given no order and no refusing queue yields the one receiver it was
+        constructed with, which is what a single-queue session needs.
+        """
         self.endpoints.append(endpoint_to_consume_from)
-        return self._receiver
+        name = endpoint_to_consume_from.get_name()
+        if self._order is None and not self._unbindable:
+            self.built.append(self._receiver)
+            return self._receiver
+        minted = FakePersistentReceiver((), unbindable=name in self._unbindable, order=self._order)
+        self.built.append(minted)
+        return minted
 
 
 class FakeBuilder:
@@ -624,6 +657,101 @@ class PublishingSessionTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(["terminate", "disconnect"], service.order)
+
+
+class FleetSessionTests(unittest.TestCase):
+    """One connection carrying two publishers and one receiver per drone (ADR-0080)."""
+
+    def test_one_receiver_is_bound_per_named_queue_in_key_order(self) -> None:
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver, order=service.order
+        )
+
+        # Act
+        session = fleet_session(service, FLEET_QUEUES)
+
+        # Assert
+        builder = service.persistent_receiver_builder
+        self.assertEqual(
+            ([EARLIER_QUEUE, LATER_QUEUE], sorted(FLEET_QUEUES)),
+            ([endpoint.get_name() for endpoint in builder.endpoints], sorted(session.receivers)),
+        )
+
+    def test_one_connection_carries_every_receiver_and_both_publishers(self) -> None:
+        """`MAX_BIND_COUNT` bounds flows per queue, not services per process."""
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver, order=service.order
+        )
+
+        # Act
+        session = fleet_session(service, FLEET_QUEUES)
+
+        # Assert
+        self.assertEqual(
+            (2, True, True),
+            (
+                len(session.receivers),
+                isinstance(session.telemetry, SolaceDirectPublisher),
+                isinstance(session.results, SolacePublisher),
+            ),
+        )
+
+    def test_closing_releases_every_receiver_before_it_disconnects(self) -> None:
+        """Disconnecting first would strand messages a receiver had taken and not settled."""
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver, order=service.order
+        )
+        session = fleet_session(service, FLEET_QUEUES)
+
+        # Act
+        session.close()
+
+        # Assert
+        self.assertEqual(
+            ["receiver-terminate", "receiver-terminate", "terminate", "disconnect"],
+            service.order,
+        )
+
+    def test_a_refused_binding_names_the_queue_the_broker_would_not_give(self) -> None:
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver, order=service.order, unbindable=(LATER_QUEUE,)
+        )
+
+        # Act
+        with pytest.raises(MessagingError) as captured:
+            fleet_session(service, FLEET_QUEUES)
+
+        # Assert
+        self.assertEqual(
+            (MessagingRefusal.BIND_REFUSED, LATER_QUEUE),
+            (captured.value.refusal, captured.value.value),
+        )
+
+    def test_a_refused_binding_releases_everything_already_opened(self) -> None:
+        """A partly built fleet must not leave a connection and a bound queue behind."""
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver, order=service.order, unbindable=(LATER_QUEUE,)
+        )
+
+        # Act
+        with pytest.raises(MessagingError):
+            fleet_session(service, FLEET_QUEUES)
+
+        # Assert
+        self.assertEqual(
+            (["receiver-terminate", "terminate", "disconnect"], 1),
+            (service.order, service.publisher.terminated),
+        )
 
 
 if __name__ == "__main__":
