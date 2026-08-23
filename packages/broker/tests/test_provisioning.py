@@ -29,8 +29,21 @@ from aerial_rescue_broker.provisioning import (
     describe,
     desired_state,
 )
+from aerial_rescue_broker.queues import (
+    DEAD_MESSAGE_QUEUE,
+    DISCARD_NOTIFICATION,
+    MAX_BIND_COUNT,
+    MAX_REDELIVERY_COUNT,
+    MAX_SPOOL_MEGABYTES,
+    MAX_TTL_SECONDS,
+    QUEUE_ACCESS_TYPE,
+    QUEUE_PERMISSION,
+    desired_queues,
+    drone_queue_name,
+)
 from aerial_rescue_broker.subscriptions import (
     a2a_subscription,
+    drone_command_subscription,
     reply_subscription,
     subscription_for,
 )
@@ -50,6 +63,10 @@ CREDENTIALS = {role: CREDENTIAL for role in Principal}
 
 EXPECTED_PUBLISH_EXCEPTIONS = 16
 EXPECTED_SUBSCRIBE_EXCEPTIONS = 31
+
+DRONES = ("drone-vision-01", "drone-thermal-02")
+EXPECTED_QUEUES = 23
+EXPECTED_QUEUE_SUBSCRIPTIONS = 22
 
 
 class FakeBroker:
@@ -128,7 +145,7 @@ def _state_refusal_of(
 ) -> tuple[Enum, object]:
     """Return the refusal building the state raises, failing the test if it is accepted."""
     try:
-        desired_state(VPN, credentials, namespace)
+        desired_state(VPN, credentials, namespace, DRONES)
     except ProvisioningError as error:
         return (error.refusal, error.value)
     message = f"accepted: {sorted(role.value for role in credentials)!r} {namespace!r}"
@@ -141,7 +158,7 @@ class DesiredStateTests(unittest.TestCase):
         expected = {role.value for role in Principal}
 
         # Act
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Assert
         self.assertEqual(
@@ -154,7 +171,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_every_profile_carries_exactly_the_exceptions_the_matrix_implies(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         rendered = {
@@ -175,7 +192,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_only_the_three_agent_mesh_roles_carry_the_a2a_exception(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         a2a = a2a_subscription(NAMESPACE)
 
         # Act
@@ -203,7 +220,7 @@ class DesiredStateTests(unittest.TestCase):
         a2a = a2a_subscription(NAMESPACE)
 
         # Act
-        state = desired_state(VPN, CREDENTIALS, None)
+        state = desired_state(VPN, CREDENTIALS, None, DRONES)
 
         # Assert
         self.assertEqual(
@@ -227,7 +244,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_only_the_event_mesh_tool_carries_the_reply_channel_exception(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         reply = reply_subscription()
 
         # Act
@@ -243,7 +260,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_the_reply_channel_exception_is_a_subscribe_grant_only(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         reply = reply_subscription()
 
         # Act
@@ -259,7 +276,7 @@ class DesiredStateTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         subscribed = _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE)
@@ -272,14 +289,14 @@ class DesiredStateTests(unittest.TestCase):
         reply = reply_subscription()
 
         # Act
-        state = desired_state(VPN, CREDENTIALS, None)
+        state = desired_state(VPN, CREDENTIALS, None, DRONES)
 
         # Assert
         self.assertIn(reply, _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE))
 
     def test_the_recorder_profile_reads_every_family_and_writes_none(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         held = (
@@ -318,7 +335,7 @@ class DesiredStateTests(unittest.TestCase):
 
         # Act
         with pytest.raises(ValueError) as captured:  # noqa: PT011
-            desired_state(VPN, CREDENTIALS, namespace)
+            desired_state(VPN, CREDENTIALS, namespace, DRONES)
 
         # Assert
         self.assertNotIsInstance(captured.value, ProvisioningError)
@@ -328,7 +345,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_first_apply_creates_every_profile_username_and_exception(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         apply(broker, state)
@@ -336,9 +353,11 @@ class ApplyTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             {
-                Method.GET: 2 * len(tuple(Principal)),
-                Method.PUT: 2 * len(tuple(Principal)),
-                Method.POST: EXPECTED_PUBLISH_EXCEPTIONS + EXPECTED_SUBSCRIBE_EXCEPTIONS,
+                Method.GET: 2 * len(tuple(Principal)) + EXPECTED_QUEUES,
+                Method.PUT: 2 * len(tuple(Principal)) + EXPECTED_QUEUES,
+                Method.POST: EXPECTED_PUBLISH_EXCEPTIONS
+                + EXPECTED_SUBSCRIBE_EXCEPTIONS
+                + EXPECTED_QUEUE_SUBSCRIPTIONS,
                 Method.DELETE: 0,
                 Method.PATCH: 1,
             },
@@ -348,7 +367,7 @@ class ApplyTests(unittest.TestCase):
     def test_every_profile_is_written_deny_by_default_in_all_three_directions(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         apply(broker, state)
@@ -370,7 +389,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_second_apply_writes_no_exception_and_deletes_none(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         apply(broker, state)
         broker.issued.clear()
 
@@ -383,7 +402,7 @@ class ApplyTests(unittest.TestCase):
     def test_an_exception_the_matrix_no_longer_grants_is_removed(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         apply(broker, state)
         stray = "aerial-rescue/v1/*/drone/*/command/*"
         path = f"msgVpns/{VPN}/aclProfiles/{Principal.RECORDER.value}/publishTopicExceptions"
@@ -404,7 +423,7 @@ class ApplyTests(unittest.TestCase):
     def test_the_factory_client_username_is_left_disabled(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         path = f"msgVpns/{VPN}/clientUsernames/{FACTORY_CLIENT_USERNAME}"
 
         # Act
@@ -423,7 +442,7 @@ class ApplyTests(unittest.TestCase):
     def test_every_client_username_binds_to_its_own_acl_profile(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
         # Act
         apply(broker, state)
@@ -447,7 +466,7 @@ class DescribeTests(unittest.TestCase):
     def test_a_description_never_carries_the_password(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE)
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
         apply(broker, state)
 
         # Act
@@ -485,3 +504,218 @@ class ProvisioningErrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _queue_bodies(broker: FakeBroker) -> dict[str, Mapping[str, object]]:
+    """Return each written queue body, keyed by the queue name it carries."""
+    return {
+        str(body["queueName"]): body for path, body in broker.objects.items() if "/queues/" in path
+    }
+
+
+class QueueApplyTests(unittest.TestCase):
+    def test_every_queue_is_enabled_in_both_directions_rather_than_inheriting_disabled(
+        self,
+    ) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        self.assertEqual(
+            {(True, True)},
+            {
+                (body["ingressEnabled"], body["egressEnabled"])
+                for body in _queue_bodies(broker).values()
+            },
+        )
+
+    def test_every_queue_carries_the_four_written_bounds(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        self.assertEqual(
+            {(MAX_SPOOL_MEGABYTES, MAX_REDELIVERY_COUNT, MAX_TTL_SECONDS, MAX_BIND_COUNT)},
+            {
+                (
+                    body["maxMsgSpoolUsage"],
+                    body["maxRedeliveryCount"],
+                    body["maxTtl"],
+                    body["maxBindCount"],
+                )
+                for body in _queue_bodies(broker).values()
+            },
+        )
+
+    def test_every_queue_is_exclusive_closed_to_non_owners_and_nacks_a_discard(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        self.assertEqual(
+            {(QUEUE_ACCESS_TYPE, QUEUE_PERMISSION, DISCARD_NOTIFICATION)},
+            {
+                (
+                    body["accessType"],
+                    body["permission"],
+                    body["rejectMsgToSenderOnDiscardBehavior"],
+                )
+                for body in _queue_bodies(broker).values()
+            },
+        )
+
+    def test_each_queue_is_owned_by_the_role_that_consumes_it(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        self.assertEqual(
+            {queue.name: queue.owner for queue in desired_queues(DRONES)},
+            {name: str(body["owner"]) for name, body in _queue_bodies(broker).items()},
+        )
+
+    def test_every_queue_names_the_dead_message_queue_as_its_discard_target(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        self.assertEqual(
+            {DEAD_MESSAGE_QUEUE},
+            {str(body["deadMsgQueue"]) for body in _queue_bodies(broker).values()},
+        )
+
+    def test_the_dead_message_queue_does_not_expire_what_already_expired(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        bodies = _queue_bodies(broker)
+        self.assertEqual(
+            (False, {True}),
+            (
+                bodies[DEAD_MESSAGE_QUEUE]["respectTtlEnabled"],
+                {
+                    body["respectTtlEnabled"]
+                    for name, body in bodies.items()
+                    if name != DEAD_MESSAGE_QUEUE
+                },
+            ),
+        )
+
+    def test_the_dead_message_queue_is_written_before_anything_that_targets_it(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        written = [
+            str(request.body["queueName"])
+            for request in broker.issued
+            if request.method is Method.PUT and "queueName" in request.body
+        ]
+        self.assertEqual(DEAD_MESSAGE_QUEUE, written[0])
+
+    def test_a_queue_is_written_after_the_client_username_that_owns_it(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        usernames = [
+            index
+            for index, request in enumerate(broker.issued)
+            if request.method is Method.PUT and "clientUsername" in request.body
+        ]
+        queues = [
+            index
+            for index, request in enumerate(broker.issued)
+            if request.method is Method.PUT and "queueName" in request.body
+        ]
+        self.assertLess(max(usernames), min(queues))
+
+    def test_a_drone_queue_subscribes_to_that_drone_only(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        subscribed = {
+            str(row["subscriptionTopic"])
+            for path, rows in broker.collections.items()
+            if "/queues/" in path and "drone-vision-01" in path
+            for row in rows
+        }
+        self.assertEqual({drone_command_subscription("drone-vision-01")}, subscribed)
+
+    def test_a_second_apply_writes_no_queue_subscription_and_deletes_none(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        apply(broker, state)
+        broker.issued.clear()
+
+        # Act
+        apply(broker, state)
+
+        # Assert
+        self.assertEqual((0, 0), (broker.counts()[Method.POST], broker.counts()[Method.DELETE]))
+
+    def test_a_subscription_added_to_a_queue_by_hand_is_reconciled_away(self) -> None:
+        """The desired state wins over an edit made outside it, as it does for exceptions."""
+        # Arrange
+        broker = FakeBroker()
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        apply(broker, state)
+        stray = "aerial-rescue/v1/*/audit/*"
+        collection = next(path for path in broker.collections if "/queues/" in path)
+        broker.collections[collection].append({"subscriptionTopic": stray})
+        broker.issued.clear()
+
+        # Act
+        apply(broker, state)
+
+        # Assert
+        self.assertEqual(
+            [f"{collection}/{quote(stray, safe='')}"],
+            [request.path for request in broker.issued if request.method is Method.DELETE],
+        )
+
+    def test_a_drone_that_left_the_scenario_keeps_its_queue(self) -> None:
+        """The gap ADR-0080 records: the applier deletes no queue a role no longer owns."""
+        # Arrange
+        broker = FakeBroker()
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        broker.issued.clear()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1]))
+
+        # Assert
+        self.assertIn(
+            f"msgVpns/{VPN}/queues/{quote(drone_queue_name(DRONES[1]), safe='')}",
+            broker.objects,
+        )

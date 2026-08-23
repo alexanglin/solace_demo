@@ -36,6 +36,7 @@ from aerial_rescue_broker.semp import SempError, SempFailure, SempSession
 from aerial_rescue_domain.principals import Principal
 
 CREDENTIAL = "fixture-not-a-real-credential"
+DRONES = ("drone-vision-01", "drone-thermal-02")
 
 
 class RecordingTransport:
@@ -148,18 +149,36 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev")
+        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
 
         # Assert
         self.assertEqual(
-            ("9 acl profiles", "9 client usernames", "47 topic exceptions", True),
+            (
+                "9 acl profiles",
+                "9 client usernames",
+                "47 topic exceptions",
+                "23 durable queues, 22 subscriptions",
+                True,
+            ),
             (
                 next(part for part in lines if "acl profiles" in part).split(" to ")[0],
                 next(part for part in lines if "client usernames" in part),
                 next(part for part in lines if "topic exceptions" in part),
+                next(part for part in lines if "durable queues" in part),
                 any("'default'" in part and "disabled" in part for part in lines),
             ),
         )
+
+    def test_a_fleet_with_no_drones_is_reported_rather_than_left_to_be_inferred(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        transport = RecordingTransport()
+
+        # Act
+        lines = provision(transport, deploy, "default", "acme/dev", ())
+
+        # Assert
+        self.assertTrue(any("no drone command queues" in part for part in lines), lines)
 
     def test_an_unset_namespace_is_reported_as_a_withheld_grant(self) -> None:
         # Arrange
@@ -167,7 +186,7 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", None)
+        lines = provision(transport, deploy, "default", None, DRONES)
 
         # Assert
         self.assertTrue(any("no A2A grant" in part for part in lines), lines)
@@ -178,7 +197,7 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev")
+        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
 
         # Assert
         self.assertEqual((), tuple(part for part in lines if CREDENTIAL in part))
@@ -201,6 +220,48 @@ class MainTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((0, True), (code, "acl profiles" in out.getvalue()))
+
+    def test_each_declared_drone_becomes_one_command_queue(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        transport = RecordingTransport()
+        out = io.StringIO()
+
+        # Act
+        code = main(
+            (
+                "--deploy-directory",
+                str(deploy),
+                "--namespace",
+                "acme/dev",
+                "--drone",
+                DRONES[0],
+                "--drone",
+                DRONES[1],
+            ),
+            session=lambda _: transport,
+            out=out,
+            error=io.StringIO(),
+        )
+
+        # Assert
+        self.assertEqual((0, True), (code, "23 durable queues" in out.getvalue()))
+
+    def test_a_drone_identifier_the_grammar_refuses_reports_one(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        error = io.StringIO()
+
+        # Act
+        code = main(
+            ("--deploy-directory", str(deploy), "--drone", "Drone-01"),
+            session=lambda _: RecordingTransport(),
+            out=io.StringIO(),
+            error=error,
+        )
+
+        # Assert
+        self.assertEqual((1, True), (code, "Drone-01" in error.getvalue()))
 
     def test_a_broker_refusal_reports_one_without_a_traceback_or_a_credential(self) -> None:
         # Arrange
