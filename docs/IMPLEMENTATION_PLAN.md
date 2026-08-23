@@ -264,8 +264,8 @@ contract, and operator-flow evidence.
   rather than looping, and a role holding the topic grant still being refused another role's queue
   are all asserted against the broker
   ([guaranteed-delivery-first-run.md](../release-evidence/phase-2/guaranteed-delivery-first-run.md)).
-  Still owed: the backlog-recovery measurement, which now waits on a consumer service rather than on
-  an endpoint, and message expiry, which is configured and unobserved.
+  Still owed: the backlog-recovery measurement, whose consumer now exists so that what is left is
+  the measurement itself, and message expiry, which is configured and unobserved.
 - Build the Python broker adapter test-first against the PubSub+ container in `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - Complete the browser-consumed event and local HTTP/SSE contracts, schemas, and golden fixtures needed for
   generated TypeScript types and cross-language runtime validation. The dashboard must consume these
@@ -289,7 +289,7 @@ contract, and operator-flow evidence.
   of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
   the evidence service's use of them is still owed. The band boundaries are an open row in
   [operating-parameters.md](operating-parameters.md).
-- **Three of five done.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
+- **Four of five done.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
   composition-boundary value ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)),
   folds one heartbeat-or-miss observation per drone per tick in ascending identifier order
   ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and drives the mission, sector, and
@@ -297,13 +297,25 @@ contract, and operator-flow evidence.
   direct publisher, proven live on the least-privilege `fleet-simulator` identity with a
   `dashboard-api` reader as the positive control
   ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)).
-  Still owed: the **command dispatch lifecycle**, whose send budget, acknowledgement timeout,
-  backoff, and jitter are now derived rows
-  ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)) and whose durable command queue
-  already exists, so what it now waits on is a wire contract -- no payload or event schema binds
-  the drone-command or the command-result family; and the **evidence lifecycle and score**, which
-  still needs the evidence band boundaries, an open row in
-  [operating-parameters.md](operating-parameters.md).
+- **Done: the command dispatch lifecycle, drone side.** The drone-command and command-result
+  families are bound to payload and event schemas
+  ([ADR-0082](adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)), and the send
+  budget, acknowledgement timeout, backoff, and jitter are derived rows
+  ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)). Each tick is followed by a bounded
+  drain of every drone's own durable queue: the simulator folds `packages/domain`'s machine over
+  what arrives, publishes an acknowledgement and then a resolution, and settles only after both are
+  on the wire. It is the first process in this repository to bind a durable queue in production
+  ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)).
+  What the plan recorded as this capability's blocker -- the send budget -- turned out not to be
+  one: every edge a drone applies is blind to it, and a property test asserts that. The blocker was
+  the wire contract.
+  Still owed on this lifecycle: the **gateway's half**, which needs `packages/store`, because
+  `ACCEPTED` in [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
+  `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised, the intake claim is at-least-once
+  with duplicates possible across a restart, and the backlog-recovery measurement is now possible
+  rather than done.
+- Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
+  open row in [operating-parameters.md](operating-parameters.md).
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
   an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
   lint, format, test, coverage, duplication, and production-build gates from
