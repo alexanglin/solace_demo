@@ -19,6 +19,7 @@ from urllib.parse import quote
 
 import pytest
 from aerial_rescue_broker.provisioning import (
+    DEAD_MESSAGE_REFUSED_MEMBERS,
     FACTORY_CLIENT_USERNAME,
     DesiredState,
     Method,
@@ -532,7 +533,8 @@ class QueueApplyTests(unittest.TestCase):
             },
         )
 
-    def test_every_queue_carries_the_four_written_bounds(self) -> None:
+    def test_every_owned_queue_carries_the_four_written_bounds(self) -> None:
+        """The dead-message queue is the exception, and the test below says which two."""
         # Arrange
         broker = FakeBroker()
 
@@ -549,8 +551,23 @@ class QueueApplyTests(unittest.TestCase):
                     body["maxTtl"],
                     body["maxBindCount"],
                 )
-                for body in _queue_bodies(broker).values()
+                for name, body in _queue_bodies(broker).items()
+                if name != DEAD_MESSAGE_QUEUE
             },
+        )
+
+    def test_the_dead_message_queue_is_still_bounded_in_spool_and_bindings(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        dead = _queue_bodies(broker)[DEAD_MESSAGE_QUEUE]
+        self.assertEqual(
+            (MAX_SPOOL_MEGABYTES, MAX_BIND_COUNT),
+            (dead["maxMsgSpoolUsage"], dead["maxBindCount"]),
         )
 
     def test_every_queue_is_exclusive_closed_to_non_owners_and_nacks_a_discard(self) -> None:
@@ -617,6 +634,31 @@ class QueueApplyTests(unittest.TestCase):
                     for name, body in bodies.items()
                     if name != DEAD_MESSAGE_QUEUE
                 },
+            ),
+        )
+
+    def test_the_dead_message_queue_omits_the_two_members_the_broker_refuses_on_it(
+        self,
+    ) -> None:
+        """Both return 400 on the live container; no fake would have found it."""
+        # Arrange
+        broker = FakeBroker()
+
+        # Act
+        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+
+        # Assert
+        bodies = _queue_bodies(broker)
+        self.assertEqual(
+            (frozenset(), DEAD_MESSAGE_REFUSED_MEMBERS),
+            (
+                DEAD_MESSAGE_REFUSED_MEMBERS & set(bodies[DEAD_MESSAGE_QUEUE]),
+                frozenset(
+                    member
+                    for member in DEAD_MESSAGE_REFUSED_MEMBERS
+                    for name, body in bodies.items()
+                    if name != DEAD_MESSAGE_QUEUE and member in body
+                ),
             ),
         )
 

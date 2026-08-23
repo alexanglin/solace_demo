@@ -99,6 +99,16 @@ _SYNTAX_MEMBER: Final[Mapping[Access, str]] = {
 QUEUE_SUBSCRIPTION_MEMBER: Final = "subscriptionTopic"
 """The member a queue's subscription row carries; it needs no syntax member."""
 
+DEAD_MESSAGE_REFUSED_MEMBERS: Final = frozenset({"maxRedeliveryCount", "maxTtl"})
+"""The two members the broker refuses on the dead-message queue itself.
+
+Measured against the container on 2026-08-23: writing either returns 400 with
+``max-redelivery cannot be set on #DEAD_MSG_QUEUE`` and ``max-ttl cannot be set on
+#DEAD_MSG_QUEUE``. Neither has a meaning for the endpoint that redelivery and expiry
+*send* messages to, so they are left out rather than left to fail the apply. No offline
+fake could have found this; the first live run did.
+"""
+
 
 class Method(Enum):
     """The SEMP v2 config methods this module issues."""
@@ -319,30 +329,35 @@ def _queue_request(vpn: str, queue: QueueSpec) -> Request:
 
     Every value is written. The broker's defaults would leave both traffic directions
     disabled, retry redelivery forever, ignore expiry, allow a spool larger than the whole
-    message VPN's, and target a dead-message queue that does not exist. The dead-message
-    queue is the one exception to expiry: a message that already expired must not expire
-    again once it is there.
+    message VPN's, and target a dead-message queue that does not exist.
+
+    The dead-message queue is written from the same body with two members removed, because
+    the broker refuses them on it -- see :data:`DEAD_MESSAGE_REFUSED_MEMBERS`. It also
+    respects no expiry, which the broker does accept: a message that already expired must
+    not expire again once it is there.
     """
     dead = queue.name == DEAD_MESSAGE_QUEUE
+    body: Mapping[str, object] = {
+        "queueName": queue.name,
+        "msgVpnName": vpn,
+        "owner": queue.owner,
+        "permission": QUEUE_PERMISSION,
+        "accessType": QUEUE_ACCESS_TYPE,
+        "maxBindCount": MAX_BIND_COUNT,
+        "maxMsgSpoolUsage": MAX_SPOOL_MEGABYTES,
+        "maxRedeliveryCount": MAX_REDELIVERY_COUNT,
+        "maxTtl": MAX_TTL_SECONDS,
+        "respectTtlEnabled": not dead,
+        "deadMsgQueue": DEAD_MESSAGE_QUEUE,
+        "rejectMsgToSenderOnDiscardBehavior": DISCARD_NOTIFICATION,
+        "ingressEnabled": True,
+        "egressEnabled": True,
+    }
+    refused = DEAD_MESSAGE_REFUSED_MEMBERS if dead else frozenset()
     return Request(
         Method.PUT,
         f"msgVpns/{vpn}/queues/{quote(queue.name, safe='')}",
-        {
-            "queueName": queue.name,
-            "msgVpnName": vpn,
-            "owner": queue.owner,
-            "permission": QUEUE_PERMISSION,
-            "accessType": QUEUE_ACCESS_TYPE,
-            "maxBindCount": MAX_BIND_COUNT,
-            "maxMsgSpoolUsage": MAX_SPOOL_MEGABYTES,
-            "maxRedeliveryCount": MAX_REDELIVERY_COUNT,
-            "maxTtl": MAX_TTL_SECONDS,
-            "respectTtlEnabled": not dead,
-            "deadMsgQueue": DEAD_MESSAGE_QUEUE,
-            "rejectMsgToSenderOnDiscardBehavior": DISCARD_NOTIFICATION,
-            "ingressEnabled": True,
-            "egressEnabled": True,
-        },
+        {member: value for member, value in body.items() if member not in refused},
     )
 
 
