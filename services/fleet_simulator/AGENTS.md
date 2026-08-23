@@ -7,9 +7,9 @@ These instructions apply to every file under `services/fleet_simulator/`. Read t
 still apply.
 
 This member is the deterministic adapter between an accepted scenario, the pure domain machines, and the
-application data plane. Its scenario boundary and its tick semantics are implemented; its command intake,
-evidence publication, and process entry point are not. Read the authority for each concern before
-changing it:
+application data plane. Its scenario boundary, its tick semantics, and its command intake are
+implemented; its evidence publication and its process entry point are not. Read the authority for each
+concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -246,10 +246,14 @@ says it did **not** settle before citing it.
 
 The broker package provides both publishers, the direct receiver, and a queue-bound receiver that
 settles explicitly. Routine telemetry is contractually direct, so keep it on the direct publisher and
-do not route it through the persistent one. Command intake belongs on this drone's own durable
-queue, bound by the `fleet-simulator` identity that owns it, and settled only after the owning
-durable outcome — which the store does not yet make possible. Do not hide a second Solace publisher
-or receiver in the simulator, and do not settle a command on receipt to make intake look finished.
+do not route it through the persistent one. Command intake is on this drone's own durable queue,
+bound by the `fleet-simulator` identity that owns it, and settled only after both of its results are
+on the wire and acknowledged by the broker. For a simulated drone that publisher confirmation **is**
+the owning outcome, because the fold's state is authority for nothing durable and there is no
+committed effect for exactly-once to protect; what it costs is recorded in `TECH_DEBT.md` as
+at-least-once with duplicates possible across a restart, and it is not a licence to claim more. Do
+not hide a second Solace publisher or receiver in the simulator, and do not settle a command on
+receipt to make intake look finished.
 
 Make process lifecycle ownership explicit:
 
