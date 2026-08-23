@@ -6,8 +6,9 @@ These instructions apply to every file under `services/command_gateway/`. Read t
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control rules
 still apply.
 
-The command gateway is the planned deterministic boundary between proposals and executable commands. It
-is not implemented yet. Read the authority for each concern before changing this member:
+The command gateway is the deterministic boundary between proposals and executable commands. Its
+request-and-reply half is implemented and proven live; its dispatch half is not. Read the authority for
+each concern before changing this member:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -38,40 +39,47 @@ A command kind, approval rule, transaction boundary, broker grant, queue, retry 
 parameter, or verification change requires the decision and coordinated work specified by the root guide.
 Do not settle safety behavior in a service-local constant or comment.
 
-## 2. Preserve the current scaffold truth
+## 2. What the member owns, and what it still does not
 
-This member currently contains only:
-
-| Path | Current responsibility |
+| Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, Tier 1 status, and future mutmut wiring |
-| `src/aerial_rescue_command_gateway/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_command_gateway/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | The package shell, the Python range, Tier 1, the three workspace dependencies, and the console script |
+| `src/aerial_rescue_command_gateway/__init__.py` | `CommandGatewayError`, the structured refusal base every module here raises, and `event_source()` |
+| `src/aerial_rescue_command_gateway/policy.py` | The pure deterministic answer, joining the two deny-by-default domain tables ([ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)) |
+| `src/aerial_rescue_command_gateway/reply.py` | The injection guard that decides where an answer may be sent ([ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)) |
+| `src/aerial_rescue_command_gateway/record.py` | The CloudEvent copy published for every answer ([ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)) |
+| `src/aerial_rescue_command_gateway/exchange.py` | Where the three pure modules meet a broker: one request in, one reply and one record out |
+| `src/aerial_rescue_command_gateway/service.py` | The composition root: the environment, the endpoint, the ports, `serve`, and shutdown |
+| `tests/` | Member-local unit, refusal, boundary, and property evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and names `src/` plus a
-future member-local `tests/` directory for mutation. There is no command handler, approval consumer,
-store adapter, broker publisher, composition root, or test here today.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
+The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
+such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
+pins that. The Tier 1 coverage and mutation gates apply here now, to every statement, every branch, and
+every mutated module.
 
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
+Still absent, and each blocked by something named rather than by effort:
 
-Activation applies the Tier 1 coverage and mutation gates immediately. Never add a dummy statement,
-placeholder test, empty abstraction, or fake entry point to make the component look started. The first
-real behavior lands through red-green-refactor with member-local unit, property, failure-injection, and
-mutation evidence.
+| Not here | What it waits on |
+| --- | --- |
+| Approval consumption and the dispatch transaction | `packages/store`. Process memory is authority for no approval, idempotency decision, audit ordinal, or prior command result, so a durable single-use consumption cannot be claimed from it |
+| Publishing an executable command | The same durable boundary. `ACCEPTED` in [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) means validated **and persisted**, and nothing here persists |
+| The acknowledgement timer, backoff, jitter, and the send-budget fold | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md), and the state to fold it over, which is the row above |
+| Operator command and approval ingress | No payload or event schema binds either family, and a subscribe grant is not a wire contract |
 
-The `command-gateway` definition in `deploy/compose.yaml` is also a shell: its command imports this
-package and exits, and its inherited healthcheck imports the contracts package. The wired broker identity
-and a green Compose policy check prove configuration shape only. They do not prove this service starts,
-stays ready, consumes an approval, commits a transaction, publishes a command, or shuts down cleanly.
+Never add a dummy statement, placeholder test, empty abstraction, or fake entry point to make an absent
+capability look started. Each lands through red-green-refactor with member-local unit, property,
+failure-injection, and mutation evidence.
 
-`AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and do not activate the member.
+The `command-gateway` definition in `deploy/compose.yaml` is still a shell: its command imports this
+package and exits rather than calling the console script the manifest declares, and its inherited
+healthcheck imports the contracts package. The wired broker identity and a green Compose policy check
+prove configuration shape only. They do not prove this service starts under Compose, stays ready,
+consumes an approval, commits a transaction, publishes a command, or shuts down cleanly. What has been
+proven live is one Event Mesh Tool request answered by this member running on the host, recorded in
+[`event-mesh-tool-first-run.md`](../../release-evidence/phase-0/event-mesh-tool-first-run.md).
+
+`AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and are not member source.
 
 ## 3. Keep policy, representation, and effects separated
 
@@ -85,8 +93,8 @@ transaction, and drives typed adapters. It does not become a second owner for lo
   and other pure policy. Do not copy a transition table or add a permissive service-only branch.
 - Keep every direct `solace` import and vendor callback type inside the typed `packages/broker` boundary.
   Vendor objects, `Any` values, and vendor exceptions must not escape into this service. The broker
-  package does not yet implement the application data plane; do not bypass that missing boundary with a
-  second client.
+  package now carries the application data plane, including durable-queue consumption and settlement;
+  reach it only through that boundary and never with a second client.
 - Put durable repository and transaction adapters in `packages/store`. Process memory is not authority
   for approvals, idempotency, audit order, inbox or outbox state, or prior command results. The store is
   also a scaffold today, so sequence the real dependency through TDD instead of hiding temporary state in
@@ -219,9 +227,9 @@ stream containing an approved escalation.
 
 ## 7. Testing and evidence
 
-For the first behavior in this member:
+For each new behavior in this member:
 
-1. Run the existing scaffold predicate and every relevant domain, contracts, broker, and root test.
+1. Run the member suite and every relevant domain, contracts, broker, and root test before editing.
 2. Add the smallest member-local test under `services/command_gateway/tests/` with the mandatory AAA
    structure.
 3. Run the AAA gate and focused test; observe the intended red result before production code.
@@ -271,8 +279,8 @@ current policy is a design conflict to resolve, not a reason to relax the oracle
 
 ## 9. Required verification
 
-For a guide-only change, create the locked root environment, prove the member remains a scaffold, and
-pass the files explicitly to the hooks:
+For a guide-only change, create the locked root environment, prove the member's classification is
+unchanged, and pass the files explicitly to the hooks:
 
 ```sh
 uv sync --all-packages --frozen
