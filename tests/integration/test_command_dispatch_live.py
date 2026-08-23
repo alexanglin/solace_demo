@@ -297,8 +297,25 @@ def _drain(role: Principal, queue: str) -> list[Mapping[str, object]]:
 
 
 def _discard(role: Principal, queue: str) -> None:
-    """Accept everything on ``queue`` without reading it, so the next run starts level."""
-    _drain(role, queue)
+    """Accept everything on ``queue`` without reading it, so the next run starts level.
+
+    Deliberately not :func:`_drain`. One of these runs publishes bytes that are not an
+    envelope on purpose, and those bytes reach the collateral command queues too, so a
+    cleanup that decoded what it took would fail on the very message the test is about.
+    """
+    service = _service(role)
+    receiver = SolacePersistentReceiver(service, queue)
+    window = RECEIVE_WINDOW_MILLISECONDS
+    try:
+        while True:
+            message = receiver.receive(window)
+            if message is None:
+                return
+            window = DRAIN_WINDOW_MILLISECONDS
+            receiver.settle(message, Outcome.ACCEPTED)
+    finally:
+        receiver.close()
+        service.disconnect()
 
 
 def _outcomes(payloads: Sequence[Mapping[str, object]]) -> list[str]:
