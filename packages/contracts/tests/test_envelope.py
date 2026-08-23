@@ -107,6 +107,22 @@ ASSIGN_SECTOR_TOPIC = Topic(
     {"droneId": "drone-vision-01", "commandType": "assign-sector"},
 )
 
+COMMAND_RESULT_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-result.schema.json"
+)
+COMMAND_RESULT_TYPE = "aerial-rescue.v1.drone.command-result"
+COMMAND_RESULT_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads((BASELINES / "drone_command_result_baseline.json").read_text(encoding="utf-8")),
+)
+"""One drone's report on one command, committed as its golden fixture for the same reason."""
+
+COMMAND_RESULT_TOPIC = Topic(
+    Family.DRONE_COMMAND_RESULT,
+    "m-2026-0001",
+    {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
+)
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
@@ -126,6 +142,11 @@ def _gateway_response_baseline() -> dict[str, object]:
 def _assign_sector_baseline() -> dict[str, object]:
     """Return a fresh copy of the sector-assignment command."""
     return deepcopy(ASSIGN_SECTOR_BASELINE)
+
+
+def _command_result_baseline() -> dict[str, object]:
+    """Return a fresh copy of the drone's report on one command."""
+    return deepcopy(COMMAND_RESULT_BASELINE)
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -766,6 +787,61 @@ class DroneCommandBindingTests(unittest.TestCase):
         self.assertEqual(
             (EnvelopeRefusal.UNKNOWN_TYPE, "type", ESCALATE_RESCUE_TYPE),
             (captured.value.refusal, captured.value.attribute, captured.value.value),
+        )
+
+
+class DroneCommandResultBindingTests(unittest.TestCase):
+    """The fifth bound type: one drone's report on one command it received (ADR-0082)."""
+
+    def test_binding_for_returns_the_command_result_binding(self) -> None:
+        # Arrange
+        expected = Binding(COMMAND_RESULT_TYPE, Family.DRONE_COMMAND_RESULT, COMMAND_RESULT_SCHEMA)
+
+        # Act
+        binding = binding_for(COMMAND_RESULT_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_command_result_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _command_result_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, COMMAND_RESULT_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (COMMAND_RESULT_TYPE, COMMAND_RESULT_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_result_naming_another_command_does_not_bind(self) -> None:
+        """The result topic is keyed by the command it answers, so the two must agree."""
+        # Arrange
+        document = _command_result_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["commandId"] = "cmd-2026-0002"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), COMMAND_RESULT_TOPIC)
+
+        # Assert
+        self.assertEqual(("commandId", EnvelopeRefusal.TOPIC_BINDING, "cmd-2026-0002"), outcome)
+
+    def test_the_result_carries_the_command_it_answers_as_its_causation(self) -> None:
+        """A retry is a new envelope, so only the causation links a result to its send."""
+        # Arrange
+        document = _command_result_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+
+        # Assert
+        self.assertEqual(
+            ("0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6e", "c-2026-0001"),
+            (envelope.causation_id, envelope.correlation_id),
         )
 
 
