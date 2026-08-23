@@ -43,7 +43,7 @@ ALLOWED_KEYWORDS = frozenset(
         "items",
     }
 )
-EXPECTED_SCHEMA_COUNT = 10
+EXPECTED_SCHEMA_COUNT = 12
 
 
 def _schema_paths() -> tuple[Path, ...]:

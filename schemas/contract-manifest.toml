@@ -123,6 +123,34 @@ invalid = [
 ]
 
 [[contracts]]
+schema = "schemas/v1/payload/drone-command-assign-sector.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/drone-command-assign-sector/baseline.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/identifiers-shortest.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/identifiers-longest.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/drone-command-assign-sector/missing-command-id.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/missing-sector-id.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/sector-id-uppercase.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/sector-id-65-characters.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/sector-id-not-a-string.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/command-id-trailing-hyphen.json",
+  "fixtures/golden/v1/payload/drone-command-assign-sector/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/drone-command-assign-sector.schema.json"
+valid = [
+  "fixtures/golden/v1/event/drone-command-assign-sector/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/drone-command-assign-sector/type-not-assign-sector.json",
+  "fixtures/golden/v1/event/drone-command-assign-sector/dataschema-not-assign-sector.json",
+  "fixtures/golden/v1/event/drone-command-assign-sector/data-fails-payload.json",
+]
+
+[[contracts]]
 schema = "schemas/v1/rpc/gateway-request.schema.json"
 valid = [
   "fixtures/golden/v1/rpc/gateway-request/baseline.json",
