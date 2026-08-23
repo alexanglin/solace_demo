@@ -25,14 +25,10 @@ it (``docs/TESTING.md``).
 
 from __future__ import annotations
 
-import base64
-import http.client
-import json
 import time
 import unittest
 from pathlib import Path
 from typing import Final, override
-from urllib.parse import quote
 
 import pytest
 from aerial_rescue_broker.deployment import (
@@ -52,13 +48,14 @@ from aerial_rescue_broker.messaging import (
     SolacePublisher,
     build_service,
 )
+from aerial_rescue_broker.provisioning import message_count
 from aerial_rescue_broker.queues import (
     DEAD_MESSAGE_QUEUE,
     MAX_REDELIVERY_COUNT,
     drone_queue_name,
     family_queue_name,
 )
-from aerial_rescue_broker.semp import REQUEST_TIMEOUT_SECONDS, verification_context
+from aerial_rescue_broker.semp import SempEndpoint, SempSession, connect
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.config.message_acknowledgement_configuration import Outcome
@@ -90,8 +87,6 @@ COLLATERAL_QUEUES: Final = (
 )
 FILLED_QUEUES: Final = ((Principal.FLEET_SIMULATOR, PROBE_QUEUE), *COLLATERAL_QUEUES)
 
-MONITOR_PATH: Final = f"/SEMP/v2/monitor/msgVpns/{DEFAULT_VPN}"
-MESSAGE_PAGE: Final = 100
 DELIVERY_ATTEMPT_LIMIT: Final = MAX_REDELIVERY_COUNT + 3
 
 RECEIVE_WINDOW_MILLISECONDS: Final = 5_000
@@ -100,23 +95,15 @@ SETTLE_POLLS: Final = 20
 SETTLE_INTERVAL_SECONDS: Final = 0.2
 
 
-def _monitor(path: str) -> object:
-    """Return one monitor document's ``data``, read over the same validated TLS as SEMP."""
-    authority = str(DEPLOY / CERTIFICATE_AUTHORITY)
-    password = (DEPLOY / ADMIN_CREDENTIAL).read_text().strip()
-    credential = base64.b64encode(f"{ADMIN_USERNAME}:{password}".encode()).decode()
-    connection = http.client.HTTPSConnection(
-        DEFAULT_HOST,
-        DEFAULT_PORT,
-        context=verification_context(authority),
-        timeout=REQUEST_TIMEOUT_SECONDS,
+def _semp_endpoint() -> SempEndpoint:
+    """Return the administrator SEMP endpoint, over the per-checkout authority."""
+    return SempEndpoint(
+        host=DEFAULT_HOST,
+        port=DEFAULT_PORT,
+        username=ADMIN_USERNAME,
+        password=(DEPLOY / ADMIN_CREDENTIAL).read_text().strip(),
+        certificate_authority=str(DEPLOY / CERTIFICATE_AUTHORITY),
     )
-    connection.request(
-        "GET", f"{MONITOR_PATH}/{path}", None, {"Authorization": "Basic " + credential}
-    )
-    document: object = json.loads(connection.getresponse().read())["data"]
-    connection.close()
-    return document
 
 
 def _depth(queue: str) -> int:
@@ -127,10 +114,18 @@ def _depth(queue: str) -> int:
     ever held. Measured on 2026-08-23, a queue reporting ``spooledMsgCount`` 17 held zero
     messages. ``msgSpoolUsage`` is the current figure but is bytes rather than messages, so
     the queue's own message collection is the only instrument that answers the question
-    asked here, and counting it is exact while the depth stays under ``MESSAGE_PAGE``.
+    asked here.
+
+    Counted through ``packages/broker`` rather than here, so the cursor is followed to the
+    collection's end and a depth larger than one page is a real number rather than the page
+    size. The member refuses with ``PAGING`` past its bound instead of truncating.
     """
-    rows = _monitor(f"queues/{quote(queue, safe='')}/msgs?count={MESSAGE_PAGE}")
-    return len(rows) if isinstance(rows, list) else 0
+    endpoint = _semp_endpoint()
+    connection = connect(endpoint)
+    try:
+        return message_count(SempSession(connection, endpoint), DEFAULT_VPN, queue)
+    finally:
+        connection.close()
 
 
 def _settled_depth(queue: str, expected: int) -> int:
