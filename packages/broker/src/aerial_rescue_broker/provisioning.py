@@ -204,6 +204,52 @@ class SempTransport(Protocol):
         ...
 
 
+class MonitorTransport(Protocol):
+    """The read-only half of the SEMP transport, for what the broker is doing right now.
+
+    Deliberately narrower than :class:`SempTransport`: a caller that only needs to read a
+    depth cannot reach a write through this port, and no monitor path is writable.
+    """
+
+    def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return every row of the monitoring collection at ``path``."""
+        ...
+
+
+def queue_messages_path(vpn: str, queue: str) -> str:
+    """Return the monitor-relative path of one queue's spooled messages.
+
+    The queue name is percent-encoded whole. `#DEAD_MSG_QUEUE` is the case that proves it:
+    an unencoded `#` truncates the path at a fragment, and the request would read the queue
+    collection rather than that queue's messages.
+    """
+    return f"msgVpns/{vpn}/queues/{quote(queue, safe='')}/msgs"
+
+
+def message_count(transport: MonitorTransport, vpn: str, queue: str) -> int:
+    """Return how many messages ``queue`` is holding, by counting them.
+
+    Counting is not a preference. A queue's ``spooledMsgCount`` is cumulative and never
+    falls, so it cannot answer "how deep is this queue now", which is what an acceptance
+    run reads and what
+    ``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md`` names as the
+    dead-message queue's instrument.
+
+    Args:
+        transport: The read-only monitor transport.
+        vpn: The message VPN the queue belongs to.
+        queue: The queue's name, unencoded.
+
+    Returns:
+        The number of messages spooled on the queue across every page of the collection.
+
+    Raises:
+        SempError: With ``PAGING`` when the queue holds more than the page bound can walk,
+            so a depth is never silently truncated into a smaller one.
+    """
+    return len(transport.read_monitor(queue_messages_path(vpn, queue)))
+
+
 def describe(request: Request) -> str:
     """Return a log-safe rendering of ``request`` with every secret member replaced."""
     body = {
