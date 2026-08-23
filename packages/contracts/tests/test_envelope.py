@@ -86,6 +86,27 @@ GATEWAY_RESPONSE_TOPIC = Topic(
     Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": GATEWAY_RESPONSE_REQUEST_ID}
 )
 
+ASSIGN_SECTOR_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json"
+)
+ASSIGN_SECTOR_TYPE = "aerial-rescue.v1.drone.command.assign-sector"
+ESCALATE_RESCUE_TYPE = "aerial-rescue.v1.drone.command.escalate-rescue"
+"""The second command type ADR-0041 closes, deliberately left unbound by ADR-0082."""
+
+ASSIGN_SECTOR_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads(
+        (BASELINES / "drone_command_assign_sector_baseline.json").read_text(encoding="utf-8")
+    ),
+)
+"""One executable sector assignment, committed as its golden fixture for the same reason."""
+
+ASSIGN_SECTOR_TOPIC = Topic(
+    Family.DRONE_COMMAND,
+    "m-2026-0001",
+    {"droneId": "drone-vision-01", "commandType": "assign-sector"},
+)
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
@@ -100,6 +121,11 @@ def _salient_baseline() -> dict[str, object]:
 def _gateway_response_baseline() -> dict[str, object]:
     """Return a fresh copy of the command-gateway response record."""
     return deepcopy(GATEWAY_RESPONSE_BASELINE)
+
+
+def _assign_sector_baseline() -> dict[str, object]:
+    """Return a fresh copy of the sector-assignment command."""
+    return deepcopy(ASSIGN_SECTOR_BASELINE)
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -684,6 +710,62 @@ class GatewayResponseBindingTests(unittest.TestCase):
         self.assertEqual(
             ("requestId", EnvelopeRefusal.TOPIC_BINDING, "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"),
             outcome,
+        )
+
+
+class DroneCommandBindingTests(unittest.TestCase):
+    """The fourth bound type: one executable sector assignment (ADR-0082)."""
+
+    def test_binding_for_returns_the_assign_sector_command_binding(self) -> None:
+        # Arrange
+        expected = Binding(ASSIGN_SECTOR_TYPE, Family.DRONE_COMMAND, ASSIGN_SECTOR_SCHEMA)
+
+        # Act
+        binding = binding_for(ASSIGN_SECTOR_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_assign_sector_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _assign_sector_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, ASSIGN_SECTOR_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (ASSIGN_SECTOR_TYPE, ASSIGN_SECTOR_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_command_whose_payload_names_another_drone_does_not_bind(self) -> None:
+        """A drone must be able to refuse a command addressed to a different drone."""
+        # Arrange
+        document = _assign_sector_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["droneId"] = "drone-thermal-02"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), ASSIGN_SECTOR_TOPIC)
+
+        # Assert
+        self.assertEqual(("droneId", EnvelopeRefusal.TOPIC_BINDING, "drone-thermal-02"), outcome)
+
+    def test_the_rescue_escalation_command_type_is_deliberately_unbound(self) -> None:
+        """ADR-0082 leaves it unbound, so no component can publish one until it is bound."""
+        # Arrange
+        unbound = ESCALATE_RESCUE_TYPE
+
+        # Act
+        with pytest.raises(EnvelopeError) as captured:
+            binding_for(unbound)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.UNKNOWN_TYPE, "type", ESCALATE_RESCUE_TYPE),
+            (captured.value.refusal, captured.value.attribute, captured.value.value),
         )
 
 

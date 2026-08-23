@@ -137,6 +137,11 @@ BINDINGS: Final[Mapping[str, Binding]] = {
         Family.GATEWAY_RESPONSE,
         SCHEMA_ID_BASE + "schemas/v1/payload/gateway-response.schema.json",
     ),
+    "aerial-rescue.v1.drone.command.assign-sector": Binding(
+        "aerial-rescue.v1.drone.command.assign-sector",
+        Family.DRONE_COMMAND,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-assign-sector.schema.json",
+    ),
 }
 """A new row lands together with its payload schema, event schema, fixtures, and manifest entry."""
 
