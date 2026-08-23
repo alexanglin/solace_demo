@@ -7,24 +7,44 @@ there: the caller holds them, so this member opens nothing it was not handed.
 
 from __future__ import annotations
 
+import json
 import unittest
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Final
 
 import pytest
-from aerial_rescue_broker.messaging import BrokerEndpoint, MessagingError, MessagingRefusal
-from aerial_rescue_contracts.envelope import MAX_SEQUENCE
+from aerial_rescue_broker.messaging import (
+    BrokerEndpoint,
+    InboundMessage,
+    MessagingError,
+    MessagingRefusal,
+    Outcome,
+)
+from aerial_rescue_broker.queues import drone_queue_name
+from aerial_rescue_contracts.canonical import canonical_bytes
+from aerial_rescue_contracts.envelope import (
+    MAX_SEQUENCE,
+    Envelope,
+    envelope_document,
+    parse_envelope,
+)
+from aerial_rescue_domain.commands import SendBudget
 from aerial_rescue_domain.connectivity import ConnectivityThresholds
 from aerial_rescue_domain.mission import MissionState
 from aerial_rescue_domain.principals import Principal
+from aerial_rescue_fleet_simulator import FleetSimulatorError
+from aerial_rescue_fleet_simulator.results import ResultStamp
 from aerial_rescue_fleet_simulator.scenario import DroneStart, FleetScenario
 from aerial_rescue_fleet_simulator.service import (
     CountingStamps,
+    IntakeBounds,
+    IntakeOutcome,
     PublishOutcome,
     Runtime,
     ServeReport,
+    StampSource,
     run,
 )
 from aerial_rescue_fleet_simulator.telemetry import TelemetryStamp
@@ -36,6 +56,18 @@ ENDPOINT: Final = BrokerEndpoint(
 )
 CREDENTIAL: Final = "not-a-real-credential"
 CORRELATION: Final = "c-2026-0001"
+MISSION: Final = "m-2026-0001"
+VISION_ID: Final = "drone-vision-01"
+THERMAL_ID: Final = "drone-thermal-02"
+COMMAND: Final = "cmd-2026-0001"
+EVENT_ID: Final = "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6e"
+TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+ASSIGN_TYPE: Final = "aerial-rescue.v1.drone.command.assign-sector"
+ASSIGN_SCHEMA: Final = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json"
+)
+BUDGET: Final = SendBudget(max_sends=5)
+BOUNDS: Final = IntakeBounds(commands_per_drone_per_tick=3)
 
 VISION: Final = DroneStart(
     drone_id="drone-vision-01",
@@ -96,12 +128,88 @@ class FakeDirectPublisher:
         self.closed += 1
 
 
-class FakeSession:
-    """A publish-only session that records its shutdown."""
+class FakeResultPublisher:
+    """Records every guaranteed publication, and can be told to refuse the first few."""
 
-    def __init__(self, publisher: FakeDirectPublisher) -> None:
-        """Record which publisher this session hands out."""
-        self.publisher = publisher
+    def __init__(self, order: list[str], refuse_first: int = 0) -> None:
+        """Record where to note the order of effects, and how many publications refuse."""
+        self.published: list[tuple[str, bytes]] = []
+        self._order = order
+        self._refusals = refuse_first
+
+    def publish(self, topic: str, payload: bytes, properties: Mapping[str, object]) -> None:
+        """Record one publication, or refuse it the way the broker adapter does."""
+        del properties
+        if self._refusals > 0:
+            self._refusals -= 1
+            raise MessagingError(MessagingRefusal.PUBLISH_REFUSED, topic)
+        self._order.append("publish")
+        self.published.append((topic, bytes(payload)))
+
+
+class FakeMessage:
+    """One inbound command, carrying the members the ``InboundMessage`` port names."""
+
+    def __init__(self, payload: bytes | None, topic: str) -> None:
+        """Record the payload and the topic this message reports."""
+        self._payload = payload
+        self._topic = topic
+
+    def get_payload_as_bytes(self) -> bytes | None:
+        """Return the payload."""
+        return self._payload
+
+    def get_destination_name(self) -> str | None:
+        """Return the topic the message arrived on."""
+        return self._topic
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return the user properties the producer set."""
+        return {}
+
+
+class FakeQueueReceiver:
+    """One drone's queue, answering from a script and recording every settlement."""
+
+    def __init__(
+        self,
+        order: list[str],
+        scripted: Sequence[FakeMessage] = (),
+        refuse_settlement: bool = False,
+    ) -> None:
+        """Record what this queue yields and whether settling refuses."""
+        self.settled: list[tuple[InboundMessage, Outcome]] = []
+        self.windows: list[int] = []
+        self._order = order
+        self._scripted = list(scripted)
+        self._refusing = refuse_settlement
+
+    def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
+        """Return the next scripted command, or ``None`` when the script is exhausted."""
+        self.windows.append(timeout_milliseconds)
+        return self._scripted.pop(0) if self._scripted else None
+
+    def settle(self, message: InboundMessage, outcome: Outcome) -> None:
+        """Record one settlement, or refuse it the way the broker adapter does."""
+        if self._refusing:
+            raise MessagingError(MessagingRefusal.SETTLE_REFUSED, outcome.name)
+        self._order.append(f"settle-{outcome.name.lower()}")
+        self.settled.append((message, outcome))
+
+
+class FakeSession:
+    """A fleet session: two publishers, one receiver per drone, and one shutdown."""
+
+    def __init__(
+        self,
+        publisher: FakeDirectPublisher,
+        results: FakeResultPublisher,
+        receivers: Mapping[str, FakeQueueReceiver],
+    ) -> None:
+        """Record the publishers and the per-drone receivers this session hands out."""
+        self.telemetry = publisher
+        self.results = results
+        self.receivers = receivers
         self.closed = 0
 
     def close(self) -> None:
@@ -110,16 +218,25 @@ class FakeSession:
 
 
 class FakeOpener:
-    """Records the endpoint, role, and credential one run connected with."""
+    """Records the endpoint, role, credential, and queues one run connected with."""
 
-    def __init__(self, session: FakeSession) -> None:
-        """Record which session this opener yields."""
+    def __init__(self, session: FakeSession, refusing: bool = False) -> None:
+        """Record which session this opener yields, and whether opening refuses."""
         self.session = session
-        self.calls: list[tuple[BrokerEndpoint, Principal, str]] = []
+        self.calls: list[tuple[BrokerEndpoint, Principal, str, Mapping[str, str]]] = []
+        self._refusing = refusing
 
-    def __call__(self, endpoint: BrokerEndpoint, role: Principal, credential: str) -> FakeSession:
-        """Record one connection and return the session."""
-        self.calls.append((endpoint, role, credential))
+    def __call__(
+        self,
+        endpoint: BrokerEndpoint,
+        role: Principal,
+        credential: str,
+        queues: Mapping[str, str],
+    ) -> FakeSession:
+        """Record one connection and return the session, or refuse a binding."""
+        self.calls.append((endpoint, role, credential, queues))
+        if self._refusing:
+            raise MessagingError(MessagingRefusal.BIND_REFUSED, next(iter(queues.values())))
         return self.session
 
 
@@ -160,6 +277,127 @@ class OverflowingStamps:
             traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01",
         )
 
+    def next_result_stamp(
+        self, producer: str, correlation_id: str, causation_id: str
+    ) -> ResultStamp:
+        """Return a result stamp that overflows for the same reason."""
+        return ResultStamp(
+            event_id=producer,
+            occurred_at="2026-08-20T14:03:07.250Z",
+            sequence=MAX_SEQUENCE + 1,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01",
+        )
+
+
+def _command_bytes(
+    *,
+    command_id: str = COMMAND,
+    sector: str = "sector-north",
+    sequence: int = 2,
+    event_id: str = EVENT_ID,
+    drone: str = VISION_ID,
+) -> bytes:
+    """Return one assign-sector command as the gateway would have published it."""
+    return canonical_bytes(
+        envelope_document(
+            Envelope(
+                id=event_id,
+                source="urn:aerial-rescue:service:command-gateway",
+                type=ASSIGN_TYPE,
+                subject=MISSION,
+                time="2026-08-23T07:31:04.882Z",
+                dataschema=ASSIGN_SCHEMA,
+                sequence=f"{sequence:015d}",
+                correlation_id=CORRELATION,
+                traceparent=TRACEPARENT,
+                data={
+                    "missionId": MISSION,
+                    "droneId": drone,
+                    "commandId": command_id,
+                    "sectorId": sector,
+                },
+            )
+        )
+    )
+
+
+def _command_topic(drone: str = VISION_ID) -> str:
+    """Return the topic one drone's assign-sector command arrives on."""
+    return f"aerial-rescue/v1/{MISSION}/drone/{drone}/command/assign-sector"
+
+
+def _message(payload: bytes | None = None, drone: str = VISION_ID) -> FakeMessage:
+    """Return one inbound command message for a drone's own queue."""
+    return FakeMessage(
+        _command_bytes(drone=drone) if payload is None else payload, _command_topic(drone)
+    )
+
+
+@dataclass
+class Fleet:
+    """Every fake one run was given, so a test can read what the run did to each."""
+
+    runtime: Runtime
+    opener: FakeOpener
+    telemetry: FakeDirectPublisher
+    results: FakeResultPublisher
+    receivers: Mapping[str, FakeQueueReceiver]
+    order: list[str]
+
+
+@dataclass(frozen=True)
+class Refusals:
+    """Which transport steps refuse, so one run can model one failure at a time."""
+
+    results: int = 0
+    settlement: bool = False
+    binding: bool = False
+
+
+NO_REFUSALS: Final = Refusals()
+
+
+@dataclass(frozen=True)
+class Given:
+    """Everything a test varies about one run, so the factory takes one value."""
+
+    publisher: FakeDirectPublisher | None = None
+    scenario: FleetScenario | None = None
+    asks: int = 100
+    queued: Mapping[str, Sequence[FakeMessage]] | None = None
+    refuse: Refusals = NO_REFUSALS
+    stamps: StampSource | None = None
+    bounds: IntakeBounds = BOUNDS
+
+
+DEFAULT: Final = Given()
+
+
+def _fleet(given: Given = DEFAULT) -> Fleet:
+    """Return a runtime with every boundary injected, beside the fakes it holds."""
+    order: list[str] = []
+    resolved = FakeDirectPublisher() if given.publisher is None else given.publisher
+    results = FakeResultPublisher(order, refuse_first=given.refuse.results)
+    scripted = {} if given.queued is None else given.queued
+    receivers = {
+        drone: FakeQueueReceiver(order, scripted.get(drone, ()), given.refuse.settlement)
+        for drone in (VISION_ID, THERMAL_ID)
+    }
+    opener = FakeOpener(FakeSession(resolved, results, receivers), refusing=given.refuse.binding)
+    runtime = Runtime(
+        endpoint=ENDPOINT,
+        credential=CREDENTIAL,
+        open_broker=opener,
+        scenario=_scenario() if given.scenario is None else given.scenario,
+        stamps=_stamps() if given.stamps is None else given.stamps,
+        running=Countdown(given.asks),
+        send_budget=BUDGET,
+        intake=given.bounds,
+    )
+    return Fleet(runtime, opener, resolved, results, receivers, order)
+
 
 def _runtime(
     *,
@@ -167,23 +405,19 @@ def _runtime(
     scenario: FleetScenario | None = None,
     asks: int = 100,
 ) -> tuple[Runtime, FakeOpener, FakeDirectPublisher]:
-    """Return a runtime with every boundary injected, beside the fakes it holds."""
-    resolved = FakeDirectPublisher() if publisher is None else publisher
-    opener = FakeOpener(FakeSession(resolved))
-    runtime = Runtime(
-        endpoint=ENDPOINT,
-        credential=CREDENTIAL,
-        open_broker=opener,
-        scenario=_scenario() if scenario is None else scenario,
-        stamps=_stamps(),
-        running=Countdown(asks),
-    )
-    return runtime, opener, resolved
+    """Return the three fakes the telemetry tests read, from one fleet."""
+    fleet = _fleet(Given(publisher=publisher, scenario=scenario, asks=asks))
+    return fleet.runtime, fleet.opener, fleet.telemetry
 
 
 def _topics(publisher: FakeDirectPublisher) -> Sequence[str]:
     """Return the topics one run published on, in order."""
     return [topic for topic, _ in publisher.published]
+
+
+def _outcome_of(payload: bytes) -> object:
+    """Return the outcome word one published command result carries."""
+    return parse_envelope(json.loads(payload)).data["outcome"]
 
 
 class ConnectionTests(unittest.TestCase):
@@ -195,7 +429,8 @@ class ConnectionTests(unittest.TestCase):
         run(runtime)
 
         # Assert
-        self.assertEqual([(ENDPOINT, Principal.FLEET_SIMULATOR, CREDENTIAL)], opener.calls)
+        connected = [(endpoint, role, credential) for endpoint, role, credential, _ in opener.calls]
+        self.assertEqual([(ENDPOINT, Principal.FLEET_SIMULATOR, CREDENTIAL)], connected)
 
     def test_the_session_is_closed_even_when_the_fold_raises(self) -> None:
         # Arrange
@@ -335,6 +570,323 @@ class ReportTests(unittest.TestCase):
 
         # Assert
         self.assertIsInstance(report, ServeReport)
+
+
+class IntakeBoundTests(unittest.TestCase):
+    def test_a_bound_that_would_take_no_command_is_refused_at_construction(self) -> None:
+        """A drain that could never drain is a configuration error, not a quiet stall."""
+        # Arrange
+        degenerate = 0
+
+        # Act
+        with pytest.raises(FleetSimulatorError) as captured:
+            IntakeBounds(commands_per_drone_per_tick=degenerate)
+
+        # Assert
+        self.assertEqual(degenerate, captured.value.value)
+
+
+class CommandIntakeTests(unittest.TestCase):
+    def test_a_command_is_acknowledged_and_then_resolved_in_that_order(self) -> None:
+        """ADR-0074 gives no `IN_FLIGHT`-to-`FAILED` edge, so both reports reach the wire."""
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        outcomes = [_outcome_of(payload) for _topic, payload in fleet.results.published]
+        self.assertEqual(["acknowledged", "succeeded"], outcomes)
+
+    def test_both_results_are_published_on_the_command_s_own_result_topic(self) -> None:
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1))
+        expected = f"aerial-rescue/v1/{MISSION}/drone/{VISION_ID}/command-result/{COMMAND}"
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual([expected, expected], [topic for topic, _ in fleet.results.published])
+
+    def test_the_message_is_settled_only_after_both_results_are_published(self) -> None:
+        """Settling on receipt would end the guarantee at the socket."""
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(["publish", "publish", "settle-accepted"], fleet.order)
+
+    def test_a_command_naming_a_sector_this_run_does_not_hold_is_failed(self) -> None:
+        """The drone acknowledges first, because the machine has no shortcut to failure."""
+        # Arrange
+        elsewhere = _message(_command_bytes(sector="sector-elsewhere"))
+        fleet = _fleet(Given(queued={VISION_ID: (elsewhere,)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        outcomes = [_outcome_of(payload) for _topic, payload in fleet.results.published]
+        self.assertEqual(
+            (["acknowledged", "failed"], 1),
+            (outcomes, report.intake.get(IntakeOutcome.HANDLED, 0)),
+        )
+
+    def test_the_result_names_the_command_that_caused_it(self) -> None:
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        first = parse_envelope(json.loads(fleet.results.published[0][1]))
+        self.assertEqual((EVENT_ID, CORRELATION), (first.causation_id, first.correlation_id))
+
+
+class MalformedCommandTests(unittest.TestCase):
+    def test_a_command_that_cannot_be_read_is_rejected_rather_than_redelivered(self) -> None:
+        """An unparsable command is deterministic, so redelivering it would only loop."""
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(b"{not canonical"),)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            ([(Outcome.REJECTED)], [], 1),
+            (
+                [outcome for _message, outcome in fleet.receivers[VISION_ID].settled],
+                fleet.results.published,
+                report.intake.get(IntakeOutcome.UNREADABLE, 0),
+            ),
+        )
+
+    def test_a_command_for_another_drone_on_this_queue_is_rejected(self) -> None:
+        # Arrange
+        misrouted = FakeMessage(_command_bytes(drone=THERMAL_ID), _command_topic(THERMAL_ID))
+        fleet = _fleet(Given(queued={VISION_ID: (misrouted,)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(1, report.intake.get(IntakeOutcome.UNREADABLE, 0))
+
+
+class IdempotencyTests(unittest.TestCase):
+    def test_a_redelivery_of_the_same_event_is_settled_without_acting_again(self) -> None:
+        """The broker redelivers the same bytes; the sequence has not advanced."""
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(), _message())}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            (2, 1, 1),
+            (
+                len(fleet.results.published),
+                report.intake.get(IntakeOutcome.HANDLED, 0),
+                report.intake.get(IntakeOutcome.SUPERSEDED, 0),
+            ),
+        )
+
+    def test_a_retry_reusing_the_command_identifier_returns_the_prior_result(self) -> None:
+        """A retry is a new event with a higher sequence and the same command."""
+        # Arrange
+        retry = _message(
+            _command_bytes(sequence=3, event_id="0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a70")
+        )
+        fleet = _fleet(Given(queued={VISION_ID: (_message(), retry)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            (2, 1),
+            (len(fleet.results.published), report.intake.get(IntakeOutcome.REPLAYED, 0)),
+        )
+
+    def test_a_stale_sequence_is_superseded_rather_than_dead_lettered(self) -> None:
+        """A superseded command is not poison; rejecting it would corrupt the instrument."""
+        # Arrange
+        stale = _message(_command_bytes(command_id="cmd-2026-0002", sequence=1))
+        fleet = _fleet(Given(queued={VISION_ID: (_message(), stale)}, asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            [Outcome.ACCEPTED, Outcome.ACCEPTED],
+            [outcome for _message, outcome in fleet.receivers[VISION_ID].settled],
+        )
+
+    def test_each_drone_s_queue_keeps_its_own_view_of_the_gateway_s_stream(self) -> None:
+        """One gateway counts globally, so one drone's queue sees a subsequence."""
+        # Arrange
+        thermal = FakeMessage(
+            _command_bytes(
+                command_id="cmd-2026-0003",
+                sector="sector-south",
+                sequence=1,
+                event_id="0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a71",
+                drone=THERMAL_ID,
+            ),
+            _command_topic(THERMAL_ID),
+        )
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),), THERMAL_ID: (thermal,)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(2, report.intake.get(IntakeOutcome.HANDLED, 0))
+
+
+class DrainBoundTests(unittest.TestCase):
+    def test_no_more_than_the_bound_is_taken_from_one_drone_in_one_tick(self) -> None:
+        """One drone's backlog cannot starve the other drones or the next tick."""
+        # Arrange
+        backlog = tuple(
+            _message(
+                _command_bytes(
+                    command_id=f"cmd-2026-{index:04d}",
+                    sequence=index + 10,
+                    event_id=f"0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5{index:03d}",
+                )
+            )
+            for index in range(6)
+        )
+        fleet = _fleet(Given(queued={VISION_ID: backlog}, asks=1, bounds=IntakeBounds(2)))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(2, report.intake.get(IntakeOutcome.HANDLED, 0))
+
+    def test_the_drain_polls_rather_than_waiting_on_an_empty_queue(self) -> None:
+        """A blocking window would make command traffic the pacer of the tick loop."""
+        # Arrange
+        fleet = _fleet(Given(asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual([0], sorted(set(fleet.receivers[VISION_ID].windows)))
+
+    def test_the_drones_are_drained_in_ascending_identifier_order(self) -> None:
+        """Broker arrival order must not decide which drone acts first."""
+        # Arrange
+        fleet = _fleet(Given(asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        self.assertEqual([THERMAL_ID, VISION_ID], sorted(fleet.receivers))
+
+
+class SettlementRefusalTests(unittest.TestCase):
+    def test_a_refused_result_returns_the_command_for_redelivery(self) -> None:
+        """A transport failure could differ next time, so the queue bounds the retry."""
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1, refuse=Refusals(results=1)))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            ([Outcome.FAILED], 1),
+            (
+                [outcome for _message, outcome in fleet.receivers[VISION_ID].settled],
+                report.intake.get(IntakeOutcome.RESULT_REFUSED, 0),
+            ),
+        )
+
+    def test_a_refused_settlement_is_counted_and_the_run_carries_on(self) -> None:
+        """An unsettled message is redelivered, so it must not be mistaken for done."""
+        # Arrange
+        fleet = _fleet(
+            Given(queued={VISION_ID: (_message(),)}, asks=1, refuse=Refusals(settlement=True))
+        )
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(1, report.intake.get(IntakeOutcome.SETTLEMENT_REFUSED, 0))
+
+    def test_a_result_that_cannot_be_built_is_rejected_rather_than_retried(self) -> None:
+        # Arrange
+        fleet = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=1, stamps=OverflowingStamps()))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(1, report.intake.get(IntakeOutcome.UNANSWERABLE, 0))
+
+
+class StartupTests(unittest.TestCase):
+    def test_a_queue_the_broker_will_not_give_stops_the_run_before_any_tick(self) -> None:
+        """A drone with no queue loses its commands silently; this is what detects it."""
+        # Arrange
+        fleet = _fleet(Given(refuse=Refusals(binding=True)))
+
+        # Act
+        with pytest.raises(MessagingError) as captured:
+            run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            (MessagingRefusal.BIND_REFUSED, []),
+            (captured.value.refusal, fleet.telemetry.published),
+        )
+
+    def test_every_declared_drone_is_given_its_own_command_queue_name(self) -> None:
+        # Arrange
+        fleet = _fleet(Given(asks=1))
+
+        # Act
+        run(fleet.runtime)
+
+        # Assert
+        _endpoint, _role, _credential, queues = fleet.opener.calls[0]
+        self.assertEqual(
+            {
+                VISION_ID: drone_queue_name(VISION_ID),
+                THERMAL_ID: drone_queue_name(THERMAL_ID),
+            },
+            dict(queues),
+        )
+
+
+class TelemetryIsUnaffectedTests(unittest.TestCase):
+    def test_command_intake_does_not_change_what_telemetry_a_tick_publishes(self) -> None:
+        """The two paths share a loop and must not share a failure."""
+        # Arrange
+        quiet = _fleet(Given(asks=2))
+        busy = _fleet(Given(queued={VISION_ID: (_message(),)}, asks=2))
+
+        # Act
+        run(quiet.runtime)
+        run(busy.runtime)
+
+        # Assert
+        self.assertEqual(_topics(quiet.telemetry), _topics(busy.telemetry))
 
 
 if __name__ == "__main__":

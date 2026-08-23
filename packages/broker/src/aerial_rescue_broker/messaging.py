@@ -42,6 +42,46 @@ from solace.messaging.resources.queue import Queue as SolaceQueue
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
+__all__ = [
+    "CONNECTION_RETRIES",
+    "DIRECT_BUFFER_CAPACITY",
+    "PUBLISH_TIMEOUT_MILLISECONDS",
+    "RECONNECTION_ATTEMPTS",
+    "REQUIRED_OUTCOMES",
+    "AcknowledgingReceiver",
+    "BrokerEndpoint",
+    "BrokerSession",
+    "ConsumingSession",
+    "DirectPublisher",
+    "FleetSession",
+    "InboundMessage",
+    "MessagePublisher",
+    "MessageReceiver",
+    "MessagingError",
+    "MessagingRefusal",
+    "Outcome",
+    "PublishingSession",
+    "SolaceDirectPublisher",
+    "SolacePersistentReceiver",
+    "SolacePublisher",
+    "SolaceReceiver",
+    "build_service",
+    "connection_properties",
+    "fleet_session",
+    "open_consuming_session",
+    "open_fleet_session",
+    "open_publishing_session",
+    "open_session",
+]
+"""This adapter's public surface.
+
+``Outcome`` is in it deliberately. A settlement outcome is part of the port a consumer of
+this package uses, and every service guide here forbids reaching past this boundary to the
+vendor distribution for a settlement primitive, so the name has to be reachable from here.
+Everything else is defined below; the list exists so that one re-export is explicit rather
+than incidental.
+"""
+
 PUBLISH_TIMEOUT_MILLISECONDS: Final = 10_000
 """Bound on one guaranteed publication; see docs/operating-parameters.md."""
 

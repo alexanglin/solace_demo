@@ -384,6 +384,34 @@ approval is the atomic single-use consumption before the first publication
 whatever the budget is. Exceeding any row here costs a command's completion report, never its
 authorization.
 
+## Command intake
+
+How much command work one tick may do. The fleet simulator drains each drone's own durable
+command queue after folding a tick, and the bound is what decides whether the backlog-recovery
+target above is reachable at all
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Commands taken per drone per tick | 3 | `IntakeBounds` in `services/fleet_simulator/src/aerial_rescue_fleet_simulator/service.py`, injected with no default and refusing a bound below one; a member test asserts the refusal and the cap |
+| Command receive window | 0 ms, a non-blocking poll | `_POLL_MILLISECONDS` in the same module; a member test asserts the window every receive is given |
+
+Both rows are derived from the service-level rows above rather than measured. The **per-drone
+cap** follows from the backlog-recovery target: 500 critical messages must drain within 10
+seconds, and 23 drones at 1 Hz give 230 opportunities in that window, so a cap of at least
+500 / 230, which is 2.18, is needed. One command per drone per tick gives 23 a second and a
+21.7-second drain, which fails the target outright; three gives 69 a second and 7.2 seconds,
+which clears it. Four would clear it too, at no benefit any row asks for.
+
+The **receive window** is zero because intake must not become the tick loop's pacer. A blocking
+window would make the tick rate depend on how much command traffic arrived -- fast under load and
+slow when idle, which is backwards -- and the loop has no pacing of its own to fall back on. A
+poll adds no wall clock to a tick, and the per-drone cap is what bounds the work instead.
+
+Neither gates safety, and neither is the measurement. The backlog-recovery row stays unmeasured;
+what changed is that a consumer now exists to measure it against, which is the obligation
+ADR-0080 recorded when it provisioned the endpoints.
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
