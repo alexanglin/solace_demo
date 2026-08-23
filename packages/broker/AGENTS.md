@@ -8,11 +8,12 @@ rules still apply. Also read [`packages/domain/AGENTS.md`](../domain/AGENTS.md) 
 principal or authorization projection and [`packages/contracts/AGENTS.md`](../contracts/AGENTS.md)
 before changing topic or event handling.
 
-This package is the infrastructure boundary between typed application code and PubSub+. It currently
-implements the management-plane authorization projection over SEMP and wildcard subscription
-rendering. It does not yet implement the application data-plane publisher, consumer, acknowledgement,
-reconnect, or shutdown behavior described by the architecture. Do not report planned behavior or the
-package description as implemented evidence.
+This package is the infrastructure boundary between typed application code and PubSub+. It implements
+the management-plane authorization and queue projection over SEMP, wildcard subscription rendering,
+both publishers, the direct receiver, and the queue-bound receiver that settles explicitly. It does
+not yet implement the bounded edge outbox, reconnect reconciliation, or acknowledgement after a
+durable store commit. Do not report planned behavior or the package description as implemented
+evidence.
 
 Read the authority for the concern before editing it:
 
@@ -33,6 +34,8 @@ Read the authority for the concern before editing it:
 | Local broker substrate and non-gating Cloud showcase | [ADR-0043](../../docs/adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Per-checkout authority and hostname-validated TLS | [ADR-0046](../../docs/adr/0046-generated-local-certificate-authority.md) |
 | Least-privilege roles, grants, and broker projection | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Delivery guarantee per topic family | [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md) |
+| Durable queue set, ownership, and the four written bounds | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Fixed Agent Mesh A2A namespace | [ADR-0064](../../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
 
 An Accepted ADR governs if code, tests, comments, or older evidence disagree. A change to a broker
@@ -45,9 +48,10 @@ requires a decision record.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions, the isolated A2A subscription, and the reserved command-gateway reply channel |
-| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, the guaranteed and direct publishers, the receiver, and session lifecycle |
-| `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles and usernames, and reconcile their exceptions |
+| `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions, one drone's command subscription, the isolated A2A subscription, and the reserved command-gateway reply channel |
+| `src/aerial_rescue_broker/queues.py` | Derive the durable queue set from the grant tables and the delivery guarantees, and carry the values every queue is written with ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)) |
+| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, the guaranteed and direct publishers, the direct receiver, the queue-bound receiver that settles explicitly, and session lifecycle |
+| `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles, usernames, and queues, and reconcile their exceptions and subscriptions |
 | `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads, response parsing, and failure redaction |
 | `src/aerial_rescue_broker/deployment.py` | Read generated local material and compose the operator-facing provision command |
 | `src/aerial_rescue_broker/__main__.py` | `python -m aerial_rescue_broker` entry point |
@@ -164,10 +168,19 @@ unprovisioned broker, keep dependent clients unready, rerun the complete apply, 
 require both permitted positive controls and forbidden negative controls before claiming authorization
 is enforced.
 
-Queues are intentionally absent while their governing parameters remain open. Do not add a queue,
-durable subscription, spool setting, redelivery limit, message time-to-live, or dead-message target
-until the required measurement and decision exist. Until then, do not claim that the broker enforces
-the documented guaranteed-delivery behavior.
+Queues are derived, never listed. The set is the subscribe grants intersected with the guaranteed
+families, so a queue exists only where the ACL already permits the subscription and a queue can
+narrow authority but never widen it. How each role's endpoints are realised is a table total over the
+nine roles, and `NONE` is provable rather than asserted: a `NONE` role must hold no guaranteed
+subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly one role carries it
+on ADR-0071's authority.
+
+Every queue value is written rather than inherited. Five broker defaults are wrong here — redelivery
+retries forever, expiry is ignored, the per-queue spool exceeds the whole message VPN's, the
+dead-message target names a queue that does not exist, and both traffic directions start disabled —
+and the dead-message queue itself refuses `maxRedeliveryCount` and `maxTtl`. Do not change a queue
+parameter as a local tuning edit; each has one home in `docs/operating-parameters.md` and a
+derivation recorded with it.
 
 ## 6. Credentials, TLS, and diagnostics
 
@@ -209,21 +222,29 @@ recreation and a complete reapply so credentials, clients, and ACLs agree.
 
 ## 7. Data-plane boundary
 
-The package contains the direct half of the application data plane and no queues. `SolacePublisher`
-is the guaranteed publisher, `SolaceDirectPublisher` is the direct one that routine telemetry uses,
-and `PublishingSession` is a publish-only session for a role whose subscribe grant is not yet
-consumable. The two publisher ports carry deliberately different method names: a protocol is satisfied
-structurally, so `publish` on both would let a direct publisher stand in wherever an acknowledged
-publication is required. Preserve that distinction.
+The package contains both halves of the application data plane. `SolacePublisher` is the guaranteed
+publisher, `SolaceDirectPublisher` is the direct one that routine telemetry uses, `SolaceReceiver` is
+the direct receiver, and `SolacePersistentReceiver` binds one durable queue and settles nothing on
+its own.
 
-Still absent: every queue, the guaranteed consumer, explicit acknowledgement, settlement, redelivery,
-reconnect, and the bounded outbox. When that implementation lands, keep it here, contain the untyped
-vendor client behind the typed façade, and prove the official Solace client satisfies the need before
-adding a project-owned transport. Implement the exact current `CONTRACTS.md` delivery and failure
-semantics and `ARCHITECTURE.md` boundary rather than copying them into this guide. Require Pydantic
-ingress, deterministic fakes, failure injection, and authorized live broker evidence before claiming
-consumer, acknowledgement, reconnect, or shutdown behavior. The offline suite proves what the adapter
-passes to the client, never that the broker accepted it.
+Three port distinctions are load-bearing and none of them is enforced by the type system on its own.
+A protocol is satisfied structurally, so `publish` on both publishers would let a direct publisher
+stand in wherever an acknowledged publication is required; `publish_unacknowledged` is the control.
+For the same reason `AcknowledgingReceiver` requires `settle` rather than standing beside
+`MessageReceiver`, so a direct receiver cannot be passed where a consumer must acknowledge what it
+took. Preserve both. Client acknowledgement is asked for explicitly: auto-acknowledgement removes a
+message as soon as it is handed over, which would end the guarantee at the socket instead of at the
+durable outcome.
+
+Still absent: the bounded edge outbox, reconnect reconciliation, acknowledgement after a durable
+store commit, and exactly-once effects. No service consumes a queue yet, so "settle only after the
+owning durable outcome" is a rule with no implementation to check it against. When that lands, keep
+it here, contain the untyped vendor client behind the typed façade, and prove the official Solace
+client satisfies the need before adding a project-owned transport. Require Pydantic ingress,
+deterministic fakes, failure injection, and authorized live broker evidence before claiming
+reconnect, durability, or shutdown behavior. The offline suite proves what the adapter passes to the
+client, never that the broker accepted it — the first live apply refused two members the fake had
+happily accepted.
 
 ## 8. Testing and cross-tree coordination
 

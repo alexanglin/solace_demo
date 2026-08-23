@@ -42,7 +42,7 @@ that fold derives deterministic state but never authorizes or mutates a running 
 | `canonical.py` | Encode and decode the repository's exact canonical JSON profile |
 | `digest.py` | Build and verify versioned, domain-separated contract identities |
 | `instant.py` | Validate and convert the exact UTC millisecond instant profile |
-| `topics.py` | Validate concrete topic families and bind topics to event types |
+| `topics.py` | Validate concrete topic families, bind topics to event types, and bind each family to the delivery guarantee it is owed ([ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)) |
 | `envelope.py` | Parse the envelope profile in the documented refusal order and enforce bindings |
 | `view.py` | Project accepted application events and own the pure reduced-dashboard-state contract |
 | `__init__.py` | Deliberate public Python API; exports here are compatibility surface |
