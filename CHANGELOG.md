@@ -10,6 +10,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A queue depth is now a real number, not the page size.** `SempSession.read_all` has always
+  followed the broker's paging cursor to the end of a collection and refused with `PAGING` at its
+  bound rather than truncating, but `_perform` hard-coded the configuration root. How a queue is
+  *configured* lives there; how many messages it is holding *right now* lives on the monitoring
+  plane, which nothing could reach.
+
+  So both live probes had grown their own reader: an HTTPS connection built by hand, an
+  administrator credential base64-encoded inline, and a `count=100` request with no cursor whose row
+  count was taken as the depth. Two copies of an instrument that is exact only below one page --
+  and the backlog-recovery target it exists to measure is **500 messages**, at which that reader
+  reports 100.
+
+  `read_monitor` shares the existing bounded walk under a second root. It is a separate method
+  rather than a flag on `read_all`, and that is the control: `send` performs every write and stays
+  bound to the configuration root, so no request built in this package can mutate through a monitor
+  path. `MonitorTransport` is the correspondingly narrow port -- a caller that needs a depth cannot
+  reach a write through it.
+
+  `message_count` counts the queue's own message collection, because the members that look like a
+  depth are not one: `spooledMsgCount` is cumulative and never falls, and `msgSpoolUsage` is bytes.
+  `queue_messages_path` percent-encodes the queue name whole, and `#DEAD_MSG_QUEUE` is the case that
+  proves it -- unencoded, the `#` truncates the path at a fragment and the request reads the queue
+  collection instead of that queue's messages.
+
+  `PAGE_SIZE` and `MAX_PAGES` were unchanged and are now in `docs/operating-parameters.md`, which is
+  what `packages/broker/AGENTS.md` required before either could be relied on. Both probes read
+  through the member, which also closed a cleanup gap their own guide recorded: the hand-rolled
+  reader did not close its connection on every failure path.
+
 - **The fleet flies at the rate it declares.** `FleetScenario` has carried
   `tick_interval_milliseconds` since [ADR-0077](docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md),
   described there as "the interval one fold step represents". Nothing read it. `serve()` looped on

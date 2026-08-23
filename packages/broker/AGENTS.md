@@ -52,7 +52,7 @@ requires a decision record.
 | `src/aerial_rescue_broker/queues.py` | Derive the durable queue set from the grant tables and the delivery guarantees, and carry the values every queue is written with ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)) |
 | `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, the guaranteed and direct publishers, the direct receiver, the queue-bound receiver that settles explicitly, and session lifecycle |
 | `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles, usernames, and queues, and reconcile their exceptions and subscriptions |
-| `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads, response parsing, and failure redaction |
+| `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads on the configuration and monitoring planes, response parsing, and failure redaction |
 | `src/aerial_rescue_broker/deployment.py` | Read generated local material and compose the operator-facing provision command |
 | `src/aerial_rescue_broker/__main__.py` | `python -m aerial_rescue_broker` entry point |
 | `tests/` | Offline unit, refusal, repeat-apply, reconciliation, redaction, boundary, and property evidence |
@@ -84,12 +84,16 @@ wildcard subscription strings because concrete publish topics must reject wildca
   response fields.
 - Keep management-plane SEMP JSON distinct from application CloudEvent canonicalization. SEMP requests
   follow the broker API; application payloads and topics follow `packages/contracts`.
+- Keep the monitoring plane read-only. `send` performs every write and is bound to the configuration
+  root; `read_monitor` is a separate method rather than a flag so no request can mutate through a
+  monitor path. Read a queue's depth with `message_count`, which counts the queue's own message
+  collection: `spooledMsgCount` is cumulative and never falls, and `msgSpoolUsage` is bytes.
 - Inject connections and transports. Unit and property tests must not open sockets or require generated
   credentials. Name a real client or HTTPS connection only at the narrow composition seam.
 - Bound every request, page walk, retry loop, receive queue, reconnect attempt, callback handoff, and
-  shutdown wait. Numeric values belong in `docs/operating-parameters.md` with their instruments.
-  The current page-size and maximum-page constants have no row there, so do not change them until their
-  values and instruments have a canonical home.
+  shutdown wait. Numeric values belong in `docs/operating-parameters.md` with their instruments. The
+  page-size and maximum-page constants now have rows there; changing either is an operating-parameter
+  change rather than a local tuning edit.
 - Convert expected transport failures into typed, redacted outcomes and retain the original exception as
   the cause. Preserve unexpected stack traces in redacted structured logs; do not catch broadly and call
   a broken probe an authorization denial.

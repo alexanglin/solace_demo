@@ -130,11 +130,12 @@ resource closure, and secret-safe diagnostics. The local refinements are:
 - Keep waits conditional and bounded. The settlement helper polls because SEMP monitor state can lag;
   do not replace it with one immediate read, a fixed one-shot sleep, or an unbounded retry.
 
-The current probes have cleanup-bound gaps: `_monitor()` does not close its HTTPS connection on every
-failure path, some messaging-resource constructors execute before their `try` blocks, and `_drain()`
-has no overall time or message bound if matching traffic continues to arrive. Do not cite those paths as
-proof of complete resource hygiene. Close the relevant gap through the approved TDD workflow before
-extending it, and never copy it into another probe.
+The current probes have cleanup-bound gaps: some messaging-resource constructors execute before their
+`try` blocks, and `_drain()` has no overall time or message bound if matching traffic continues to
+arrive. Do not cite those paths as proof of complete resource hygiene. Close the relevant gap through
+the approved TDD workflow before extending it, and never copy it into another probe. The
+hand-rolled monitor reader that did not close its connection on every failure path is gone: depth is
+read through `message_count`, inside a `try`/`finally` that closes.
 
 The fleet and command-dispatch probes perform their live scenario operation in class setup and give
 multiple tests shared mutable captures. That is a current limitation, not a pattern to extend: the
@@ -188,10 +189,11 @@ accounting that keeps repeated runs interpretable:
 - Never bind, drain, or reset the dead-message queue. It deliberately has no owner or consumer, so its
   depth accumulates across runs. Read it before an operation and assert the expected delta, never an
   absolute starting value.
-- Read current queue depth from the queue's message collection. `spooledMsgCount` is cumulative and
-  `msgSpoolUsage` measures bytes, so neither is a message depth. The current helper is exact only below
-  its single-page bound. Repeated runs grow the dead-message queue even when per-run volume stays fixed,
-  so add pagination or an explicit fail-closed page-limit check before relying on a depth at that bound.
+- Read current queue depth through `aerial_rescue_broker.provisioning.message_count`, which counts the
+  queue's own message collection. `spooledMsgCount` is cumulative and `msgSpoolUsage` measures bytes, so
+  neither is a message depth. The member follows the broker's cursor to the end of the collection and
+  refuses with `PAGING` past its page bound rather than truncating, so a depth larger than one page is a
+  real number or a failure and never a quietly capped one. Do not reintroduce a probe-local reader.
 - Poll for the expected post-settlement depth within a fixed bound because the monitor plane can lag
   client settlement. A single immediate read is racy, and an unbounded wait can hide a stalled queue.
 - Keep redelivery attempts bounded above the configured maximum so an accidental retry-forever broker

@@ -239,6 +239,8 @@ over the roles and names every family's publisher set; this section carries only
 | Topic exceptions written | 16 publish and 31 subscribe across the nine profiles, the A2A grant included | asserted by the apply test in `packages/broker/tests/test_provisioning.py` |
 | SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
+| SEMP collection page size | 100 rows asked for per read; the broker pages at ten unless asked for more | `PAGE_SIZE` in the same module, asserted by a transport test |
+| SEMP collection page bound | 20 pages per read, so at most 2,000 rows; a cursor still running at the bound is refused as `PAGING` rather than truncated | `MAX_PAGES` in the same module, asserted by a transport test |
 
 ## Broker data plane
 
@@ -268,7 +270,7 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Queue maximum spool | 10 MB per queue | `MAX_SPOOL_MEGABYTES` in `packages/broker/src/aerial_rescue_broker/queues.py`, written into every queue and asserted by a provisioning test |
 | Queue maximum redelivery | 3 redeliveries after the first delivery, so at most 4 arrivals, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module; the live probe reads `MAX_REDELIVERY_COUNT + 1` arrivals before the dead-message queue |
 | Queue message expiry | 300 s, with expiry respected rather than the factory `false` | `MAX_TTL_SECONDS` in the same module, written together with `respectTtlEnabled` |
-| Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads |
+| Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads, through `message_count` |
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
 | Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
 | Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
