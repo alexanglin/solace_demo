@@ -83,6 +83,7 @@ class MessagingRefusal(Enum):
     INSECURE_TRANSPORT = "broker URL does not use a validated TLS transport"
     PUBLISH_REFUSED = "the broker did not acknowledge the publication"
     SETTLE_REFUSED = "the broker did not accept the settlement"
+    BIND_REFUSED = "the broker refused the queue binding"
 
 
 class MessagingError(ValueError):
@@ -336,14 +337,25 @@ class SolacePersistentReceiver:
     """
 
     def __init__(self, service: MessagingService, queue: str) -> None:
-        """Bind a persistent receiver to ``queue`` on a connected service, and start it."""
+        """Bind a persistent receiver to ``queue`` on a connected service, and start it.
+
+        Raises:
+            MessagingError: With ``BIND_REFUSED`` naming the queue when the broker refuses
+                the binding. The queue permits no access to anyone but its named owner, so
+                this is the ordinary answer to a role that holds the topic grant and is
+                still not the owner, and a caller should see an owned type rather than an
+                untyped upstream one.
+        """
         self._receiver = (
             service.create_persistent_message_receiver_builder()
             .with_required_message_outcome_support(*REQUIRED_OUTCOMES)
             .with_message_client_acknowledgement()
             .build(SolaceQueue.durable_exclusive_queue(queue))
         )
-        self._receiver.start()
+        try:
+            self._receiver.start()
+        except PubSubPlusClientError as error:
+            raise MessagingError(MessagingRefusal.BIND_REFUSED, queue) from error
 
     def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
         """Return the next message, or ``None`` when the window passes with none."""
