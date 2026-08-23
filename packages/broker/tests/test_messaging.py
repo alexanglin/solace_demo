@@ -212,17 +212,22 @@ class FakeMessage:
 class FakePersistentReceiver:
     """The client's persistent receiver, recording every settlement it was asked for."""
 
-    def __init__(self, scripted: Sequence[object], failing: bool = False) -> None:
-        """Record what this receiver will yield, and whether settling reports a failure."""
+    def __init__(
+        self, scripted: Sequence[object], failing: bool = False, unbindable: bool = False
+    ) -> None:
+        """Record what this receiver yields, and whether binding or settling refuses."""
         self.started = 0
         self.terminated = 0
         self.timeouts: list[int] = []
         self.settled: list[tuple[object, Outcome]] = []
         self._scripted = list(scripted)
         self._failing = failing
+        self._unbindable = unbindable
 
     def start(self) -> None:
-        """Record that the receiver was started."""
+        """Record the start, or raise the way the client does for a refused binding."""
+        if self._unbindable:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
         self.started += 1
 
     def receive_message(self, timeout: int) -> object:
@@ -734,6 +739,24 @@ class SolacePersistentReceiverTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(MessagingRefusal.SETTLE_REFUSED, raised.value.refusal)
+
+    def test_a_refused_binding_names_the_queue_as_one_owned_refusal(self) -> None:
+        # Arrange
+        service = FakeService()
+        service.persistent_receiver = FakePersistentReceiver((), unbindable=True)
+        service.persistent_receiver_builder = FakePersistentReceiverBuilder(
+            service.persistent_receiver
+        )
+
+        # Act
+        with pytest.raises(MessagingError) as raised:
+            SolacePersistentReceiver(service, QUEUE)
+
+        # Assert
+        self.assertEqual(
+            (MessagingRefusal.BIND_REFUSED, QUEUE),
+            (raised.value.refusal, raised.value.value),
+        )
 
     def test_closing_terminates_the_receiver_rather_than_leaving_it_collected(self) -> None:
         # Arrange
