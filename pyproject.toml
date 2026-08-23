@@ -249,6 +249,7 @@ markers = [
     "unit: pure domain rules, state machines, validation, reducers",
     "property: Hypothesis property-based invariants",
     "contract: cross-language schema, topic, CloudEvents, OpenAPI, golden fixtures",
+    "integration: broker or provider integration against a running dependency",
     "e2e: mission start through evidence, replan, approval, completion",
     "uat: Playwright operator workflow and safety gates",
     "evaluation: curated agent-capability datasets",

@@ -10,6 +10,66 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A fleet flies, and the broker carries it.** `services/fleet_simulator` had been a scaffold
+  since the repository began: a manifest, a docstring, and a `py.typed` marker. All five Tier 1
+  domain state machines existed and nothing drove any of them, so every claim about the mission,
+  the sectors, and the drone links was a claim about a plan. Twelve telemetry events now go over
+  the container on the least-privilege `fleet-simulator` identity and come back on the
+  `dashboard-api` one, in 0.542 seconds, with a drone the schedule silenced reaching `OFFLINE` and
+  its sector — and only its sector — reaching `AT_RISK`
+  ([fleet-simulator-first-run.md](release-evidence/phase-3/fleet-simulator-first-run.md)).
+
+  Two records fix what was never decided. The scenario is a frozen value the composition root
+  supplies ([ADR-0077](docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)):
+  nothing in the member reads a file, an environment variable, a broker message, a clock, or a
+  random source, because loading and versioning a scenario is the scenario service's job and that
+  service holds no broker identity by
+  [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md). The value
+  carries no seed, because nothing in the fold is random and a seed with no consumer would be a
+  determinism promise the code does not keep.
+
+  One tick is one heartbeat-or-miss observation per drone, read from the schedule and never
+  inferred from whether telemetry was published
+  ([ADR-0078](docs/adr/0078-one-tick-is-one-observation-per-drone.md)) — `docs/operating-parameters.md`
+  already said why: telemetry is droppable, so its absence is not the drone's. Drones fold in
+  ascending identifier order, the rule
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) fixed for the reduced
+  dashboard state's collections, so one tick has exactly one event order.
+
+  Motion is integer addition of a declared per-tick displacement, with no trigonometry anywhere.
+  [ADR-0027](docs/adr/0027-integer-only-canonical-serialization.md) makes no floating-point value
+  representable where a digest can reach, and the last-bit behaviour of `cos` and `sin` differs
+  between C libraries, so a derived displacement would have made the determinism claim rest on the
+  platform rather than on the fold. A step that would leave the documented coordinate range is a
+  typed refusal naming the drone: clamping would put a position on the wire that the drone is not
+  at, and wrapping would model a circumnavigating search this project does not claim.
+
+  Three machines are driven and two are not, and the reason is a parameter rather than effort. The
+  command dispatch lifecycle needs the command send budget and evidence scoring needs the band
+  boundaries; both are `open` rows in `docs/operating-parameters.md`, and command intake is blocked
+  a second time by the absence of a durable queue.
+
+- **Routine telemetry now has the delivery guarantee the contract gives it.** `docs/CONTRACTS.md`
+  has always put routine telemetry on direct delivery and everything else on guaranteed delivery,
+  and `packages/broker` had only the guaranteed half. `SolaceDirectPublisher` is the other one. Its
+  method is named `publish_unacknowledged` rather than `publish`, and the name is the control: a
+  Protocol is satisfied structurally, so a direct publisher sharing the name would also satisfy
+  `MessagePublisher` and could be passed wherever an acknowledged publication is required, silently
+  downgrading an audit record to a droppable one. Nothing in the type system would have caught that.
+
+  Its buffer capacity is zero, so a full transport refuses a publication rather than queueing it.
+  Zero is the absence of a queue rather than a tuned depth, so it needs no measurement, and it is
+  the same posture as the two retry counts already at zero. `PublishingSession` is publish-only,
+  because the fleet simulator's single subscribe grant is the drone command family and consuming it
+  needs a durable queue that does not exist.
+
+- **The fifteen-digit producer sequence has one home again.** It had three: the pattern in
+  `envelope.py`, a re-derived width and maximum in the command gateway's `record.py`, and a third
+  copy of the width inside a contracts property test. Rather than add a fourth for the simulator,
+  `envelope.py` owns the width, derives the pattern and the maximum from it, and exposes
+  `sequence_text`. It returns `None` rather than raising, so the refusal stays with the producer and
+  each service names its own; no existing expectation changed.
+
 - **The escalating evidence band is now unreachable by construction, not because of where a number
   sits.** `docs/LIMITATIONS.md` claimed the escalating band was "deliberately unreachable from a
   single model-generated observation alone" and the approval-bypass catalogue recorded B32 as
