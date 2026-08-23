@@ -5,7 +5,7 @@
 These instructions apply to every file under `tests/integration/`. Read the repository-root
 [`AGENTS.md`](../../AGENTS.md) and the parent [`tests/AGENTS.md`](../AGENTS.md) first. Their safety,
 TDD, marker, live-resource, evidence, and version-control rules still apply. This guide adds the
-rules specific to the two live PubSub+ probes in this directory; it does not make either probe a
+rules specific to the live PubSub+ probes in this directory; it does not make any of them a
 blocking test or authorize a live run.
 
 Read the owner of a fact before changing a probe or interpreting its result:
@@ -41,6 +41,7 @@ member's test directory; keep only real cross-component evidence here.
 | `test_fleet_simulator_live.py` | Publish direct, droppable telemetry through the fleet-simulator identity, receive it through the dashboard-api identity, validate each delivered event, and inspect the resulting fleet/domain fold |
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
 | `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
+| `test_backlog_recovery_live.py` | Spool 500 drone commands across a 23-drone fleet with no consumer bound, then measure how long one fleet-simulator run takes to drain them, under the instrument [ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) defines |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -73,8 +74,13 @@ namespace. All three share one projection invocation, which names every drone an
 ```sh
 just provision --namespace aerial-rescue-mesh \
   --drone drone-delivery-probe --drone drone-dispatch-probe \
-  --drone drone-vision-01 --drone drone-thermal-02 --drone drone-audio-03
+  --drone drone-vision-01 --drone drone-thermal-02 --drone drone-audio-03 \
+  --drone drone-backlog-01 ... --drone drone-backlog-23
 ```
+
+The twenty-three `drone-backlog-NN` identifiers are written out in full in
+`test_backlog_recovery_live.PROVISIONING`; the ellipsis above stands for the other twenty-one and
+is not a shell form that works.
 
 Keep every drone in that single invocation. The applier converges the desired state and deletes what
 the matrix no longer grants, so naming one drone alone removes the queues the other probes need.
@@ -88,6 +94,9 @@ What each file adds to that shared prerequisite:
 - `test_guaranteed_delivery_live.py` needs `drone-delivery-probe`'s durable command queue.
 - `test_command_dispatch_live.py` needs `drone-dispatch-probe`'s durable command queue and the
   `command-gateway` drone-command-result queue.
+- `test_backlog_recovery_live.py` needs a durable command queue for each of the twenty-three
+  `drone-backlog-NN` drones its scenario declares, and the `command-gateway`
+  drone-command-result queue. It is the reason the shared invocation names twenty-eight drones.
 
 Two files drain broker state. The guaranteed-delivery file automatically accepts and removes every
 message already present in each `FILLED_QUEUES` entry before a case and after the class, and its reject
@@ -253,7 +262,44 @@ fleet's rate or scale, more than one command in flight, reassignment, reconnect 
 outbox, a durable store commit before acknowledgement, exactly-once effects, a deployed gateway entry
 point, or Cloud parity.
 
-## 8. Evidence and change coordination
+## 8. Backlog-recovery probe
+
+`test_backlog_recovery_live.py` is the only probe here that produces a number rather than a verdict.
+[ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) owns the instrument -- start
+point, end point, clock, workload, fleet size, sample count, statistic, discarded warm-up, and
+machine-state precondition -- and this guide does not restate it.
+
+- **Keep the assertion on completeness and the number in the record.** The probe asserts that every
+  published command was handled, that no other intake outcome occurred, that every drone queue ended
+  empty, and that the dead-message queue did not move. It does not assert the ten-second target: the
+  target was derived rather than measured, and `release-evidence/AGENTS.md` puts parameter selection
+  outside an evidence record. Adding that assertion is a change to what the repository claims, not a
+  tightening of a test.
+- **Keep the end point at the last settlement.** A paced run waits out one final interval it does not
+  need ([ADR-0083](../../docs/adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)), and timing to the
+  return from `run()` would fold that interval into a ten-second measurement. The counting wrapper
+  around the run's receivers exists for that stamp; keep it delegating and counting, and do not give
+  it a decision.
+- **This probe fills far more than it measures.** Five hundred commands reach three queues each and
+  produce a thousand results that reach three more, so one cycle leaves about four thousand messages
+  on collateral queues, and the instrument runs four cycles. Clearing between cycles is not tidiness:
+  a collection larger than the SEMP page bound is refused as `PAGING`, so an uncleared run makes the
+  next depth read fail rather than lie.
+- **Clearing reads depth before it binds.** Binding an empty queue and waiting out the receive window
+  costs five seconds, and this probe touches twenty-eight of them. A counted depth is one bounded
+  request. The run's own assertion that every drone queue ends empty is what catches a depth that
+  lagged the broker.
+- **An absent consumer is not a reconnect.** No session is broken and no flow is re-established
+  mid-run. Do not cite this probe for reconnect reconciliation, in-flight redelivery, or an unsettled
+  message's fate across a dropped connection.
+
+A green result establishes the observed drain of a spooled backlog by a paced consumer at the
+reference fleet size, on one workstation, in three samples after a discarded warm-up. It does not
+establish the broker's own delivery ceiling -- the drain is bounded by the intake cap times the fleet
+size divided by the tick interval, so the number says the configuration is adequate rather than that
+the broker was the constraint.
+
+## 9. Evidence and change coordination
 
 The existing Phase 2 guaranteed-delivery and Phase 3 fleet-simulator records under
 `release-evidence/` are dated historical observations, not mutable expected-output files. Do not edit
@@ -277,7 +323,7 @@ Do not change a live assertion merely because the current container disagrees. F
 the implementation, desired-state projection, stale broker state, prerequisite, test, contract, or ADR
 is defective, and fix the owning artifact through the approved TDD workflow.
 
-## 9. Verification
+## 10. Verification
 
 Use the repository-root `.venv`, `pyproject.toml`, and `uv.lock`. A fresh worktree needs:
 
@@ -322,6 +368,7 @@ one intended live probe:
 uv run --frozen pytest -q tests/integration/test_fleet_simulator_live.py
 uv run --frozen pytest -q tests/integration/test_guaranteed_delivery_live.py
 uv run --frozen pytest -q tests/integration/test_command_dispatch_live.py
+uv run --frozen pytest -q tests/integration/test_backlog_recovery_live.py
 ```
 
 Running the guaranteed-delivery or command-dispatch file requires authorization that includes that
