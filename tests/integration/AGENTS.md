@@ -32,14 +32,15 @@ policy, authorization grants, queue parameters, or operational targets.
 
 ## 2. Directory boundary
 
-Both modules run in the repository-root Python 3.14 workspace and cross package, service, deployment,
-and broker boundaries. Behavior owned by one workspace member still belongs in that member's test
-directory; keep only real cross-component evidence here.
+All three modules run in the repository-root Python 3.14 workspace and cross package, service,
+deployment, and broker boundaries. Behavior owned by one workspace member still belongs in that
+member's test directory; keep only real cross-component evidence here.
 
 | Path | Responsibility |
 | --- | --- |
 | `test_fleet_simulator_live.py` | Publish direct, droppable telemetry through the fleet-simulator identity, receive it through the dashboard-api identity, validate each delivered event, and inspect the resulting fleet/domain fold |
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
+| `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -58,27 +59,47 @@ in that probe.
 
 ## 3. Live authorization and prerequisites
 
-Both modules must retain the `integration` class marker and the `docker` and `broker` resource markers.
-The resource markers keep them out of the blocking deterministic stages; the class marker describes
-why they exist. None of the markers authorizes a live run.
+Every module here must retain the `integration` class marker and the `docker` and `broker` resource
+markers. The resource markers keep them out of the blocking deterministic stages; the class marker
+describes why they exist. None of the markers authorizes a live run.
 
 Obtain explicit human authorization for the exact file before running it. Treat each setup action as
 separately authorized external mutation:
 
-- `test_fleet_simulator_live.py` needs the generated per-checkout certificate authority and role
-  credentials, a healthy default local stack, and the least-privilege projection applied with the
-  fixed `aerial-rescue-mesh` namespace.
-- `test_guaranteed_delivery_live.py` additionally needs the probe drone's durable command queue. Its
-  exact provisioning prerequisite is
-  `just provision --namespace aerial-rescue-mesh --drone drone-delivery-probe`.
+Every module needs the generated per-checkout certificate authority and role credentials, a healthy
+default local stack, and the least-privilege projection applied with the fixed `aerial-rescue-mesh`
+namespace. All three share one projection invocation, which names every drone any probe declares:
 
-The guaranteed-delivery file automatically accepts and removes every message already present in each
-`FILLED_QUEUES` entry before a case and after the class. Its reject and failed-settlement cases also add
-persistent entries to the dead-message queue. Name those destructive and cumulative effects when
-requesting exact-file authorization. Run both probes serially, without xdist, against a dedicated,
-quiescent authorized local broker whose matching queues may be drained and whose dead-message queue may
-accumulate entries. Their fixed identifiers, broad subscriptions, drains, and depth deltas are unsafe in
-parallel with another probe, publisher, or consumer.
+```sh
+just provision --namespace aerial-rescue-mesh \
+  --drone drone-delivery-probe --drone drone-dispatch-probe \
+  --drone drone-vision-01 --drone drone-thermal-02 --drone drone-audio-03
+```
+
+Keep every drone in that single invocation. The applier converges the desired state and deletes what
+the matrix no longer grants, so naming one drone alone removes the queues the other probes need.
+`test_command_dispatch_live.PROVISIONING` holds the same command in its raw `python -m` form.
+
+What each file adds to that shared prerequisite:
+
+- `test_fleet_simulator_live.py` needs a durable command queue for each of the three drones its
+  scenario declares. The simulator binds one queue per declared drone rather than publishing alone,
+  so publishing rights are no longer the whole prerequisite.
+- `test_guaranteed_delivery_live.py` needs `drone-delivery-probe`'s durable command queue.
+- `test_command_dispatch_live.py` needs `drone-dispatch-probe`'s durable command queue and the
+  `command-gateway` drone-command-result queue.
+
+Two files drain broker state. The guaranteed-delivery file automatically accepts and removes every
+message already present in each `FILLED_QUEUES` entry before a case and after the class, and its reject
+and failed-settlement cases add persistent entries to the dead-message queue. The command-dispatch file
+accepts and removes everything on its own filled queues after each class: the probe drone's queue, the
+`command-gateway` result queue, and the four collateral `dashboard-api` and `recorder` family queues
+that a command and a result are each copied to. Its unreadable-command case adds one persistent
+dead-message entry. Name those destructive and cumulative effects when requesting exact-file
+authorization. Run these probes serially, without xdist, against a dedicated, quiescent authorized
+local broker whose matching queues may be drained and whose dead-message queue may accumulate entries.
+Their fixed identifiers, broad subscriptions, drains, and depth deltas are unsafe in parallel with
+another probe, publisher, or consumer.
 
 Generating or rotating secrets, starting or recreating containers, provisioning identities, ACLs, or
 queues, deleting queues, resetting broker state, and removing volumes are separate setup or cleanup
@@ -98,9 +119,12 @@ resource closure, and secret-safe diagnostics. The local refinements are:
 
 - Use `tcps` for messaging and HTTPS for SEMP. Preserve certificate-chain and hostname validation on
   both paths, and never retry with plaintext, disabled verification, or a broader identity.
-- Only the fleet telemetry is canonical application-event evidence: decode every delivered envelope
-  and check its topic binding before using its data. The guaranteed-delivery command body is deliberately
-  raw synthetic bytes and proves transport fidelity by byte equality, not contract validation.
+- Decode every delivered envelope before using its data, and check its topic binding wherever the
+  message arrived through a subscription rather than a named queue. The fleet telemetry does both.
+  The command-dispatch results are drained from one named queue, so they are decoded but not
+  binding-checked; do not read that as permission to skip the check on a subscription. The
+  guaranteed-delivery command body is deliberately raw synthetic bytes and proves transport fidelity
+  by byte equality, not contract validation.
 - Keep any denied binding paired with a permitted binding through the same endpoint and desired state.
   Catch the exact typed bind refusal; a general connection failure is not an ownership denial.
 - Keep waits conditional and bounded. The settlement helper polls because SEMP monitor state can lag;
@@ -112,11 +136,12 @@ has no overall time or message bound if matching traffic continues to arrive. Do
 proof of complete resource hygiene. Close the relevant gap through the approved TDD workflow before
 extending it, and never copy it into another probe.
 
-The current fleet probe performs its live scenario operation in class setup and gives multiple tests
-shared mutable captures. That is a current limitation, not a pattern to extend: the scenario Act is not
-visible inside each test. Treat the captured list and dictionaries as read-only and keep the existing
-assertions order-independent. Put a new scenario or independently failing operation in an explicit Act
-boundary after obtaining any permission needed to change the established test structure.
+The fleet and command-dispatch probes perform their live scenario operation in class setup and give
+multiple tests shared mutable captures. That is a current limitation, not a pattern to extend: the
+scenario Act is not visible inside each test. Treat the captured lists and dictionaries as read-only
+and keep the existing assertions order-independent. Put a new scenario or independently failing
+operation in an explicit Act boundary after obtaining any permission needed to change the established
+test structure.
 
 ## 5. Direct fleet-telemetry probe
 
@@ -187,10 +212,46 @@ A green result establishes only the observed local probe cases: spooling to exis
 body delivery, explicit settlement, bounded redelivery, dead-letter movement, and one denied non-owner
 and allowed owner binding on one queue. It does not exhaust identities or queues, or prove message
 expiry, spool exhaustion, the backlog-recovery target, reconnect reconciliation, an outbox, a durable
-store commit before acknowledgement, exactly-once effects, a running consumer service, the full
-reference fleet, or Cloud parity.
+store commit before acknowledgement, exactly-once effects, the full reference fleet, or Cloud parity.
+A running consumer on the other side of the queue is what `test_command_dispatch_live.py` adds.
 
-## 7. Evidence and change coordination
+## 7. Command-dispatch probe
+
+`test_command_dispatch_live.py` closes the loop the other two leave open: a command the broker spooled
+reaches a production consumer, is answered, and leaves the queue. The `command-gateway` identity, the
+only role permitted to publish a drone command, puts one on the wire; the fleet simulator binds its own
+drone's queue on the least-privilege `fleet-simulator` identity, answers it, and settles; and the
+answers are read back on the `command-gateway` identity, which holds the command-result subscribe grant.
+That reader is this module's allowed positive control, so what is asserted is the broker's answer rather
+than the project's intention.
+
+- Read depth as a delta by counting a queue's own message collection, for the reason the
+  guaranteed-delivery probe records. `spooledMsgCount` is cumulative and never falls, so it cannot serve
+  as a starting value.
+- Leave every queue this run filled at the depth it started at, the four collateral ones included. One
+  command reaches three queues and one result reaches three more, so cleaning only the probe queue makes
+  the next run's arithmetic depend on this one.
+- Keep the cleanup helper distinct from the reading helper. The unreadable-command case publishes bytes
+  that are not an envelope on purpose, and those bytes reach the collateral command queues too, so a
+  cleanup that decoded what it took would fail on the very message that case is about.
+- Read the dead-message queue's depth and assert the delta; never bind, drain, or reset it. The
+  guaranteed-delivery rule holds here unchanged.
+- Keep the acknowledgement and the resolution distinct, and require each result to name both its command
+  and the drone that answered. A count of results is not evidence that the published command was the one
+  answered.
+- Preserve the unreadable-command case's rejection. Rejecting rather than failing is what keeps a poison
+  command out of bounded redelivery, so assert the dead-message delta on the first delivery rather than
+  a redelivery count.
+
+A green result establishes only the observed local cases: one command spooled to the addressed drone's
+own queue, taken by a running simulator, settled after its outcome rather than on receipt, and answered
+with an acknowledgement and a resolution the gateway read back; and one unreadable command refused and
+dead-lettered on its first delivery. It does not establish the backlog-recovery target, the reference
+fleet's rate or scale, more than one command in flight, reassignment, reconnect reconciliation, an
+outbox, a durable store commit before acknowledgement, exactly-once effects, a deployed gateway entry
+point, or Cloud parity.
+
+## 8. Evidence and change coordination
 
 The existing Phase 2 guaranteed-delivery and Phase 3 fleet-simulator records under
 `release-evidence/` are dated historical observations, not mutable expected-output files. Do not edit
@@ -214,7 +275,7 @@ Do not change a live assertion merely because the current container disagrees. F
 the implementation, desired-state projection, stale broker state, prerequisite, test, contract, or ADR
 is defective, and fix the owning artifact through the approved TDD workflow.
 
-## 8. Verification
+## 9. Verification
 
 Use the repository-root `.venv`, `pyproject.toml`, and `uv.lock`. A fresh worktree needs:
 
@@ -258,13 +319,15 @@ one intended live probe:
 ```sh
 uv run --frozen pytest -q tests/integration/test_fleet_simulator_live.py
 uv run --frozen pytest -q tests/integration/test_guaranteed_delivery_live.py
+uv run --frozen pytest -q tests/integration/test_command_dispatch_live.py
 ```
 
-Running the guaranteed-delivery file requires authorization that includes its documented queue drains
-and persistent dead-message additions. Authorization for either file does not authorize the other or
-any out-of-band provisioning, secret rotation, container startup or recreation, queue deletion, volume
-removal, Cloud access, or evidence capture. A documentation-only change does not require fabricating
-live evidence; report the probes as not run when they were not authorized.
+Running the guaranteed-delivery or command-dispatch file requires authorization that includes that
+file's documented queue drains and persistent dead-message additions. Authorization for one file does
+not authorize another, or any out-of-band provisioning, secret rotation, container startup or
+recreation, queue deletion, volume removal, Cloud access, or evidence capture. A documentation-only
+change does not require fabricating live evidence; report the probes as not run when they were not
+authorized.
 
 Finish every change with the repository-wide stages required by the root guide:
 
