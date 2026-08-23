@@ -147,9 +147,10 @@ mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
   dashboard/
-services/                      (scaffold) six typed service package shells
+services/                      (scaffold) four typed service package shells
   dashboard_api/
-  fleet_simulator/
+  fleet_simulator/             (exists)  scenario boundary, tick fold, telemetry, composition root
+    tests/                     (exists)  member-local unit and property tests
   command_gateway/
     tests/                               member-local mutation tests
   scenario_service/
@@ -186,15 +187,15 @@ schemas/                       (exists)  contract-manifest.toml and the v1 JSON 
 fixtures/
   golden/                      (exists)  golden fixtures, one directory per schema
 scenarios/
-release-evidence/                        per-phase acceptance evidence, redacted
+release-evidence/              (exists)  per-phase acceptance evidence, redacted
 tests/
   phase0/                      (exists)  feasibility probes against the pinned runtimes
   unit/
   contract/                    (exists)  schema identity and the golden-fixture oracle
-  integration/
+  integration/                 (exists)  the fleet simulator against the running broker
   e2e/
   performance/
-  security/
+  security/                    (exists)  broker authorization against the running broker
 docs/
   IMPLEMENTATION_PLAN.md       (exists)  sequenced delivery, risks, release criteria
   adr/                         (exists)  authoritative decision log
@@ -276,8 +277,18 @@ contract, and operator-flow evidence.
   of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
   the evidence service's use of them is still owed. The band boundaries and the command send budget
   are open rows in [operating-parameters.md](operating-parameters.md).
-- Drive the five domain state machines and the evidence score through the Tier 2 fleet-simulator
-  adapter.
+- **Three of five done.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
+  composition-boundary value ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)),
+  folds one heartbeat-or-miss observation per drone per tick in ascending identifier order
+  ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and drives the mission, sector, and
+  connectivity machines from it. Each tick publishes one schema-bound telemetry CloudEvent through a
+  direct publisher, proven live on the least-privilege `fleet-simulator` identity with a
+  `dashboard-api` reader as the positive control
+  ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)).
+  Still owed, each blocked by a named parameter rather than by effort: the **command dispatch
+  lifecycle**, which needs the command send budget and a durable queue for command intake, and the
+  **evidence lifecycle and score**, which need the evidence band boundaries. Both are open rows in
+  [operating-parameters.md](operating-parameters.md).
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
   an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
   lint, format, test, coverage, duplication, and production-build gates from
