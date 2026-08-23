@@ -29,10 +29,12 @@ from typing import Final
 
 from aerial_rescue_contracts import TOPIC_NAMESPACE_ROOT, namespace_prefix
 from aerial_rescue_contracts.topics import (
+    DRONE_PARAMETER,
     MAX_TOPIC_BYTES,
     RESERVED_REPLY_MISSION,
     WILDCARD_CHARACTERS,
     Family,
+    validated_level,
 )
 
 LEVEL_SEPARATOR: Final = "/"
@@ -86,6 +88,36 @@ def subscription_for(family: Family) -> str:
         *(_wildcarded(level) for level in family.levels),
     )
     return LEVEL_SEPARATOR.join(levels)
+
+
+def drone_command_subscription(drone_id: str) -> str:
+    """Return the subscription covering one drone's commands and no other drone's.
+
+    The only pattern here that carries a concrete level. A queue bound to the family
+    wildcard spools every drone's commands, which is right for a consumer that is the whole
+    fleet and wrong for one that simulates a drone: the drone is the unit that loses
+    connectivity, and its backlog has to be its own
+    (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
+
+    Args:
+        drone_id: The drone whose commands the subscription reaches, held to the same
+            identifier rule a published topic's drone level obeys.
+
+    Returns:
+        The subscription: the family pattern with the drone level made literal.
+
+    Raises:
+        TopicError: With ``IDENTIFIER_FORM`` for a value outside the identifier rule. It is
+            not re-wrapped, because the rule and its refusal belong to the topic grammar,
+            and a wildcard character fails it there rather than needing a check here.
+    """
+    levels = tuple(
+        validated_level(DRONE_PARAMETER, drone_id)
+        if level == "{" + DRONE_PARAMETER + "}"
+        else _wildcarded(level)
+        for level in Family.DRONE_COMMAND.levels
+    )
+    return LEVEL_SEPARATOR.join((namespace_prefix(), SINGLE_LEVEL_WILDCARD, *levels))
 
 
 def reply_subscription() -> str:
