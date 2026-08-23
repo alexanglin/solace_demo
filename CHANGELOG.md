@@ -10,6 +10,66 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A drone now receives a command, answers it, and settles it.** Twenty-two durable queues had
+  existed since the previous change and nothing in the repository bound one outside a test:
+  `packages/broker` offered a persistent receiver and a `settle`, and its only callers were its own
+  unit tests and one probe. `services/fleet_simulator` is now the first process here to bind a
+  durable queue in production, fold a Tier 1 domain machine over what arrives, publish a guaranteed
+  answer, and settle
+  ([command-dispatch-first-run.md](release-evidence/phase-3/command-dispatch-first-run.md)).
+
+  **The blocker was not the one recorded.** `docs/IMPLEMENTATION_PLAN.md` had this capability
+  "blocked by a named parameter rather than by effort", and named the command send budget. The
+  budget is read on exactly one line of `advance`, guarding `TIME_OUT`, and a drone applies neither
+  `SEND` nor `TIME_OUT` — so every edge this member folds is blind to it, which a property test now
+  asserts over budgets from one to a million. What actually blocked it was a wire contract: three
+  event types were bound, and a drone command was not one of them, so an arriving command was
+  refused as an unknown type before anything could read it.
+
+  Two families are now bound, one schema per command type rather than one discriminated by a member
+  ([ADR-0082](docs/adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)). The
+  topic grammar decided the shape rather than a preference: `commandType` is a kind level the
+  CloudEvents type keeps, so the command family is one type per command type, while both of the
+  result family's variable levels are identifiers and drop, so it is exactly one. A command carries
+  a `commandId` its own topic does not name, because the result topic is keyed by it and a drone can
+  learn it nowhere else.
+
+  **`escalate-rescue` is deliberately unbound.** Its payload members would be the action parameters
+  an approval's proposal digest is recomputed over, and the proposal family has no schema at all
+  yet, so binding it here would settle what every approval binds inside a command's schema. The
+  failure that leaves is a safe one with a name — `binding_for` refuses the type, so the sole
+  publisher of executable commands cannot publish an escalation — and a test asserts that refusal
+  rather than leaving it an accident of an absent row.
+
+  The send budget did get its number, along with the three durations ADR-0074 recorded as having no
+  rows at all. They land together because a budget alone is a number with a hidden derivation: every
+  service-level row pins a duration, so what has to clear the declared fault envelope is the instant
+  a command is abandoned, and that is a sum of intervals. Command dispatch has one interval — the
+  acknowledgement timeout is also the backoff base and the jitter bound — and the jitter only adds,
+  because full and equal jitter both put the abandon instant below the derived floor and would leave
+  the arithmetic holding only in expectation
+  ([ADR-0081](docs/adr/0081-give-command-dispatch-one-interval.md)).
+
+  Settlement has one rule, and it is what keeps a poison command out of the retries. A condition
+  that could differ on the next delivery is `FAILED`; one that cannot is `REJECTED`, which reaches
+  the dead-message queue on the first delivery rather than after the queue's four. The live probe
+  publishes bytes that are not an envelope and reads the dead-message queue move by exactly one.
+
+  Two things the live run found that no offline test could. Making the simulator bind a queue per
+  declared drone turned ADR-0080's sharpest negative — a command for a drone with no queue is
+  discarded and not refused, and nothing detected it — into a startup failure, and immediately
+  turned the existing fleet probe red because its three drones had never been provisioned. And a
+  cleanup that decodes what it drains cannot clean up after a malformed-message test: the first
+  attempt passed all eight assertions and then raised on the very message the test was about.
+
+  What this does not do is recorded too. Nothing durable: `packages/store` is a scaffold, the
+  receipts are process-local, and the claim is **at-least-once with duplicates possible across a
+  restart** — never exactly-once, zero loss, backlog recovery, or reconnect reconciliation. Nothing
+  about the gateway's half of dispatch, which needs the store, so `SEND`, `TIME_OUT`, and
+  `ABANDONED` stay unexercised and the four new values are correct and unread. Nothing at fleet
+  scale: one drone, one command, three ticks, not 23 drones at 1 Hz. And no sector state changes,
+  because reassigning a sector mid-run is a mission-coordination decision no record has made.
+
 - **Guaranteed delivery has an endpoint.** `docs/CONTRACTS.md` has put mission commands,
   command results, evidence, failures, approvals, and audit records on guaranteed delivery
   through queues and explicit acknowledgement since the topic taxonomy landed, and

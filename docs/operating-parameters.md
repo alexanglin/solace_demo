@@ -282,7 +282,8 @@ put a command on the wire ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
 
 None of these gates safety: exceeding any one costs a delivery and leaves a counted dead-message
 entry, never a command published without an approval. The backlog-recovery row itself remains
-unmeasured, and is now blocked by the absence of a consumer rather than by the absence of an endpoint.
+unmeasured. The consumer it waited on now exists -- the fleet simulator drains its own drones'
+queues -- so what is left is the measurement rather than a component to measure.
 
 ## Model spend budget
 
