@@ -129,6 +129,50 @@ class Family(Enum):
         return ".".join(kept)
 
 
+class Delivery(Enum):
+    """What delivery guarantee a family is owed (ADR-0079)."""
+
+    DIRECT = "direct"
+    GUARANTEED = "guaranteed"
+    REQUEST_REPLY = "request-reply"
+
+
+_DELIVERY: Final[Mapping[Family, Delivery]] = {
+    Family.OPERATOR_COMMAND: Delivery.GUARANTEED,
+    Family.OPERATOR_APPROVAL: Delivery.GUARANTEED,
+    Family.DRONE_TELEMETRY: Delivery.DIRECT,
+    Family.DRONE_EVENT: Delivery.GUARANTEED,
+    Family.DRONE_COMMAND: Delivery.GUARANTEED,
+    Family.DRONE_COMMAND_RESULT: Delivery.GUARANTEED,
+    Family.GATEWAY_REQUEST: Delivery.REQUEST_REPLY,
+    Family.GATEWAY_RESPONSE: Delivery.REQUEST_REPLY,
+    Family.AGENT_PROPOSAL: Delivery.GUARANTEED,
+    Family.AGENT_RESPONSE: Delivery.GUARANTEED,
+    Family.AUDIT: Delivery.GUARANTEED,
+}
+"""Total over the families; a test asserts it.
+
+``DRONE_TELEMETRY`` is direct because a current position supersedes a stale one, which is
+what ``docs/CONTRACTS.md`` has always said. The two gateway families are neither: their
+reply queue is a temporary one Solace AI Connector names and binds itself, so this project
+provisions no endpoint for them
+(``docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md``).
+"""
+
+
+def delivery_for(family: Family) -> Delivery:
+    """Return the delivery guarantee a family is owed.
+
+    Args:
+        family: The topic family.
+
+    Returns:
+        The guarantee. The lookup is total, so there is no refusal: a family added
+        without a row fails the table's own test rather than falling back here.
+    """
+    return _DELIVERY[family]
+
+
 class TopicRefusal(Enum):
     """Why text or a value is not an application topic."""
 
