@@ -6,6 +6,10 @@ a drone can cause -- and that the schema and the domain cannot both own that fac
 ``packages/contracts`` must not import ``packages/domain``, so this is where the two are held
 to each other: the schema is read from disk and compared with the enum, and a rename on either
 side fails here rather than producing a wire word nothing maps.
+
+The publishing half is held here too. ``aerial_rescue_fleet_simulator.results.OUTCOMES`` is the
+table a drone spells its reports with, written out rather than derived, and a table that spelled
+a word the schema does not declare would publish an event the golden oracle would refuse.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from aerial_rescue_domain.commands import CommandState
+from aerial_rescue_fleet_simulator.results import OUTCOMES
 
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
 RESULT_SCHEMA: Final = REPOSITORY_ROOT / "schemas/v1/payload/drone-command-result.schema.json"
@@ -64,6 +69,27 @@ class CommandResultVocabularyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(frozenset(), claimed)
+
+    def test_the_publishing_table_spells_exactly_the_declared_words(self) -> None:
+        """The drone's own vocabulary, held against the schema it publishes under."""
+        # Arrange
+        declared = frozenset(_outcome_values())
+
+        # Act
+        spelled = frozenset(OUTCOMES.values())
+
+        # Assert
+        self.assertEqual(declared, spelled)
+
+    def test_the_publishing_table_covers_exactly_the_drone_causable_states(self) -> None:
+        # Arrange
+        expected = frozenset(DRONE_CAUSABLE)
+
+        # Act
+        covered = frozenset(OUTCOMES)
+
+        # Assert
+        self.assertEqual(expected, covered)
 
     def test_the_two_halves_partition_the_dispatch_states(self) -> None:
         """Every state belongs to exactly one side, so neither list can silently drift."""
