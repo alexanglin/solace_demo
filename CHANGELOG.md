@@ -10,6 +10,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The backlog-recovery target is measured, and the number is 7.141 seconds against a target of
+  10.** `docs/operating-parameters.md` has carried "500 critical messages drain within 10 seconds
+  after reconnect" since the service-level profile was written, in a table with no instrument
+  column, while the same document's open-parameter table demanded start point, end point, clock,
+  sample count, statistic, warm-up, and machine-state precondition for every service-level row. The
+  row was not decorative: the queue spool, the command-intake cap, and through
+  [ADR-0042](docs/adr/0042-approval-time-to-live.md) the approval time to live are all derived from
+  it.
+
+  What blocked the measurement was removed three times over.
+  [ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) provisioned the
+  endpoints and recorded that what remained was "the absence of a consumer"; command intake became
+  that consumer; and the pacing above gave the loop the 1 Hz rate the cap's derivation had assumed.
+  The last obstacle was the instrument itself, which read a 500-deep queue as 100.
+
+  [ADR-0084](docs/adr/0084-give-backlog-recovery-an-instrument.md) defines all eight members and
+  fixes the fleet size at 23, because the target's own derivation assumes it. Three samples after a
+  discarded warm-up measured 7.132, 7.139, and 7.141 seconds, every one of the 500 commands handled,
+  every drone queue empty at the end, and the dead-message queue unmoved
+  ([backlog-recovery-first-run.md](release-evidence/phase-2/backlog-recovery-first-run.md)).
+
+  **The number confirms an arithmetic that was previously an assumption.** Three commands per drone
+  per tick at 1 Hz across 23 drones is 69 per second, so 500 needs eight ticks; seven fully paced
+  intervals plus the eighth tick's drain is 7.14 seconds, which is what the clock said.
+
+  The three samples agree to within 9 milliseconds, and that is the finding rather than a
+  reassurance: the measurement is dominated by the configured drain rate, not by the broker, which
+  never came close to limiting -- a scaled-down 46-command run drained in 0.123 seconds. The record
+  says so, and the probe deliberately does **not** assert the 10-second target: it was derived
+  rather than measured, and an evidence record is not where a parameter is selected.
+
+  What it is not: an absent consumer is not a transport reconnect, so nothing here covers reconnect
+  reconciliation, in-flight redelivery, or an unsettled message across a dropped connection. Message
+  expiry stays configured and unobserved.
+
 - **A queue depth is now a real number, not the page size.** `SempSession.read_all` has always
   followed the broker's paging cursor to the end of a collection and refused with `PAGING` at its
   bound rather than truncating, but `_perform` hard-coded the configuration root. How a queue is

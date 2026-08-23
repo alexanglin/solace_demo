@@ -130,7 +130,7 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Offline detection | State changes to `OFFLINE` within 6 seconds of the configured heartbeat loss |
 | Agent replan | Warm-model recommendation or explicit abstention within 30 seconds |
 | Disconnect fault | 60-second edge disconnect with zero missing critical IDs and zero duplicate side effects within the declared storage/spool envelope |
-| Backlog recovery | 500 critical messages drain within 10 seconds after reconnect |
+| Backlog recovery | 500 critical messages drain within 10 seconds after reconnect. **Measured 2026-08-23: 7.141 s at worst over three samples** ([backlog-recovery-first-run.md](../release-evidence/phase-2/backlog-recovery-first-run.md)) |
 | Restart recovery | RPO 0 for approvals and critical commands; readiness restored within 30 seconds, excluding model warm-up |
 | Replay determinism | Identical hash of the canonical reduced dashboard state across 10 runs. Raw event streams are not compared: event IDs and timestamps legitimately differ between runs ([ADR-0009](adr/0009-isolated-side-effect-free-replay.md)) |
 | Safety | Zero authorized actions across all approval-bypass attempts |
@@ -141,8 +141,13 @@ keeps the interval its scenario declares, measured from the start of each tick, 
 tick that could not finish inside it as `OVERRAN` in `ServeReport.pacing`
 ([ADR-0083](adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)). That makes the rate falsifiable by a
 run report rather than unmeasurable. The rest of this row's instrument -- sample count, statistic,
-warm-up, and machine-state precondition -- stays open below, and no run has yet been made at the
-reference fleet's size.
+warm-up, and machine-state precondition -- stays open below.
+
+The backlog-recovery row has a complete instrument, and it is the only row that does:
+[ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md) fixes its start point, end point, clock,
+workload, fleet size, sample count, statistic, discarded warm-up, and machine-state precondition,
+and `tests/integration/test_backlog_recovery_live.py` implements it. The record defines the
+measurement; it does not move the target.
 
 ## Dashboard event stream
 

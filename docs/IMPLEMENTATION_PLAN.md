@@ -264,8 +264,14 @@ contract, and operator-flow evidence.
   rather than looping, and a role holding the topic grant still being refused another role's queue
   are all asserted against the broker
   ([guaranteed-delivery-first-run.md](../release-evidence/phase-2/guaranteed-delivery-first-run.md)).
-  Still owed: the backlog-recovery measurement, whose consumer now exists so that what is left is
-  the measurement itself, and message expiry, which is configured and unobserved.
+  **The backlog-recovery target is measured.** Five hundred commands spooled across the reference
+  fleet drain in 7.141 seconds at worst over three samples, against a target of 10, under the
+  instrument [ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md) defines
+  ([backlog-recovery-first-run.md](../release-evidence/phase-2/backlog-recovery-first-run.md)). The
+  number confirms the command-intake cap's derivation end to end, and it is dominated by that
+  configuration rather than by the broker, which the record says plainly. Still owed: message
+  expiry, which is configured and unobserved, and a real reconnect -- the measurement models an
+  absent consumer, not a broken session.
 - Build the Python broker adapter test-first against the PubSub+ container in `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)).
 - Complete the browser-consumed event and local HTTP/SSE contracts, schemas, and golden fixtures needed for
   generated TypeScript types and cross-language runtime validation. The dashboard must consume these
@@ -311,9 +317,9 @@ contract, and operator-flow evidence.
   the wire contract.
   Still owed on this lifecycle: the **gateway's half**, which needs `packages/store`, because
   `ACCEPTED` in [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
-  `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised, the intake claim is at-least-once
-  with duplicates possible across a restart, and the backlog-recovery measurement is now possible
-  rather than done.
+  `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised and the intake claim is
+  at-least-once with duplicates possible across a restart. The backlog-recovery measurement this
+  consumer unblocked has since been made.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
