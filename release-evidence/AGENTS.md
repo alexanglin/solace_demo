@@ -39,6 +39,15 @@ four distinct boundaries:
 | `event-mesh-gateway-first-run.md` | Live Event Mesh Gateway ingress: one salient CloudEvent becoming one structured A2A task |
 | `event-mesh-tool-first-run.md` | Live Event Mesh Tool egress: one request becoming one non-actuating command-gateway response |
 
+`phase-2/` and `phase-3/` carry the delivery and simulator records:
+
+| Record | Observed boundary |
+| --- | --- |
+| `phase-2/guaranteed-delivery-first-run.md` | The first durable queues, their written values, settlement, redelivery, and dead-lettering |
+| `phase-2/backlog-recovery-first-run.md` | The first backlog-recovery measurement: 500 spooled commands drained by a paced consumer at the reference fleet size |
+| `phase-3/fleet-simulator-first-run.md` | Live direct telemetry and the mission, sector, and connectivity fold |
+| `phase-3/command-dispatch-first-run.md` | One command spooled, taken by a running consumer, answered, and settled |
+
 The record itself owns the dated observation. Current capability claims belong in `README.md`, phase
 status and unfinished delivery risks belong in the implementation plan, measured parameters belong in
 `operating-parameters.md`, explicitly accepted technical debt belongs in `TECH_DEBT.md`, and security
