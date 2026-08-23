@@ -136,6 +136,14 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Safety | Zero authorized actions across all approval-bypass attempts |
 | Soak | 30 minutes with no unbounded process, queue, or SSE-client memory growth |
 
+The fleet-telemetry rate is the one row with a partial instrument. The fleet simulator's tick loop
+keeps the interval its scenario declares, measured from the start of each tick, and tallies every
+tick that could not finish inside it as `OVERRAN` in `ServeReport.pacing`
+([ADR-0083](adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)). That makes the rate falsifiable by a
+run report rather than unmeasurable. The rest of this row's instrument -- sample count, statistic,
+warm-up, and machine-state precondition -- stays open below, and no run has yet been made at the
+reference fleet's size.
+
 ## Dashboard event stream
 
 The normalized dashboard event and the reduced state it folds into are defined by
@@ -400,7 +408,9 @@ target above is reachable at all
 Both rows are derived from the service-level rows above rather than measured. The **per-drone
 cap** follows from the backlog-recovery target: 500 critical messages must drain within 10
 seconds, and 23 drones at 1 Hz give 230 opportunities in that window, so a cap of at least
-500 / 230, which is 2.18, is needed. One command per drone per tick gives 23 a second and a
+500 / 230, which is 2.18, is needed. That derivation assumes a loop that runs at 1 Hz, which it
+did not do when the cap was set; [ADR-0083](adr/0083-pace-the-tick-loop-at-a-fixed-rate.md) paces
+it, so the premise now holds. One command per drone per tick gives 23 a second and a
 21.7-second drain, which fails the target outright; three gives 69 a second and 7.2 seconds,
 which clears it. Four would clear it too, at no benefit any row asks for.
 

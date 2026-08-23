@@ -72,7 +72,9 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   driving the mission, sector, and connectivity machines. Command intake runs live too: each tick is
   followed by a bounded drain of every drone's own durable queue, and the simulator folds the dispatch
   machine, publishes an acknowledgement and then a resolution, and settles
-  ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)). It drives
+  ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)). The loop
+  keeps the interval its scenario declares, measured from the start of each tick, and counts every tick
+  that could not finish inside it ([ADR-0083](adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)). It drives
   only the drone-observable half of that machine: `SEND`, `TIME_OUT`, and `ABANDONED` are the dispatching
   gateway's, and the broker's grant tables make none of the three observable here. The evidence machines
   are not implemented, and the service in `deploy/compose.yaml` is still an import-and-exit shell because
