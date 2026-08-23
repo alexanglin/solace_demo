@@ -42,10 +42,17 @@ from aerial_rescue_contracts.topics import (
     parse_event_type,
 )
 
+BASELINES = Path(__file__).parent / "baselines"
+"""Committed wire-contract documents, each byte-identical to its golden fixture.
+
+They sit in their own directory so ``tests/`` stays inside the fan-out bound as more
+contracts are bound (``docs/adr/0033-bound-directory-fan-out.md``).
+"""
+
 TELEMETRY_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
 BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("envelope_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "envelope_baseline.json").read_text(encoding="utf-8")),
 )
 """The same event committed as the golden fixture, so both suites judge one document."""
 
@@ -56,7 +63,7 @@ SALIENT_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-s
 SALIENT_TYPE = "aerial-rescue.v1.drone.event.salient"
 SALIENT_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("salient_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "salient_baseline.json").read_text(encoding="utf-8")),
 )
 """The salient drone event, committed as its golden fixture for the same reason."""
 
@@ -71,9 +78,7 @@ GATEWAY_RESPONSE_TYPE = "aerial-rescue.v1.gateway.response"
 GATEWAY_RESPONSE_REQUEST_ID = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
 GATEWAY_RESPONSE_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(
-        Path(__file__).with_name("gateway_response_baseline.json").read_text(encoding="utf-8")
-    ),
+    json.loads((BASELINES / "gateway_response_baseline.json").read_text(encoding="utf-8")),
 )
 """The command gateway's own record of an answer, committed as its golden fixture."""
 
