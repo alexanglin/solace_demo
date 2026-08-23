@@ -127,6 +127,11 @@ threads, signal handlers, or global mutable fleet at import time.
 
 Determinism is a property of the complete adapter fold, not merely of calling `random.seed` once.
 
+- Keep the tick loop's own timekeeping on the injected `Pacer`
+  ([ADR-0083](../../docs/adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)): the interval is measured from
+  the start of each tick, an overrun is counted rather than absorbed, and a lost interval is never made
+  up. `MonotonicPacer` is the only sleep and the only monotonic read in this member; do not add a second
+  one, and do not pace from the stamp source's wall clock.
 - Inject a virtual or controlled clock and an explicit random source. Do not call the ambient wall clock,
   monotonic clock, global `random`, UUID generator, or scheduler from simulation logic. Inject event IDs,
   trace IDs, producer sequences, and any other nondeterministic values at the boundary that owns them.

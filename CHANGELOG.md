@@ -10,6 +10,48 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The fleet flies at the rate it declares.** `FleetScenario` has carried
+  `tick_interval_milliseconds` since [ADR-0077](docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md),
+  described there as "the interval one fold step represents". Nothing read it. `serve()` looped on
+  the runtime's predicate and the mission's terminality with no wait of any kind, so every
+  occurrence of that member outside its own constructor was a test literal, and the loop ran as fast
+  as the machine allowed.
+
+  Three claims already rested on the rate that was not being kept. `docs/operating-parameters.md`
+  carries "23 drones at 1 Hz" with no instrument, and nothing in the repository could have measured
+  it. The command-intake cap is *derived* from it -- "23 drones at 1 Hz give 230 opportunities in
+  that window, so a cap of at least 2.18 is needed" -- arithmetic that is sound and whose premise
+  was not met. And [ADR-0039](docs/adr/0039-drone-connectivity-states-and-recovery.md) counts
+  connectivity in consecutive missed heartbeat *intervals*, splitting the work so that the domain
+  counts and the adapter times: a package forbidden to read a clock cannot enforce a duration, so
+  the interval was this member's to keep and it was keeping none.
+
+  The loop now measures the interval **from the start of each tick** and waits out the remainder, so
+  the period is the interval rather than the interval plus however long the work took
+  ([ADR-0083](docs/adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)). Waiting a whole interval
+  afterwards instead is the shape that makes a 1 Hz claim quietly false under load.
+
+  **An overrun is counted, never absorbed and never made up.** A tick that does not finish inside
+  its interval waits nothing and lands in `ServeReport.pacing` as `OVERRAN`, beside the existing
+  tallies for readings and commands, so a fleet that cannot hold its declared rate reports that
+  rather than running slow and silent. The loop does not shorten a later interval to recover a lost
+  one: a catch-up burst would publish two observations closer together than any declared rate, and
+  [ADR-0078](docs/adr/0078-one-tick-is-one-observation-per-drone.md) gives one tick one observation
+  per drone with no rate at which a burst of them means anything.
+
+  The clock is monotonic and deliberately not the stamp source's. A stamp records when an event
+  happened and belongs on the wall clock; an interval measures how long a tick took, and a wall
+  clock that steps backwards over an adjustment would make a tick look instantaneous.
+
+  No new number. The wait is the scenario's own already-validated member, so nothing was added to
+  `docs/operating-parameters.md` except the instrument the rate row never had.
+
+  What it costs is recorded too. Every live run now takes ticks times interval in wall-clock time.
+  A run waits once more than it needs to, because the runtime's predicate is consumed by the `while`
+  and cannot be peeked. The report says *that* a tick overran and not *by how much*. And
+  `MonotonicPacer` holds this member's only sleep, so a cancelled run blocks inside it for up to one
+  interval -- bounded shutdown is not solved here.
+
 - **A drone now receives a command, answers it, and settles it.** Twenty-two durable queues had
   existed since the previous change and nothing in the repository bound one outside a test:
   `packages/broker` offered a persistent receiver and a `settle`, and its only callers were its own
