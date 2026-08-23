@@ -16,6 +16,10 @@ The reader proves what the broker **accepted and delivered**, and routine teleme
 direct and droppable under ``docs/CONTRACTS.md``, so the arrival assertions are written to
 survive a drop rather than to deny one is possible.
 
+The simulator binds a durable command queue for every drone its scenario declares, so this
+probe now needs those three queues provisioned as well as publishing rights. The one
+invocation every live probe shares is in ``test_command_dispatch_live.PROVISIONING``.
+
 Carries the ``integration``, ``docker``, and ``broker`` markers, so no blocking suite runs
 it (``docs/TESTING.md``).
 """
@@ -35,17 +39,24 @@ from aerial_rescue_broker.deployment import DEFAULT_VPN, read_credential
 from aerial_rescue_broker.messaging import (
     BrokerEndpoint,
     BrokerSession,
-    open_publishing_session,
+    open_fleet_session,
     open_session,
 )
 from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts.envelope import check_topic_binding, decode_envelope
 from aerial_rescue_contracts.topics import Family, parse_topic
+from aerial_rescue_domain.commands import SendBudget
 from aerial_rescue_domain.connectivity import ConnectivityState, ConnectivityThresholds
 from aerial_rescue_domain.principals import Principal
 from aerial_rescue_domain.sectors import SectorState
 from aerial_rescue_fleet_simulator.scenario import DroneStart, FleetScenario
-from aerial_rescue_fleet_simulator.service import CountingStamps, PublishOutcome, Runtime, run
+from aerial_rescue_fleet_simulator.service import (
+    CountingStamps,
+    IntakeBounds,
+    PublishOutcome,
+    Runtime,
+    run,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
 
@@ -145,10 +156,12 @@ class FleetSimulatorLiveTests(unittest.TestCase):
                 Runtime(
                     endpoint=ENDPOINT,
                     credential=read_credential(DEPLOY, Principal.FLEET_SIMULATOR),
-                    open_broker=open_publishing_session,
+                    open_broker=open_fleet_session,
                     scenario=SCENARIO,
                     stamps=_stamps(),
                     running=Countdown(TICKS),
+                    send_budget=SendBudget(max_sends=5),
+                    intake=IntakeBounds(commands_per_drone_per_tick=3),
                 )
             )
             cls.payloads = _drain(reader)
