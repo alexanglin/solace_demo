@@ -10,6 +10,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The store can build an engine, and the credential still has not moved.** `packages/store` now
+  declares SQLAlchemy 2.0.52 and `asyncpg` 0.31.0, and `engine.py` is the one module that names
+  either. The decision of what to hand a driver is pure and lives in `engine_arguments`, so every
+  bound [ADR-0085](docs/adr/0085-bound-every-durable-store-wait.md) sets is asserted without a
+  database; `create_engine` is the thin call that passes the result on.
+
+  **The credential travels inside a SQLAlchemy `URL`, which holds it as a member and masks it in
+  both `str` and `repr`.** That is the same structural separation `settings.py` makes, carried one
+  layer further rather than re-established. Verified inside the built image on its own interpreter:
+  `postgresql+asyncpg://u:***@postgres:5432/d`.
+
+  **A bound that reaches nothing is worse than no bound.** Eight of the nine reach a real argument;
+  the ninth, the connect retry count, has no retry loop in this adapter to control. Rather than let a
+  non-zero value be silently ignored, `engine_arguments` refuses it by name. The three server-side
+  bounds are applied per session through `server_settings`, never on the cluster, because a
+  cluster-wide setting would apply this member's bounds to `psql`, to the migration runner, and to
+  every later consumer that needs different ones.
+
+  **`asyncpg` is never imported.** It ships no `py.typed` marker -- checked against the installed
+  distribution, not assumed -- so importing it would have needed the same narrow relaxation
+  [ADR-0028](docs/adr/0028-untyped-solace-client-boundary.md) granted the Solace client. Reaching it
+  only through the dialect named in the URL, and discriminating failures on typed `sqlalchemy.exc`
+  classes, costs nothing and keeps the strict type checker whole. SQLAlchemy does ship `py.typed` and
+  needs no relaxation either.
+
+  The three distributions -- SQLAlchemy, `asyncpg`, and the `greenlet` its asyncio extra pulls --
+  resolve to wheels on both locked platforms, so the `python:3.14.7-slim-trixie` builder needs no
+  compiler. Proven by building the application image for `linux/arm64`, where all three installed
+  from wheels. None carries an advisory, so the dependency audit needed no waiver.
+
+  What this does not do: **nothing has opened a connection.** The engine is lazy, which is asserted
+  against a port nothing listens on so an eager connect would fail the test rather than quietly
+  succeed against a developer's own running cluster. There is still no session, transaction, schema,
+  or migration.
+
 - **Every durable-store wait is bounded, and the measurement is what makes that worth doing.** The
   store's guide has always required pool size, checkout time, statement time, transaction waits,
   retries, migration waits, and shutdown to be bounded, and said of them that "open parameters block
