@@ -38,6 +38,10 @@ test("sorts identifiers by byte order and timeline entries by audit ordinal", as
       (_, offset) => `drone-sim-${String(offset + 1).padStart(2, "0")}`,
     ),
   ].sort();
+  const expectedTimelineOrdinals = [
+    ...Array.from({ length: 22 }, (_, offset) => offset + 1),
+    ...Array.from({ length: 9 }, (_, offset) => offset + 43),
+  ];
 
   // Act
   await openDashboard(page, fixture);
@@ -53,7 +57,7 @@ test("sorts identifiers by byte order and timeline entries by audit ordinal", as
 
   // Assert
   expect(identifiers).toEqual(expectedIdentifiers);
-  expect(ordinals).toEqual([1, 2, 3, 4, 5, 6]);
+  expect(ordinals).toEqual(expectedTimelineOrdinals);
   expect(timelineText).not.toMatch(/telemetry sample|battery|altitude|heading|speed/i);
 });
 

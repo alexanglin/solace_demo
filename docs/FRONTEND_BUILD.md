@@ -25,8 +25,8 @@ govern over the stale passages they supersede.
 
 ## 2. Where the build starts from
 
-The execution branch is based on clean `main` commit `5162c67`; A1 became green at `24037c7` on
-2026-08-24:
+The active completion worktree forked clean `main` at `24037c7`; A1 is part of that base and became
+green there on 2026-08-24:
 
 - The browser acceptance contract is committed and remains red beyond the A1 shell on purpose. The
   Playwright specifications under `apps/dashboard/tests/e2e/` pin the complete operator surface —
@@ -52,15 +52,14 @@ The execution branch is based on clean `main` commit `5162c67`; A1 became green 
   [`services/dashboard_api`](../services/dashboard_api/AGENTS.md),
   [`services/scenario_service`](../services/scenario_service/AGENTS.md), and
   [`services/recorder`](../services/recorder/AGENTS.md).
-- No dashboard or internal-control shape has a committed schema. R1 must close the complete inventory:
-  bootstrap, health, readiness, scenario catalog, snapshot, ordered dashboard event, source signal,
-  stream-overloaded, start and reset requests and responses, mutation outcome, error, replay bundle and
-  integrity metadata, internal scenario/fleet start, status, cancel, and refusal messages, the catalog
-  and scenario-definition documents, and normalized reduced state. The browser-facing references exist
-  today only in
-  [`dashboard-fixtures.ts`](../apps/dashboard/tests/e2e/support/dashboard-fixtures.ts), which is a
-  test-side reference, not a committed contract.
-  [`contract-manifest.toml`](../schemas/contract-manifest.toml) has no dashboard entry.
+- R1's browser-facing 19-shape schema, manifest, and fixture subincrement is green against the
+  intended-red inventory begun at `f29d543` and its bounded-input extension in
+  [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). R1 still
+  owes the catalog and scenario-definition documents, eight internal scenario/fleet start, status,
+  cancel, and refusal shapes, strict service-owned Pydantic twins, and HTTP/OpenAPI expectation
+  registries before A2 may start. The browser-facing values in
+  [`dashboard-fixtures.ts`](../apps/dashboard/tests/e2e/support/dashboard-fixtures.ts) remain a
+  test-side reference, not a production contract.
 - [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects one event kind,
   and no reduced-state fold exists in Python;
   [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
@@ -100,6 +99,8 @@ The execution branch is based on clean `main` commit `5162c67`; A1 became green 
 - [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) — independent
   dashboard coverage adjudication plus separate deterministic integration, fixture acceptance,
   service-integration, and production end-to-end evidence.
+- [ADR-0104](adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) — the two additional
+  cross-language schema assertions needed for nonempty strings and bounded or exact arrays.
 
 ## 4. Build increments
 
@@ -161,11 +162,17 @@ production A8 evidence also waits on R8 and R9.
 
 ### Lane B — the vertical unblockers
 
-- **R1 — dashboard wire-shape schemas.** *Status: not started. Owner: `schemas/` and
-  `packages/contracts`.* Commit a closed schema, manifest entry, accepted fixture, one-reason-negative
-  fixture, Pydantic model, and OpenAPI parity expectation for every dashboard and internal-control
-  shape in section 2, with ADR-0094/0097/0100/0101 as the deciding authority and the e2e fixtures as
-  the reference. This is the single prerequisite for A2 and everything after it.
+- **R1 — dashboard wire-shape schemas.** *Status: in progress. Browser schema/fixture subincrement is
+  green from the intended-red contract commits beginning at `f29d543`. Owners: `schemas/`, `services/dashboard_api`,
+  `services/scenario_service`, and `services/fleet_simulator`.* The browser-facing inventory now has an
+  exact 19-shape contract under [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py):
+  closed schemas, manifest ownership, polarity pairs, integer scenario revision, sector authority,
+  ordered-event timelines, operation-state separation, and replay integrity. It remains blocked until
+  the catalog/definition and eight internal-control shapes, strict service-owned Pydantic models, and
+  HTTP/OpenAPI expectation registries land. `packages/contracts` remains the owner of the pure Python
+  projections and fold in R3 and does not take a Pydantic dependency. ADR-0094/0097/0100/0101 decide the
+  shapes; the e2e fixture is a reference, never the type authority. R1 remains the single prerequisite
+  for A2 and everything after it.
 - **R2 — scenario catalog and loader.** *Status: not started. Owner: `services/scenario_service`.*
   The two committed catalog files and the strict loader
   [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
@@ -252,7 +259,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 
 | Row | Blocked dashboard work | Missing today | Owner |
 | --- | --- | --- | --- |
-| R1 | A2, and through it the typed core A4-A7 | committed schemas, manifest entries, golden fixtures for every dashboard wire shape | `schemas/`, `packages/contracts` |
+| R1 | A2, and through it the typed core A4-A7 | remaining scenario/internal schemas, service-owned Pydantic twins, and HTTP/OpenAPI expectations | `schemas/`, dashboard/scenario/fleet services |
 | R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
 | R3 | digest and reducer parity proof for A3-A4 | projections, ordered-event wrapper, Python fold, parity fixtures | `packages/contracts` |
 | R4 | snapshot timeline and resume reads | store read path, persistence revision | `packages/store` |

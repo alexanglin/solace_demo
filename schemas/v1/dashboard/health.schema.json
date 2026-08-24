@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
+  "description": "Dashboard API process liveness and its non-secret runtime identity.",
+  "type": "object",
+  "required": [
+    "healthVersion",
+    "status",
+    "runtimeId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "healthVersion": {
+      "const": "dashboard-health/v1"
+    },
+    "status": {
+      "const": "alive"
+    },
+    "runtimeId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

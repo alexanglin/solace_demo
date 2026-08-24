@@ -160,8 +160,8 @@ measurement; it does not move the target.
 
 ## Dashboard event stream
 
-The normalized dashboard event and the reduced state it folds into are defined by
-[ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md); the shapes live in
+The ordered dashboard event and the reduced state it folds into are defined by
+[ADR-0101](adr/0101-order-dashboard-events-outside-the-five-field-projection.md); the shapes live in
 [CONTRACTS.md](CONTRACTS.md#dashboard-event-stream). A dashboard event carries no transport member,
 so these bounds are about back-pressure, not about the envelope.
 
@@ -171,6 +171,10 @@ so these bounds are about back-pressure, not about the envelope.
 | Droppable classes | `TELEMETRY` only | `DROPPABLE_CLASSES` in `packages/contracts`; every other class is never dropped |
 | Buffer overflow behaviour | Discard droppable events oldest-first; if the buffer is still full, close the stream with a typed reason and let the client re-synchronize from a state snapshot | Failure-injection test against a client slower than the telemetry rate |
 | Reduced-state digest | SHA-256 over the canonical state document under the `replay-state` context | `digest.Context.REPLAY_STATE` in `packages/contracts` |
+| Readiness reasons | At most 20 | `readiness.schema.json` plus Python/Ajv contract tests |
+| Snapshot non-telemetry timeline | At most 256 ordered events | `dashboard-snapshot.schema.json` plus Python/Ajv contract tests |
+| Validated replay bundle | At most 512 ordered events | `replay-bundle.schema.json` plus replay-validator and browser contract tests |
+| Search or sector polygon | At most 256 vertices | `scenario-catalog.schema.json` plus scenario-loader contract tests |
 
 ## Connectivity detection
 

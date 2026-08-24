@@ -9,6 +9,10 @@ test("shows the bounded drone heartbeat, sector recovery, and exhaustion sequenc
   // Arrange
   const initialSource = heartbeatInitialFixture();
   const schedule = heartbeatSchedule();
+  const expectedFinalOrdinals = [
+    ...Array.from({ length: 22 }, (_, offset) => offset + 1),
+    ...Array.from({ length: 33 }, (_, offset) => offset + 43),
+  ];
 
   // Act
   await openDashboard(page, initialSource);
@@ -30,7 +34,7 @@ test("shows the bounded drone heartbeat, sector recovery, and exhaustion sequenc
   expect(observedRows[1]).toMatch(/OFFLINE.*AT RISK/i);
   expect(observedRows[2]).toMatch(/CONNECTED.*ASSIGNED/i);
   expect(observedRows[3]).toMatch(/CONNECTED.*SEARCHED/i);
-  expect(finalOrdinals).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  expect(finalOrdinals).toEqual(expectedFinalOrdinals);
   await expect(page.getByRole("status", { name: "Current mission" })).toContainText("EXHAUSTED");
   await expect(page.getByRole("status", { name: "Dashboard state" })).toHaveText(
     "Mission exhausted",

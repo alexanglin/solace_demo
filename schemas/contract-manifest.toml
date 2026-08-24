@@ -232,3 +232,98 @@ valid = [
 invalid = [
   "fixtures/golden/v1/topics/case-without-topic.json",
 ]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/bootstrap.schema.json"
+valid = ["fixtures/golden/v1/dashboard/bootstrap/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/bootstrap/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/dashboard-event.schema.json"
+valid = ["fixtures/golden/v1/dashboard/dashboard-event/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/dashboard-event/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/dashboard-event-frame.schema.json"
+valid = ["fixtures/golden/v1/dashboard/dashboard-event-frame/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/dashboard-event-frame/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/dashboard-reduced-state.schema.json"
+valid = ["fixtures/golden/v1/dashboard/dashboard-reduced-state/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/dashboard-reduced-state/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/dashboard-snapshot.schema.json"
+valid = ["fixtures/golden/v1/dashboard/dashboard-snapshot/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/dashboard-snapshot/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/error.schema.json"
+valid = ["fixtures/golden/v1/dashboard/error/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/error/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/health.schema.json"
+valid = ["fixtures/golden/v1/dashboard/health/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/health/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/mutation-outcome.schema.json"
+valid = ["fixtures/golden/v1/dashboard/mutation-outcome/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/mutation-outcome/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/ordered-dashboard-event.schema.json"
+valid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/readiness.schema.json"
+valid = ["fixtures/golden/v1/dashboard/readiness/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/readiness/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/replay-bundle.schema.json"
+valid = ["fixtures/golden/v1/dashboard/replay-bundle/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/replay-bundle/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/replay-integrity.schema.json"
+valid = ["fixtures/golden/v1/dashboard/replay-integrity/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/replay-integrity/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/reset-request.schema.json"
+valid = ["fixtures/golden/v1/dashboard/reset-request/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/reset-request/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/reset-response.schema.json"
+valid = ["fixtures/golden/v1/dashboard/reset-response/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/reset-response/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/scenario-catalog.schema.json"
+valid = ["fixtures/golden/v1/dashboard/scenario-catalog/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/scenario-catalog/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/source-signal.schema.json"
+valid = ["fixtures/golden/v1/dashboard/source-signal/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/source-signal/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/start-request.schema.json"
+valid = ["fixtures/golden/v1/dashboard/start-request/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/start-request/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/start-response.schema.json"
+valid = ["fixtures/golden/v1/dashboard/start-response/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/start-response/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/dashboard/stream-overloaded.schema.json"
+valid = ["fixtures/golden/v1/dashboard/stream-overloaded/baseline.json"]
+invalid = ["fixtures/golden/v1/dashboard/stream-overloaded/unknown-member.json"]

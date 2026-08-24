@@ -52,6 +52,7 @@ test("prevents an immediate double submission while one start request is pending
         declaredCount: 23,
         declaredOnlyCount: 3,
         missionId: "mission-synthetic-start-accepted",
+        mode: "degradedLive",
         operationVersion: "dashboard-start-response/v1",
         runId: "run-synthetic-start-accepted",
         simulatedCount: 20,
@@ -62,6 +63,7 @@ test("prevents an immediate double submission while one start request is pending
 
   // Act
   await openDashboard(page, source);
+  const missionBefore = await page.getByRole("status", { name: "Current mission" }).textContent();
   const start = page.getByRole("button", { name: "Start wilderness mission" });
   await start.evaluate((button: HTMLButtonElement) => {
     button.click();
@@ -81,7 +83,7 @@ test("prevents an immediate double submission while one start request is pending
   // Assert
   expect(requestWhilePending).toEqual({
     authorization: `Bearer ${syntheticBearerSentinel}`,
-    body: { mode: "degradedLive", scenarioRevision: "r1" },
+    body: { mode: "degradedLive", scenarioRevision: 1 },
     contentType: "application/json",
     idempotencyKey: expect.stringMatching(lowerUuidV4),
     method: "POST",
@@ -89,11 +91,12 @@ test("prevents an immediate double submission while one start request is pending
   });
   expect(startWasDisabled).toBe(true);
   expect(stateWhilePending).toBe("Starting wilderness mission");
-  await expect(page.getByRole("status", { name: "Mutation outcome" })).toHaveText(
-    "Start accepted · awaiting live snapshot",
-  );
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
-    "mission-synthetic-start-accepted",
+  const mutationOutcome = page.getByRole("status", { name: "Mutation outcome" });
+  await expect(mutationOutcome).toContainText("Start accepted · awaiting live snapshot");
+  await expect(mutationOutcome).toContainText("mission-synthetic-start-accepted");
+  await expect(mutationOutcome).toContainText("run-synthetic-start-accepted");
+  await expect(page.getByRole("status", { name: "Current mission" })).toHaveText(
+    missionBefore ?? "",
   );
 });
 
@@ -118,10 +121,14 @@ test("explains reset consequences before issuing one guarded reset request", asy
     await responseGate;
     await route.fulfill({
       json: {
+        declaredCount: 23,
+        declaredOnlyCount: 3,
         missionId: "mission-synthetic-reset-successor",
+        mode: "degradedLive",
         operationVersion: "dashboard-reset-response/v1",
         predecessorMissionId: "mission-synthetic-0001",
         runId: "run-synthetic-reset-successor",
+        simulatedCount: 20,
       },
       status: 202,
     });
@@ -129,6 +136,7 @@ test("explains reset consequences before issuing one guarded reset request", asy
 
   // Act
   await openDashboard(page, source);
+  const missionBefore = await page.getByRole("status", { name: "Current mission" }).textContent();
   await page.getByRole("button", { name: "Reset mission" }).click();
   const dialog = page.getByRole("dialog", { name: "Reset current mission" });
   const consequenceText = await dialog.textContent();
@@ -161,11 +169,12 @@ test("explains reset consequences before issuing one guarded reset request", asy
     origin: "http://127.0.0.1:4173",
   });
   expect(stateWhilePending).toBe("Resetting mission");
-  await expect(page.getByRole("status", { name: "Mutation outcome" })).toHaveText(
-    "Reset accepted · awaiting planned snapshot",
-  );
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
-    "mission-synthetic-reset-successor",
+  const mutationOutcome = page.getByRole("status", { name: "Mutation outcome" });
+  await expect(mutationOutcome).toContainText("Reset accepted · awaiting planned snapshot");
+  await expect(mutationOutcome).toContainText("mission-synthetic-reset-successor");
+  await expect(mutationOutcome).toContainText("run-synthetic-reset-successor");
+  await expect(page.getByRole("status", { name: "Current mission" })).toHaveText(
+    missionBefore ?? "",
   );
 });
 
@@ -177,9 +186,13 @@ test("fails closed when an accepted start response violates its contract", async
     requestCount += 1;
     await route.fulfill({
       json: {
+        declaredCount: 23,
+        declaredOnlyCount: 3,
         missionId: "mission-synthetic-unvalidated",
+        mode: "degradedLive",
         operationVersion: "dashboard-start-response/v1",
         runId: "run-synthetic-unvalidated",
+        simulatedCount: 19,
       },
       status: 202,
     });

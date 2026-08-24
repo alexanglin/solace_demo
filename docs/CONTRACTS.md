@@ -177,52 +177,66 @@ answer or a command.
 
 ## Local HTTP API
 
-The initial dashboard API is:
+The UI-first dashboard API is the closed surface accepted by
+[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md):
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/v1/health` | Process liveness only |
-| `GET /api/v1/readiness` | Whether the selected operating mode can start a scenario |
-| `GET /api/v1/scenarios` | Available synthetic scenarios and metadata |
-| `POST /api/v1/scenarios/{scenarioId}/start` | Start a deterministic live or replay run |
-| `POST /api/v1/scenarios/current/reset` | Return every local component to its initial state |
-| `GET /api/v1/events` | SSE stream for normalized dashboard events |
-| `POST /api/v1/missions/{missionId}/approvals` | Record an approve or reject decision bound to the proposal digest/version and exact action parameters |
+| `GET /api/v1/health` | Process liveness and the non-secret runtime identifier |
+| `GET /api/v1/readiness?mode=degradedLive\|replay` | Whether the selected mode can start |
+| `GET /api/v1/scenarios` | Validated synthetic geometry, roster, and participation |
+| `POST /api/v1/scenarios/{scenarioId}/start` | Start live execution or create a replay session |
+| `POST /api/v1/scenarios/current/reset` | Bounded live reset or a fresh replay session |
+| `GET /api/v1/events` | Snapshot plus ordered SSE suffix |
+| `GET /api/v1/replays/{sessionId}` | One read-only validated replay bundle |
+| `GET /` and `GET /assets/{asset}` | Dynamic bootstrap shell and hashed local assets |
 
-Requests and responses are typed Pydantic models with generated OpenAPI documentation. Mutation endpoints require an idempotency key, and every idempotency record stores a hash of the canonicalized request body so a key replayed with a different body is refused rather than treated as a repeat.
+There is no approval route in this slice. Approval, evidence, command, model, rescue, and escalation
+workflows remain follow-on work and gain no placeholder endpoint. The committed schemas under
+`schemas/v1/dashboard/` are normative; strict Pydantic models, generated OpenAPI, generated TypeScript,
+and Ajv consume those same shapes rather than defining parallel ones.
 
-The approvals endpoint is the one deliberate exception: approvals are single-use, so a second consumption is a hard denial and never an idempotent success. It is recorded in the audit trail as a denied bypass attempt and surfaced on the dashboard ([ADR-0006](adr/0006-proposal-bound-single-use-approvals.md)).
+Start is exactly `{mode, scenarioRevision}` with mode `degradedLive` or `replay` and integer revision
+`1`; reset is exactly `{}`. Accepted live responses carry stable mission and run identifiers; replay
+responses carry a stable session identifier. Start and reset responses also report the fixed roster as
+23 declared, 20 simulated, and three declared-only members. A `202` response updates mutation-operation
+state only: reducer-owned current mission state changes only after a validated snapshot or ordered event.
 
-The service binds only to IPv4 or IPv6 loopback addresses, never to a wildcard or non-loopback interface.
-Every request must contain exactly one syntactically valid `Host` header whose parsed host and port exactly
-match an entry in the configured API allowlist. Wildcard, suffix, and substring matches are forbidden;
-missing, malformed, duplicated, and non-allowlisted Host values are rejected before route handling.
+Both mutations require a lowercase UUID version 4 idempotency key. The durable idempotency operation
+stores a digest of the canonical request body plus the exact response status and bytes, so a same-key,
+same-body repeat returns the prior result and a same-key, different-body repeat refuses without an
+effect. Expected refusals use the closed versioned dashboard error schema.
 
-The three state-changing endpoints — scenario start, scenario reset, and mission approval — require the
-current API process's credential as `Authorization: Bearer <credential>`. The credential is generated anew
-for every API process lifetime, is never persisted or logged, and is not accepted from a cookie, query
-parameter, request body, or URL. For an approval, successful validation of that bearer is the sole source
-of the non-secret operator identity, carried as `operatorIdentity` under the canonical key rule below; a body
-field cannot supply or override it.
+The service binds only to its private Unix socket. Caddy is the sole loopback publisher. Every request
+must contain exactly one syntactically valid `Host` header whose parsed host and port exactly matches the
+configured allowlist. Wildcard, suffix, substring, missing, malformed, duplicated, and non-allowlisted
+values are rejected before route handling.
 
-Browser requests to those state-changing endpoints must also carry an `Origin` whose parsed scheme, host,
-and port exactly match the configured dashboard origin. Wildcard, `null`, suffix, and substring matches
-are forbidden, and the browser dashboard may not omit the header. The four read-only routes — health,
-readiness, scenario discovery, and the SSE event stream — deliberately do not require the bearer; their
-requests remain subject to Host validation. The complete rationale is in
-[ADR-0024](adr/0024-local-operator-api-boundary.md), and the credential entropy is in
+The two state-changing endpoints require the current API process's credential as
+`Authorization: Bearer <credential>`. The credential is generated anew for every API process lifetime,
+is never persisted or logged, and is not accepted from a cookie, query parameter, request body, or URL.
+The dynamic no-store shell transfers it once; bootstrap removes the source node and retains the value
+only in memory.
+
+Browser mutations must also carry an `Origin` whose parsed scheme, host, and port exactly match the
+configured dashboard origin. Wildcard, `null`, suffix, substring, missing, and malformed values are
+forbidden. Read-only routes deliberately do not require the bearer; every route remains subject to Host
+validation. The refusal order is Host, Origin, bearer, media type and body size, idempotency key,
+canonical decode, strict request schema, then the route operation. The complete rationale is in
+[ADR-0024](adr/0024-local-operator-api-boundary.md) and
+[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md); credential entropy is in
 [operating-parameters.md](operating-parameters.md#local-operator-credential).
 
 ## Dashboard event stream
 
-`GET /api/v1/events` streams **dashboard events**: the normalized projection of validated
-application envelopes ([ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
-shapes below lie inside the canonical profile of the next section, so one canonicalizer, one
-decoder, and one fixture oracle serve them, and TypeScript reimplements them from this section
-alone. The bounds are in [operating-parameters.md](operating-parameters.md#dashboard-event-stream).
+`GET /api/v1/events` streams the snapshot and ordered suffix accepted by
+[ADR-0101](adr/0101-order-dashboard-events-outside-the-five-field-projection.md). Every data frame lies
+inside the canonical profile, so one canonicalizer, one decoder, and one shared fixture oracle serve
+Python and TypeScript. The bounds are in
+[operating-parameters.md](operating-parameters.md#dashboard-event-stream).
 
 A dashboard event has five members: `kind`, the projection's name; `eventClass`, one of `TELEMETRY`,
-`CONNECTIVITY`, `MISSION`, `COMMAND`, `EVIDENCE`, `APPROVAL`, `AUDIT`; `mission`, the mission
+`CONNECTIVITY`, or `MISSION` in this UI slice; `mission`, the mission
 identifier; `time`, the source envelope's canonical instant; and `data`, the projected fields
 repeating every identifier the source topic named except the mission, which `mission` already
 carries. **No transport member crosses this boundary** — `id`, `source`, `sequence`, `dataschema`,
@@ -230,25 +244,47 @@ carries. **No transport member crosses this boundary** — `id`, `source`, `sequ
 envelope profile or the topic grammar. An envelope whose `type` has no projection is refused as
 `UNPROJECTED`, in the same shape as the unbound-`type` refusal of the envelope profile.
 
-The **reduced dashboard state** is the fold of every dashboard event so far by a pure total
-function. It is the replay determinism oracle of
-[ADR-0009](adr/0009-isolated-side-effect-free-replay.md), and its determinism is structural: the
-state carries no wall-clock instant, no event identifier, and no trace context, because those
-legitimately differ between runs of one seeded scenario. Where the timeline needs an order, the
-state carries the append-only audit ordinal of
-[ADR-0003](adr/0003-postgres-durable-mission-store.md), which is an integer. Collections inside the
-state are arrays in ascending byte order of their identifier, never objects keyed by it, because a
-canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen.
-Array order is semantic, so that sort is part of the contract: two states differing only in
-insertion order must produce one digest.
+Durable order wraps, rather than changes, that projection:
+
+```text
+OrderedDashboardEvent = {auditOrdinal, event}
+```
+
+The audit ordinal is a positive integer. A fold accepts only the next ordinal, ignores only an exact
+duplicate, and refuses a gap, a regression, or a same-ordinal event with different content.
+
+The **reduced dashboard state** is the fold of ordered dashboard events by a pure total function. It is
+the replay determinism oracle of
+[ADR-0094](adr/0094-validate-replay-before-browser-playback.md), and its determinism is structural: the state
+carries no wall-clock instant, event identifier, trace context, run mode, connection state, operation,
+timeline, filter, selection, or playback state. It carries the current mission lifecycle, latest audit
+ordinal, sorted fleet members, explicit connectivity and latest telemetry for simulated members, and
+sorted sector lifecycle and assignment. Declared-only members carry neither connectivity nor telemetry.
+Sectors are the sole assignment and lifecycle authority; fleet members do not duplicate sector state.
+Collections are arrays in ascending byte order of their identifier, never objects keyed by it, because a
+canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen. Array
+order is semantic, so that sort is part of the contract.
+
+The non-telemetry timeline is not reconstructed from reduced state. A snapshot carries its full ordered
+timeline as normalized events; meaningful suffix events append to it, while telemetry never does. The
+snapshot schema narrows the ordered-event wrapper to connectivity, mission, and sector variants so a
+telemetry event cannot enter the timeline after otherwise-valid schema validation.
 
 The determinism hash is taken over the canonical state document under the `replay-state` context,
 so state bytes cannot be replayed as proposal bytes.
 
-Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses
-direct delivery that may already be dropped and a newer position supersedes a stale one. Every other
-class is never dropped: a buffer that is still full after discarding droppable events closes the
-stream with a typed reason, and the client re-synchronizes from a state snapshot.
+The API emits only `snapshot`, `dashboard-event`, and terminal `stream-overloaded` data frames;
+keepalives are comments. A snapshot carries the runtime identifier, an opaque run-bound cursor, current
+run, reduced state, replay-state digest, and full non-telemetry timeline. A dashboard-event frame carries
+one ordered event, its suffix cursor, and the server digest after the fold. An unknown, stale, or
+cross-run cursor receives a fresh snapshot.
+
+Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses direct
+delivery and a newer position supersedes a stale one. Each client retains 256 data frames plus one
+reserved terminal slot. If removing the oldest telemetry cannot retain a non-droppable frame, the API
+sends one terminal control frame and closes; the browser disposes that source and requests exactly one
+fresh snapshot. It validates every frame, recomputes the digest, and retains the last validated state on
+any contract, ordinal, or digest refusal.
 
 Adding an application event type is one change: a projection row, a state rule, golden fixtures, and
 a manifest entry land together, or the type is refused as unprojected.
@@ -304,8 +340,10 @@ validator can ever fetch it
 ([ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)). Every `$ref` is
 `#/$defs/...` inside one file or an absolute `$id` with an optional `#/$defs/...` fragment. Schemas use
 only `$schema`, `$id`, `$defs`, `$ref`, `description`, `type`, `const`, `enum`, `pattern`, `maxLength`,
-`minItems`, `minimum`, `maximum`, `required`, `properties`, `additionalProperties`, `propertyNames`,
-`anyOf`, `allOf`, and `items`, and never `format`, whose assertion behaviour is implementation-defined.
+`minLength`, `minItems`, `maxItems`, `minimum`, `maximum`, `required`, `properties`,
+`additionalProperties`, `propertyNames`, `anyOf`, `allOf`, and `items`, and never `format`, whose
+assertion behaviour is implementation-defined
+([ADR-0104](adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md)).
 Patterns are ASCII-only and use `[0-9]` rather than `\d`, so Python's `re` and ECMA-262 read them
 identically, and the pattern strings in the schemas are the constants in `packages/contracts`.
 

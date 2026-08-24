@@ -84,7 +84,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
 | [0066](0066-select-commit-stage-tests-from-an-import-graph.md) | Select commit-stage tests from a project-owned import graph | Accepted |
-| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Superseded by ADR-0093 |
+| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Superseded by ADR-0101 |
 | [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
 | [0069](0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md) | Close the gateway-operation set with a deny-by-default operation table | Accepted |
 | [0070](0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) | Reserve `reply` as the reply channel's mission level, and narrow the Event Mesh Tool's grant to it | Accepted |
@@ -121,6 +121,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0101](0101-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
 | [0102](0102-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
 | [0103](0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) | Adjudicate dashboard coverage and require separate browser evidence | Accepted |
+| [0104](0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) | Bound dashboard schema strings and arrays explicitly | Accepted |
 
 ## Decisions still open
 

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/start-request.schema.json",
+  "description": "The exact body accepted by a public scenario-start mutation.",
+  "type": "object",
+  "required": [
+    "mode",
+    "scenarioRevision"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "mode": {
+      "enum": [
+        "degradedLive",
+        "replay"
+      ]
+    },
+    "scenarioRevision": {
+      "const": 1
+    }
+  }
+}

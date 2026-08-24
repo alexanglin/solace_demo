@@ -142,7 +142,7 @@ for (const faultCase of orderedFaultCases) {
 
     // Assert
     await expect(page.getByRole("alert")).toContainText(faultCase.message);
-    await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("6");
+    await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("51");
     await expect(page.getByRole("status", { name: "Current mission" })).toContainText("SEARCHING");
   });
 }
@@ -157,12 +157,12 @@ test("ignores an exact duplicate ordered event", async ({ page }) => {
   await appendDashboardInputs(page, duplicateFrames);
   const duplicateOrdinalCount = await page
     .getByRole("region", { name: "Mission timeline" })
-    .locator('[data-audit-ordinal="7"]')
+    .locator('[data-audit-ordinal="52"]')
     .count();
 
   // Assert
   expect(duplicateOrdinalCount).toBe(1);
-  await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("7");
+  await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("52");
   await expect(page.getByRole("status", { name: "Current mission" })).toContainText("EXHAUSTED");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
@@ -171,6 +171,10 @@ test("recovers without duplicating ordered timeline entries", async ({ page }) =
   // Arrange
   const retryingSource = fixtureForState("retrying");
   const recoveredSource = fixtureForState("recovered");
+  const expectedTimelineOrdinals = [
+    ...Array.from({ length: 22 }, (_, offset) => offset + 1),
+    ...Array.from({ length: 9 }, (_, offset) => offset + 43),
+  ];
 
   // Act
   await openDashboard(page, retryingSource);
@@ -184,7 +188,7 @@ test("recovers without duplicating ordered timeline entries", async ({ page }) =
   await expect(page.getByRole("status", { name: "Dashboard state" })).toHaveText(
     "Connection recovered",
   );
-  expect(ordinals).toEqual([1, 2, 3, 4, 5, 6]);
+  expect(ordinals).toEqual(expectedTimelineOrdinals);
   expect(new Set(ordinals).size).toBe(ordinals.length);
 });
 

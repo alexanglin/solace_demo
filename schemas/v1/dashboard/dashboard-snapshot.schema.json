@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
+  "description": "A complete reduced mission state and its ordered non-telemetry timeline.",
+  "type": "object",
+  "required": [
+    "snapshotVersion",
+    "runtimeId",
+    "cursor",
+    "digest",
+    "currentRun",
+    "state",
+    "timeline"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "snapshotVersion": {
+      "const": "dashboard-snapshot/v1"
+    },
+    "runtimeId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "digest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "currentRun": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/liveRun"
+        },
+        {
+          "$ref": "#/$defs/replayRun"
+        }
+      ]
+    },
+    "state": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
+    },
+    "timeline": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
+        "type": "object",
+        "properties": {
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/connectivityChanged"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/missionLifecycle"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/sectorLifecycle"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "liveRun": {
+      "type": "object",
+      "required": [
+        "mode",
+        "missionId",
+        "runId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "degradedLive"
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "runId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        }
+      }
+    },
+    "replayRun": {
+      "type": "object",
+      "required": [
+        "mode",
+        "sessionId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "const": "replay"
+        },
+        "sessionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        }
+      }
+    }
+  }
+}

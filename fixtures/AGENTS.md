@@ -28,7 +28,8 @@ editing it:
 | Closed CloudEvents envelope | [ADR-0037](../docs/adr/0037-cloudevents-envelope-profile.md) |
 | Fixture layout and one-reason negatives | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
 | Shared TypeScript validation obligations | [ADR-0058](../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
-| Dashboard projection and reduced-state fixtures | [ADR-0067](../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
+| Ordered dashboard projection, reduced state, snapshots, and replay | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
+| Explicit dashboard collection bounds | [ADR-0104](../docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 
 An Accepted architecture decision record (ADR) governs if a fixture, manifest entry, schema,
 implementation, test, or document disagrees. Changing accepted shape, polarity, refusal behavior,
@@ -51,6 +52,7 @@ The current version-one fixture families have distinct jobs:
 | `golden/v1/payload/<event>/` | Accepted payload boundaries and payload-schema refusals |
 | `golden/v1/event/<event>/` | Composed envelope, type, dataschema, and payload binding cases |
 | `golden/v1/topics/` | Schema-valid accepted/refused parser cases plus schema-invalid case documents |
+| `golden/v1/dashboard/<shape>/` | Browser-bound accepted documents and one-member schema refusals |
 
 [`schemas/contract-manifest.toml`](../schemas/contract-manifest.toml) is the only ownership registry.
 Every `fixtures/golden/**/*.json` artifact must:

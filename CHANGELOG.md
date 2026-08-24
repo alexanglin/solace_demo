@@ -10,6 +10,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The dashboard browser boundary now has a normative contract instead of test-only TypeScript
+  shapes.** Nineteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
+  discovery, normalized and ordered events, reduced state, SSE frames and source signals, start and
+  reset, typed errors and mutation outcomes, and checksummed replay bundles. Every schema has one
+  manifest-owned accepted fixture and one one-reason negative, and the contract tests pin integer
+  scenario revision `1`, sector-only assignment authority, declared-only members without fabricated
+  connectivity or telemetry, normalized-event timelines, and mutation state outside the reducer.
+
+  [ADR-0104](docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) adds only
+  `minLength` and `maxItems` to the portable schema vocabulary, which makes nonempty capabilities and
+  exact scenario cardinalities expressible without admitting optional `format` behavior or the rest of
+  Draft 2020-12. The 64 Playwright cases remain intact while their serialized fixtures now match the
+  contract's integer geometry, discriminated roster, recovery sequence, replay integrity, and
+  snapshot-owned mission semantics. All browser collections are explicitly bounded, and snapshot
+  timelines reject telemetry at the schema boundary. R1 remains in progress: scenario-file and private-control schemas,
+  service-owned Pydantic twins, and HTTP/OpenAPI expectations still gate A2.
+
 - **The dashboard has a real shell and frontend verification can no longer pass on incomplete
   evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and
   main landmarks, explicit degraded-live mode text, a dashboard-state live region, and post-render

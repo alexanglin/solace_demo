@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
+  "description": "One normalized dashboard event paired with its durable positive audit ordinal.",
+  "type": "object",
+  "required": [
+    "auditOrdinal",
+    "event"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "auditOrdinal": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "event": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+    }
+  }
+}

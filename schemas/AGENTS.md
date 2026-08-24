@@ -25,8 +25,9 @@ values in this guide:
 | Topic grammar and event-type derivation | [ADR-0036](../docs/adr/0036-ascii-topic-grammar-bound-to-event-type.md) |
 | Closed CloudEvents envelope and refusal order | [ADR-0037](../docs/adr/0037-cloudevents-envelope-profile.md) |
 | Reserved-host identity, absolute references, fixture layout, and one-reason negatives | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
+| Explicit string and array cardinality assertions | [ADR-0104](../docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Generated dashboard types and runtime validation | [ADR-0058](../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
-| Normalized dashboard events and reduced state | [ADR-0067](../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
+| Ordered dashboard events, reduced state, and SSE frames | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
 
 An Accepted architecture decision record (ADR) governs whenever a schema, fixture, implementation, or
 document disagrees with it. Never rewrite Accepted ADR prose. Create a new or superseding record before

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
+  "description": "One ordered dashboard-event SSE frame with the server digest after reduction.",
+  "type": "object",
+  "required": [
+    "frameVersion",
+    "cursor",
+    "digest",
+    "event"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "frameVersion": {
+      "const": "ordered-dashboard-event-frame/v1"
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "digest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "event": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json"
+    }
+  }
+}

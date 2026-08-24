@@ -1,7 +1,7 @@
 # Dashboard Agent Instructions
 
 The repository-root `AGENTS.md` applies here. Before changing this package, also read
-`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice ADRs 0094 through 0103.
+`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice ADRs 0094 through 0104.
 
 ## Boundaries
 

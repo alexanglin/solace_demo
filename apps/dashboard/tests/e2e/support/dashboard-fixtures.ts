@@ -20,7 +20,7 @@ export type DashboardViewState =
 
 export type MissionLifecycle = "PLANNED" | "SEARCHING" | "EXHAUSTED" | "ABORTED";
 
-export type Connectivity = "CONNECTED" | "DEGRADED" | "OFFLINE" | "NOT_EXECUTED";
+export type Connectivity = "CONNECTED" | "DEGRADED" | "OFFLINE";
 
 export type Participation = "SIMULATED" | "DECLARED_ONLY";
 
@@ -35,14 +35,19 @@ export interface TelemetryFixture {
   readonly longitudeMicrodegrees: number;
 }
 
-export interface FleetMemberFixture {
+export interface SimulatedFleetMemberFixture {
   readonly connectivity: Connectivity;
   readonly identifier: string;
-  readonly participation: Participation;
-  readonly sectorId: string | null;
-  readonly sectorState: SectorState | null;
+  readonly participation: "SIMULATED";
   readonly telemetry: TelemetryFixture | null;
 }
+
+export interface DeclaredOnlyFleetMemberFixture {
+  readonly identifier: string;
+  readonly participation: "DECLARED_ONLY";
+}
+
+export type FleetMemberFixture = SimulatedFleetMemberFixture | DeclaredOnlyFleetMemberFixture;
 
 export interface SectorFixture {
   readonly assignedMemberId: string | null;
@@ -50,27 +55,33 @@ export interface SectorFixture {
   readonly state: SectorState;
 }
 
-export interface TimelineFixture {
-  readonly auditOrdinal: number;
-  readonly label: string;
-  readonly occurredAt: string;
+export interface SimulatedScenarioMemberFixture {
+  readonly identifier: string;
+  readonly participation: "SIMULATED";
 }
 
-export interface ScenarioMemberFixture {
+export interface DeclaredOnlyScenarioMemberFixture {
+  readonly executionLabel: "DECLARED ONLY — NOT EXECUTED";
   readonly identifier: string;
-  readonly participation: Participation;
+  readonly participation: "DECLARED_ONLY";
+  readonly role: "communications" | "navigation" | "vision";
+}
+
+export type ScenarioMemberFixture =
+  SimulatedScenarioMemberFixture | DeclaredOnlyScenarioMemberFixture;
+
+export interface ScenarioVertexFixture {
+  readonly latitudeMicrodegrees: number;
+  readonly longitudeMicrodegrees: number;
 }
 
 export interface SectorGeometryFixture {
-  readonly geometry: {
-    readonly coordinates: readonly (readonly (readonly [number, number])[])[];
-    readonly type: "Polygon";
-  };
   readonly identifier: string;
-  readonly type: "Feature";
+  readonly vertices: readonly ScenarioVertexFixture[];
 }
 
 export interface ScenarioFixture {
+  readonly declaredCount: 23;
   readonly declaredOnlyCount: 3;
   readonly identifier: "wilderness-missing-person";
   readonly lastKnownLocation: {
@@ -79,8 +90,11 @@ export interface ScenarioFixture {
     readonly longitudeMicrodegrees: number;
   };
   readonly members: readonly ScenarioMemberFixture[];
-  readonly revision: "r1";
-  readonly searchAreaSquareKilometres: number;
+  readonly revision: 1;
+  readonly searchAreaSquareMetres: number;
+  readonly searchPolygon: {
+    readonly vertices: readonly ScenarioVertexFixture[];
+  };
   readonly sectors: readonly SectorGeometryFixture[];
   readonly simulatedCount: 20;
   readonly summary: string;
@@ -99,15 +113,54 @@ export interface DashboardReducedState {
   readonly fleet: readonly FleetMemberFixture[];
   readonly latestAuditOrdinal: number;
   readonly sectors: readonly SectorFixture[];
+  readonly stateVersion: 1;
 }
 
-export interface DashboardEventFixture {
-  readonly data: Readonly<Record<string, boolean | number | string | null>>;
-  readonly eventClass: "CONNECTIVITY" | "MISSION" | "TELEMETRY";
-  readonly kind: "connectivityChanged" | "droneTelemetry" | "missionLifecycle" | "sectorLifecycle";
+interface DashboardEventBaseFixture {
   readonly mission: string;
   readonly time: string;
 }
+
+export interface ConnectivityChangedEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly connectivity: Connectivity;
+    readonly droneId: string;
+  };
+  readonly eventClass: "CONNECTIVITY";
+  readonly kind: "connectivityChanged";
+}
+
+export interface DroneTelemetryEventFixture extends DashboardEventBaseFixture {
+  readonly data: TelemetryFixture & {
+    readonly droneId: string;
+  };
+  readonly eventClass: "TELEMETRY";
+  readonly kind: "droneTelemetry";
+}
+
+export interface MissionLifecycleEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly lifecycle: MissionLifecycle;
+  };
+  readonly eventClass: "MISSION";
+  readonly kind: "missionLifecycle";
+}
+
+export interface SectorLifecycleEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly assignedMemberId: string | null;
+    readonly sectorId: string;
+    readonly state: SectorState;
+  };
+  readonly eventClass: "MISSION";
+  readonly kind: "sectorLifecycle";
+}
+
+export type DashboardEventFixture =
+  | ConnectivityChangedEventFixture
+  | DroneTelemetryEventFixture
+  | MissionLifecycleEventFixture
+  | SectorLifecycleEventFixture;
 
 export interface OrderedDashboardEventFixture {
   readonly auditOrdinal: number;
@@ -161,6 +214,13 @@ export interface ReplayFixtureOverrides {
   readonly expectedFinalDigest?: string;
 }
 
+interface ReplayIntegrityFixture {
+  readonly algorithm: "sha256";
+  readonly checksum: string;
+  readonly expectedFinalDigest: string;
+  readonly integrityVersion: "dashboard-replay-integrity/v1";
+}
+
 export const syntheticBearerSentinel = "synthetic-browser-bearer-do-not-persist";
 
 export const declaredOnlyAgentIds = [
@@ -184,42 +244,52 @@ function byteOrder(left: string, right: string): number {
 function sectorGeometry(index: number): SectorGeometryFixture {
   const column = (index - 1) % 5;
   const row = Math.floor((index - 1) / 5);
-  const west = -79.25 + column * 0.01;
-  const south = 44.47 + row * 0.01;
-  const east = west + 0.009;
-  const north = south + 0.009;
+  const west = -79_250_000 + column * 10_000;
+  const south = 44_470_000 + row * 10_000;
+  const east = west + 9_000;
+  const north = south + 9_000;
   return {
-    geometry: {
-      coordinates: [
-        [
-          [west, south],
-          [east, south],
-          [east, north],
-          [west, north],
-          [west, south],
-        ],
-      ],
-      type: "Polygon",
-    },
     identifier: sectorIdentifierFor(index),
-    type: "Feature",
+    vertices: [
+      { latitudeMicrodegrees: south, longitudeMicrodegrees: west },
+      { latitudeMicrodegrees: south, longitudeMicrodegrees: east },
+      { latitudeMicrodegrees: north, longitudeMicrodegrees: east },
+      { latitudeMicrodegrees: north, longitudeMicrodegrees: west },
+      { latitudeMicrodegrees: south, longitudeMicrodegrees: west },
+    ],
   };
 }
 
+function declaredOnlyRole(
+  identifier: (typeof declaredOnlyAgentIds)[number],
+): DeclaredOnlyScenarioMemberFixture["role"] {
+  if (identifier === "drone-comms-03") {
+    return "communications";
+  }
+  if (identifier === "drone-navigation-02") {
+    return "navigation";
+  }
+  return "vision";
+}
+
 function scenarioMembers(): readonly ScenarioMemberFixture[] {
-  return [
-    ...declaredOnlyAgentIds.map((identifier) => ({
+  const declaredOnlyMembers = declaredOnlyAgentIds
+    .map((identifier) => ({
+      executionLabel: "DECLARED ONLY — NOT EXECUTED" as const,
       identifier,
       participation: "DECLARED_ONLY" as const,
-    })),
-    ...Array.from({ length: 20 }, (_, offset) => ({
-      identifier: identifierFor(offset + 1),
-      participation: "SIMULATED" as const,
-    })),
-  ].sort((left, right) => byteOrder(left.identifier, right.identifier));
+      role: declaredOnlyRole(identifier),
+    }))
+    .sort((left, right) => byteOrder(left.identifier, right.identifier));
+  const simulatedMembers = Array.from({ length: 20 }, (_, offset) => ({
+    identifier: identifierFor(offset + 1),
+    participation: "SIMULATED" as const,
+  })).sort((left, right) => byteOrder(left.identifier, right.identifier));
+  return [...declaredOnlyMembers, ...simulatedMembers];
 }
 
 const scenario: ScenarioFixture = {
+  declaredCount: 23,
   declaredOnlyCount: 3,
   identifier: "wilderness-missing-person",
   lastKnownLocation: {
@@ -228,11 +298,20 @@ const scenario: ScenarioFixture = {
     longitudeMicrodegrees: -79_228_400,
   },
   members: scenarioMembers(),
-  revision: "r1",
-  searchAreaSquareKilometres: 18.4,
+  revision: 1,
+  searchAreaSquareMetres: 18_400_000,
+  searchPolygon: {
+    vertices: [
+      { latitudeMicrodegrees: 44_470_000, longitudeMicrodegrees: -79_250_000 },
+      { latitudeMicrodegrees: 44_470_000, longitudeMicrodegrees: -79_201_000 },
+      { latitudeMicrodegrees: 44_509_000, longitudeMicrodegrees: -79_201_000 },
+      { latitudeMicrodegrees: 44_509_000, longitudeMicrodegrees: -79_250_000 },
+      { latitudeMicrodegrees: 44_470_000, longitudeMicrodegrees: -79_250_000 },
+    ],
+  },
   sectors: Array.from({ length: 20 }, (_, offset) => sectorGeometry(offset + 1)),
   simulatedCount: 20,
-  summary: "Twenty simulated aircraft sweep twenty bounded wilderness sectors.",
+  summary: "Twenty simulated aircraft sweep twenty bounded synthetic wilderness sectors.",
   title: "Wilderness Missing Person",
 };
 
@@ -256,13 +335,11 @@ function sectorStateFor(index: number): SectorState {
   return "ASSIGNED";
 }
 
-function simulatedMember(index: number): FleetMemberFixture {
+function simulatedMember(index: number): SimulatedFleetMemberFixture {
   return {
     connectivity: connectivityFor(index),
     identifier: identifierFor(index),
     participation: "SIMULATED",
-    sectorId: sectorIdentifierFor(index),
-    sectorState: sectorStateFor(index),
     telemetry: {
       altitudeMetres: 82 + index,
       batteryPercent: 96 - index,
@@ -274,14 +351,10 @@ function simulatedMember(index: number): FleetMemberFixture {
   };
 }
 
-function declaredOnlyMember(identifier: string): FleetMemberFixture {
+function declaredOnlyMember(identifier: string): DeclaredOnlyFleetMemberFixture {
   return {
-    connectivity: "NOT_EXECUTED",
     identifier,
     participation: "DECLARED_ONLY",
-    sectorId: null,
-    sectorState: null,
-    telemetry: null,
   };
 }
 
@@ -303,53 +376,107 @@ function sectors(): readonly SectorFixture[] {
   });
 }
 
-function liveTimeline(): readonly TimelineFixture[] {
-  return [
-    {
-      auditOrdinal: 5,
-      label: "drone-sim-07 offline",
-      occurredAt: "2026-08-24T12:00:04.000Z",
-    },
-    {
-      auditOrdinal: 1,
-      label: "Mission planned",
-      occurredAt: "2026-08-24T12:00:10.000Z",
-    },
-    {
-      auditOrdinal: 4,
-      label: "drone-sim-07 connectivity degraded",
-      occurredAt: "2026-08-24T12:00:03.000Z",
-    },
-    {
-      auditOrdinal: 2,
-      label: "Mission searching",
-      occurredAt: "2026-08-24T12:00:01.000Z",
-    },
-    {
-      auditOrdinal: 6,
-      label: "sector-07 at risk",
-      occurredAt: "2026-08-24T12:00:05.000Z",
-    },
-    {
-      auditOrdinal: 3,
-      label: "Twenty sectors assigned",
-      occurredAt: "2026-08-24T12:00:02.000Z",
-    },
+function liveAuditEvents(): readonly OrderedDashboardEventFixture[] {
+  const mission = "mission-synthetic-0001";
+  const auditEvents: OrderedDashboardEventFixture[] = [
+    event(1, "missionLifecycle", "MISSION", { lifecycle: "PLANNED" }, mission),
+    event(2, "missionLifecycle", "MISSION", { lifecycle: "SEARCHING" }, mission),
   ];
+  for (let index = 1; index <= 20; index += 1) {
+    auditEvents.push(
+      event(
+        index + 2,
+        "sectorLifecycle",
+        "MISSION",
+        {
+          assignedMemberId: identifierFor(index),
+          sectorId: sectorIdentifierFor(index),
+          state: "ASSIGNED",
+        },
+        mission,
+      ),
+    );
+  }
+  for (let index = 1; index <= 20; index += 1) {
+    const telemetry = simulatedMember(index).telemetry;
+    if (telemetry === null) {
+      throw new Error("live fixture telemetry is missing");
+    }
+    auditEvents.push(
+      event(
+        index + 22,
+        "droneTelemetry",
+        "TELEMETRY",
+        { ...telemetry, droneId: identifierFor(index) },
+        mission,
+      ),
+    );
+  }
+  for (let index = 1; index <= 4; index += 1) {
+    auditEvents.push(
+      event(
+        index + 42,
+        "sectorLifecycle",
+        "MISSION",
+        {
+          assignedMemberId: identifierFor(index),
+          sectorId: sectorIdentifierFor(index),
+          state: "SEARCHED",
+        },
+        mission,
+      ),
+    );
+  }
+  auditEvents.push(
+    event(
+      47,
+      "connectivityChanged",
+      "CONNECTIVITY",
+      { connectivity: "DEGRADED", droneId: "drone-sim-04" },
+      mission,
+    ),
+    event(
+      48,
+      "connectivityChanged",
+      "CONNECTIVITY",
+      { connectivity: "DEGRADED", droneId: "drone-sim-12" },
+      mission,
+    ),
+    event(
+      49,
+      "connectivityChanged",
+      "CONNECTIVITY",
+      { connectivity: "DEGRADED", droneId: "drone-sim-07" },
+      mission,
+    ),
+    event(
+      50,
+      "connectivityChanged",
+      "CONNECTIVITY",
+      { connectivity: "OFFLINE", droneId: "drone-sim-07" },
+      mission,
+    ),
+    event(
+      51,
+      "sectorLifecycle",
+      "MISSION",
+      {
+        assignedMemberId: "drone-sim-07",
+        sectorId: "sector-07",
+        state: "AT_RISK",
+      },
+      mission,
+    ),
+  );
+  return auditEvents;
 }
 
-function liveState(lifecycle: MissionLifecycle = "SEARCHING"): DashboardReducedState {
-  return {
-    canonicalizationVersion: 1,
-    currentMission: {
-      identifier: "mission-synthetic-0001",
-      lifecycle,
-      predecessorIdentifier: null,
-    },
-    fleet: fleet(),
-    latestAuditOrdinal: 6,
-    sectors: sectors(),
-  };
+function liveTimeline(): readonly OrderedDashboardEventFixture[] {
+  return liveAuditEvents().filter((orderedEvent) => orderedEvent.event.eventClass !== "TELEMETRY");
+}
+
+function liveState(): DashboardReducedState {
+  return liveAuditEvents().reduce(applyOrderedEventForOracle, plannedState());
 }
 
 function plannedState(): DashboardReducedState {
@@ -362,7 +489,7 @@ function plannedState(): DashboardReducedState {
     },
     fleet: fleet().map((member) =>
       member.participation === "SIMULATED"
-        ? { ...member, connectivity: "CONNECTED", sectorState: "UNASSIGNED", telemetry: null }
+        ? { ...member, connectivity: "CONNECTED", telemetry: null }
         : member,
     ),
     latestAuditOrdinal: 0,
@@ -371,22 +498,40 @@ function plannedState(): DashboardReducedState {
       assignedMemberId: null,
       state: "UNASSIGNED",
     })),
+    stateVersion: 1,
   };
 }
 
 function heartbeatBaseState(): DashboardReducedState {
-  const state = liveState();
-  return {
-    ...state,
-    fleet: state.fleet.map((member) =>
-      member.identifier === "drone-sim-07"
-        ? { ...member, connectivity: "CONNECTED", sectorState: "ASSIGNED" }
-        : member,
+  return heartbeatRecoveryEvents().reduce(applyOrderedEventForOracle, liveState());
+}
+
+function heartbeatRecoveryEvents(): readonly OrderedDashboardEventFixture[] {
+  const mission = "mission-synthetic-0001";
+  return [
+    event(
+      52,
+      "connectivityChanged",
+      "CONNECTIVITY",
+      { connectivity: "CONNECTED", droneId: "drone-sim-07" },
+      mission,
     ),
-    sectors: state.sectors.map((sector) =>
-      sector.identifier === "sector-07" ? { ...sector, state: "ASSIGNED" } : sector,
+    event(
+      53,
+      "sectorLifecycle",
+      "MISSION",
+      {
+        assignedMemberId: "drone-sim-07",
+        sectorId: "sector-07",
+        state: "ASSIGNED",
+      },
+      mission,
     ),
-  };
+  ];
+}
+
+function heartbeatTimeline(): readonly OrderedDashboardEventFixture[] {
+  return [...liveTimeline(), ...heartbeatRecoveryEvents()];
 }
 
 function sourceInput(
@@ -395,6 +540,12 @@ function sourceInput(
   document: object,
 ): DashboardSourceInput {
   return { channel, name, raw: JSON.stringify(document) };
+}
+
+function opaqueLiveCursor(material: object): string {
+  const runBoundMaterial = `run-synthetic-0001\n${canonicalJson(material)}`;
+  const opaqueToken = createHash("sha256").update(runBoundMaterial, "utf8").digest("hex");
+  return `cursor-${opaqueToken}`;
 }
 
 export function malformedSourceInput(
@@ -418,6 +569,7 @@ function readiness(mode: DashboardMode = "degradedLive"): DashboardSourceInput {
     mode,
     readinessVersion: "dashboard-readiness/v1",
     ready: true,
+    reasons: [],
   });
 }
 
@@ -430,12 +582,17 @@ function scenarioCatalog(scenarios: readonly ScenarioFixture[] = [scenario]): Da
 
 function snapshot(
   state: DashboardReducedState,
-  timeline: readonly TimelineFixture[],
+  timeline: readonly OrderedDashboardEventFixture[],
 ): DashboardSourceInput {
+  const digest = replayStateDigest(state);
   return sourceInput("sse-frame", "snapshot", {
-    currentRun: "run-synthetic-0001",
-    cursor: `cursor-${state.latestAuditOrdinal.toString()}`,
-    digest: replayStateDigest(state),
+    currentRun: {
+      missionId: "mission-synthetic-0001",
+      mode: "degradedLive",
+      runId: "run-synthetic-0001",
+    },
+    cursor: opaqueLiveCursor({ digest, frame: "snapshot" }),
+    digest,
     runtimeId: "runtime-synthetic-0001",
     snapshotVersion: "dashboard-snapshot/v1",
     state,
@@ -472,7 +629,7 @@ function orderedEventFrameInput(
   digest: string,
 ): DashboardSourceInput {
   return sourceInput("sse-frame", "dashboard-event", {
-    cursor: `cursor-${orderedEvent.auditOrdinal.toString()}`,
+    cursor: opaqueLiveCursor({ digest, event: orderedEvent, frame: "dashboardEvent" }),
     digest,
     event: orderedEvent,
     frameVersion: "ordered-dashboard-event-frame/v1",
@@ -501,7 +658,6 @@ function canonicalJson(value: unknown): string {
   if (typeof value === "object") {
     const entries = Object.entries(value).sort(([left], [right]) => byteOrder(left, right));
     return `{${entries
-      .filter(([key]) => key !== "digest")
       .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
       .join(",")}}`;
   }
@@ -509,10 +665,41 @@ function canonicalJson(value: unknown): string {
 }
 
 export function replayStateDigest(state: DashboardReducedState): string {
-  const material = `aerial-rescue/canonical/v1\nreplay-state\n${canonicalJson(state)}`;
+  const stateWithoutTopLevelDigest = Object.fromEntries(
+    Object.entries(state).filter(([key]) => key !== "digest"),
+  );
+  const material = `aerial-rescue/canonical/v1\nreplay-state\n${canonicalJson(stateWithoutTopLevelDigest)}`;
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
+function event(
+  auditOrdinal: number,
+  kind: "connectivityChanged",
+  eventClass: "CONNECTIVITY",
+  data: ConnectivityChangedEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "droneTelemetry",
+  eventClass: "TELEMETRY",
+  data: DroneTelemetryEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "missionLifecycle",
+  eventClass: "MISSION",
+  data: MissionLifecycleEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "sectorLifecycle",
+  eventClass: "MISSION",
+  data: SectorLifecycleEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
 function event(
   auditOrdinal: number,
   kind: DashboardEventFixture["kind"],
@@ -520,24 +707,30 @@ function event(
   data: DashboardEventFixture["data"],
   mission = "recorded-mission-synthetic-0001",
 ): OrderedDashboardEventFixture {
-  return {
-    auditOrdinal,
-    event: {
-      data,
-      eventClass,
-      kind,
-      mission,
-      time: `2026-08-24T12:00:${String(auditOrdinal).padStart(2, "0")}.000Z`,
-    },
-  };
+  const time = new Date(Date.UTC(2026, 7, 24, 12, 0, auditOrdinal)).toISOString();
+  if (kind === "connectivityChanged" && eventClass === "CONNECTIVITY" && "connectivity" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "droneTelemetry" && eventClass === "TELEMETRY" && "latitudeMicrodegrees" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "missionLifecycle" && eventClass === "MISSION" && "lifecycle" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "sectorLifecycle" && eventClass === "MISSION" && "sectorId" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  throw new TypeError("dashboard event fixture variant is inconsistent");
 }
 
-function replaceMember(
+function replaceSimulatedMember(
   state: DashboardReducedState,
   droneId: string,
-  update: (member: FleetMemberFixture) => FleetMemberFixture,
+  update: (member: SimulatedFleetMemberFixture) => SimulatedFleetMemberFixture,
 ): readonly FleetMemberFixture[] {
-  return state.fleet.map((member) => (member.identifier === droneId ? update(member) : member));
+  return state.fleet.map((member) =>
+    member.identifier === droneId && member.participation === "SIMULATED" ? update(member) : member,
+  );
 }
 
 function replaceSector(
@@ -555,87 +748,103 @@ export function applyOrderedEventForOracle(
   if (orderedEvent.auditOrdinal !== state.latestAuditOrdinal + 1) {
     throw new RangeError("replay oracle accepts only the next audit ordinal");
   }
-  const { data, kind } = orderedEvent.event;
+  const { event: dashboardEvent } = orderedEvent;
   const nextBase = { ...state, latestAuditOrdinal: orderedEvent.auditOrdinal };
-  if (kind === "missionLifecycle") {
+  if (dashboardEvent.kind === "missionLifecycle") {
     return {
       ...nextBase,
       currentMission:
         state.currentMission === null
           ? null
-          : { ...state.currentMission, lifecycle: data["lifecycle"] as MissionLifecycle },
+          : { ...state.currentMission, lifecycle: dashboardEvent.data.lifecycle },
     };
   }
-  if (kind === "connectivityChanged") {
+  if (dashboardEvent.kind === "connectivityChanged") {
     return {
       ...nextBase,
-      fleet: replaceMember(state, String(data["droneId"]), (member) => ({
+      fleet: replaceSimulatedMember(state, dashboardEvent.data.droneId, (member) => ({
         ...member,
-        connectivity: data["connectivity"] as Connectivity,
+        connectivity: dashboardEvent.data.connectivity,
       })),
     };
   }
-  if (kind === "sectorLifecycle") {
-    const sectorState = data["state"] as SectorState;
+  if (dashboardEvent.kind === "sectorLifecycle") {
     return {
       ...nextBase,
-      fleet: replaceMember(state, String(data["droneId"]), (member) => ({
-        ...member,
-        sectorState,
-      })),
-      sectors: replaceSector(state, String(data["sectorId"]), (sector) => ({
+      sectors: replaceSector(state, dashboardEvent.data.sectorId, (sector) => ({
         ...sector,
-        state: sectorState,
+        assignedMemberId: dashboardEvent.data.assignedMemberId,
+        state: dashboardEvent.data.state,
       })),
     };
   }
   return {
     ...nextBase,
-    fleet: replaceMember(state, String(data["droneId"]), (member) => ({
+    fleet: replaceSimulatedMember(state, dashboardEvent.data.droneId, (member) => ({
       ...member,
       telemetry: {
-        altitudeMetres: Number(data["altitudeMetres"]),
-        batteryPercent: Number(data["batteryPercent"]),
-        groundSpeedCentimetresPerSecond: Number(data["groundSpeedCentimetresPerSecond"]),
-        headingDegrees: Number(data["headingDegrees"]),
-        latitudeMicrodegrees: Number(data["latitudeMicrodegrees"]),
-        longitudeMicrodegrees: Number(data["longitudeMicrodegrees"]),
+        altitudeMetres: dashboardEvent.data.altitudeMetres,
+        batteryPercent: dashboardEvent.data.batteryPercent,
+        groundSpeedCentimetresPerSecond: dashboardEvent.data.groundSpeedCentimetresPerSecond,
+        headingDegrees: dashboardEvent.data.headingDegrees,
+        latitudeMicrodegrees: dashboardEvent.data.latitudeMicrodegrees,
+        longitudeMicrodegrees: dashboardEvent.data.longitudeMicrodegrees,
       },
     })),
   };
 }
 
-const replayOrderedEvents: readonly OrderedDashboardEventFixture[] = [
-  event(1, "missionLifecycle", "MISSION", { lifecycle: "SEARCHING" }),
-  event(2, "sectorLifecycle", "MISSION", {
-    droneId: "drone-sim-07",
-    sectorId: "sector-07",
-    state: "ASSIGNED",
-  }),
-  event(3, "connectivityChanged", "CONNECTIVITY", {
-    connectivity: "DEGRADED",
-    droneId: "drone-sim-07",
-  }),
-  event(4, "connectivityChanged", "CONNECTIVITY", {
-    connectivity: "OFFLINE",
-    droneId: "drone-sim-07",
-  }),
-  event(5, "sectorLifecycle", "MISSION", {
-    droneId: "drone-sim-07",
-    sectorId: "sector-07",
-    state: "AT_RISK",
-  }),
-  event(6, "connectivityChanged", "CONNECTIVITY", {
-    connectivity: "CONNECTED",
-    droneId: "drone-sim-07",
-  }),
-  event(7, "sectorLifecycle", "MISSION", {
-    droneId: "drone-sim-07",
-    sectorId: "sector-07",
-    state: "SEARCHED",
-  }),
-  event(8, "missionLifecycle", "MISSION", { lifecycle: "EXHAUSTED" }),
-];
+function replayAuditEvents(): readonly OrderedDashboardEventFixture[] {
+  const auditEvents: OrderedDashboardEventFixture[] = [
+    event(1, "missionLifecycle", "MISSION", { lifecycle: "SEARCHING" }),
+  ];
+  for (let index = 1; index <= 20; index += 1) {
+    auditEvents.push(
+      event(index + 1, "sectorLifecycle", "MISSION", {
+        assignedMemberId: identifierFor(index),
+        sectorId: sectorIdentifierFor(index),
+        state: "ASSIGNED",
+      }),
+    );
+  }
+  auditEvents.push(
+    event(22, "connectivityChanged", "CONNECTIVITY", {
+      connectivity: "DEGRADED",
+      droneId: "drone-sim-07",
+    }),
+    event(23, "connectivityChanged", "CONNECTIVITY", {
+      connectivity: "OFFLINE",
+      droneId: "drone-sim-07",
+    }),
+    event(24, "sectorLifecycle", "MISSION", {
+      assignedMemberId: "drone-sim-07",
+      sectorId: "sector-07",
+      state: "AT_RISK",
+    }),
+    event(25, "connectivityChanged", "CONNECTIVITY", {
+      connectivity: "CONNECTED",
+      droneId: "drone-sim-07",
+    }),
+    event(26, "sectorLifecycle", "MISSION", {
+      assignedMemberId: "drone-sim-07",
+      sectorId: "sector-07",
+      state: "ASSIGNED",
+    }),
+  );
+  for (let index = 1; index <= 20; index += 1) {
+    auditEvents.push(
+      event(index + 26, "sectorLifecycle", "MISSION", {
+        assignedMemberId: identifierFor(index),
+        sectorId: sectorIdentifierFor(index),
+        state: "SEARCHED",
+      }),
+    );
+  }
+  auditEvents.push(event(47, "missionLifecycle", "MISSION", { lifecycle: "EXHAUSTED" }));
+  return auditEvents;
+}
+
+const replayOrderedEvents = replayAuditEvents();
 
 const replayInitialState: DashboardReducedState = {
   ...plannedState(),
@@ -662,7 +871,11 @@ function replayStates(): readonly DashboardReducedState[] {
 export const replayCheckpoints: readonly ReplayCheckpoint[] = replayStates().map((state) => {
   const drone07 = state.fleet.find((member) => member.identifier === "drone-sim-07");
   const sector07 = state.sectors.find((sector) => sector.identifier === "sector-07");
-  if (drone07 === undefined || sector07 === undefined || state.currentMission === null) {
+  if (
+    drone07?.participation !== "SIMULATED" ||
+    sector07 === undefined ||
+    state.currentMission === null
+  ) {
     throw new Error("replay oracle state is incomplete");
   }
   return {
@@ -676,18 +889,44 @@ export const replayCheckpoints: readonly ReplayCheckpoint[] = replayStates().map
 
 export const expectedReplayDigest = replayCheckpoints.at(-1)?.digest ?? "";
 
+/**
+ * Provisional R1 fixture convention: checksum the canonical bundle document with the
+ * checksum member itself absent. This covers the bundle and every other integrity
+ * member without self-reference. R6 replaces this fixture-owned convention with the
+ * replay validator's normative checksum material.
+ */
+function provisionalR1ReplayChecksum(bundleWithoutChecksum: object): string {
+  return createHash("sha256").update(canonicalJson(bundleWithoutChecksum), "utf8").digest("hex");
+}
+
 function replayBundle(overrides: ReplayFixtureOverrides): DashboardSourceInput {
+  const expectedFinalDigest = overrides.expectedFinalDigest ?? expectedReplayDigest;
   const coveredBundle = {
     bundleVersion: "dashboard-replay-bundle/v1",
     events: replayOrderedEvents,
-    expectedFinalDigest: overrides.expectedFinalDigest ?? expectedReplayDigest,
     initialState: replayInitialState,
+    scenarioId: "wilderness-missing-person",
+    scenarioRevision: 1,
     sessionId: "replay-session-0001",
   };
-  const checksum = createHash("sha256").update(canonicalJson(coveredBundle), "utf8").digest("hex");
+  const provisionalR1ChecksumMaterial = {
+    ...coveredBundle,
+    integrity: {
+      algorithm: "sha256",
+      expectedFinalDigest,
+      integrityVersion: "dashboard-replay-integrity/v1",
+    },
+  };
+  const checksum = provisionalR1ReplayChecksum(provisionalR1ChecksumMaterial);
+  const integrity: ReplayIntegrityFixture = {
+    algorithm: "sha256",
+    checksum: overrides.checksum ?? checksum,
+    expectedFinalDigest,
+    integrityVersion: "dashboard-replay-integrity/v1",
+  };
   return sourceInput("replay-bundle", "validated-replay-bundle", {
     ...coveredBundle,
-    checksum: overrides.checksum ?? checksum,
+    integrity,
   });
 }
 
@@ -711,7 +950,8 @@ export function fixtureForState(
   if (viewState === "starting") {
     return script([...common, snapshot(plannedState(), []), operationSignal("start", "pending")]);
   }
-  const running = snapshot(liveState(), liveTimeline());
+  const currentLiveState = liveState();
+  const running = snapshot(currentLiveState, liveTimeline());
   if (viewState === "resetting") {
     return script([...common, running, operationSignal("reset", "pending")]);
   }
@@ -737,13 +977,13 @@ export function fixtureForState(
   if (viewState === "exhausted" || viewState === "aborted") {
     const lifecycle = viewState === "exhausted" ? "EXHAUSTED" : "ABORTED";
     const orderedEvent = event(
-      7,
+      currentLiveState.latestAuditOrdinal + 1,
       "missionLifecycle",
       "MISSION",
       { lifecycle },
       "mission-synthetic-0001",
     );
-    const stateAfter = applyOrderedEventForOracle(liveState(), orderedEvent);
+    const stateAfter = applyOrderedEventForOracle(currentLiveState, orderedEvent);
     return script([...common, running, orderedEventInput(orderedEvent, stateAfter)]);
   }
   return script([...common, running]);
@@ -771,6 +1011,7 @@ export function malformedBoundaryInputs(
         mode: "degradedLive",
         readinessVersion: "dashboard-readiness/v1",
         ready: "yes",
+        reasons: [],
       }),
     ];
   }
@@ -782,21 +1023,38 @@ export function malformedBoundaryInputs(
       }),
     ];
   }
+  const malformedCoveredBundle = {
+    bundleVersion: "dashboard-replay-bundle/v1",
+    events: "not-an-array",
+    initialState: replayInitialState,
+    scenarioId: "wilderness-missing-person",
+    scenarioRevision: 1,
+    sessionId: "replay-session-malformed",
+  };
+  const malformedIntegrity = {
+    algorithm: "sha256" as const,
+    expectedFinalDigest: "0".repeat(64),
+    integrityVersion: "dashboard-replay-integrity/v1" as const,
+  };
+  const checksum = provisionalR1ReplayChecksum({
+    ...malformedCoveredBundle,
+    integrity: malformedIntegrity,
+  });
   return [
     sourceInput("replay-bundle", "validated-replay-bundle", {
-      bundleVersion: "dashboard-replay-bundle/v1",
-      checksum: "0".repeat(64),
-      events: "not-an-array",
-      expectedFinalDigest: "0".repeat(64),
-      initialState: replayInitialState,
-      sessionId: "replay-session-malformed",
+      ...malformedCoveredBundle,
+      integrity: {
+        ...malformedIntegrity,
+        checksum,
+      },
     }),
   ];
 }
 
 export function telemetryInterpolationInputs(): readonly DashboardSourceInput[] {
+  const currentLiveState = liveState();
   const telemetryEvent = event(
-    7,
+    currentLiveState.latestAuditOrdinal + 1,
     "droneTelemetry",
     "TELEMETRY",
     {
@@ -810,7 +1068,7 @@ export function telemetryInterpolationInputs(): readonly DashboardSourceInput[] 
     },
     "mission-synthetic-0001",
   );
-  const stateAfter = applyOrderedEventForOracle(liveState(), telemetryEvent);
+  const stateAfter = applyOrderedEventForOracle(currentLiveState, telemetryEvent);
   return [orderedEventInput(telemetryEvent, stateAfter)];
 }
 
@@ -821,7 +1079,7 @@ function heartbeatEvents(): Readonly<
   return {
     degraded: [
       event(
-        7,
+        54,
         "connectivityChanged",
         "CONNECTIVITY",
         { connectivity: "DEGRADED", droneId: "drone-sim-07" },
@@ -829,44 +1087,59 @@ function heartbeatEvents(): Readonly<
       ),
     ],
     exhausted: [
-      event(
-        12,
-        "sectorLifecycle",
-        "MISSION",
-        { droneId: "drone-sim-07", sectorId: "sector-07", state: "SEARCHED" },
-        mission,
-      ),
-      event(13, "missionLifecycle", "MISSION", { lifecycle: "EXHAUSTED" }, mission),
+      ...Array.from({ length: 16 }, (_, offset) => {
+        const index = offset + 5;
+        return event(
+          index + 54,
+          "sectorLifecycle",
+          "MISSION",
+          {
+            assignedMemberId: identifierFor(index),
+            sectorId: sectorIdentifierFor(index),
+            state: "SEARCHED",
+          },
+          mission,
+        );
+      }),
+      event(75, "missionLifecycle", "MISSION", { lifecycle: "EXHAUSTED" }, mission),
     ],
     offline: [
       event(
-        8,
+        55,
         "connectivityChanged",
         "CONNECTIVITY",
         { connectivity: "OFFLINE", droneId: "drone-sim-07" },
         mission,
       ),
       event(
-        9,
+        56,
         "sectorLifecycle",
         "MISSION",
-        { droneId: "drone-sim-07", sectorId: "sector-07", state: "AT_RISK" },
+        {
+          assignedMemberId: "drone-sim-07",
+          sectorId: "sector-07",
+          state: "AT_RISK",
+        },
         mission,
       ),
     ],
     recovered: [
       event(
-        10,
+        57,
         "connectivityChanged",
         "CONNECTIVITY",
         { connectivity: "CONNECTED", droneId: "drone-sim-07" },
         mission,
       ),
       event(
-        11,
+        58,
         "sectorLifecycle",
         "MISSION",
-        { droneId: "drone-sim-07", sectorId: "sector-07", state: "ASSIGNED" },
+        {
+          assignedMemberId: "drone-sim-07",
+          sectorId: "sector-07",
+          state: "ASSIGNED",
+        },
         mission,
       ),
     ],
@@ -893,7 +1166,7 @@ export function heartbeatInitialFixture(): DashboardSourceScript {
     bootstrap(),
     readiness(),
     scenarioCatalog(),
-    snapshot(heartbeatBaseState(), liveTimeline()),
+    snapshot(heartbeatBaseState(), heartbeatTimeline()),
   ]);
 }
 
@@ -915,14 +1188,16 @@ export function resilienceFaultInputs(fault: ResilienceFault): readonly Dashboar
       }),
     ];
   }
+  const currentLiveState = liveState();
+  const successorOrdinal = currentLiveState.latestAuditOrdinal + 1;
   const nextEvent = event(
-    7,
+    successorOrdinal,
     "missionLifecycle",
     "MISSION",
     { lifecycle: "EXHAUSTED" },
     "mission-synthetic-0001",
   );
-  const nextState = applyOrderedEventForOracle(liveState(), nextEvent);
+  const nextState = applyOrderedEventForOracle(currentLiveState, nextEvent);
   const acceptedFrame = orderedEventInput(nextEvent, nextState);
   if (fault === "exactDuplicate") {
     return [acceptedFrame, acceptedFrame];
@@ -930,7 +1205,8 @@ export function resilienceFaultInputs(fault: ResilienceFault): readonly Dashboar
   if (fault === "digestDivergence") {
     return [orderedEventFrameInput(nextEvent, "0".repeat(64))];
   }
-  const invalidOrdinal = fault === "ordinalGap" ? 8 : 5;
+  const invalidOrdinal =
+    fault === "ordinalGap" ? successorOrdinal + 1 : currentLiveState.latestAuditOrdinal - 1;
   const invalidEvent = event(
     invalidOrdinal,
     "missionLifecycle",
@@ -938,5 +1214,6 @@ export function resilienceFaultInputs(fault: ResilienceFault): readonly Dashboar
     { lifecycle: "EXHAUSTED" },
     "mission-synthetic-0001",
   );
-  return [orderedEventFrameInput(invalidEvent, "0".repeat(64))];
+  const hypotheticalState = { ...nextState, latestAuditOrdinal: invalidOrdinal };
+  return [orderedEventFrameInput(invalidEvent, replayStateDigest(hypotheticalState))];
 }

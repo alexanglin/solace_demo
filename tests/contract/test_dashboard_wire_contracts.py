@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from jsonschema import validators
+from jsonschema.protocols import Validator
+from referencing import Registry, Resource
 
 from tools import contract_gate
 
@@ -81,6 +84,16 @@ def _all_property_names(value: object) -> frozenset[str]:
     if isinstance(value, list):
         return frozenset(name for item in value for name in _all_property_names(item))
     return frozenset()
+
+
+def _validator_for(name: str) -> Validator:
+    """Build one offline validator with every committed schema preloaded."""
+    schemas = tuple(_load(path) for path in sorted(REPO_ROOT.glob("schemas/**/*.schema.json")))
+    resources = ((cast("str", schema["$id"]), Resource.from_contents(schema)) for schema in schemas)
+    registry = Registry().with_resources(resources)
+    schema = _load(_schema_path(name))
+    validator_type = validators.validator_for(schema)
+    return validator_type(schema, registry=registry)
 
 
 class DashboardWireInventoryTests(unittest.TestCase):
@@ -276,6 +289,37 @@ class DashboardEventContractTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, references)
+
+    def test_snapshot_validator_refuses_an_otherwise_valid_telemetry_timeline_entry(self) -> None:
+        # Arrange
+        snapshot = _load(_fixture_path("dashboard-snapshot", "baseline"))
+        snapshot["timeline"] = [
+            {
+                "auditOrdinal": 4,
+                "event": {
+                    "kind": "droneTelemetry",
+                    "eventClass": "TELEMETRY",
+                    "mission": "mission-synthetic-0001",
+                    "time": "2026-08-24T12:00:04.000Z",
+                    "data": {
+                        "droneId": "drone-sim-01",
+                        "latitudeMicrodegrees": 44475000,
+                        "longitudeMicrodegrees": -79245000,
+                        "batteryPercent": 96,
+                        "altitudeMetres": 83,
+                        "headingDegrees": 45,
+                        "groundSpeedCentimetresPerSecond": 950,
+                    },
+                },
+            }
+        ]
+        validator = _validator_for("dashboard-snapshot")
+
+        # Act
+        errors = tuple(validator.iter_errors(cast("contract_gate.JsonObject", snapshot)))
+
+        # Assert
+        self.assertTrue(errors)
 
 
 class DashboardCollectionBoundTests(unittest.TestCase):

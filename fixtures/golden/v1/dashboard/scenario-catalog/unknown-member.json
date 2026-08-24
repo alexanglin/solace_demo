@@ -1,0 +1,647 @@
+{
+  "catalogVersion": "scenario-catalog/v1",
+  "scenarios": [
+    {
+      "identifier": "wilderness-missing-person",
+      "revision": 1,
+      "title": "Wilderness Missing Person",
+      "summary": "Twenty simulated aircraft sweep twenty bounded synthetic wilderness sectors.",
+      "declaredCount": 23,
+      "simulatedCount": 20,
+      "declaredOnlyCount": 3,
+      "searchAreaSquareMetres": 18400000,
+      "lastKnownLocation": {
+        "label": "North ridge trail",
+        "latitudeMicrodegrees": 44493100,
+        "longitudeMicrodegrees": -79228400
+      },
+      "searchPolygon": {
+        "vertices": [
+          {
+            "latitudeMicrodegrees": 44470000,
+            "longitudeMicrodegrees": -79250000
+          },
+          {
+            "latitudeMicrodegrees": 44470000,
+            "longitudeMicrodegrees": -79201000
+          },
+          {
+            "latitudeMicrodegrees": 44509000,
+            "longitudeMicrodegrees": -79201000
+          },
+          {
+            "latitudeMicrodegrees": 44509000,
+            "longitudeMicrodegrees": -79250000
+          },
+          {
+            "latitudeMicrodegrees": 44470000,
+            "longitudeMicrodegrees": -79250000
+          }
+        ]
+      },
+      "sectors": [
+        {
+          "identifier": "sector-01",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79250000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-02",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79240000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-03",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79230000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-04",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79220000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-05",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44479000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44470000,
+              "longitudeMicrodegrees": -79210000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-06",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79250000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-07",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79240000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-08",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79230000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-09",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79220000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-10",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44489000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44480000,
+              "longitudeMicrodegrees": -79210000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-11",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79250000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-12",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79240000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-13",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79230000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-14",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79220000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-15",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44499000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44490000,
+              "longitudeMicrodegrees": -79210000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-16",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79241000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79250000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79250000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-17",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79231000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79240000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79240000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-18",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79221000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79230000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79230000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-19",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79211000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79220000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79220000
+            }
+          ]
+        },
+        {
+          "identifier": "sector-20",
+          "vertices": [
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79201000
+            },
+            {
+              "latitudeMicrodegrees": 44509000,
+              "longitudeMicrodegrees": -79210000
+            },
+            {
+              "latitudeMicrodegrees": 44500000,
+              "longitudeMicrodegrees": -79210000
+            }
+          ]
+        }
+      ],
+      "members": [
+        {
+          "identifier": "drone-comms-03",
+          "participation": "DECLARED_ONLY",
+          "role": "communications",
+          "executionLabel": "DECLARED ONLY — NOT EXECUTED"
+        },
+        {
+          "identifier": "drone-navigation-02",
+          "participation": "DECLARED_ONLY",
+          "role": "navigation",
+          "executionLabel": "DECLARED ONLY — NOT EXECUTED"
+        },
+        {
+          "identifier": "drone-vision-01",
+          "participation": "DECLARED_ONLY",
+          "role": "vision",
+          "executionLabel": "DECLARED ONLY — NOT EXECUTED"
+        },
+        {
+          "identifier": "drone-sim-01",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-02",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-03",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-04",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-05",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-06",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-07",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-08",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-09",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-10",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-11",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-12",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-13",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-14",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-15",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-16",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-17",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-18",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-19",
+          "participation": "SIMULATED"
+        },
+        {
+          "identifier": "drone-sim-20",
+          "participation": "SIMULATED"
+        }
+      ]
+    }
+  ],
+  "unexpected": true
+}

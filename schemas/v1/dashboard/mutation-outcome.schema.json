@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/mutation-outcome.schema.json",
+  "description": "Browser-owned operation progress and validated mutation results, separate from reduced mission state.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/pending"
+    },
+    {
+      "$ref": "#/$defs/startAccepted"
+    },
+    {
+      "$ref": "#/$defs/resetAccepted"
+    },
+    {
+      "$ref": "#/$defs/refused"
+    }
+  ],
+  "$defs": {
+    "pending": {
+      "type": "object",
+      "required": [
+        "resultVersion",
+        "operation",
+        "phase"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resultVersion": {
+          "const": "dashboard-mutation-result/v1"
+        },
+        "operation": {
+          "enum": [
+            "start",
+            "reset"
+          ]
+        },
+        "phase": {
+          "const": "pending"
+        }
+      }
+    },
+    "startAccepted": {
+      "type": "object",
+      "required": [
+        "resultVersion",
+        "operation",
+        "phase",
+        "response"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resultVersion": {
+          "const": "dashboard-mutation-result/v1"
+        },
+        "operation": {
+          "const": "start"
+        },
+        "phase": {
+          "const": "accepted"
+        },
+        "response": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/start-response.schema.json"
+        }
+      }
+    },
+    "resetAccepted": {
+      "type": "object",
+      "required": [
+        "resultVersion",
+        "operation",
+        "phase",
+        "response"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resultVersion": {
+          "const": "dashboard-mutation-result/v1"
+        },
+        "operation": {
+          "const": "reset"
+        },
+        "phase": {
+          "const": "accepted"
+        },
+        "response": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-response.schema.json"
+        }
+      }
+    },
+    "refused": {
+      "type": "object",
+      "required": [
+        "resultVersion",
+        "operation",
+        "phase",
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resultVersion": {
+          "const": "dashboard-mutation-result/v1"
+        },
+        "operation": {
+          "enum": [
+            "start",
+            "reset"
+          ]
+        },
+        "phase": {
+          "const": "refused"
+        },
+        "error": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json"
+        }
+      }
+    }
+  }
+}

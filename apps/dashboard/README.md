@@ -2,8 +2,28 @@
 
 This package is the browser command center for the wilderness mission slice. A1 is green: the
 production HTML host loads the real entry module, which renders sibling banner and main landmarks,
-explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. The
-remaining Playwright contract stays intentionally red while A2-A8 are implemented.
+explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is in
+progress: the 19 browser-facing schemas and shared polarity fixtures are committed, while scenario
+and private-control schemas plus strict service twins still gate A2. The remaining Playwright
+contract stays intentionally red while A2-A8 are implemented.
+
+## Contract boundary
+
+Production browser types will be generated from `schemas/v1/dashboard/`; the hand-written Playwright
+fixtures are serialized examples, never a type authority. The current schema slice covers bootstrap,
+health and readiness, scenario discovery, the five-field normalized event and its audit wrapper,
+reduced state, snapshot and suffix frames, source state, mutations and errors, and replay integrity.
+A2 will add the committed generated types and offline Ajv registry after all of R1 closes.
+
+The contract keeps three facts explicit:
+
+- scenario revision is integer `1`, and geometry crosses the boundary in integer microdegrees before
+  a map adapter constructs presentation-only GeoJSON;
+- sectors alone own assignment and lifecycle, while a simulated fleet member owns connectivity and
+  latest telemetry; and
+- a reduced-state declared-only member owns only identifier and participation, so
+  `DECLARED ONLY — NOT EXECUTED` never becomes fabricated connectivity or telemetry; the scenario
+  descriptor separately carries its truthful role and explicit execution label.
 
 ## Intended component boundaries
 

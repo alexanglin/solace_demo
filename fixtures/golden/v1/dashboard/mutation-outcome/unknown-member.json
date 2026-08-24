@@ -1,0 +1,15 @@
+{
+  "resultVersion": "dashboard-mutation-result/v1",
+  "operation": "start",
+  "phase": "accepted",
+  "response": {
+    "operationVersion": "dashboard-start-response/v1",
+    "mode": "degradedLive",
+    "missionId": "mission-synthetic-0001",
+    "runId": "run-synthetic-0001",
+    "declaredCount": 23,
+    "simulatedCount": 20,
+    "declaredOnlyCount": 3
+  },
+  "unexpected": true
+}

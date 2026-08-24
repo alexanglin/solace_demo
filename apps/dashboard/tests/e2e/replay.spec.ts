@@ -53,9 +53,12 @@ test("keeps isolated replay unmistakable and removes operational action surfaces
 test("folds ordered replay events when stepping and seeking", async ({ page }) => {
   // Arrange
   const source = replayFixture();
-  const firstCheckpoint = replayCheckpoints[1];
-  const riskCheckpoint = replayCheckpoints[5];
-  const finalCheckpoint = replayCheckpoints[8];
+  const firstCheckpoint = replayCheckpoints.find((checkpoint) => checkpoint.auditOrdinal === 1);
+  const riskCheckpoint = replayCheckpoints.find(
+    (checkpoint) =>
+      checkpoint.drone07Connectivity === "OFFLINE" && checkpoint.sector07State === "AT_RISK",
+  );
+  const finalCheckpoint = replayCheckpoints.at(-1);
   if (
     firstCheckpoint === undefined ||
     riskCheckpoint === undefined ||
@@ -72,23 +75,38 @@ test("folds ordered replay events when stepping and seeking", async ({ page }) =
   const digestAfterStep = await page
     .getByRole("status", { name: "Current mission digest" })
     .textContent();
-  await progress.fill("5");
+  await progress.fill(riskCheckpoint.auditOrdinal.toString());
   const riskRow = page
     .getByRole("table", { name: "Mission fleet" })
     .getByRole("row", { name: fleetRowName("drone-sim-07") });
   const riskRowText = await riskRow.textContent();
-  await progress.fill("8");
+  await progress.fill(finalCheckpoint.auditOrdinal.toString());
   const nativeRange = await progress.evaluate((element: HTMLInputElement) => ({
     max: element.max,
     min: element.min,
     value: element.value,
   }));
+  await page
+    .getByRole("region", { name: "Fleet status" })
+    .getByRole("button", { name: "Searched", exact: true })
+    .click();
+  const searchedMemberCount = await page
+    .getByRole("table", { name: "Mission fleet" })
+    .getByRole("rowheader")
+    .count();
 
   // Assert
   expect(digestAfterStep).toBe(firstCheckpoint.digest);
   expect(riskRowText).toMatch(/OFFLINE.*AT RISK/i);
-  expect(nativeRange).toEqual({ max: "8", min: "0", value: "8" });
-  await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("8");
+  expect(nativeRange).toEqual({
+    max: finalCheckpoint.auditOrdinal.toString(),
+    min: "0",
+    value: finalCheckpoint.auditOrdinal.toString(),
+  });
+  expect(searchedMemberCount).toBe(20);
+  await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText(
+    finalCheckpoint.auditOrdinal.toString(),
+  );
   await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
     finalCheckpoint.lifecycle,
   );
@@ -179,13 +197,17 @@ test("fails closed when the browser digest differs from the replay bundle", asyn
   // Arrange
   const incorrectDigest = "f".repeat(64);
   const source = replayFixture({ expectedFinalDigest: incorrectDigest });
+  const finalCheckpoint = replayCheckpoints.at(-1);
+  if (finalCheckpoint === undefined) {
+    throw new Error("replay final checkpoint fixture is missing");
+  }
 
   // Act
   await openDashboard(page, source);
   await page
     .getByRole("region", { name: "Replay controls" })
     .getByRole("slider", { name: "Replay progress" })
-    .fill("8");
+    .fill(finalCheckpoint.auditOrdinal.toString());
 
   // Assert
   await expect(page.getByRole("alert")).toContainText("Replay digest mismatch");
@@ -219,13 +241,17 @@ test("reproduces one final digest across ten replay folds", async ({ page }) => 
   // Arrange
   const source = replayFixture();
   const observedDigests: string[] = [];
+  const finalCheckpoint = replayCheckpoints.at(-1);
+  if (finalCheckpoint === undefined) {
+    throw new Error("replay final checkpoint fixture is missing");
+  }
 
   // Act
   await openDashboard(page, source);
   const controls = page.getByRole("region", { name: "Replay controls" });
   const progress = controls.getByRole("slider", { name: "Replay progress" });
   for (let run = 0; run < 10; run += 1) {
-    await progress.fill("8");
+    await progress.fill(finalCheckpoint.auditOrdinal.toString());
     observedDigests.push(
       (await page.getByRole("status", { name: "Computed final digest" }).textContent()) ?? "",
     );
