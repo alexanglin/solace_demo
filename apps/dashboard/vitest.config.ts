@@ -1,16 +1,27 @@
 import { defineConfig } from "vitest/config";
+import type { ViteUserConfig } from "vitest/config";
 
-export default defineConfig({
+export const dashboardVitestConfiguration = {
   test: {
     clearMocks: true,
     coverage: {
-      exclude: ["src/contracts/generated/**", "src/**/*.d.ts"],
+      exclude: [
+        "src/contracts/generated/**",
+        "src/**/*.d.ts",
+        "src/**/*.spec.{ts,tsx}",
+        "src/**/*.test.{ts,tsx}",
+      ],
       include: ["src/**/*.{ts,tsx}"],
+      provider: "v8",
+      reporter: ["text", "json-summary"],
     },
     environment: "jsdom",
     exclude: ["tests/e2e/**"],
     globals: false,
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
+    passWithNoTests: false,
     restoreMocks: true,
   },
-});
+} satisfies ViteUserConfig;
+
+export default defineConfig(dashboardVitestConfiguration);

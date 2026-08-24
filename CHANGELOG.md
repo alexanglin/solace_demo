@@ -10,9 +10,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The dashboard has a real shell and frontend verification can no longer pass on incomplete
+  evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and
+  main landmarks, explicit degraded-live mode text, a dashboard-state live region, and post-render
+  fixture revision acknowledgement. Unit and HTML-entry integration tests measure the hand-written
+  entry module instead of excluding it.
+
+  [ADR-0103](docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) gives the
+  frontend the same fail-closed coverage semantics as the Python workspace. The complete Vitest run
+  emits V8 JSON into a temporary directory; a typed gate rejects missing, empty, malformed,
+  duplicate-key, skipped, ignored, or inventory-incomplete evidence, recomputes every total with integer
+  arithmetic, and applies all four TypeScript coverage dimensions independently. A separate non-empty
+  integration suite blocks at pre-push and in continuous integration.
+
+  The existing 64 Playwright cases remain separate fixture-driven browser acceptance. They do not pad
+  the coverage percentage and are not relabeled as production end-to-end evidence. Four existing
+  behaviors will run again against the packaged mission-control origin only after the live API, replay,
+  fleet-control, and exact Compose closure blockers are green.
+
 - **The dashboard build has one guide, and it defers to every canonical owner.**
   [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md) sequences the UI-first slice from the committed
-  red acceptance contract to a green product surface: eight browser increments, seven vertical
+  red acceptance contract to a green product surface: eight browser increments, nine vertical
   unblockers with named owners, the join that makes the committed schemas the one prerequisite for
   the typed core, and a staleness register for the passages the UI-slice records supersede. A
   generated diagram carries the two lanes, and the documentation canonical-owner table now names

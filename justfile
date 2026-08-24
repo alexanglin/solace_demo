@@ -28,11 +28,13 @@ check-types:
     pre-commit run --all-files --hook-stage pre-push mypy-full
     pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
 
-# Hold the dashboard's TypeScript configuration, lint, and formatting to docs/adr/0057.
+# Hold dashboard policy, types, lint, format, coverage, and integration to ADR-0057 and ADR-0103.
 check-dashboard:
     pre-commit run --all-files --hook-stage pre-commit typescript-policy
     pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
     pre-commit run --all-files --hook-stage pre-push dashboard-quality-full
+    pre-commit run --all-files --hook-stage pre-push dashboard-test-full
+    pre-commit run --all-files --hook-stage pre-push dashboard-integration-full
 
 # Run the complete dashboard browser acceptance gate with its runtime, cache, and artifact checks.
 check-dashboard-browser:

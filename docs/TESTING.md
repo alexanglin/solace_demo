@@ -102,8 +102,12 @@ limits and their instruments live only in [operating-parameters.md](operating-pa
 - **Python:** statement coverage and branch coverage are measured independently per `uv` workspace
   member at its declared risk tier. `coverage.py` reports no function-coverage metric, and statements and
   lines are the same measurement, so those are not separate Python dimensions.
-- **TypeScript:** statements, branches, functions, and lines are enforced independently per production
-  package through Vitest.
+- **TypeScript:** Vitest measures statements, branches, functions, and lines independently per
+  production package. `tools/typescript_coverage_gate.py` treats its JSON summary as untrusted,
+  recomputes the aggregate with integer arithmetic, and requires an exact match with every
+  hand-written production source enumerated by the wrapper. Missing, empty, skipped, malformed,
+  duplicate-key, out-of-inventory, or coverage-ignored evidence fails closed
+  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - **Safety-critical core:** approval authorization, command-gateway dispatch, domain state machines,
   idempotency and sequence rules, evidence scoring, and `packages/contracts` carry the Tier 1 coverage,
   property-based, failure-injection, and mutation obligations.
@@ -165,8 +169,22 @@ and review remain mandatory for those behaviors.
   delegation, and both pinned Event Mesh plugins. A test asserting transport, schema, or error handling
   uses a deterministic stub at the model boundary; only a test asserting model capability calls a real
   model, and those are the model-dependent class excluded from the blocking safety gate.
+- **Dashboard integration tests:** Dedicated `*.integration.test.ts` and
+  `*.integration.test.tsx` specifications exercise composition across production browser modules. The A1
+  case joins the production HTML host to the real application entry point; once A2-A5 exist, cases also
+  carry serialized boundary input through the production validator, source, reducer, state ownership,
+  and render composition. Their separate non-empty suite blocks at pre-push and in continuous
+  integration, and the complete Vitest coverage run includes them.
 - **End-to-end tests:** Mission start through evidence, connectivity failure, replan, approval, and completion.
-- **User acceptance tests:** Playwright exercises the complete operator workflow, including live/replay labeling and approval blocking.
+- **User acceptance tests:** The manifest-owned Playwright inventory exercises the selected operator
+  slice through serialized fixture inputs, including live/replay labeling and the explicit absence of
+  deferred approval, command, evidence, model, rescue, and escalation controls.
+- **Dashboard production end-to-end tests:** After the mission-control service closure exists, four
+  existing Playwright behaviors will run again against the production origin with fixture selection and
+  request interception forbidden. The dedicated continuous-integration job will also run the resourceful
+  broker, store, recorder, replay, HTTP, SSE, and packaging integration class. Once admitted, missing
+  runtime evidence will fail rather than falling back to fixture acceptance
+  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - **Agent evaluations:** Curated datasets validate delegation, tool selection, structured outputs, refusal of unsafe requests, and approval behavior.
 - **Failure-injection tests:** Broker loss, Agent Mesh container loss, Ollama loss, duplicate and out-of-order events, malformed input, model timeout, invalid output, and recovery.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
@@ -205,12 +223,15 @@ a `conftest.py`, has an ambiguous module name, or does not parse, widens the run
 deterministic suite. That is what makes a change to a hook script, a workflow, a manifest, or a
 committed registry run the tests that read it, none of which any import names.
 
-**Push stage — every unit and dashboard acceptance test, unconditionally.** `pytest-full.sh` runs the
+**Push stage — every unit, deterministic dashboard integration, and dashboard acceptance test,
+unconditionally.** `pytest-full.sh` runs the
 root suite with the per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its
-own interpreter, and `dashboard-test-full.sh` runs the dashboard unit suite with all four coverage
-dimensions. `dashboard-playwright-full.sh` separately verifies discovery against the manifest-owned
-inventory and runs every Playwright acceptance case against the package-pinned Chromium. None selects a
-subset, and conformance tests hold every entry point to that whole-suite contract.
+own interpreter, `dashboard-test-full.sh` runs the complete dashboard unit/component/integration suite
+and independently adjudicates all four coverage dimensions, and `dashboard-integration-full.sh`
+separately refuses an empty dedicated integration inventory. `dashboard-playwright-full.sh` verifies
+discovery against the manifest-owned inventory and runs every Playwright acceptance case against the
+package-pinned Chromium. None selects a subset, and conformance tests hold every entry point to that
+whole-suite contract.
 
 Narrowing the commit stage is only safe while the push stage stays whole. Selection is fast feedback;
 `pre-push` and continuous integration remain the authority.
@@ -241,11 +262,15 @@ tree in continuous integration only
 `.github/workflows/security.yml` repeats the dependency audit, the configuration audit, and the image
 scans daily, and Dependabot raises pinned-update pull requests under a seven-day cooldown
 ([ADR-0051](adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md),
-[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest, Testing Library, Playwright, `tsc --noEmit` over the whole
-project, and typescript-eslint's type-aware presets at zero tolerated warnings; the compiler
-options, the required package scripts, and the coverage thresholds are held by
+[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest,
+Testing Library, Playwright, `tsc --noEmit` over the whole project, and typescript-eslint's type-aware
+presets at zero tolerated warnings; the compiler options, the required package scripts, and the coverage
+thresholds are held by
 `tools/typescript_policy_gate.py` at both blocking stages
-([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)). Playwright
+([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)). The full Vitest wrapper
+writes a temporary JSON summary, passes the tracked-or-unignored source inventory to
+`tools/typescript_coverage_gate.py`, and removes the report after adjudication; a dedicated integration
+configuration has its own fail-closed wrapper. Playwright
 specifications live under `apps/dashboard/tests/e2e/`, because anything outside `apps/dashboard`
 escapes the type check, the linter, the formatter, and the duplication scan together. Vitest must
 not register its globals: the AAA gate resolves test identifiers from `vitest` and
@@ -255,8 +280,10 @@ count against `config.playwrightExpectedTests`, checks that Chromium revision 12
 instead of downloading from a local hook, and scans retained `test-results/` and `playwright-report/`
 files for the synthetic bearer sentinel after both passing and failing browser runs.
 Continuous integration performs the explicit Chromium-only installation before invoking the identical
-pre-push hook. jscpd 5.0.14 provides the multi-language duplication scan. The
-cross-language AAA gate uses Python's `ast` and `tokenize`
+pre-push hook. Playwright execution coverage is not merged into the package result, and fixture
+acceptance is not described as production end-to-end evidence
+([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)). jscpd 5.0.14
+provides the multi-language duplication scan. The cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
 message validation, pushed-range `git diff --check`, and the directory fan-out gate, which bounds how

@@ -22,7 +22,7 @@ integer arithmetic; display rounding never changes a verdict.
 | Python Tier 2 branch coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
 | Agent Mesh owned-tooling coverage | 100% statements and 100% branches for `agent-mesh/tools/agent_mesh_config_validator.py` | `pytest-cov` with `--cov-fail-under=100` in `scripts/hooks/agent-mesh-test-full.sh` |
 | Python Tier 3 test inventory | At least 1 smoke test and 1 failure-path test per module | Tier inventory gate; Tier 3 fails until this inventory is executable |
-| TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest thresholds carried on the `test:coverage` script, held there by `tools/typescript_policy_gate.py` |
+| TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest V8 JSON summary plus exact source inventory, recomputed with integer arithmetic by `tools/typescript_coverage_gate.py`; manifest thresholds held by `tools/typescript_policy_gate.py` |
 | TypeScript type errors | Zero, whole project | `tsc --noEmit` through `scripts/hooks/dashboard/dashboard-typecheck-full.sh` |
 | TypeScript lint findings | Zero at any severity | `eslint --max-warnings 0` through `scripts/hooks/dashboard/dashboard-quality-full.sh` |
 | TypeScript compiler options | Every option [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md) names, at the value it names | `tools/typescript_policy_gate.py` |
@@ -135,6 +135,15 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Replay determinism | Identical hash of the canonical reduced dashboard state across 10 runs. Raw event streams are not compared: event IDs and timestamps legitimately differ between runs ([ADR-0009](adr/0009-isolated-side-effect-free-replay.md)) |
 | Safety | Zero authorized actions across all approval-bypass attempts |
 | Soak | 30 minutes with no unbounded process, queue, or SSE-client memory growth |
+
+The prepared wilderness dashboard workload adds two Phase 3 acceptance targets. They are planned, not
+measured evidence; R8 must update their status only after the committed scenario and fleet runtime produce
+the result.
+
+| Prepared dashboard measure | Acceptance target | Instrument and current status |
+| --- | --- | --- |
+| Scenario execution | Exactly 14 ticks | The R8 fleet-control integration test reads the completed-tick count for the committed scenario; not yet implemented or measured |
+| Fleet telemetry publication | Exactly 280 publications: 20 simulated members over 14 ticks | The R8 fleet publisher counter is asserted independently from best-effort recorder receipt; not yet implemented or measured |
 
 The fleet-telemetry rate is the one row with a partial instrument. The fleet simulator's tick loop
 keeps the interval its scenario declares, measured from the start of each tick, and tallies every

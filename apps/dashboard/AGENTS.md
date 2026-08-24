@@ -1,7 +1,7 @@
 # Dashboard Agent Instructions
 
 The repository-root `AGENTS.md` applies here. Before changing this package, also read
-`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice ADRs 0090 through 0097.
+`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice ADRs 0094 through 0103.
 
 ## Boundaries
 
@@ -19,6 +19,11 @@ The repository-root `AGENTS.md` applies here. Before changing this package, also
 
 - Keep Playwright specifications under `tests/e2e/` and import `test` and `expect` explicitly from
   `@playwright/test`.
+- Keep deterministic integration specifications under `src/` with the `*.integration.test.{ts,tsx}`
+  suffix. They run both as a dedicated non-empty suite and inside the complete coverage inventory.
+- Do not use V8, c8, Istanbul, or Node coverage-ignore directives in hand-written production source.
+  The coverage wrapper must account for every such source through the independent report gate
+  selected by ADR-0103; Playwright coverage never contributes to that result.
 - Every executable test callback uses one direct `// Arrange`, `// Act`, and `// Assert` sequence.
 - Feed Playwright through serialized boundary inputs, never a reduced presentation fixture.
   Increment the test-source revision for every input batch and acknowledge it only after the render

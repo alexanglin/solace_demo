@@ -1,8 +1,9 @@
 # Aerial Rescue Mesh dashboard
 
-This package is the browser command center for the wilderness mission slice. It is currently at the
-intentional red stage of test-driven development: the Playwright harness is executable, while the UI
-landmarks and behavior described below have not been implemented yet.
+This package is the browser command center for the wilderness mission slice. A1 is green: the
+production HTML host loads the real entry module, which renders sibling banner and main landmarks,
+explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. The
+remaining Playwright contract stays intentionally red while A2-A8 are implemented.
 
 ## Intended component boundaries
 
@@ -91,4 +92,25 @@ different font and WebGL rasterizers:
 
 ```sh
 pnpm --dir apps/dashboard run test:e2e:update
+```
+
+## Coverage and integration evidence
+
+The complete Vitest run includes unit, component, and dedicated `*.integration.test.tsx` or
+`*.integration.test.ts` specifications. `dashboard-test-full.sh` writes V8's JSON summary to a
+temporary directory and `tools/typescript_coverage_gate.py` independently matches it to every
+hand-written production source before applying the four coverage dimensions. Test files, generated
+contract types, and declaration files are the only coverage exclusions; an empty inventory, missing
+report, skipped count, unexpected file, or coverage-ignore directive fails closed.
+
+`dashboard-integration-full.sh` separately proves that the dedicated deterministic integration suite
+is non-empty. Playwright remains separate browser acceptance and does not contribute to package
+coverage. Production-stack end-to-end execution is also separate and remains blocked until the API,
+replay, live fleet control, and exact mission-control package closure exist
+([ADR-0103](../../docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+
+```sh
+pnpm --dir apps/dashboard run test:coverage
+pnpm --dir apps/dashboard run test:integration
+just check-dashboard
 ```

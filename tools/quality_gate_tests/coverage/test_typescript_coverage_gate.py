@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from collections.abc import Mapping
@@ -368,6 +369,7 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
         report = _write_report(
             dashboard_root / "coverage" / "coverage-summary.json",
             {source: summary},
+            total=summary,
         )
 
         # Act
@@ -375,6 +377,90 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([], findings)
+
+    def test_zero_opportunity_dimensions_still_require_an_exact_aggregate(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        source = _source(dashboard_root)
+        file_summary = _summary(
+            {
+                "branches": (0, 0, 0, 100),
+                "functions": (0, 0, 0, 100),
+            }
+        )
+        inconsistent_total = _summary(
+            {
+                "branches": (1, 1, 0, 100),
+                "functions": (1, 1, 0, 100),
+            }
+        )
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {source: file_summary},
+            total=inconsistent_total,
+        )
+
+        # Act
+        findings = typescript_coverage_gate.evaluate_coverage(report, dashboard_root, [source])
+
+        # Assert
+        self.assertTrue(
+            any("total.branches" in finding and "recomputed" in finding for finding in findings),
+            findings,
+        )
+        self.assertTrue(
+            any("total.functions" in finding and "recomputed" in finding for finding in findings),
+            findings,
+        )
+
+    def test_the_exact_v8_aggregate_metadata_is_accepted(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        source = _source(dashboard_root)
+        aggregate = _summary()
+        aggregate["branchesTrue"] = {
+            "total": 0,
+            "covered": 0,
+            "skipped": 0,
+            "pct": "Unknown",
+        }
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {source: _summary()},
+            total=aggregate,
+        )
+
+        # Act
+        findings = typescript_coverage_gate.evaluate_coverage(report, dashboard_root, [source])
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_malformed_v8_aggregate_metadata_fails_closed(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        source = _source(dashboard_root)
+        aggregate = _summary()
+        aggregate["branchesTrue"] = {
+            "total": 1,
+            "covered": 1,
+            "skipped": 0,
+            "pct": 100,
+        }
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {source: _summary()},
+            total=aggregate,
+        )
+
+        # Act
+        findings = typescript_coverage_gate.evaluate_coverage(report, dashboard_root, [source])
+
+        # Assert
+        self.assertTrue(
+            any("total.branchesTrue" in finding for finding in findings),
+            findings,
+        )
 
     def test_test_generated_and_declaration_sources_are_excluded(self) -> None:
         # Arrange
@@ -461,6 +547,54 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
                     ),
                     findings,
                 )
+
+    def test_module_extensions_are_never_silently_omitted(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        production = _source(dashboard_root)
+        refused_typescript = [
+            _source(dashboard_root, "src/module.mts"),
+            _source(dashboard_root, "src/common-module.cts"),
+        ]
+        refused_javascript = [
+            _source(dashboard_root, "src/module.mjs"),
+            _source(dashboard_root, "src/common-module.cjs"),
+        ]
+        declarations = [
+            _source(dashboard_root, "src/module.d.mts"),
+            _source(dashboard_root, "src/common-module.d.cts"),
+        ]
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {production: _summary()},
+        )
+
+        # Act
+        findings = typescript_coverage_gate.evaluate_coverage(
+            report,
+            dashboard_root,
+            [production, *refused_typescript, *refused_javascript, *declarations],
+        )
+
+        # Assert
+        for path in refused_typescript:
+            with self.subTest(path=path.name):
+                self.assertTrue(
+                    any(
+                        path.name in finding and "not an accepted TypeScript" in finding
+                        for finding in findings
+                    ),
+                    findings,
+                )
+        for path in refused_javascript:
+            with self.subTest(path=path.name):
+                self.assertTrue(
+                    any(path.name in finding and "JavaScript" in finding for finding in findings),
+                    findings,
+                )
+        for path in declarations:
+            with self.subTest(path=path.name):
+                self.assertFalse(any(path.name in finding for finding in findings), findings)
 
     def test_symlink_and_nonregular_production_sources_are_refused(self) -> None:
         # Arrange
@@ -576,6 +710,66 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, status)
         self.assertEqual("", stderr.getvalue())
+
+    def test_main_reads_a_nul_delimited_inventory_losslessly(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        sources = [
+            _source(dashboard_root, "src/café.ts"),
+            _source(dashboard_root, "src/line\nbreak.ts"),
+        ]
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {source: _summary() for source in sources},
+        )
+        inventory = dashboard_root / "coverage" / "source-inventory.bin"
+        inventory.write_bytes(b"".join(os.fsencode(source) + b"\0" for source in sources))
+        stderr = io.StringIO()
+        arguments = [
+            "--report",
+            str(report),
+            "--dashboard-root",
+            str(dashboard_root),
+            "--source-inventory",
+            str(inventory),
+        ]
+
+        # Act
+        with contextlib.redirect_stderr(stderr):
+            status = typescript_coverage_gate.main(arguments)
+
+        # Assert
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr.getvalue())
+
+    def test_an_invalid_nul_inventory_fails_closed_without_echoing_its_value(self) -> None:
+        # Arrange
+        dashboard_root = _dashboard(self)
+        source = _source(dashboard_root)
+        report = _write_report(
+            dashboard_root / "coverage" / "coverage-summary.json",
+            {source: _summary()},
+        )
+        inventory = dashboard_root / "coverage" / "source-inventory.bin"
+        inventory.write_bytes(b"not-nul-terminated SECRET_SENTINEL")
+        stderr = io.StringIO()
+        arguments = [
+            "--report",
+            str(report),
+            "--dashboard-root",
+            str(dashboard_root),
+            "--source-inventory",
+            str(inventory),
+        ]
+
+        # Act
+        with contextlib.redirect_stderr(stderr):
+            status = typescript_coverage_gate.main(arguments)
+
+        # Assert
+        self.assertEqual(1, status)
+        self.assertIn("NUL-terminated", stderr.getvalue())
+        self.assertNotIn("SECRET_SENTINEL", stderr.getvalue())
 
     def test_main_prints_sorted_diagnostics_and_returns_one_on_failure(self) -> None:
         # Arrange

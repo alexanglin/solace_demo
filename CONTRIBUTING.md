@@ -36,6 +36,13 @@ manifest-owned acceptance-test inventory. A missing cache or inventory drift fai
 continuous integration is the one environment that deliberately installs Chromium and its Linux system
 dependencies before running the same hook.
 
+The dashboard's deterministic integration suite and complete unit/component/integration coverage run
+at pre-push. Coverage is not accepted from Vitest's exit status alone: a project-owned gate recomputes
+the JSON summary against the exact hand-written production-source inventory. Once the mission-control
+closure exists, production-stack browser end-to-end execution will use a separate container-backed
+acceptance command and will never contribute to the package coverage percentage
+([ADR-0103](docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+
 ## Branching
 
 `main` is protected in two places. The `no-commit-to-branch` hook stops a commit on `main` locally,
@@ -76,7 +83,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit test, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit/component/integration coverage with independent adjudication, dedicated integration inventory, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
@@ -98,6 +105,7 @@ Run them yourself at any time:
 just check-commit      # the fast tier
 just check-push        # the thorough tier
 just check             # both, exactly as CI runs them
+just check-dashboard   # frontend policy, coverage, integration, type, lint, and format
 just check-dashboard-browser  # the complete Chromium Playwright acceptance gate
 just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures

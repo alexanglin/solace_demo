@@ -10,7 +10,7 @@ digraph DashboardBuildIncrements {
     newrank=true,
     fontname="Helvetica",
     fontsize=18,
-    label="Dashboard build increments — Lane A (browser) and the Lane B work that unblocks it",
+    label="Dashboard build increments — browser delivery, vertical runtime blockers, and production evidence",
     labelloc=t
   ];
 
@@ -33,17 +33,17 @@ digraph DashboardBuildIncrements {
   ];
 
   subgraph cluster_lane_a {
-    label="Lane A — apps/dashboard/src (fixture-driven, no backend required)";
+    label="Lane A — browser delivery (A1-A7 fixture-driven; A8 production-gated)";
     color="#2F6FB7";
     style="rounded";
-    a1 [label="A1\nentry point + app shell\nharness revision ACK", fillcolor="#E8F7F1"];
+    a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
     a2 [label="A2\ncontracts layer\ncodegen + validator registry\n+ freshness gate"];
     a3 [label="A3\ncanonical digest module"];
     a4 [label="A4\npure reducer\n+ timeline model"];
     a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
     a6 [label="A6\nmutation client"];
     a7 [label="A7\npresentation state\nmap adapter + components"];
-    a8 [label="A8\nscreenshot baselines\nacceptance suite green", fillcolor="#DFF7EE", color="#008F6B"];
+    a8 [label="A8 — blocked\nscreenshot baselines\nfixture + production acceptance", fillcolor="#FDEBD0", color="#B7791F"];
     a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8;
   }
 
@@ -58,13 +58,21 @@ digraph DashboardBuildIncrements {
     r4 [label="R4\nstore read path\nUI-slice revision (ADR-0095)"];
     r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101"];
     r6 [label="R6\nrecorder + replay validator\nADR-0094"];
-    r7 [label="R7\ncanonical-doc propagation"];
+    r7 [label="R7 — in progress\ncanonical-doc propagation"];
+    r8 [label="R8\nscenario + fleet live control\n14 ticks / 280 publications"];
+    r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
   }
 
   r1 -> a2 [label="gates the typed core", color="#B7791F", penwidth=1.6];
-  r3 -> a4 [label="parity oracle", style=dashed];
+  r3 -> a3 [label="digest parity oracle", style=dashed];
+  r3 -> a4 [label="fold parity oracle", style=dashed];
   r2 -> r5 [label="catalog data", style=dashed];
   r4 -> r5 [label="snapshot + timeline reads", style=dashed];
   r5 -> a5 [label="live SSE + HTTP", style=dashed];
   r6 -> a5 [label="replay bundles", style=dashed];
+  r8 -> r5 [label="live control + lifecycle events", style=dashed];
+  r5 -> r9 [label="packaged API", style=dashed];
+  r6 -> r9 [label="validated replay", style=dashed];
+  r8 -> r9 [label="live runtime", style=dashed];
+  r9 -> a8 [label="production E2E evidence", color="#B7791F", penwidth=1.4];
 }

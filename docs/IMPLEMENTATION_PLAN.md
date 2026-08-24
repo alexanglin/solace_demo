@@ -52,7 +52,7 @@ decision has no ADR yet and one is owed.
 | Python runtimes | Application services on Python 3.14.7; Agent Mesh and its plugins on Python 3.13.15, in separate `uv`-managed environments | [ADR-0004](adr/0004-split-python-runtimes.md) |
 | Project layout | A `uv` workspace with per-member packages and one shared lockfile; `agent-mesh/` is a separate non-member project; local and CI tooling use uv 0.12.5 | [ADR-0010](adr/0010-uv-workspace-and-toolchain.md), [ADR-0020](adr/0020-pin-uv-version.md) |
 | Durable store | PostgreSQL in Docker Compose, via async SQLAlchemy 2.x and `asyncpg`, with Alembic migrations | [ADR-0003](adr/0003-postgres-durable-mission-store.md) |
-| Dashboard | React, TypeScript, Vite, MapLibre, and Playwright, built with Node 24 LTS and `pnpm` | — |
+| Dashboard | A UI-first React, TypeScript, Vite, MapLibre, and Playwright command center, built with the exact Node and `pnpm` pins and kept separate from deferred approval/evidence controls | [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md), [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md) |
 | Fleet | 23 drones by default: three model-backed agents and 20 deterministic simulations | — |
 | Integration style | Agent Mesh A2A plus separate application topics over Solace; no public tunnel to the laptop | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |
 | Infrastructure policy | Prefer supported Solace components over project-owned equivalents; custom infrastructure requires a documented capability gap and a proving test | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |
@@ -63,7 +63,7 @@ decision has no ADR yet and one is owed.
 | Continuity | Clearly labeled degraded live simulation, and replay isolated by structural deny sinks rather than by credentials alone | [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) |
 | Deployment boundary | The local workstation's Docker Compose stack; Solace Cloud only as the showcase profile; no AWS deployment in the initial release | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Data | Search-and-rescue artifacts composited onto public-domain wilderness backgrounds; never photographs of real people | [ADR-0013](adr/0013-sar-artifact-imagery-policy.md) |
-| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, and tier coverage by risk | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md) |
+| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, tier coverage by risk, and adjudicate dashboard coverage independently from fixture and production browser evidence | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md), [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) |
 | Verification authority | Staged git hooks give fast feedback; CI re-runs the identical hooks and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) |
 | Document precedence | Each normative fact has exactly one home; `AGENTS.md` keeps process rules and this plan keeps sequenced delivery | [ADR-0016](adr/0016-documentation-set-split.md) |
 | Version control | Never commit without explicit human approval | — |
@@ -140,13 +140,13 @@ justfile                       (exists)
 .github/workflows/             (exists)
 scripts/                       (exists)  hooks/, diagrams.sh, fix.sh, broker-secrets.sh
 .python-version                (exists)  application Python 3.14.7 pin
-tools/                         (scaffold) root repository-tooling package marker
+tools/                         (exists)  root quality gates, conformance tests, and package marker
 pyproject.toml                 (exists)  uv workspace root, declares members
 uv.lock                        (exists)  macOS arm64 and Linux aarch64 resolution
 mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
-  dashboard/
+  dashboard/                  (exists)  A1 React shell, pinned toolchain, fixture acceptance contract
 services/                      (mixed)   two active members and four typed package shells
   dashboard_api/
   fleet_simulator/             (exists)  scenario boundary, tick fold, telemetry, composition root
@@ -251,9 +251,11 @@ contract, and operator-flow evidence.
   Tier 1 mutation scoring before production behavior lands.
 - Create the separate Python 3.14.7 application and Python 3.13.15 Agent Mesh environments and verify both lockfiles from a clean checkout.
 - **Done:** the Agent Mesh YAML is `agent-mesh/configs/`, the agent cards are declared there and read back from the running mesh, and the model parameters are pinned by digest in `agent-mesh/model-lock.toml` ([ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md)). The Event Mesh Gateway and the Event Mesh Tool are both configured there and both proven live against the broker.
-- **Done:** establish and self-test the dashboard TypeScript policy and whole-tree verification stages. They
-  remain inert until Phase 3 creates `apps/dashboard`, then fail closed on an incomplete configuration
-  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)).
+- **Done and active:** establish and self-test the dashboard TypeScript policy and whole-tree verification
+  stages. Phase 3 now contains `apps/dashboard`, so incomplete configuration, missing integration
+  discovery, missing source inventory, and incomplete coverage evidence fail closed
+  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
+  [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ### Phase 2: Contracts and broker
 
@@ -368,10 +370,15 @@ contract, and operator-flow evidence.
   the history to the persistent database, which no runbook yet describes.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
-- Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
-  an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
-  lint, format, test, coverage, duplication, and production-build gates from
-  [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md).
+- **Done for the verification foundation and A1 shell:** the dashboard stack, exact runtime, lockfile,
+  strict TypeScript policy, production build, and first tested React entry point are committed. Coverage
+  now has the same fail-closed evidence discipline as the Python workspace: Vitest produces the report,
+  while a separate gate matches it to the complete hand-written source inventory and independently
+  adjudicates statements, branches, functions, and lines. A non-empty deterministic integration suite
+  blocks separately; the fixed 64-case Playwright inventory remains fixture-driven browser acceptance
+  and does not substitute for the later production-stack end-to-end run
+  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
+  [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - Generate and commit dashboard contract types from the versioned schemas, freshness-gate them, validate
   every HTTP/SSE input at runtime, and prove Python and TypeScript refusal parity with the shared golden
   fixtures ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
@@ -429,6 +436,11 @@ contract, and operator-flow evidence.
 - Qualify every completed member against its declared coverage, complexity, duplication, mutation, and
   test-inventory gates.
 - Complete integration, E2E, Playwright UAT, agent evaluations, performance checks, threat model, and dependency/secret scanning.
+- Keep deterministic dashboard integration, fixture-driven Playwright acceptance, resourceful service
+  integration, and production-stack browser end-to-end execution as separate required claims. The
+  production path re-executes the selected existing behaviors only after the mission-control closure is
+  available; fixture acceptance cannot substitute for it
+  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - Qualify the mode-appropriate operator workflows in live simulation, degraded live simulation, and replay
   at the reference MacBook's normal resolution without developer tools. Playwright acceptance covers the
   accessible proposal-bound approval in the live modes and an unavailable approval control in replay while
@@ -470,6 +482,9 @@ The initial release is ready only when:
 - Ruff complexity, cognitive complexity, multi-language duplication, and per-module Tier 1 mutation gates
   pass at the limits in `docs/operating-parameters.md`.
 - Linting, formatting, type checking, security scans, integration tests, E2E tests, and UAT pass without introduced warnings.
+- Dashboard unit/component/integration coverage passes its independent source-inventory adjudication;
+  the fixed fixture acceptance inventory and the separate packaged production end-to-end execution both
+  pass without one contributing coverage to or substituting for the other.
 - Broker disconnect and model-failure tests demonstrate recovery or safe degradation.
 - No secrets or improperly licensed assets exist in Git history or the working tree.
 - Architecture and workflow documentation includes editable diagram sources and generated PNGs.

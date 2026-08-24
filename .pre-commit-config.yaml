@@ -539,6 +539,14 @@ repos:
         always_run: true
         pass_filenames: false
 
+      - id: dashboard-integration-full
+        name: vitest (dashboard, integration suite)
+        entry: scripts/hooks/dashboard/dashboard-integration-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: dashboard-playwright-full
         name: playwright (dashboard, Chromium acceptance)
         entry: scripts/hooks/dashboard/dashboard-playwright-full.sh

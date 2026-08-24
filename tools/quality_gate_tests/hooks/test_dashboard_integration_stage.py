@@ -78,7 +78,8 @@ class DashboardIntegrationStageTests(QualityGateTestCase):
         self.assertIn("stages: [pre-push]", block)
         self.assertIn("always_run: true", block)
         self.assertIn("pass_filenames: false", block)
-        self.assertIn("pre-commit run --all-files --hook-stage pre-push", workflow)
+        self.assertIn("uses: pre-commit/action@", workflow)
+        self.assertIn("extra_args: --all-files --hook-stage pre-push", workflow)
 
 
 if __name__ == "__main__":

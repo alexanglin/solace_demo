@@ -34,7 +34,7 @@ executable.
 | --- | --- |
 | `hooks/quality-components.sh` | Side-effect-free, sourced component activation and root Python discovery |
 | `hooks/agent-mesh/` | Agent Mesh configuration and whole-tree type-check wrappers |
-| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, unit, Playwright acceptance, and build wrappers |
+| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, coverage adjudication, deterministic integration, Playwright acceptance, and build wrappers |
 | `hooks/deploy/` | Compose-policy and Trivy-configuration wrapper orchestration |
 | `hooks/deps/` | Lock synchronization and consistency plus audit and waiver-gate orchestration |
 | `hooks/docs/` | Documentation facts and links plus recursive diagram freshness |
@@ -95,9 +95,11 @@ superseding decision.
 - Keep the root and `agent-mesh/` Python projects on their separate frozen locks and environments.
   Agent Mesh pytest and mypy wrappers must change into `agent-mesh/` before `uv run --frozen`; selecting
   a project does not change pytest discovery, mypy configuration, or Python import resolution.
-- Dashboard execution wrappers call committed lint, type-check, test, and build scripts through
+- Dashboard execution wrappers call committed lint, type-check, test, integration, and build scripts through
   `pnpm --dir apps/dashboard`. The TypeScript-policy wrapper enumerates inputs and launches its pure
-  Python gate instead. The Playwright wrapper additionally refuses a runtime that differs from the
+  Python gate instead. The coverage wrapper writes its report to a temporary directory, enumerates
+  tracked or unignored source, and passes both to the pure TypeScript coverage gate; it never trusts the
+  runner's displayed percentage alone. The Playwright wrapper additionally refuses a runtime that differs from the
   manifest, verifies discovery against the manifest-owned test inventory, requires the package-pinned
   Chromium revision to be cached before it starts, and scans retained reports for the synthetic bearer
   sentinel even after a browser failure. It never downloads a browser from a local hook. Do not replace

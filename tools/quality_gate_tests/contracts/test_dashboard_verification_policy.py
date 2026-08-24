@@ -43,7 +43,10 @@ class DashboardVerificationPolicyTests(QualityGateTestCase):
         self.assertIn('"src/contracts/generated/**"', configuration)
         self.assertIn('"src/**/*.d.ts"', configuration)
         self.assertIn('"src/**/*.test.{ts,tsx}"', configuration)
-        self.assertIn('include: ["src/**/*.test.{ts,tsx}"]', configuration)
+        self.assertIn(
+            'include: ["src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"]',
+            configuration,
+        )
         self.assertIn("passWithNoTests: false", configuration)
 
     def test_the_integration_configuration_selects_only_the_dedicated_inventory(self) -> None:
@@ -56,7 +59,12 @@ class DashboardVerificationPolicyTests(QualityGateTestCase):
         # Assert
         self.assertIn('include: ["src/**/*.integration.test.{ts,tsx}"]', configuration)
         self.assertIn("passWithNoTests: false", configuration)
-        self.assertIn("mergeConfig", configuration)
+        self.assertIn(
+            'import { dashboardVitestConfiguration } from "./vitest.config.ts"',
+            configuration,
+        )
+        self.assertIn("...dashboardVitestConfiguration.test", configuration)
+        self.assertNotIn("mergeConfig", configuration)
 
     def test_the_dashboard_recipe_runs_coverage_integration_and_browser_evidence(self) -> None:
         # Arrange

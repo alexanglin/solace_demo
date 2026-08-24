@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -62,11 +63,22 @@ done
         if include_uv:
             self._write_runtime(
                 executable_directory / "uv",
-                'printf \'uv %s\\n\' "$*" >>"$QUALITY_ARGUMENTS_FILE"\nexit 0\n',
+                'printf \'uv %s\\n\' "$*" >>"$QUALITY_ARGUMENTS_FILE"\n'
+                "previous=''\n"
+                'for argument in "$@"; do\n'
+                '  if [ "$previous" = "--source-inventory" ]; then\n'
+                '    cp "$argument" "$QUALITY_INVENTORY_FILE"\n'
+                "  fi\n"
+                "  previous=$argument\n"
+                "done\n"
+                "exit 0\n",
             )
+        inventory = repository / "source-inventory.bin"
+        inventory.touch()
         environment = {
             "PATH": f"{executable_directory}:/usr/bin:/bin",
             "QUALITY_ARGUMENTS_FILE": str(arguments),
+            "QUALITY_INVENTORY_FILE": str(inventory),
         }
         return arguments, environment
 
@@ -118,14 +130,66 @@ done
 
         # Assert
         self.assert_hook_succeeded(result)
-        self.assertIn("pnpm --dir apps/dashboard run test:coverage --", recorded)
+        self.assertIn(
+            "pnpm --dir apps/dashboard run test:coverage --coverage.reportsDirectory=",
+            recorded,
+        )
+        self.assertNotIn("run test:coverage -- --coverage.reportsDirectory=", recorded)
         self.assertIn("--coverage.reportsDirectory=", recorded)
         self.assertIn("uv run --frozen python -m tools.typescript_coverage_gate", recorded)
         self.assertIn("--dashboard-root apps/dashboard", recorded)
-        self.assertIn("--source apps/dashboard/src/App.tsx", recorded)
+        self.assertIn("--source-inventory", recorded)
+        self.assertNotIn("--source apps/dashboard/src/App.tsx", recorded)
         self.assertIsNotNone(report_match)
         if report_match is not None:
+            self.assertTrue(Path(report_match.group(1)).is_absolute())
             self.assertFalse(Path(report_match.group(1)).parent.exists())
+
+    def test_source_inventory_is_nul_delimited_and_includes_every_module_extension(self) -> None:
+        # Arrange
+        repository = self._dashboard_repository()
+        source_paths = [
+            repository / "apps" / "dashboard" / "src" / "line\nbreak.ts",
+            repository / "apps" / "dashboard" / "src" / "module.mts",
+            repository / "apps" / "dashboard" / "src" / "common.cts",
+            repository / "apps" / "dashboard" / "src" / "module.mjs",
+            repository / "apps" / "dashboard" / "src" / "common.cjs",
+        ]
+        for source_path in source_paths:
+            source_path.write_text("export const value = 1;\n", encoding="utf-8")
+        _, environment = self._runtime_environment(repository)
+
+        # Act
+        result = self.run_hook("dashboard-test-full.sh", repository, environment=environment)
+        inventory = (repository / "source-inventory.bin").read_bytes()
+        inventory_paths = inventory.removesuffix(b"\0").split(b"\0") if inventory else []
+
+        # Assert
+        self.assert_hook_succeeded(result)
+        self.assertTrue(inventory.endswith(b"\0"), inventory)
+        for source_path in source_paths:
+            expected = os.fsencode(source_path.relative_to(repository).as_posix())
+            with self.subTest(source=source_path.name):
+                self.assertIn(expected, inventory_paths)
+
+    def test_a_symbolic_link_coverage_parent_is_refused_before_vitest_runs(self) -> None:
+        # Arrange
+        repository = self._dashboard_repository()
+        outside = repository / "outside"
+        outside.mkdir()
+        (repository / "apps" / "dashboard" / "coverage").symlink_to(
+            outside,
+            target_is_directory=True,
+        )
+        arguments, environment = self._runtime_environment(repository)
+
+        # Act
+        result = self.run_hook("dashboard-test-full.sh", repository, environment=environment)
+
+        # Assert
+        self.assert_hook_failed(result, "symbolic link")
+        self.assertEqual("", arguments.read_text(encoding="utf-8"))
+        self.assertEqual([], list(outside.iterdir()))
 
     def test_a_missing_summary_after_a_successful_test_run_fails_closed(self) -> None:
         # Arrange
