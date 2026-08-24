@@ -160,6 +160,7 @@ and review remain mandatory for those behaviors.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
 - **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent delivery, queues, reconnects, acknowledgement, and ACL denial. Admitting the class to a blocking continuous-integration stage is a verification change that needs its own record.
+- **Durable-store integration tests:** The PostgreSQL container from `deploy/compose.yaml`, against a database the run creates and drops ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only evidence for isolation, constraints, transaction visibility, Alembic behaviour, restart durability, pool cancellation, and concurrent races; the store's own member suite never opens a connection and establishes none of them. They carry `integration` and `docker`, and never `broker`.
 - **Provider integration tests:** Local Ollama, the pinned Agent Mesh runtime, A2A discovery and
   delegation, and both pinned Event Mesh plugins. A test asserting transport, schema, or error handling
   uses a deterministic stub at the model boundary; only a test asserting model capability calls a real

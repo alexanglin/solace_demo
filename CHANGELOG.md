@@ -10,6 +10,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The durable store gets two test classes, and neither may borrow the other's claim.**
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) left the isolation strategy open --
+  "a per-run database or transactional rollback" -- and the store's guide requires tests to use "the
+  strategy selected by the governing decision". [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)
+  selects.
+
+  One measured fact decided most of the shape. `scripts/hooks/python/pytest-full.sh` excludes
+  `docker`-marked tests from the blocking suite and builds the coverage arguments in that same run, so
+  **a test needing a container contributes nothing to coverage**. The store's Tier 2 obligation is
+  therefore met entirely by tests that never open a connection -- which is not a compromise, but the
+  shape every other member already has: no file under any member's `tests/` carries a resource marker,
+  and every live probe lives under root `tests/`.
+
+  **Transactional rollback is rejected on three grounds, each sufficient alone.** It cannot test a
+  migration, because the migration is the data-definition change under test and a rollback leaves
+  nothing to observe. It cannot produce a race, because two contenders under one outer transaction
+  either share a connection and do not race or cannot see each other and give the wrong answer -- and
+  [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md)'s single-use property is a *commit*
+  claim, which a test that never commits cannot prove. And it cannot survive a restart, which needs
+  committed state that outlives the process.
+
+  So the live class runs against a database the run creates and drops, and **the rule that tests never
+  touch persistent mission data becomes executable**: the probe refuses to run when the database name
+  it resolved equals the configured `POSTGRES_DB`.
+
+  No new resource marker. `docker` already excludes these from every blocking stage, and a new class
+  would mean editing the marker table, five hook scripts, their conformance tests, and CI for no
+  behavioural difference. `tests/integration/` does stop being broker-only: its guide required the
+  `broker` marker on *every* module, which would have had a PostgreSQL probe declaring a prerequisite
+  it does not have.
+
+  What this does not do: it admits nothing to a blocking stage. `.github/workflows/` runs no service
+  container, so requiring one at pre-push would recreate the permanently red stage
+  [ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) exists to avoid.
+
 - **The store can build an engine, and the credential still has not moved.** `packages/store` now
   declares SQLAlchemy 2.0.52 and `asyncpg` 0.31.0, and `engine.py` is the one module that names
   either. The decision of what to hand a driver is pure and lives in `engine_arguments`, so every

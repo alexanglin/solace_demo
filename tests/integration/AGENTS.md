@@ -60,9 +60,16 @@ in that probe.
 
 ## 3. Live authorization and prerequisites
 
-Every module here must retain the `integration` class marker and the `docker` and `broker` resource
-markers. The resource markers keep them out of the blocking deterministic stages; the class marker
+Every module here must retain the `integration` class marker and every resource marker it actually
+needs. The resource markers keep them out of the blocking deterministic stages; the class marker
 describes why they exist. None of the markers authorizes a live run.
+
+The four broker probes carry `docker` and `broker`. A durable-store probe carries `docker` and **not**
+`broker`, because a resource marker declares what a test needs and this directory is no longer
+broker-only ([ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)).
+Never add a marker a module does not need to make it look consistent with its neighbours: that is the
+drift the rule exists to prevent, and `docker` alone already excludes a module from every blocking
+stage.
 
 Obtain explicit human authorization for the exact file before running it. Treat each setup action as
 separately authorized external mutation:
