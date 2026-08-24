@@ -19,6 +19,7 @@ documents merely to keep them aligned.
 
 | Fact or concern | Canonical owner |
 | --- | --- |
+| Demo value thesis, audience journey, and proof requirements | [`SOLACE_VALUE.md`](SOLACE_VALUE.md) |
 | Decision rationale, alternatives, consequences, and status | [`adr/`](adr/README.md) |
 | Component responsibilities, runtime layout, and operating modes | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Event envelope, topics, HTTP API, and delivery semantics | [`CONTRACTS.md`](CONTRACTS.md) |

@@ -10,6 +10,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The demonstration has a Solace value spine.** [The positioning and evidence
+  guide](docs/SOLACE_VALUE.md) now connects each operational pressure in the rescue scenario to a Solace
+  mechanism, an audience-visible proof, and an honest evidence status. It makes agent discovery and
+  delegation, selective event-to-agent bridging, durable delivery, broker-enforced authority, and
+  cross-system observability the subject of the demo rather than infrastructure hidden behind its map
+  and model output.
+
+  The guide also keeps the attribution boundary explicit without replacing the architecture's canonical
+  responsibility map. A sequenced demo spine links the live local slices already recorded under
+  `release-evidence/` and labels the disconnect/reconnect, end-to-end approval, tracing, and Cloud
+  showcase scenes as release targets until their evidence exists. `README.md` now points presenters to
+  this narrative and distinguishes those slices from an end-to-end operational run; both documentation
+  maps make the guide discoverable to contributors.
+
 - **The schema has a history, and its first revision covers itself without a database.** The Alembic
   tree lives at `packages/store/src/aerial_rescue_store/migrations/` where
   [ADR-0087](docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) put it,
