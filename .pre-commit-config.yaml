@@ -110,7 +110,7 @@ repos:
     rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
-        # Pin Node 24 LTS for this hook (ADR-0019 and CONTRIBUTING.md). pre-commit provisions it
+        # Pin Node 24 LTS for this hook (ADR-0103). pre-commit provisions it
         # via nodeenv, so the hook is reproducible regardless of system Node --
         # and it must be pinned: markdownlint's dependency tree rejects the
         # Node 25 "Current" line outright.
@@ -422,6 +422,7 @@ repos:
         name: cross-language duplication (whole owned tree)
         entry: scripts/hooks/repo/duplication-full.sh
         language: node
+        # Isolated third-party hook: nodeenv provisions Node 24 LTS here (ADR-0103).
         language_version: "24.19.0"
         additional_dependencies:
           - jscpd@5.0.14

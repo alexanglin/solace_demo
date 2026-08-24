@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
-NODE_VERSION = "24.19.0"
+NODE_VERSION = "26.7.0"
 PNPM_VERSION = "11.23.0"
 CHROMIUM_REVISION = "1234"
 EXPECTED_TESTS = 64
@@ -183,7 +183,7 @@ exit 64
         result = self.run_hook("dashboard-playwright-full.sh", repository, environment=environment)
 
         # Assert
-        self.assert_hook_failed(result, "requires Node.js 24.19.0, found 25.2.1")
+        self.assert_hook_failed(result, "requires Node.js 26.7.0, found 25.2.1")
         self.assertNotIn("run test:e2e", arguments.read_text(encoding="utf-8"))
 
     def test_the_playwright_gate_rejects_the_wrong_pnpm_runtime(self) -> None:

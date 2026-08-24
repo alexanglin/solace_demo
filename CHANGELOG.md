@@ -1460,6 +1460,26 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The system Node runtime moves to 26.7.0, and the pin that caught the drift stays exact**
+  ([ADR-0103](docs/adr/0103-move-the-system-node-runtime-to-26.md)).
+  [ADR-0099](docs/adr/0099-pin-the-dashboard-runtime-and-stack.md) pinned Node `24.19.0` and made the
+  fail-closed dashboard wrappers compare the running runtime against `engines.node`. So when the
+  workstation's Homebrew `node` moved on, the pre-push Playwright gate refused to run instead of
+  verifying the browser suite on a runtime nobody had chosen. The refusal was the gate working; the
+  resolution is to choose again.
+
+  **The installed runtime was not the safe answer.** Node's published schedule ends v25 on
+  2026-06-01, so pinning whatever happened to be installed would have committed the project to a line
+  that receives no further security releases — and nothing here would have said so, because
+  pip-audit, Trivy, and Dependabot observe dependencies and images, not the host runtime. v26 becomes
+  long-term support on 2026-10-28 and is maintained until 2029-04-30.
+
+  `engines.node`, both `actions/setup-node` steps in `checks.yml`, the one in `security.yml`, and the
+  `CONTRIBUTING.md` setup sequence now name `26.7.0`, and `@types/node` follows the runtime major to
+  `26.2.0`. The two Node hooks pre-commit provisions through nodeenv — `markdownlint-cli2` and the
+  `jscpd` duplication gate — stay at `24.19.0`: their runtime is hermetic, and markdownlint's
+  dependency tree refuses a Current line.
+
 - **The no-loss claim is narrower, and honest**
   ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
   `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes

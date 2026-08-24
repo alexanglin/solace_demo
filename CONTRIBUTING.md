@@ -18,7 +18,7 @@ Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
 (`brew install graphviz`), `shellcheck`, and `trivy` 0.74.0 (`brew install trivy`), which the pre-push
 misconfiguration audit of `deploy/` fails closed without. Running the stack in `deploy/` additionally
 needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
-`apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
+`apps/dashboard/package.json` exists, install Node 26.7.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
 matter. Only isolated third-party Node hooks are provisioned by pre-commit itself. From the repository
 root, activate the nested manifest's exact package-manager pin, install the frozen dashboard lock, and

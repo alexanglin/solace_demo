@@ -52,7 +52,7 @@ decision has no ADR yet and one is owed.
 | Python runtimes | Application services on Python 3.14.7; Agent Mesh and its plugins on Python 3.13.15, in separate `uv`-managed environments | [ADR-0004](adr/0004-split-python-runtimes.md) |
 | Project layout | A `uv` workspace with per-member packages and one shared lockfile; `agent-mesh/` is a separate non-member project; local and CI tooling use uv 0.12.5 | [ADR-0010](adr/0010-uv-workspace-and-toolchain.md), [ADR-0020](adr/0020-pin-uv-version.md) |
 | Durable store | PostgreSQL in Docker Compose, via async SQLAlchemy 2.x and `asyncpg`, with Alembic migrations | [ADR-0003](adr/0003-postgres-durable-mission-store.md) |
-| Dashboard | React, TypeScript, Vite, MapLibre, and Playwright, built with Node 24 LTS and `pnpm` | — |
+| Dashboard | React, TypeScript, Vite, MapLibre, and Playwright, built with Node 26 and `pnpm` | — |
 | Fleet | 23 drones by default: three model-backed agents and 20 deterministic simulations | — |
 | Integration style | Agent Mesh A2A plus separate application topics over Solace; no public tunnel to the laptop | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |
 | Infrastructure policy | Prefer supported Solace components over project-owned equivalents; custom infrastructure requires a documented capability gap and a proving test | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |

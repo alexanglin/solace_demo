@@ -190,7 +190,7 @@ class HookSemanticsTests(QualityGateTestCase):
         # Assert
         self.assertIn("3.14.7", source)
         self.assertIn("3.13.15", source)
-        self.assertIn('node-version: "24.19.0"', source)
+        self.assertIn('node-version: "26.7.0"', source)
 
     def test_lockfiles_remain_reviewable_text_diffs(self) -> None:
         # Arrange

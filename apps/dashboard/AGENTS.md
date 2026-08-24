@@ -26,7 +26,7 @@ The repository-root `AGENTS.md` applies here. Before changing this package, also
   when consumed so the synthetic bearer cannot persist there.
 - Prefer semantic roles and accessible names. A test ID is reserved for volatile screenshot masks or
   a third-party canvas boundary that has no semantic DOM surface.
-- Run tests with the Node and pnpm versions pinned by ADR-0099 and `package.json`.
+- Run tests with the Node and pnpm versions pinned by ADR-0103 and `package.json`.
 - Keep Playwright traces, videos, automatic screenshots, and HAR capture disabled. Curated
   screenshots use only synthetic data and mask runtime identifiers and presentation timestamps.
 - Do not update screenshot baselines until the intended visual change has been inspected at 1440×900
