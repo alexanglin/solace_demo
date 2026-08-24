@@ -21,6 +21,7 @@ from aerial_rescue_store.migration import (
     APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
+    COMMAND_OUTBOX_TABLE,
     CONNECTION_ATTRIBUTE,
     IDEMPOTENCY_CLAIM_TABLE,
     PARAMSTYLE,
@@ -44,8 +45,10 @@ PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
 FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
+FOURTH_REVISION: Final = "0004_command_outbox"
 FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
 SECOND_TO_THIRD: Final = f"{SECOND_REVISION}:{THIRD_REVISION}"
+THIRD_TO_FOURTH: Final = f"{THIRD_REVISION}:{FOURTH_REVISION}"
 """Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
@@ -303,6 +306,72 @@ class ThirdRevisionTests(unittest.TestCase):
             (
                 f"DROP TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
                 f"DROP TABLE {APPROVAL_TABLE}" in emitted,
+            ),
+        )
+
+
+class FourthRevisionTests(unittest.TestCase):
+    """Rendered as the step from the third revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_third_revision_creates_the_outbox_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+                f"CREATE TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+            ),
+        )
+
+    def test_one_command_holds_one_record_because_a_retry_republishes_it(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (command_id)", emitted)
+
+    def test_the_state_is_constrained_to_the_three_the_lifecycle_names(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("CHECK (state IN ('staged', 'reconciliation needed', 'confirmed'))", emitted)
+
+    def test_the_payload_keeps_the_canonical_bytes_it_was_accepted_as(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("payload BYTEA NOT NULL", emitted)
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, THIRD_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+                f"DROP TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
             ),
         )
 

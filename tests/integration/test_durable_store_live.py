@@ -58,6 +58,7 @@ from aerial_rescue_domain.approvals import (
     proposal_digest,
 )
 from aerial_rescue_domain.idempotency import IdempotencyDecision, IdempotencyKind
+from aerial_rescue_domain.outbox import OutboxEvent, OutboxState
 from aerial_rescue_store import StoreError
 from aerial_rescue_store.approvals import (
     StoredApproval,
@@ -91,9 +92,17 @@ from aerial_rescue_store.migration import (
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
+    COMMAND_OUTBOX_TABLE,
     HEAD_REVISION,
     IDEMPOTENCY_CLAIM_TABLE,
     live_config,
+)
+from aerial_rescue_store.outbox import (
+    MAXIMUM_UNCONFIRMED_RECORDS,
+    StagedCommand,
+    StagedCommandError,
+    record_publication,
+    stage,
 )
 from aerial_rescue_store.session import create_session_factory, transaction
 from aerial_rescue_store.settings import database_settings
@@ -132,22 +141,25 @@ VERSION_TABLE: Final = "alembic_version"
 FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
+FOURTH_REVISION: Final = "0004_command_outbox"
 
 _FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
 _SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
 _THIRD_TABLES: Final = (*_SECOND_TABLES, IDEMPOTENCY_CLAIM_TABLE)
+_FOURTH_TABLES: Final = (*_THIRD_TABLES, COMMAND_OUTBOX_TABLE)
 
 HISTORY: Final = (
     (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
     (SECOND_REVISION, tuple(sorted(_SECOND_TABLES))),
     (THIRD_REVISION, tuple(sorted(_THIRD_TABLES))),
+    (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
 )
 """Every step and what the database holds after it. Literals, so a new revision is noticed here
 too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
 express neither a path nor a step back along one."""
 
-HEAD_REVISION_ID: Final = THIRD_REVISION
-APPLIED_TABLES: Final = tuple(sorted(_THIRD_TABLES))
+HEAD_REVISION_ID: Final = FOURTH_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_FOURTH_TABLES))
 """Every table a migrated database holds: the history's five, and Alembic's own."""
 
 BOUNDS: Final = EngineBounds(
@@ -1161,6 +1173,316 @@ async def _stored_result(engine: AsyncEngine, idempotency_key: str) -> bytes | N
     async with engine.connect() as connection:
         result = await connection.scalar(stored)
     return None if result is None else bytes(result)
+
+
+COMMAND: Final = "c-outbox-probe"
+DRONE: Final = "drone-outbox-probe"
+COMMAND_PAYLOAD: Final = b'{"commandType":"escalate_rescue"}'
+STAGED_AT: Final = "2026-08-24T12:00:00.000Z"
+NOT_A_PUBLICATION_STATE: Final = "published"
+
+OUTBOX_ROWS: Final = table(
+    COMMAND_OUTBOX_TABLE,
+    column("command_id", String),
+    column("mission_id", String),
+    column("drone_id", String),
+    column("payload", LargeBinary),
+    column("state", String),
+    column("correlation_id", String),
+    column("causation_id", String),
+    column("traceparent", String),
+    column("staged_at", String),
+)
+
+
+def _command(command_id: str) -> StagedCommand:
+    """Return one synthetic staged command for this probe."""
+    return StagedCommand(
+        command_id=command_id,
+        mission_id=APPROVAL_MISSION,
+        drone_id=DRONE,
+        payload=COMMAND_PAYLOAD,
+        correlation_id=CORRELATION,
+        causation_id=None,
+        traceparent=TRACEPARENT,
+        staged_at=STAGED_AT,
+    )
+
+
+async def _fill_outbox(engine: AsyncEngine, records: int, state: str, prefix: str) -> None:
+    """Put ``records`` rows in the outbox directly, which is faster than staging each one."""
+    rows = [
+        {
+            "command_id": f"{prefix}-{ordinal:04d}",
+            "mission_id": APPROVAL_MISSION,
+            "drone_id": DRONE,
+            "payload": COMMAND_PAYLOAD,
+            "state": state,
+            "correlation_id": CORRELATION,
+            "causation_id": None,
+            "traceparent": TRACEPARENT,
+            "staged_at": STAGED_AT,
+        }
+        for ordinal in range(records)
+    ]
+    async with engine.begin() as connection:
+        await connection.execute(insert(OUTBOX_ROWS), rows)
+
+
+async def _stage_once(engine: AsyncEngine, command_id: str) -> str:
+    """Stage one command in its own committed transaction and report what happened."""
+    try:
+        async with transaction(create_session_factory(engine)) as session:
+            await stage(session, _command(command_id))
+    except StagedCommandError as refused:
+        return refused.refusal.name
+    return STAGED_OUTCOME
+
+
+async def _outbox_state(engine: AsyncEngine, command_id: str) -> str | None:
+    """Return the state the outbox row holds, read by a session that did not write it."""
+    stored = select(OUTBOX_ROWS.c.state).where(OUTBOX_ROWS.c.command_id == command_id)
+    async with engine.connect() as connection:
+        state = await connection.scalar(stored)
+    return None if state is None else str(state)
+
+
+STAGED_OUTCOME: Final = "staged"
+OTHER_COMMAND: Final = "c-outbox-probe-other"
+
+
+async def _confirm_one(engine: AsyncEngine, command_id: str) -> None:
+    """Move one staged record to confirmed, so it stops counting against the bound."""
+    async with transaction(create_session_factory(engine)) as session:
+        await record_publication(session, command_id, OutboxState.STAGED, OutboxEvent.CONFIRM)
+
+
+class CommandOutboxLiveTests(unittest.IsolatedAsyncioTestCase):
+    """Each case gets a migrated database of its own, created here and dropped in teardown."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create this case's database, open an engine on it, and bring it to head."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+        await _apply(self.engine, HEAD_REVISION)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection, then drop the database this case created."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_a_staged_command_is_visible_to_a_session_that_did_not_stage_it(self) -> None:
+        # Arrange
+        before = await _outbox_state(self.engine, COMMAND)
+
+        # Act
+        outcome = await _stage_once(self.engine, COMMAND)
+
+        # Assert
+        self.assertEqual(
+            (None, STAGED_OUTCOME, OutboxState.STAGED.value),
+            (before, outcome, await _outbox_state(self.engine, COMMAND)),
+        )
+
+    async def test_the_record_past_the_bound_is_refused_and_nothing_is_written(self) -> None:
+        # Arrange
+        await _fill_outbox(
+            self.engine, MAXIMUM_UNCONFIRMED_RECORDS, OutboxState.STAGED.value, "c-staged"
+        )
+
+        # Act
+        outcome = await _stage_once(self.engine, COMMAND)
+
+        # Assert
+        self.assertEqual(
+            ("AT_CAPACITY", None), (outcome, await _outbox_state(self.engine, COMMAND))
+        )
+
+    async def test_a_confirmed_record_does_not_count_against_the_bound(self) -> None:
+        # Arrange
+        await _fill_outbox(
+            self.engine, MAXIMUM_UNCONFIRMED_RECORDS, OutboxState.STAGED.value, "c-staged"
+        )
+        at_capacity = await _stage_once(self.engine, OTHER_COMMAND)
+        await _confirm_one(self.engine, "c-staged-0000")
+
+        # Act
+        outcome = await _stage_once(self.engine, COMMAND)
+
+        # Assert
+        self.assertEqual(
+            ("AT_CAPACITY", STAGED_OUTCOME, OutboxState.STAGED.value),
+            (at_capacity, outcome, await _outbox_state(self.engine, COMMAND)),
+        )
+
+    async def test_a_publication_outcome_moves_the_record_along_one_edge(self) -> None:
+        # Arrange
+        await _stage_once(self.engine, COMMAND)
+
+        # Act
+        async with transaction(create_session_factory(self.engine)) as session:
+            became = await record_publication(
+                session, COMMAND, OutboxState.STAGED, OutboxEvent.AMBIGUOUS
+            )
+
+        # Assert
+        self.assertEqual(
+            (OutboxState.RECONCILIATION_NEEDED, OutboxState.RECONCILIATION_NEEDED.value),
+            (became, await _outbox_state(self.engine, COMMAND)),
+        )
+
+    async def test_a_record_that_moved_on_refuses_an_outcome_computed_against_a_stale_state(
+        self,
+    ) -> None:
+        # Arrange
+        await _stage_once(self.engine, COMMAND)
+        async with transaction(create_session_factory(self.engine)) as session:
+            await record_publication(session, COMMAND, OutboxState.STAGED, OutboxEvent.CONFIRM)
+
+        # Act
+        with pytest.raises(StagedCommandError) as refused:
+            async with transaction(create_session_factory(self.engine)) as session:
+                await record_publication(
+                    session, COMMAND, OutboxState.STAGED, OutboxEvent.AMBIGUOUS
+                )
+
+        # Assert
+        self.assertEqual(
+            ("NOT_IN_EXPECTED_STATE", OutboxState.CONFIRMED.value),
+            (refused.value.refusal.name, await _outbox_state(self.engine, COMMAND)),
+        )
+
+    async def test_a_state_outside_the_lifecycle_is_refused_by_the_database(self) -> None:
+        # Arrange
+        await _stage_once(self.engine, COMMAND)
+        forbidden = (
+            update(OUTBOX_ROWS)
+            .where(OUTBOX_ROWS.c.command_id == COMMAND)
+            .values(state=NOT_A_PUBLICATION_STATE)
+        )
+
+        # Act
+        with pytest.raises(IntegrityError) as refused:
+            async with self.engine.begin() as connection:
+                await connection.execute(forbidden)
+
+        # Assert
+        self.assertIn("ck_command_outbox_state", str(refused.value.orig))
+
+
+@dataclass(frozen=True)
+class DurableSet:
+    """What the three tables hold, read together by a session that wrote none of them."""
+
+    approval: str | None
+    claim: bytes | None
+    outbox: str | None
+
+
+async def _durable_set(engine: AsyncEngine) -> DurableSet:
+    """Return the three facts ADR-0006 requires to move together."""
+    return DurableSet(
+        approval=await _persisted_state(engine),
+        claim=await _stored_result(engine, IDEMPOTENCY_KEY),
+        outbox=await _outbox_state(engine, COMMAND),
+    )
+
+
+async def _the_atomic_set(engine: AsyncEngine, *, abandon: bool) -> None:
+    """Run ADR-0006's three writes in one transaction, and optionally abandon it before commit.
+
+    This is the sequence `packages/store/AGENTS.md` fixes, in its order: consume the approval
+    under its row lock while the caller decides, claim the idempotency key, stage the exact
+    command. A gateway would then publish after the commit; this probe stops at the commit,
+    which is the boundary the atomicity claim is about.
+    """
+    with contextlib.suppress(AbandonedError):
+        async with transaction(create_session_factory(engine)) as session:
+            loaded = await load_for_update(session, PROPOSAL)
+            executed = consume(_domain(loaded), CANDIDATE, INSIDE_THE_WINDOW)
+            await persist_consumed(session, replace(loaded, state=executed.state))
+            await claim(session, replace(COMMAND_CLAIM, kind=IdempotencyKind.APPROVAL_CONSUMPTION))
+            await record_result(session, IDEMPOTENCY_KEY, PRIOR_RESULT)
+            await stage(session, _command(COMMAND))
+            if abandon:
+                raise AbandonedError
+
+
+class AtomicSetLiveTests(unittest.IsolatedAsyncioTestCase):
+    """The three writes ADR-0006 requires to move together, against a real transaction."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create this case's database, bring it to head, and record one operator approval."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+        await _apply(self.engine, HEAD_REVISION)
+        await _record_approved(self.engine)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection, then drop the database this case created."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_the_consumption_the_claim_and_the_staging_commit_together(self) -> None:
+        # Arrange
+        before = await _durable_set(self.engine)
+
+        # Act
+        await _the_atomic_set(self.engine, abandon=False)
+
+        # Assert
+        self.assertEqual(
+            (
+                DurableSet(approval=ApprovalState.APPROVED.value, claim=None, outbox=None),
+                DurableSet(
+                    approval=ApprovalState.EXECUTED.value,
+                    claim=PRIOR_RESULT,
+                    outbox=OutboxState.STAGED.value,
+                ),
+            ),
+            (before, await _durable_set(self.engine)),
+        )
+
+    async def test_a_transaction_abandoned_after_all_three_writes_leaves_none_of_them(
+        self,
+    ) -> None:
+        # Arrange
+        before = await _durable_set(self.engine)
+
+        # Act
+        await _the_atomic_set(self.engine, abandon=True)
+
+        # Assert
+        self.assertEqual((before, before), (before, await _durable_set(self.engine)))
+
+    async def test_the_approval_is_consumable_again_after_the_set_rolled_back(self) -> None:
+        # Arrange
+        await _the_atomic_set(self.engine, abandon=True)
+
+        # Act
+        await _the_atomic_set(self.engine, abandon=False)
+
+        # Assert
+        self.assertEqual(
+            DurableSet(
+                approval=ApprovalState.EXECUTED.value,
+                claim=PRIOR_RESULT,
+                outbox=OutboxState.STAGED.value,
+            ),
+            await _durable_set(self.engine),
+        )
 
 
 if __name__ == "__main__":

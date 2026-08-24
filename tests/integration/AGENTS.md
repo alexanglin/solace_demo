@@ -42,7 +42,7 @@ member's test directory; keep only real cross-component evidence here.
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
 | `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
 | `test_backlog_recovery_live.py` | Spool 500 drone commands across a 23-drone fleet with no consumer bound, then measure how long one fleet-simulator run takes to drain them, under the instrument [ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) defines |
-| `test_durable_store_live.py` | Create a database named for the run, apply the store's Alembic history to it, assert the tables, the stamped revision, the enforcement of both declared constraints, a second application changing nothing, and an emptying downgrade; then, on a migrated database, read the server-side bounds and isolation level back from a session, commit and abandon a transaction, and race two audit appenders for one mission. Drop it afterwards |
+| `test_durable_store_live.py` | Create a database named for the run, walk the store's four-revision Alembic history up one step at a time and back down again, and assert the tables, each stamped revision, the enforcement of every declared constraint, a repeat application changing nothing, and an emptying downgrade; then, on a migrated database, read the server-side bounds and isolation level back from a session, commit and abandon transactions, race two audit appenders for one mission, race two consumers of one approval and two claimants of one key, refuse the outbox record past the bound, and commit and roll back ADR-0006's three writes together. Drop it afterwards |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -363,12 +363,22 @@ abandoned transaction leaves neither a record nor a gap; and two appenders for o
 property [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)
 rests the gap-free timeline on.
 
-It establishes **nothing** about restart durability, interrupted-process rollback, pool cancellation
-as a durable outcome, migration from a prior revision, mismatch, or failure recovery. It establishes
-nothing about the approval-consumption transaction either: that one must yield exactly one commit and
-one hard denial, and an ordinal race holds no denial, so this is not a substitute for it. The member's
-own suite establishes none of these, by construction; that division is the whole point of ADR-0086 and
-is the easiest claim in this repository to overstate.
+It now also establishes the approval-consumption transaction it once could not: two consumers of one
+approval commit once and deny once, with the second observed **waiting** and then refused by the
+domain's own `ALREADY_CONSUMED` rather than by a row count
+([ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md)); two claimants of one
+idempotency key execute once and replay once, and a claim abandoned before commit leaves the key
+claimable ([ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md));
+the outbox refuses the record past its bound and writes nothing
+([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)); and the three
+writes [ADR-0006](../../docs/adr/0006-proposal-bound-single-use-approvals.md) requires to move
+together commit together and roll back together.
+
+It establishes **nothing** about restart durability, interrupted-process rollback, or pool
+cancellation as a durable outcome: every case here ends its transaction deliberately and no process is
+ever killed. It establishes nothing about a caller, because no service imports this package. The
+member's own suite establishes none of these, by construction; that division is the whole point of
+ADR-0086 and is the easiest claim in this repository to overstate.
 
 ## 10. Evidence and change coordination
 

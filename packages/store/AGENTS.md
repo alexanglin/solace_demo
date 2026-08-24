@@ -6,9 +6,12 @@ These instructions apply to every file under `packages/store/`. Read the reposit
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the PostgreSQL repository and transaction boundary. Its schema history now exists and
-has been applied to a real cluster, and a session, a transaction boundary, and the audit repository
-now sit above it. No approval, idempotency, outbox, or ledger repository has been built yet.
+This member is the PostgreSQL repository and transaction boundary. Its schema history is four
+revisions long and has been applied to a real cluster one revision at a time, and above it sit a
+session, a transaction boundary, and four repositories: the audit log, the approval record, the
+idempotency claim, and the command outbox. No paid-call ledger has been built yet, and no service
+calls any of them.
+
 Read the authority for each concern before changing it:
 
 | Concern | Authority or reference |
@@ -41,6 +44,9 @@ Read the authority for each concern before changing it:
 | Migration-tree home, and how a revision earns its coverage | [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) |
 | The audit ordinal, and the two tables that issue and hold it | [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
 | Every wait an engine may make, and the relations between them | [ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) |
+| The mechanism that consumes an approval exactly once | [ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) |
+| The idempotency claim, and what fails comparison rather than repeating | [ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md) |
+| Outbox states, the central bound, and what an overflow does | [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) |
 
 An Accepted architecture decision record (ADR) governs if code, schema, tests, deployment, or prose
 disagrees. A persistent data shape, transaction boundary, reset scope, migration policy, technology or
@@ -59,6 +65,9 @@ method.
 | `src/aerial_rescue_store/engine.py` | The pure argument decision, and the lazy engine it builds, with the isolation level stated rather than inherited ([ADR-0089](../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md)) |
 | `src/aerial_rescue_store/session.py` | The session factory, the transaction boundary that commits on a clean exit and rolls back on every other, and the bounded explicit shutdown |
 | `src/aerial_rescue_store/audit.py` | The append-only audit log and the per-mission ordinal ([ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)). It opens no transaction: the caller's is what makes the guarantee |
+| `src/aerial_rescue_store/approvals.py` | The durable approval record, and the one guarded path by which it becomes executed ([ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md)) |
+| `src/aerial_rescue_store/idempotency.py` | The idempotency claim, and what a repeat means, asked of `packages/domain` rather than branched on here ([ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md)) |
+| `src/aerial_rescue_store/outbox.py` | Staging under the counted bound, and moving a record along one edge ([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)) |
 | `src/aerial_rescue_store/migration.py` | Where the schema history is, how a rendering run and a live run are each configured, and how it renders without a database. It still opens nothing: a live run's connection is supplied by the caller |
 | `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
@@ -68,19 +77,23 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**The schema is real, and one unit of work now sits above it.** The first revision has been applied
-to a PostgreSQL 18.6 cluster, which accepted it, stamped it, enforced both of its constraints, and
-emptied on its downgrade
-([durable-store-first-run.md](../../release-evidence/phase-3/durable-store-first-run.md)). Above it,
-`session.py` opens sessions and bounds one transaction, and `audit.py` appends a record at an ordinal
-the counter issues inside that transaction. Both are proven on a cluster: the three server-side bounds
-and the stated isolation level are read back from a live session, a committed record is visible to a
-second session, an abandoned one leaves neither a row nor a gap, and two appenders for one mission are
-ordered by the row lock the first holds rather than by luck.
+**The schema is real, it has a path, and ADR-0006's three repositories sit above it.** Four
+revisions apply to a PostgreSQL 18.6 cluster one at a time, each stamping itself and adding exactly
+its own tables, and each step back leaves the revision below it intact. Above them, `session.py`
+opens sessions and bounds one transaction; `audit.py` appends at an ordinal issued inside it;
+`approvals.py` consumes an approval under its own row lock; `idempotency.py` claims a key with one
+conflicting insert; and `outbox.py` stages a command under a counted bound.
 
-There is still no repository for approvals, idempotency, the outbox, or the paid-call ledger, no
-package-owned readiness or health check, and no workspace member declares this package as a
-dependency. **This member's own suite still opens no connection**, and under
+All of it is proven on a cluster. Two consumers of one approval commit once and deny once, with the
+second observed waiting and refused by the protocol's own `ALREADY_CONSUMED`. Two claimants of one
+key execute once and replay once. The bound refuses the record past it and writes nothing. And the
+three writes ADR-0006 requires to move together do: one transaction commits all three, and a
+transaction abandoned after all three leaves none of them, with the approval consumable again
+afterwards.
+
+There is still no paid-call ledger, no package-owned readiness or health check, and **no workspace
+member declares this package as a dependency**, so nothing calls any of it. **This member's own suite
+still opens no connection**, and under
 [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
 will; every live claim above lives in `tests/integration/test_durable_store_live.py`.
 
@@ -99,8 +112,11 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A second revision, and therefore a migration *path* | Nothing named. Mismatch and failure recovery cannot be tested against a history of length one |
-| Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race. The audit repository needed no such record because [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) had already selected its mechanism, and an ordinal race holds no denial to select one from |
+| The paid-call ledger | The atomic pre-call cap mechanism §6 requires, which [ADR-0002](../../docs/adr/0002-paid-orchestration-under-enforced-budget-cap.md) needs and no record has selected. Concurrent callers must not pass one remaining-budget check independently |
+| A caller | The command gateway's half of the dispatch lifecycle. Every repository here is exercised only by its own suite and by the live probe |
+| Restart durability and interrupted-process rollback | A probe that kills a process. Every live case here ends its transaction deliberately; none has ever been interrupted |
+| Applying the history to the operator's own database | A runbook, and the separate authorization section 7 requires |
+| A reader for `RECONCILIATION_NEEDED` | Nothing named. [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) creates the state so an ambiguous publication has somewhere to be recorded; what reconciles it is owed |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
 connection just to make an absent capability look started. Each lands through red-green-refactor with
@@ -167,14 +183,21 @@ ADR-0006 fixes that atomic set: approval consumption, idempotency claim, and out
 are durable under ADR-0003, but no accepted decision currently adds the audit append to this atomic set.
 Do not silently enlarge or shrink it.
 
-The selected durable concurrency mechanism must yield exactly one commit and one hard denial and cannot
-rely on process-local locking or an unprotected check-then-write. The isolation level is settled:
+The durable concurrency mechanism is settled and measured.
+[ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) takes the approval row
+with a plain `SELECT ... FOR UPDATE`, holds it across the caller's decision, and writes conditionally
+on the row still being approved: a second consumer **waits** and is then refused by the domain's own
+`ALREADY_CONSUMED` rather than by a row count. Three alternatives were measured and rejected, and the
+one worth remembering is `SKIP LOCKED`, under which the second consumer receives no row and cannot
+tell "already consumed" from "no such approval". It still cannot rely on process-local locking or an
+unprotected check-then-write. The isolation level is settled:
 [ADR-0089](../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED`
 on the engine, having measured that the stricter level refuses the audit appender rather than ordering
-it. Under that level a read-then-write across two statements can be lost, so anything here that is not
-one conditional statement needs its own answer. Conditional updates, constraints, and row or advisory
-locking remain undecided; select them in an ADR and prove the outcome with a real PostgreSQL race test.
-Do not let a driver default decide the safety property.
+it. Under that level a read-then-write across two statements can be lost, so **every guard here lives
+in the statement rather than in a preceding read** -- the conditional update for consumption,
+`ON CONFLICT DO NOTHING` for the claim, and a count evaluated inside the staging insert. Keep it that
+way, and do not let a driver default decide the safety property. `EXECUTED` is reachable through
+exactly one function whose write is conditional; adding a second path would undo ADR-0091.
 
 Preserve the different repeat outcomes:
 
@@ -206,10 +229,14 @@ records; it never publishes an uncommitted object captured from a transaction.
 - Acknowledge related inbound critical work only after its durable transaction commits. Settlement belongs
   to the broker adapter and follows the stored result.
 
-The only named outbox size bound in `docs/operating-parameters.md` is per-drone. The adjacent generic
-continuity-breach overflow rule does not say explicitly whether it also governs the central command outbox;
-resolve that scope together with the central bound, overflow-and-audit transaction, and the claim
-and reconciliation state machine. The command send budget and the acknowledgement, backoff, and
+The central command outbox is settled by
+[ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md): three states in
+`packages/domain`, a bound of 500 unconfirmed records, no separate byte ceiling because an envelope's
+members are already bounded, and an overflow that writes nothing. Its continuity-breach audit record
+is the **caller's**, in its own transaction, because adding it to the staging transaction would
+enlarge ADR-0006's atomic set and would roll back with the refusal it records. The **per-drone edge**
+outbox keeps its open records-and-bytes row and is Phase 6's. The command send budget and the
+acknowledgement, backoff, and
 jitter values are settled ([ADR-0081](../../docs/adr/0081-give-command-dispatch-one-interval.md)).
 Add the governing parameter and decision for anything still open before implementation. Do not claim guaranteed delivery, no
 loss, or backlog recovery until every required bound and failure test exists.
@@ -326,14 +353,17 @@ strategy selected by the governing decision for those integration claims; never 
 mission data or replace the selected database with SQLite and call the result equivalent.
 
 `tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. It proves the schema
-claims -- acceptance, the stamp, repeat application, constraint enforcement, and the downgrade -- and
-now the unit of work above them: the server-side bounds and isolation level read back from a session,
-commit visibility, an abandoned transaction leaving no gap, and two appenders for one mission ordered
-by the row lock. It still proves nothing about restart durability, interrupted-process rollback, the
-approval transaction's single hard denial, or a migration path. The member's own suite is offline by
-construction,
-which is what earns its Tier 2 gate, and it can therefore never establish any of those either. Report
-the two classes separately; one never stands in for the other.
+claims -- acceptance, the stamp, repeat application, constraint enforcement, the downgrade, and now a
+four-revision path walked one step at a time in both directions -- and the unit of work above them: the
+server-side bounds and isolation level read back from a session, commit visibility, an abandoned
+transaction leaving no gap, two appenders ordered by the row lock, the approval race that yields one
+commit and one hard denial, the claim race that yields one execution and one replay, the outbox bound
+refusing the record past it, and ADR-0006's three writes committing and rolling back together.
+
+It still proves **nothing** about restart durability, interrupted-process rollback, pool cancellation
+as a durable outcome, or any behaviour of a caller, because there is no caller. The member's own suite
+is offline by construction, which is what earns its Tier 2 gate, and it can therefore never establish
+any of those either. Report the two classes separately; one never stands in for the other.
 
 ## 9. Workspace hygiene and required verification
 

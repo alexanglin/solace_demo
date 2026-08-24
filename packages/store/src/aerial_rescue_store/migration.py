@@ -58,6 +58,7 @@ AUDIT_SEQUENCE_TABLE: Final = "audit_sequence"
 AUDIT_RECORD_TABLE: Final = "audit_record"
 APPROVAL_TABLE: Final = "approval"
 IDEMPOTENCY_CLAIM_TABLE: Final = "idempotency_claim"
+COMMAND_OUTBOX_TABLE: Final = "command_outbox"
 
 BASE_REVISION: Final = "base"
 HEAD_REVISION: Final = "head"
