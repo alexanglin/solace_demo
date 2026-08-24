@@ -1,9 +1,9 @@
 """The one module that names SQLAlchemy, and the place every bound becomes an instruction.
 
-[ADR-0085](../../../../docs/adr/0085-bound-every-durable-store-wait.md) sets the values; this
-module is where they reach a driver. The decision of *what* to hand over is pure and lives in
-``engine_arguments``, so every bound is asserted without a database; ``create_engine`` is the
-thin call that passes the result on.
+[ADR-0090](../../../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) sets the
+values; this module is where they reach a driver. The decision of *what* to hand over is pure
+and lives in ``engine_arguments``, so every bound is asserted without a database;
+``create_engine`` is the thin call that passes the result on.
 
 **Nothing here imports ``asyncpg``.** It is a runtime dependency reached only through the
 dialect named in the URL, and failures are discriminated on typed ``sqlalchemy.exc`` classes.

@@ -1,8 +1,9 @@
 """Every wait the durable store is allowed to make, and the relations between them.
 
-[ADR-0085](../../../../docs/adr/0085-bound-every-durable-store-wait.md) derives each value from
-a number the repository already carries and records why. What lives here is the arithmetic
-behind them, enforced where a set is built rather than asserted in prose.
+[ADR-0090](../../../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) derives
+each value from a number the repository already carries and records why, superseding ADR-0085.
+What lives here is the arithmetic behind them, enforced where a set is built rather than
+asserted in prose.
 
 Measured on the pinned cluster on 2026-08-23, ``statement_timeout``, ``lock_timeout``, and
 ``idle_in_transaction_session_timeout`` are all ``0`` -- not conservative defaults but no bound
@@ -26,7 +27,7 @@ from typing import Final
 from aerial_rescue_store import StoreError
 
 POOL_SIZE: Final = 5
-"""Sessions per process, below both the demand and the cluster ceilings ADR-0085 derives."""
+"""Sessions per process, below both the demand and the cluster ceilings ADR-0090 derives."""
 
 POOL_OVERFLOW: Final = 0
 """Refuse rather than queue without bound, as the direct publisher's buffer capacity does."""
@@ -40,7 +41,13 @@ CONNECT_RETRIES: Final = 0
 """An absent database fails the caller, as an absent broker does."""
 
 STATEMENT_TIMEOUT_MILLISECONDS: Final = 5_000
-LOCK_TIMEOUT_MILLISECONDS: Final = 5_000
+"""A stuck statement, not a slow one: no statement here touches an unbounded row set."""
+
+LOCK_TIMEOUT_MILLISECONDS: Final = 2_000
+"""The connected command path's p95 target, the row the checkout bound also reads. Strictly
+below the statement time, so a contended row is refused as contention rather than reported as a
+stuck statement, and strictly above the server's deadlock detection, so a deadlock is reported by
+the detector."""
 
 IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS: Final = 15_000
 """Contains one lock wait plus one statement, with margin, and is far below the approval life."""
@@ -73,6 +80,10 @@ class BoundsRefusal(Enum):
         "the lock wait must exceed the server's deadlock detection interval, or a deadlock is "
         "reported as an ordinary contended wait"
     )
+    LOCK_AT_OR_ABOVE_STATEMENT_TIME = (
+        "the lock wait must be strictly below the statement time, or a contended row is "
+        "reported as a stuck statement and the two need different answers"
+    )
     TRANSACTION_BELOW_ITS_PARTS = (
         "the idle-in-transaction bound must contain one lock wait plus one statement"
     )
@@ -97,13 +108,14 @@ class EngineBounds:
     shutdown_grace_seconds: int
 
     def __post_init__(self) -> None:
-        """Refuse a degenerate member and then the two relations that carry the meaning.
+        """Refuse a degenerate member and then the three relations that carry the meaning.
 
         Raises:
             BoundsError: With ``NOT_POSITIVE`` or ``NEGATIVE`` naming the offending member, with
                 ``LOCK_BELOW_DEADLOCK_DETECTION`` when a deadlock could not be told from
-                contention, or with ``TRANSACTION_BELOW_ITS_PARTS`` when the transaction-level
-                bound would end a transaction that is behaving legally.
+                contention, with ``LOCK_AT_OR_ABOVE_STATEMENT_TIME`` when contention could not be
+                told from a stuck statement, or with ``TRANSACTION_BELOW_ITS_PARTS`` when the
+                transaction-level bound would end a transaction that is behaving legally.
         """
         for member in _POSITIVE_MEMBERS:
             if getattr(self, member) < 1:
@@ -114,6 +126,10 @@ class EngineBounds:
         if self.lock_timeout_milliseconds <= SERVER_DEADLOCK_TIMEOUT_MILLISECONDS:
             raise BoundsError(
                 BoundsRefusal.LOCK_BELOW_DEADLOCK_DETECTION, self.lock_timeout_milliseconds
+            )
+        if self.lock_timeout_milliseconds >= self.statement_timeout_milliseconds:
+            raise BoundsError(
+                BoundsRefusal.LOCK_AT_OR_ABOVE_STATEMENT_TIME, self.lock_timeout_milliseconds
             )
         parts = self.lock_timeout_milliseconds + self.statement_timeout_milliseconds
         if self.idle_in_transaction_timeout_milliseconds < parts:

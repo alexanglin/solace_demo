@@ -18,10 +18,10 @@ must not leave a transaction open holding the audit sequence row; the exception 
 unchanged, so cancellation still propagates.
 
 The shutdown is the only wait in this member that is bounded client-side.
-[ADR-0085](../../../../docs/adr/0085-bound-every-durable-store-wait.md) rejects a client-side
-bound for a *statement*, because cancelling the coroutine abandons the wait and leaves the
-server executing. A shutdown grace is the opposite case: there is no server-side setting for
-"stop waiting for the pool to drain", so the bound has nowhere else to live.
+[ADR-0090](../../../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) rejects a
+client-side bound for a *statement*, because cancelling the coroutine abandons the wait and
+leaves the server executing. A shutdown grace is the opposite case: there is no server-side
+setting for "stop waiting for the pool to drain", so the bound has nowhere else to live.
 
 Nothing here connects. Building a factory is as lazy as building the engine under it.
 """
@@ -139,7 +139,7 @@ async def close(pool: Disposable, grace_seconds: int) -> None:
     Raises:
         SessionError: With ``SHUTDOWN_TIMED_OUT`` when the grace elapses first. A shutdown that
             waited without bound would outlive the longest transaction the server tolerates,
-            which is the number ADR-0085 derives this grace from.
+            which is the number ADR-0090 derives this grace from.
     """
     try:
         async with asyncio.timeout(grace_seconds):

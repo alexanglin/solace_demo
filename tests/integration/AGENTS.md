@@ -346,7 +346,7 @@ subject is a schema rather than a message. It is also the first `async` code in 
 - **Assert what PostgreSQL reports, not what was sent to it.** Columns and table names come back
   through the inspector and the stamped revision through Alembic's own table. An assertion that
   re-reads the rendered data definition would be the member's offline test wearing a marker.
-- **The bounds are ADR-0085's, unmodified.** A probe that widened one would be measuring a
+- **The bounds are ADR-0090's, unmodified.** A probe that widened one would be measuring a
   different engine than the one the services will get.
 - **Leave nothing behind.** Each case drops its database in teardown. An interrupted run leaks one,
   named `aerial_rescue_probe_*` so it is visible; removing a leaked database is an authorized

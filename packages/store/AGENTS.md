@@ -37,10 +37,10 @@ Read the authority for each concern before changing it:
 | PostgreSQL major and durable data layout | [ADR-0060](../../docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) |
 | Audit ordinal in normalized dashboard state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Command dispatch lifecycle and its counted send budget | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
-| Every wait an engine may make, and the relations between them | [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) |
 | Test isolation strategy, and what an offline test may claim | [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) |
 | Migration-tree home, and how a revision earns its coverage | [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) |
 | The audit ordinal, and the two tables that issue and hold it | [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
+| Every wait an engine may make, and the relations between them | [ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) |
 
 An Accepted architecture decision record (ADR) governs if code, schema, tests, deployment, or prose
 disagrees. A persistent data shape, transaction boundary, reset scope, migration policy, technology or
@@ -55,7 +55,7 @@ method.
 | `pyproject.toml` | The package shell, the Python range, Tier 2, and the one workspace dependency |
 | `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
-| `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
+| `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md)) |
 | `src/aerial_rescue_store/engine.py` | The pure argument decision, and the lazy engine it builds, with the isolation level stated rather than inherited ([ADR-0089](../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md)) |
 | `src/aerial_rescue_store/session.py` | The session factory, the transaction boundary that commits on a clean exit and rolls back on every other, and the bounded explicit shutdown |
 | `src/aerial_rescue_store/audit.py` | The append-only audit log and the per-mission ordinal ([ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)). It opens no transaction: the caller's is what makes the guarantee |
@@ -273,8 +273,8 @@ named volume without explicit human authorization.
   service and domain boundary even while the durable transaction is open. Do not connect, inspect
   environment variables, run migrations, or create background tasks at import.
 - Bound pool size, checkout time, statement time, transaction waits, retries, migration waits, and
-  shutdown. These are settled by [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) and
-  carried as constants in `bounds.py`, with three of the relations between them refused at
+  shutdown. These are settled by [ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) and
+  carried as constants in `bounds.py`, with four of the relations between them refused at
   construction. Supply them; never let a driver default stand in, and never widen one to make a slow
   path pass. Any bound that record does not name is still an open parameter and still blocks.
 - Make cancellation and shutdown explicit. Roll back unfinished transactions, release sessions, stop new

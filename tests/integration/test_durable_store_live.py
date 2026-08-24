@@ -118,7 +118,7 @@ BOUNDS: Final = EngineBounds(
     idle_in_transaction_timeout_milliseconds=IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS,
     shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS,
 )
-"""ADR-0085's bounds, unmodified. A probe that widened one would be measuring something else."""
+"""ADR-0090's bounds, unmodified. A probe that widened one would be measuring something else."""
 
 MISSION: Final = "m-store-probe"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
@@ -153,8 +153,8 @@ MISSION_ORDINALS: Final = (
     .order_by(RECORD_ROWS.c.ordinal)
 )
 
-EXPECTED_BOUNDS: Final = ("5s", "5s", "15s")
-"""What ADR-0085's three server-side milliseconds normalise to when PostgreSQL renders them."""
+EXPECTED_BOUNDS: Final = ("5s", "2s", "15s")
+"""What ADR-0090's three server-side milliseconds normalise to when PostgreSQL renders them."""
 
 SHOWN_BOUNDS: Final = (
     text("SHOW statement_timeout"),
@@ -166,7 +166,7 @@ LONGER_THAN_THE_STATEMENT_BOUND: Final = text("SELECT pg_sleep(6)")
 STATEMENT_TIMEOUT_MESSAGE: Final = "canceling statement due to statement timeout"
 
 HELD_WINDOW_SECONDS: Final = 0.5
-"""How long the waiting appender is watched. Far below ADR-0085's five-second lock wait, so a
+"""How long the waiting appender is watched. Far below ADR-0090's two-second lock wait, so a
 blocked appender is still blocked when the window ends rather than already refused."""
 
 

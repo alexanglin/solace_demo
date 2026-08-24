@@ -432,7 +432,7 @@ ADR-0080 recorded when it provisioned the endpoints.
 
 ## Durable store
 
-Every wait the PostgreSQL adapter is allowed to make ([ADR-0085](adr/0085-bound-every-durable-store-wait.md)).
+Every wait the PostgreSQL adapter is allowed to make ([ADR-0090](adr/0090-bound-the-lock-wait-below-the-statement-time.md), which supersedes [ADR-0085](adr/0085-bound-every-durable-store-wait.md)).
 Measured on the pinned cluster on 2026-08-23, `statement_timeout`, `lock_timeout`, and
 `idle_in_transaction_session_timeout` are all `0`, which is not a conservative default but no bound at
 all, so every row below replaces an unbounded wait rather than tightening a loose one. Each value is
@@ -447,8 +447,8 @@ connects yet.
 | Connect timeout | 5 s | `CONNECT_TIMEOUT_SECONDS` in the same module |
 | Connect retries | 0, matching the broker adapter's connection and reconnection attempts | `CONNECT_RETRIES` in the same module |
 | Statement timeout | 5 s, applied server-side per session so a cancelled caller does not leave the work running | `STATEMENT_TIMEOUT_MILLISECONDS` in the same module |
-| Lock timeout | 5 s, applied server-side. Strictly above the cluster's 1 s deadlock detection, so a deadlock and a contended wait stay distinguishable, and one twelfth of the approval time to live | `LOCK_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value at or below `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` |
-| Idle-in-transaction timeout | 15 s, applied server-side. Contains one lock wait plus one statement, which is the longest legal transaction | `IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value below the sum of the two |
+| Lock timeout | 2 s, applied server-side. Strictly above the cluster's 1 s deadlock detection, so a deadlock and a contended wait stay distinguishable, and strictly below the statement timeout, so a contended wait and a stuck statement stay distinguishable. It is the connected command path's p95 target, the row the checkout timeout also derives from | `LOCK_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value at or below `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` and a value at or above `STATEMENT_TIMEOUT_MILLISECONDS` |
+| Idle-in-transaction timeout | 15 s, applied server-side. Contains one lock wait plus one statement, which is the longest legal transaction and is now 7 s | `IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value below the sum of the two |
 | Shutdown grace | 15 s, equal to the idle-in-transaction bound so a shutdown never outlives the longest transaction the server tolerates | `SHUTDOWN_GRACE_SECONDS` in the same module |
 | Migration wait | 90 s, containing the cluster's healthcheck envelope of a 10 s start period then twelve probes at 5 s | `MIGRATION_WAIT_SECONDS` in the same module, asserted against that envelope by a member test |
 | Cluster deadlock detection | 1000 ms, the server's own `deadlock_timeout`, read from the running cluster rather than assumed | `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` in the same module |
@@ -456,12 +456,15 @@ connects yet.
 
 Only the lock timeout gates safety: a refusal there is the difference between a denied approval
 consumption and an indefinite hold on the approval row. Exceeding any other row produces a failed
-request, never an unsafe one.
+request, never an unsafe one. That refusal is reachable only because the lock wait is strictly below
+the statement timeout: measured on 2026-08-24 with the two set equal, a contended row was reported
+as `canceling statement due to statement timeout` and the lock bound never fired
+([ADR-0090](adr/0090-bound-the-lock-wait-below-the-statement-time.md)).
 
 Three of these are settings this member applies to the server, per session: the statement, lock, and
 idle-in-transaction bounds reach the connection through `connect_args["server_settings"]` in
 `packages/store/src/aerial_rescue_store/engine.py`. Two more are read from the cluster rather than set
-on it. **All three applied bounds have now been read back from a live session** and report `5s`, `5s`,
+on it. **All three applied bounds have now been read back from a live session** and report `5s`, `2s`,
 and `15s`, and a statement past the first is cancelled by the server rather than left running
 (`tests/integration/test_durable_store_live.py`). ADR-0085's consequence that "nothing applies them
 yet" was true when that record landed one increment ahead of its adapter.
