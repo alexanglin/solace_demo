@@ -22,6 +22,7 @@ from aerial_rescue_store.migration import (
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     CONNECTION_ATTRIBUTE,
+    IDEMPOTENCY_CLAIM_TABLE,
     PARAMSTYLE,
     SCRIPT_DIRECTORY,
     URL_OPTION,
@@ -42,7 +43,9 @@ PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
 
 FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
+THIRD_REVISION: Final = "0003_idempotency"
 FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
+SECOND_TO_THIRD: Final = f"{SECOND_REVISION}:{THIRD_REVISION}"
 """Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
@@ -234,6 +237,72 @@ class SecondRevisionTests(unittest.TestCase):
             (
                 f"DROP TABLE {APPROVAL_TABLE}" in emitted,
                 f"DROP TABLE {AUDIT_RECORD_TABLE}" in emitted,
+            ),
+        )
+
+
+class ThirdRevisionTests(unittest.TestCase):
+    """Rendered as the step from the second revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_second_revision_creates_the_claim_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+                f"CREATE TABLE {APPROVAL_TABLE}" in emitted,
+            ),
+        )
+
+    def test_the_key_is_the_claim_because_the_key_is_what_conflicts(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (idempotency_key)", emitted)
+
+    def test_the_kind_is_constrained_to_the_two_the_domain_names(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("CHECK (kind IN ('command', 'approval consumption'))", emitted)
+
+    def test_an_unanswered_claim_is_a_null_result_rather_than_an_absent_row(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("result BYTEA", emitted)
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, SECOND_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+                f"DROP TABLE {APPROVAL_TABLE}" in emitted,
             ),
         )
 

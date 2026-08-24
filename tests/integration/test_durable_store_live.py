@@ -57,6 +57,7 @@ from aerial_rescue_domain.approvals import (
     consume,
     proposal_digest,
 )
+from aerial_rescue_domain.idempotency import IdempotencyDecision, IdempotencyKind
 from aerial_rescue_store import StoreError
 from aerial_rescue_store.approvals import (
     StoredApproval,
@@ -79,12 +80,19 @@ from aerial_rescue_store.bounds import (
     EngineBounds,
 )
 from aerial_rescue_store.engine import ISOLATION_LEVEL, create_engine
+from aerial_rescue_store.idempotency import (
+    StoredClaim,
+    StoredClaimError,
+    claim,
+    record_result,
+)
 from aerial_rescue_store.migration import (
     APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
     HEAD_REVISION,
+    IDEMPOTENCY_CLAIM_TABLE,
     live_config,
 )
 from aerial_rescue_store.session import create_session_factory, transaction
@@ -123,17 +131,24 @@ RUN_DATABASE_PREFIX: Final = "aerial_rescue_probe_"
 VERSION_TABLE: Final = "alembic_version"
 FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
-"""The head this history is at. A literal, so a new revision has to be noticed here too."""
+THIRD_REVISION: Final = "0003_idempotency"
 
-APPLIED_TABLES: Final = tuple(
-    sorted((APPROVAL_TABLE, AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE))
-)
-"""Every table a migrated database holds: the history's three, and Alembic's own."""
+_FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
+_SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
+_THIRD_TABLES: Final = (*_SECOND_TABLES, IDEMPOTENCY_CLAIM_TABLE)
 
-FIRST_REVISION_TABLES: Final = tuple(
-    sorted((AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE))
+HISTORY: Final = (
+    (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
+    (SECOND_REVISION, tuple(sorted(_SECOND_TABLES))),
+    (THIRD_REVISION, tuple(sorted(_THIRD_TABLES))),
 )
-"""What the database holds part-way up the history, which a one-revision tree could not show."""
+"""Every step and what the database holds after it. Literals, so a new revision is noticed here
+too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
+express neither a path nor a step back along one."""
+
+HEAD_REVISION_ID: Final = THIRD_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_THIRD_TABLES))
+"""Every table a migrated database holds: the history's five, and Alembic's own."""
 
 BOUNDS: Final = EngineBounds(
     pool_size=POOL_SIZE,
@@ -305,6 +320,18 @@ async def _column_names(engine: AsyncEngine, table: str) -> tuple[str, ...]:
     return tuple(sorted(str(column["name"]) for column in columns))
 
 
+async def _applied(engine: AsyncEngine, revision: str) -> tuple[str | None, tuple[str, ...]]:
+    """Bring the database up one revision and report what it says it is, and what it holds."""
+    await _apply(engine, revision)
+    return (await _stamped_revision(engine), await _table_names(engine))
+
+
+async def _stepped_back(engine: AsyncEngine, revision: str) -> tuple[str | None, tuple[str, ...]]:
+    """Take the database down one revision and report what it says it is, and what it holds."""
+    await _downgrade(engine, revision)
+    return (await _stamped_revision(engine), await _table_names(engine))
+
+
 async def _stamped_revision(engine: AsyncEngine) -> str | None:
     """Return the revision the database says it is at, or `None` if it is at none."""
     async with engine.connect() as connection:
@@ -401,34 +428,28 @@ class FirstRevisionLiveTests(unittest.IsolatedAsyncioTestCase):
         await _apply(self.engine, HEAD_REVISION)
 
         # Assert
-        self.assertEqual(((), SECOND_REVISION), (before, await _stamped_revision(self.engine)))
+        self.assertEqual(((), HEAD_REVISION_ID), (before, await _stamped_revision(self.engine)))
 
     async def test_the_history_applies_one_revision_at_a_time(self) -> None:
         # Arrange
-        await _apply(self.engine, FIRST_REVISION)
-        part_way = (await _table_names(self.engine), await _stamped_revision(self.engine))
+        expected = HISTORY
 
         # Act
-        await _apply(self.engine, SECOND_REVISION)
+        observed = tuple([await _applied(self.engine, revision) for revision, _ in expected])
 
         # Assert
-        self.assertEqual(
-            ((FIRST_REVISION_TABLES, FIRST_REVISION), (APPLIED_TABLES, SECOND_REVISION)),
-            (part_way, (await _table_names(self.engine), await _stamped_revision(self.engine))),
-        )
+        self.assertEqual(expected, observed)
 
-    async def test_the_step_back_leaves_the_revision_below_it_intact(self) -> None:
+    async def test_each_step_back_leaves_the_revision_below_it_intact(self) -> None:
         # Arrange
         await _apply(self.engine, HEAD_REVISION)
+        expected = HISTORY[:-1][::-1]
 
         # Act
-        await _downgrade(self.engine, FIRST_REVISION)
+        observed = tuple([await _stepped_back(self.engine, revision) for revision, _ in expected])
 
         # Assert
-        self.assertEqual(
-            (FIRST_REVISION_TABLES, FIRST_REVISION),
-            (await _table_names(self.engine), await _stamped_revision(self.engine)),
-        )
+        self.assertEqual(expected, observed)
 
     async def test_applying_the_same_head_a_second_time_changes_nothing(self) -> None:
         # Arrange
@@ -933,6 +954,213 @@ class ApprovalConsumptionLiveTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertIn("pk_approval", str(refused.value.orig))
+
+
+IDEMPOTENCY_KEY: Final = "k-idempotency-probe"
+OTHER_KEY: Final = "k-idempotency-probe-other"
+BODY_DIGEST: Final = "ab" * 32
+OTHER_BODY_DIGEST: Final = "cd" * 32
+CLAIMED_AT: Final = "2026-08-24T12:00:00.000Z"
+PRIOR_RESULT: Final = b'{"dispatched":true}'
+NOT_A_PROTOCOL_KIND: Final = "escalation"
+
+COMMAND_CLAIM: Final = StoredClaim(
+    idempotency_key=IDEMPOTENCY_KEY,
+    kind=IdempotencyKind.COMMAND,
+    body_digest=BODY_DIGEST,
+    mission_id=APPROVAL_MISSION,
+    claimed_at=CLAIMED_AT,
+)
+
+CLAIM_ROWS: Final = table(
+    IDEMPOTENCY_CLAIM_TABLE,
+    column("idempotency_key", String),
+    column("kind", String),
+    column("body_digest", String),
+    column("mission_id", String),
+    column("result", LargeBinary),
+    column("claimed_at", String),
+)
+
+
+async def _claim_and_answer(
+    engine: AsyncEngine,
+    request: StoredClaim,
+    *,
+    hold: asyncio.Event | None = None,
+    took: asyncio.Future[bool] | None = None,
+) -> str:
+    """Claim a key, record its result in the same transaction, and report what happened.
+
+    Recording inside the claiming transaction is what closes ADR-0092's in-flight window for
+    this probe. A real gateway records later, which is why ``RESULT_NOT_RECORDED`` exists.
+    """
+    try:
+        async with transaction(create_session_factory(engine)) as session:
+            outcome = await claim(session, request)
+            if took is not None and not took.done():
+                took.set_result(True)
+            if outcome.decision is IdempotencyDecision.EXECUTE:
+                await record_result(session, request.idempotency_key, PRIOR_RESULT)
+            if hold is not None:
+                await hold.wait()
+    except StoredClaimError as refused:
+        return refused.refusal.name
+    return outcome.decision.name
+
+
+async def _abandon_a_claim(engine: AsyncEngine, request: StoredClaim) -> None:
+    """Claim and answer, then abandon the transaction, so the rollback is what ends it."""
+    with contextlib.suppress(AbandonedError):
+        async with transaction(create_session_factory(engine)) as session:
+            await claim(session, request)
+            await record_result(session, request.idempotency_key, PRIOR_RESULT)
+            raise AbandonedError
+
+
+@dataclass(frozen=True)
+class Claiming:
+    """What two claimants of one key did, and whether the second had to wait."""
+
+    first: str
+    second: str
+    second_waited: bool
+
+
+async def _two_claimants_of_one_key(engine: AsyncEngine) -> Claiming:
+    """Run the race ADR-0092 measures, and observe the wait itself."""
+    took: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+    release = asyncio.Event()
+    async with asyncio.TaskGroup() as group:
+        first = group.create_task(_claim_and_answer(engine, COMMAND_CLAIM, hold=release, took=took))
+        await took
+        second = group.create_task(_claim_and_answer(engine, COMMAND_CLAIM))
+        finished, _ = await asyncio.wait({second}, timeout=HELD_WINDOW_SECONDS)
+        release.set()
+    return Claiming(first=first.result(), second=second.result(), second_waited=not finished)
+
+
+class IdempotencyClaimLiveTests(unittest.IsolatedAsyncioTestCase):
+    """Each case gets a migrated database of its own, created here and dropped in teardown."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create this case's database, open an engine on it, and bring it to head."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+        await _apply(self.engine, HEAD_REVISION)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection, then drop the database this case created."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_two_claimants_of_one_key_execute_once_and_replay_once(self) -> None:
+        # Arrange
+        key = IDEMPOTENCY_KEY
+
+        # Act
+        claiming = await _two_claimants_of_one_key(self.engine)
+
+        # Assert
+        self.assertEqual(
+            (
+                IdempotencyDecision.EXECUTE.name,
+                IdempotencyDecision.RETURN_PRIOR_RESULT.name,
+                True,
+                PRIOR_RESULT,
+            ),
+            (
+                claiming.first,
+                claiming.second,
+                claiming.second_waited,
+                await _stored_result(self.engine, key),
+            ),
+        )
+
+    async def test_a_claim_abandoned_before_commit_leaves_the_key_claimable(self) -> None:
+        # Arrange
+        await _abandon_a_claim(self.engine, COMMAND_CLAIM)
+
+        # Act
+        after = await _claim_and_answer(self.engine, COMMAND_CLAIM)
+
+        # Assert
+        self.assertEqual(
+            (IdempotencyDecision.EXECUTE.name, PRIOR_RESULT),
+            (after, await _stored_result(self.engine, IDEMPOTENCY_KEY)),
+        )
+
+    async def test_a_key_replayed_with_a_different_body_is_refused(self) -> None:
+        # Arrange
+        first = await _claim_and_answer(self.engine, COMMAND_CLAIM)
+
+        # Act
+        replayed = await _claim_and_answer(
+            self.engine, replace(COMMAND_CLAIM, body_digest=OTHER_BODY_DIGEST)
+        )
+
+        # Assert
+        self.assertEqual((IdempotencyDecision.EXECUTE.name, "BODY_MISMATCH"), (first, replayed))
+
+    async def test_a_known_approval_consumption_is_denied_rather_than_replayed(self) -> None:
+        # Arrange
+        consumption = replace(COMMAND_CLAIM, kind=IdempotencyKind.APPROVAL_CONSUMPTION)
+        first = await _claim_and_answer(self.engine, consumption)
+
+        # Act
+        repeat = await _claim_and_answer(self.engine, consumption)
+
+        # Assert
+        self.assertEqual(
+            (IdempotencyDecision.EXECUTE.name, IdempotencyDecision.DENY.name), (first, repeat)
+        )
+
+    async def test_a_recorded_result_is_never_overwritten(self) -> None:
+        # Arrange
+        await _claim_and_answer(self.engine, COMMAND_CLAIM)
+
+        # Act
+        with pytest.raises(StoredClaimError) as refused:
+            async with transaction(create_session_factory(self.engine)) as session:
+                await record_result(session, IDEMPOTENCY_KEY, b'{"dispatched":false}')
+
+        # Assert
+        self.assertEqual(
+            ("RESULT_ALREADY_RECORDED", PRIOR_RESULT),
+            (refused.value.refusal.name, await _stored_result(self.engine, IDEMPOTENCY_KEY)),
+        )
+
+    async def test_a_kind_outside_the_closed_set_is_refused_by_the_database(self) -> None:
+        # Arrange
+        forbidden = insert(CLAIM_ROWS).values(
+            idempotency_key=OTHER_KEY,
+            kind=NOT_A_PROTOCOL_KIND,
+            body_digest=BODY_DIGEST,
+            mission_id=APPROVAL_MISSION,
+            claimed_at=CLAIMED_AT,
+        )
+
+        # Act
+        with pytest.raises(IntegrityError) as refused:
+            async with self.engine.begin() as connection:
+                await connection.execute(forbidden)
+
+        # Assert
+        self.assertIn("ck_idempotency_claim_kind", str(refused.value.orig))
+
+
+async def _stored_result(engine: AsyncEngine, idempotency_key: str) -> bytes | None:
+    """Return the result stored for a key, read by a session that did not write it."""
+    stored = select(CLAIM_ROWS.c.result).where(CLAIM_ROWS.c.idempotency_key == idempotency_key)
+    async with engine.connect() as connection:
+        result = await connection.scalar(stored)
+    return None if result is None else bytes(result)
 
 
 if __name__ == "__main__":
