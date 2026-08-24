@@ -430,6 +430,37 @@ Neither gates safety, and neither is the measurement. The backlog-recovery row s
 what changed is that a consumer now exists to measure it against, which is the obligation
 ADR-0080 recorded when it provisioned the endpoints.
 
+## Durable store
+
+Every wait the PostgreSQL adapter is allowed to make ([ADR-0085](adr/0085-bound-every-durable-store-wait.md)).
+Measured on the pinned cluster on 2026-08-23, `statement_timeout`, `lock_timeout`, and
+`idle_in_transaction_session_timeout` are all `0`, which is not a conservative default but no bound at
+all, so every row below replaces an unbounded wait rather than tightening a loose one. Each value is
+derived from a number elsewhere in this document; none is measured under load, because nothing
+connects yet.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Pool size | 5 sessions per process | `POOL_SIZE` in `packages/store/src/aerial_rescue_store/bounds.py`; `EngineBounds` refuses a size below one |
+| Pool overflow | 0, so exhaustion is a bounded refusal rather than an unbounded queue | `POOL_OVERFLOW` in the same module, which refuses a negative count and accepts zero |
+| Connection checkout timeout | 2 s, the connected command path's own p95 target | `CHECKOUT_TIMEOUT_SECONDS` in the same module |
+| Connect timeout | 5 s | `CONNECT_TIMEOUT_SECONDS` in the same module |
+| Connect retries | 0, matching the broker adapter's connection and reconnection attempts | `CONNECT_RETRIES` in the same module |
+| Statement timeout | 5 s, applied server-side per session so a cancelled caller does not leave the work running | `STATEMENT_TIMEOUT_MILLISECONDS` in the same module |
+| Lock timeout | 5 s, applied server-side. Strictly above the cluster's 1 s deadlock detection, so a deadlock and a contended wait stay distinguishable, and one twelfth of the approval time to live | `LOCK_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value at or below `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` |
+| Idle-in-transaction timeout | 15 s, applied server-side. Contains one lock wait plus one statement, which is the longest legal transaction | `IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value below the sum of the two |
+| Shutdown grace | 15 s, equal to the idle-in-transaction bound so a shutdown never outlives the longest transaction the server tolerates | `SHUTDOWN_GRACE_SECONDS` in the same module |
+| Migration wait | 90 s, containing the cluster's healthcheck envelope of a 10 s start period then twelve probes at 5 s | `MIGRATION_WAIT_SECONDS` in the same module, asserted against that envelope by a member test |
+| Cluster deadlock detection | 1000 ms, the server's own `deadlock_timeout`, read from the running cluster rather than assumed | `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` in the same module |
+| Cluster connection ceiling | 100 total, 3 reserved for superusers, 0 otherwise reserved, so 97 available | `pg_settings` on the pinned cluster; five services holding a pool of 5 with no overflow need 25 |
+
+Only the lock timeout gates safety: a refusal there is the difference between a denied approval
+consumption and an indefinite hold on the approval row. Exceeding any other row produces a failed
+request, never an unsafe one.
+
+Five of these are server-side settings and **nothing applies them yet**. They are values in a typed
+record until the engine that sets them exists.
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
