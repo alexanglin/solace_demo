@@ -25,7 +25,7 @@ Use the canonical document for the fact being changed instead of copying it here
 | --- | --- |
 | `.python-version`, `pyproject.toml`, `uv.lock` | The non-workspace Python verification project and its exact dependency graph |
 | `model-lock.toml` | Auditable Ollama model identifiers and measured manifest digests |
-| `configs/` | Owned Solace AI Connector definitions for the Orchestrator, specialized agents, workflows, and local Web UI |
+| [`configs/`](configs/AGENTS.md) | Owned Solace AI Connector definitions for agents, workflows, gateways, tools, and the local Web UI |
 | `tools/` | Offline, fail-closed semantic validation of every owned configuration |
 | `tests/` | Validator behavior, pinned-wheel compatibility, runtime overrides, and warning-policy evidence |
 
