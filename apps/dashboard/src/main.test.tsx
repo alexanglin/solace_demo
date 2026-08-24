@@ -1,5 +1,7 @@
 import { act, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+
+import type { DashboardTestHarness } from "../tests/e2e/support/dashboard-harness";
 
 test("renders the real application shell and acknowledges its initial source revision", async () => {
   // Arrange
@@ -8,7 +10,7 @@ test("renders the real application shell and acknowledges its initial source rev
   if (!(rootElement instanceof HTMLDivElement)) {
     throw new Error("dashboard root was not installed");
   }
-  window.__AERIAL_RESCUE_DASHBOARD_TEST__ = {
+  const initialHarness: DashboardTestHarness = {
     appliedRevision: 0,
     snapshotRequests: 0,
     sourceDisposals: 0,
@@ -18,6 +20,7 @@ test("renders the real application shell and acknowledges its initial source rev
       inputs: [],
     },
   };
+  window.__AERIAL_RESCUE_DASHBOARD_TEST__ = initialHarness;
 
   // Act
   await act(async () => import("./main"));
@@ -36,6 +39,44 @@ test("renders the real application shell and acknowledges its initial source rev
   expect(screen.getByRole("status", { name: "Dashboard state" }).textContent).toBe(
     "Loading scenario catalog",
   );
-  expect(window.__AERIAL_RESCUE_DASHBOARD_TEST__?.sourceScript).toBeNull();
-  expect(window.__AERIAL_RESCUE_DASHBOARD_TEST__?.appliedRevision).toBe(1);
+  expect(initialHarness.sourceScript).toBeNull();
+  expect(initialHarness.appliedRevision).toBe(1);
+});
+
+test("renders without installing the test revision harness", async () => {
+  // Arrange
+  vi.resetModules();
+  document.body.innerHTML = '<div id="root"></div>';
+  const rootElement = document.querySelector("#root");
+  if (!(rootElement instanceof HTMLDivElement)) {
+    throw new Error("dashboard root was not installed");
+  }
+  delete window.__AERIAL_RESCUE_DASHBOARD_TEST__;
+
+  // Act
+  await act(async () => import("./main"));
+  const main = screen.getByRole("main");
+
+  // Assert
+  expect(main.parentElement).toBe(rootElement);
+  expect(window.__AERIAL_RESCUE_DASHBOARD_TEST__).toBeUndefined();
+});
+
+test("fails closed when the neutral application root is missing", async () => {
+  // Arrange
+  vi.resetModules();
+  document.body.replaceChildren();
+  delete window.__AERIAL_RESCUE_DASHBOARD_TEST__;
+  let importError: unknown;
+
+  // Act
+  try {
+    await import("./main");
+  } catch (error: unknown) {
+    importError = error;
+  }
+
+  // Assert
+  expect(importError).toEqual(new Error("dashboard root must be a div"));
+  expect(document.getElementById("root")).toBeNull();
 });
