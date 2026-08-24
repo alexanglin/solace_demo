@@ -12,6 +12,7 @@ class FullGateScriptTests(QualityGateTestCase):
             "agent-mesh-test-full": "scripts/hooks/agent-mesh-test-full.sh",
             "bandit-full": "scripts/hooks/python/bandit-full.sh",
             "dashboard-build": "scripts/hooks/dashboard/dashboard-build.sh",
+            "dashboard-playwright-full": "scripts/hooks/dashboard/dashboard-playwright-full.sh",
             "dashboard-test-full": "scripts/hooks/dashboard/dashboard-test-full.sh",
             "dependency-audit": "scripts/hooks/deps/dependency-audit.sh",
             "python-quality-full": "scripts/hooks/python/python-quality-full.sh",
@@ -49,7 +50,11 @@ class FullGateScriptTests(QualityGateTestCase):
 
     def test_dashboard_full_gates_fail_when_pnpm_is_missing(self) -> None:
         # Arrange
-        hook_names = ("dashboard-test-full.sh", "dashboard-build.sh")
+        hook_names = (
+            "dashboard-test-full.sh",
+            "dashboard-playwright-full.sh",
+            "dashboard-build.sh",
+        )
         repository = self.temporary_repository()
         dashboard = repository / "apps" / "dashboard"
         dashboard.mkdir(parents=True)
@@ -70,6 +75,7 @@ class FullGateScriptTests(QualityGateTestCase):
             "dependency-audit.sh",
             "python-quality-full.sh",
             "dashboard-test-full.sh",
+            "dashboard-playwright-full.sh",
             "dashboard-build.sh",
             "trivy-config-full.sh",
         )

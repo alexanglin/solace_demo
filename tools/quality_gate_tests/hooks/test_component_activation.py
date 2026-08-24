@@ -57,6 +57,7 @@ class ComponentActivationTests(QualityGateTestCase):
         hooks = (
             "check-locks.sh",
             "dashboard-build.sh",
+            "dashboard-playwright-full.sh",
             "dashboard-test-full.sh",
             "dependency-audit.sh",
         )

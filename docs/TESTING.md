@@ -205,10 +205,12 @@ a `conftest.py`, has an ambiguous module name, or does not parse, widens the run
 deterministic suite. That is what makes a change to a hook script, a workflow, a manifest, or a
 committed registry run the tests that read it, none of which any import names.
 
-**Push stage — every unit test, unconditionally.** `pytest-full.sh` runs the root suite with the
-per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its own interpreter,
-and `dashboard-test-full.sh` runs the dashboard suite with all four coverage dimensions. None of the
-three selects a subset, and a test asserts that none of them ever starts to.
+**Push stage — every unit and dashboard acceptance test, unconditionally.** `pytest-full.sh` runs the
+root suite with the per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its
+own interpreter, and `dashboard-test-full.sh` runs the dashboard unit suite with all four coverage
+dimensions. `dashboard-playwright-full.sh` separately verifies discovery against the manifest-owned
+inventory and runs every Playwright acceptance case against the package-pinned Chromium. None selects a
+subset, and conformance tests hold every entry point to that whole-suite contract.
 
 Narrowing the commit stage is only safe while the push stage stays whole. Selection is fast feedback;
 `pre-push` and continuous integration remain the authority.
@@ -247,7 +249,13 @@ options, the required package scripts, and the coverage thresholds are held by
 specifications live under `apps/dashboard/tests/e2e/`, because anything outside `apps/dashboard`
 escapes the type check, the linter, the formatter, and the duplication scan together. Vitest must
 not register its globals: the AAA gate resolves test identifiers from `vitest` and
-`@playwright/test` imports, so global registration fails every dashboard test closed. jscpd 5.0.14 provides the multi-language duplication scan. The
+`@playwright/test` imports, so global registration fails every dashboard test closed. The blocking
+Playwright wrapper accepts only the manifest-pinned Node and pnpm runtimes, verifies the discovered test
+count against `config.playwrightExpectedTests`, checks that Chromium revision 1234 is already cached
+instead of downloading from a local hook, and scans retained `test-results/` and `playwright-report/`
+files for the synthetic bearer sentinel after both passing and failing browser runs.
+Continuous integration performs the explicit Chromium-only installation before invoking the identical
+pre-push hook. jscpd 5.0.14 provides the multi-language duplication scan. The
 cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
