@@ -10,6 +10,42 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The audit ordinal becomes an ordering authority instead of a column type.**
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) has always called the append-only audit
+  ordinal "the ordering authority for the mission timeline", and
+  [ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) put it inside the reduced
+  dashboard state, which is hashed as the replay determinism oracle. Nothing had said how it is issued.
+
+  **A generated identity column would not have delivered it, and the failure is silent.** PostgreSQL
+  assigns a sequence value at insert, not at commit, so two concurrent appends can take 6 and 7 and
+  commit in the opposite order. A reader polling for everything above its high-water mark sees 7,
+  records 7, and never sees 6 -- which then exists in the table forever, invisible to that reader. A
+  rolled-back transaction burns a number too. Both land on claims already made: the operating
+  parameters require an "identical hash of the canonical reduced dashboard state across 10 runs", which
+  would fail for a correctly behaving system, and the recorder exports replay fixtures from this
+  history, so a gap becomes a committed fixture that omits a record.
+
+  [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) issues the
+  ordinal from a per-mission counter advanced by a conditional upsert **inside the transaction that
+  writes the record**. The row lock is held to commit, so ordinals are issued in commit order; a
+  rollback releases it without advancing, so the sequence is gap-free as well as ordered; and the
+  upsert form means a mission's first record needs no separate initialisation.
+
+  Per mission is the scope the claim was always about -- a timeline belongs to a mission -- so ordering
+  one mission's appends against another's would serialise work for an ordering no reader uses.
+
+  The costs are stated: appends for one mission serialise, the counter is a hot row per mission, and a
+  second lock means a lock-ordering rule that later code can break, with the deadlock detector as the
+  backstop rather than the design. That is why ADR-0085 already requires the lock wait to exceed the
+  server's 1 s deadlock detection.
+
+  The first revision's shape lands with it: identifiers as `text` bounded to the contract's 1-to-64
+  rule rather than `uuid`, because a drone identifier is not one; the instant stored as the **canonical
+  text** rather than `timestamptz`, because ADR-0027 makes those exact bytes part of what a digest
+  covers and a re-render would put the formatting rule in a second place; the payload as canonical
+  bytes for the same reason; and a retention class assigned to each table now, so the reset scope that
+  endpoint still owes becomes an enumeration rather than a fresh argument.
+
 - **The migration tree goes inside the member that owns the schema, and its revisions earn their
   coverage rather than being excused from it.** `packages/store/AGENTS.md` required the question
   settled "before the first revision", naming five parts: location, local guidance, scaffold
