@@ -84,8 +84,10 @@ opens sessions and bounds one transaction; `audit.py` appends at an ordinal issu
 `approvals.py` consumes an approval under its own row lock; `idempotency.py` claims a key with one
 conflicting insert; and `outbox.py` stages a command under a counted bound.
 
-All of it is proven on a cluster. Two consumers of one approval commit once and deny once, with the
-second observed waiting and refused by the protocol's own `ALREADY_CONSUMED`. Two claimants of one
+All of it is proven on a cluster
+([durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md)).
+Two consumers of one approval commit once and deny once, with the second observed waiting and
+refused by the protocol's own `ALREADY_CONSUMED`. Two claimants of one
 key execute once and replay once. The bound refuses the record past it and writes nothing. And the
 three writes ADR-0006 requires to move together do: one transaction commits all three, and a
 transaction abandoned after all three leaves none of them, with the approval consumable again
@@ -95,7 +97,8 @@ There is still no paid-call ledger, no package-owned readiness or health check, 
 member declares this package as a dependency**, so nothing calls any of it. **This member's own suite
 still opens no connection**, and under
 [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
-will; every live claim above lives in `tests/integration/test_durable_store_live.py`.
+will; every live claim above lives in `tests/integration/test_durable_store_live.py`, and what one
+authorized run of it observed is recorded in [durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md).
 
 SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are declared and locked. The migration tree
 exists at the home

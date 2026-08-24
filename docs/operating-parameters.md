@@ -466,7 +466,10 @@ idle-in-transaction bounds reach the connection through `connect_args["server_se
 `packages/store/src/aerial_rescue_store/engine.py`. Two more are read from the cluster rather than set
 on it. **All three applied bounds have now been read back from a live session** and report `5s`, `2s`,
 and `15s`, and a statement past the first is cancelled by the server rather than left running
-(`tests/integration/test_durable_store_live.py`). ADR-0085's consequence that "nothing applies them
+(`tests/integration/test_durable_store_live.py`, [durable-transaction-first-run.md](../release-evidence/phase-3/durable-transaction-first-run.md)).
+The first of the two read rather than set, the cluster's own `deadlock_timeout`, reports `1s` from
+that same session, so the relation `EngineBounds` enforces against it rests on a reading of this
+cluster rather than an assumption about it. ADR-0085's consequence that "nothing applies them
 yet" was true when that record landed one increment ahead of its adapter.
 
 ## Command outbox

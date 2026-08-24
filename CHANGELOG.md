@@ -52,7 +52,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   Six rows of [the approval-bypass catalogue](docs/security/approval-bypass-catalogue.md) gain a
   durable half, B07 among them -- "two concurrent consumptions of the same approval ... asserted under
-  real concurrency, not sequentially" -- which is now proven live rather than owed.
+  real concurrency, not sequentially" -- which is now proven live rather than owed, and each row
+  carries the record that supports it ([durable-transaction-first-run.md](release-evidence/phase-3/durable-transaction-first-run.md)).
 
   **What this does not do.** Nothing calls any of it: no workspace member declares `packages/store` as
   a dependency, so the command gateway's half of the dispatch lifecycle is still owed and command
