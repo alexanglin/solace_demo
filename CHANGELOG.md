@@ -10,6 +10,44 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Every durable-store wait is bounded, and the measurement is what makes that worth doing.** The
+  store's guide has always required pool size, checkout time, statement time, transaction waits,
+  retries, migration waits, and shutdown to be bounded, and said of them that "open parameters block
+  implementation; they are not permission to choose a local default". None had a row in
+  `docs/operating-parameters.md` -- not even in that document's own "Parameters still to be set"
+  table, so this closes a gap the ledger did not know it had.
+
+  Reading the pinned cluster settled the shape of the record. `statement_timeout`, `lock_timeout`,
+  and `idle_in_transaction_session_timeout` are all **`0`**: not conservative defaults but no bound
+  at all. A statement runs forever, a lock waits forever, and an open transaction holds its rows
+  forever. The last is reachable by design rather than by accident, because the approval-consumption
+  sequence the store's guide fixes keeps the transaction open across the command gateway's two clock
+  reads and its call into the domain -- the durable side deliberately hands control back to a caller
+  while holding a row lock.
+
+  [ADR-0085](docs/adr/0085-bound-every-durable-store-wait.md) derives all ten values from numbers the
+  repository already carries, in one record rather than ten, because they are one piece of
+  arithmetic: the lock wait and the statement are components of the same transaction and the
+  transaction-level bound has to contain them. Split across separate records, nothing would check
+  that it still did.
+
+  **Three relations are refused at construction rather than asserted in prose.** `EngineBounds` will
+  not build a set with a non-positive duration, a lock wait at or below the server's deadlock
+  detection, or an idle-in-transaction bound smaller than one lock wait plus one statement. The
+  middle one is the interesting one: at or below the measured 1000 ms `deadlock_timeout`, a genuine
+  deadlock ends as an ordinary lock timeout, because the wait finishes before the detector runs --
+  and a deadlock is a defect in lock ordering while a timeout is contention, so collapsing them hides
+  the one that has to be fixed.
+
+  Only the lock wait gates safety, and the record says so: a refusal there is the difference between
+  a denied approval consumption and an indefinite hold on the approval row. Everything else produces
+  a failed request, never an unsafe one.
+
+  What this does not do: **five of these are server-side settings and nothing applies them.** They
+  are values in a typed record until the engine that sets them exists. None is measured under load,
+  because nothing connects yet; every row is derived, and a measurement that contradicts one
+  supersedes the record rather than editing it.
+
 - **The durable store has its first behaviour, and it is the one that decides where the credential
   can travel.** `packages/store` had been a docstring-only scaffold since the workspace was laid
   out, and it is named as the blocker in three places: the gateway's half of the command dispatch

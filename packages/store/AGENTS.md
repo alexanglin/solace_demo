@@ -49,6 +49,7 @@ method.
 | `pyproject.toml` | The package shell, the Python range, Tier 2, and the one workspace dependency |
 | `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
+| `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
 | `tests/` | Member-local unit and refusal evidence |
 
 The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
@@ -67,7 +68,7 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| An engine or session factory | The connection and transaction bounds, which have no row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md); §7 makes an open parameter a blocker rather than a licence to pick a default |
+| An engine or session factory | Declaring and locking SQLAlchemy, `asyncpg`, and Alembic, which this member's manifest still does not name. The bounds it needs are no longer a blocker: [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) settles them and `bounds.py` carries them |
 | The migration tree and any table | The repository-layout and verification decision §7 requires: location, coverage ownership, scaffold activation, and runtime-image inclusion |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
@@ -235,7 +236,10 @@ named volume without explicit human authorization.
   service and domain boundary even while the durable transaction is open. Do not connect, inspect
   environment variables, run migrations, or create background tasks at import.
 - Bound pool size, checkout time, statement time, transaction waits, retries, migration waits, and
-  shutdown. Open parameters block implementation; they are not permission to choose a local default.
+  shutdown. These are settled by [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) and
+  carried as constants in `bounds.py`, with three of the relations between them refused at
+  construction. Supply them; never let a driver default stand in, and never widen one to make a slow
+  path pass. Any bound that record does not name is still an open parameter and still blocks.
 - Make cancellation and shutdown explicit. Roll back unfinished transactions, release sessions, stop new
   work, and leave committed outbox records recoverable.
 - Keep database URLs with user information, secret-file contents, SQL parameters containing credentials,

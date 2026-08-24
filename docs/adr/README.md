@@ -102,6 +102,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0082](0082-bind-the-drone-command-and-its-result-to-payload-schemas.md) | Bind the drone command and its result to payload schemas, one schema per command type | Accepted |
 | [0083](0083-pace-the-tick-loop-at-a-fixed-rate.md) | Pace the tick loop at a fixed rate, and count what overruns | Accepted |
 | [0084](0084-give-backlog-recovery-an-instrument.md) | Give backlog recovery an instrument, and say what it does not measure | Accepted |
+| [0085](0085-bound-every-durable-store-wait.md) | Bound every durable-store wait, and derive each from a number the repository already carries | Accepted |
 
 ## Decisions still open
 
