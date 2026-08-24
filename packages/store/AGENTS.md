@@ -61,8 +61,10 @@ pins that. The Tier 2 coverage gate applies here now, to every statement and eve
 **Nothing here is durable yet.** An engine can be built, but there is no session, transaction adapter,
 table model, schema, migration, repository, package-owned readiness or health check, or live test, and
 nothing has opened a connection. No workspace member declares this package as a dependency or imports
-it. SQLAlchemy 2.0.52 and `asyncpg` 0.31.0 are declared and locked; Alembic is not. The repository-root
-`migrations/` path shown in the implementation-plan blueprint does not exist.
+it. SQLAlchemy 2.0.52 and `asyncpg` 0.31.0 are declared and locked; Alembic is not. The migration tree's
+home is decided but empty: [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md)
+places it at `src/aerial_rescue_store/migrations/` and rejects the repository-root path the
+implementation-plan blueprint used to sketch.
 
 `asyncpg` is a runtime dependency this package never imports. It is reached only through the dialect
 named in the URL, and failures are discriminated on typed `sqlalchemy.exc` classes. Keep it that way:
@@ -74,7 +76,7 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
-| The migration tree and any table | The repository-layout and verification decision §7 requires: location, coverage ownership, scaffold activation, and runtime-image inclusion |
+| The migration tree and any table | The durable schema's shape, which is the next record. The layout is settled by [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md): `src/aerial_rescue_store/migrations/`, hand-written `env.py`, revisions covered offline |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
@@ -218,13 +220,15 @@ ADR-0003 selects async SQLAlchemy 2.x, `asyncpg`, and Alembic. Adding them means
 dependencies, synchronizing the shared lock for both supported platforms, and proving the built wheel;
 do not substitute SQLite or a synchronous driver because it makes a test easier.
 
-No migration tree exists today. The implementation-plan blueprint sketches a future repository-root
-`migrations/` directory, but no accepted decision fixes that location and this guide would not govern it.
-The current gates would neither activate `packages/store` for a root migration nor attribute that code to
-the package's Tier 2 coverage, and the application image does not copy a root migration tree. Resolve
-migration location, local guidance, scaffold activation, coverage ownership, and runtime-image inclusion
-through the required repository-layout and verification decision before the first revision; test the gate
-change itself. Never let ORM metadata create production tables implicitly.
+No migration tree exists yet, but its home is settled.
+[ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) places it
+at `src/aerial_rescue_store/migrations/`, inside the coverage prefix and inside the wheel, and rejects the
+repository-root path the blueprint used to sketch. Three consequences bind every revision: `env.py` is
+hand-written because the generated one does not survive strict type checking; a revision has to be
+renderable by Alembic's offline mode to earn its Tier 2 coverage, because every live probe is outside the
+blocking suite and no coverage `omit` exists; and `versions/` is sharded by release series, because the
+fan-out cap would refuse an exemption for a directory that can be decomposed. Never let ORM metadata
+create production tables implicitly.
 
 The SQL delete scope for `POST /api/v1/scenarios/current/reset` is not decided. Do not implement reset as
 an unbounded `TRUNCATE`, database drop, schema recreation, or volume deletion. Define the exact mission,
