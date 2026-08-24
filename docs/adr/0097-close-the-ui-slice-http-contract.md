@@ -32,7 +32,7 @@ There is no approval route in this slice.
 Every body and response has a closed Draft 2020-12 JSON Schema, strict Pydantic model, generated
 TypeScript type, shared accepted and one-reason-negative fixtures, Ajv validation, and OpenAPI parity
 test. The wire modes are exactly `degradedLive` and `replay`; presentation uses the explicit uppercase
-badges ADR-0090 defines.
+badges ADR-0098 defines.
 
 Mutations require JSON, one exact allowlisted Host, the exact configured Origin, the current bearer, and
 an `Idempotency-Key` that is a lowercase RFC 4122 UUID version 4. Raw request bytes are bounded and decoded

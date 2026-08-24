@@ -1,4 +1,4 @@
-# ADR-0091: Pin the dashboard runtime and production stack
+# ADR-0099: Pin the dashboard runtime and production stack
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

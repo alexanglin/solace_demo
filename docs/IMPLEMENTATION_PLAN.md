@@ -336,6 +336,9 @@ contract, and operator-flow evidence.
   enforced rather than merely emitted**, which is what
   [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
   gap-free mission timeline on ([durable-store-first-run.md](../release-evidence/phase-3/durable-store-first-run.md)).
+  A later run at the four-revision history walks it up one step at a time and back down again, and
+  provokes six of the eleven declared constraints; the other five are declared and never refused
+  anything ([durable-transaction-first-run.md](../release-evidence/phase-3/durable-transaction-first-run.md)).
   **Done: the schema has a unit of work above it.** `session.py` opens sessions and bounds one
   transaction; `audit.py` appends a record at an ordinal issued by the conditional upsert
   [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) selected.

@@ -1,4 +1,4 @@
-# ADR-0092: Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation
+# ADR-0100: Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

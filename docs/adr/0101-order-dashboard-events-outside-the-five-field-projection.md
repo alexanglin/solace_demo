@@ -1,4 +1,4 @@
-# ADR-0093: Order dashboard events outside the five-field projection and resnapshot bounded SSE
+# ADR-0101: Order dashboard events outside the five-field projection and resnapshot bounded SSE
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

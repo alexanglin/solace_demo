@@ -107,18 +107,18 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0087](0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) | Put the migration tree inside the member that owns the schema, and cover its revisions offline | Accepted |
 | [0088](0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) | Order the mission timeline by a per-mission audit ordinal advanced inside the writing transaction | Accepted |
 | [0089](0089-state-read-committed-rather-than-inherit-it.md) | State `READ COMMITTED` on the engine rather than inherit it from the cluster | Accepted |
-| [0090](0090-make-the-wilderness-dashboard-ui-first.md) | Make the wilderness mission dashboard a UI-first real slice | Accepted |
 | [0090](0090-bound-the-lock-wait-below-the-statement-time.md) | Bound the lock wait below the statement time, so a contended row is distinguishable | Accepted |
-| [0091](0091-pin-the-dashboard-runtime-and-stack.md) | Pin the dashboard runtime and production stack | Accepted |
 | [0091](0091-consume-an-approval-under-its-own-row-lock.md) | Consume an approval under its own row lock, and let the domain's refusal be the denial | Accepted |
-| [0092](0092-commit-a-strict-wilderness-scenario-catalog.md) | Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation | Accepted |
 | [0092](0092-claim-an-idempotency-key-with-one-conflicting-insert.md) | Claim an idempotency key with one conflicting insert, and let the domain say what a repeat means | Accepted |
-| [0093](0093-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
 | [0093](0093-stage-the-command-outbox-under-a-counted-bound.md) | Give the command outbox three states, a counted bound, and an overflow that writes nothing | Accepted |
 | [0094](0094-validate-replay-before-browser-playback.md) | Validate replay in a zero-network one-shot container before browser playback | Accepted |
 | [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Accepted |
 | [0096](0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) | Publish the dashboard through Caddy and keep FastAPI on a private Unix socket | Accepted |
 | [0097](0097-close-the-ui-slice-http-contract.md) | Close the UI slice HTTP contract and mutation refusal order | Accepted |
+| [0098](0098-make-the-wilderness-dashboard-ui-first.md) | Make the wilderness mission dashboard a UI-first real slice | Accepted |
+| [0099](0099-pin-the-dashboard-runtime-and-stack.md) | Pin the dashboard runtime and production stack | Accepted |
+| [0100](0100-commit-a-strict-wilderness-scenario-catalog.md) | Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation | Accepted |
+| [0101](0101-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
 | [0102](0102-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
 
 ## Decisions still open

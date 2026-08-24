@@ -131,3 +131,16 @@ The durable-concurrency ADR that `packages/store/AGENTS.md` section 4 requires b
 consumption, the idempotency claim, and outbox staging can be built. That record needs "a real
 PostgreSQL race" as its evidence, and until this run there was no live PostgreSQL class to write
 one in. `docs/IMPLEMENTATION_PLAN.md` carries the delivery consequence.
+
+## Later run, 2026-08-24
+
+[`durable-transaction-first-run.md`](durable-transaction-first-run.md) records an independent rerun at
+revision `2ff8729`, on the same host and the same pinned image, under a changed acceptance scope. What
+changed between the two: the schema history grew from one revision to four, a session and a bounded
+transaction were built above it, four repositories were added, and the probe grew from nine cases to 39.
+
+Nothing observed above is revised by it. Of the six limitations this record closes with, the later run
+settles the transaction and isolation claim, settles the migration-path claim except for mismatch and
+failure recovery, settles the pool-and-timeout claim for the statement bound alone, and narrows "no
+repository, session, or unit-of-work claim" to "no caller". The restart-durability limitation and the
+limitation about the operator's own schema stand exactly as written here.

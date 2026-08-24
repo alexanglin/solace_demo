@@ -1,4 +1,4 @@
-# ADR-0090: Make the wilderness mission dashboard a UI-first real slice
+# ADR-0098: Make the wilderness mission dashboard a UI-first real slice
 
 - **Status:** Accepted
 - **Date:** 2026-08-24
