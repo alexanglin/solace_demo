@@ -163,7 +163,7 @@ packages/                      (exists)  four active members and one typed packa
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/                       (exists)  the durable target, its bounds, and its engine
+  store/                       (exists)  the durable target, its bounds, its engine, and a schema
     src/aerial_rescue_store/migrations/  Alembic revisions, inside the member that owns them
     tests/                     (exists)  member-local unit tests
   observability/               (scaffold)
@@ -322,6 +322,19 @@ contract, and operator-flow evidence.
   `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised and the intake claim is
   at-least-once with duplicates possible across a restart. The backlog-recovery measurement this
   consumer unblocked has since been made.
+- **Done: the schema exists on a cluster.** The first revision is applied, live, to a PostgreSQL
+  18.6 database the run creates and drops, under the two-class split
+  ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)) that keeps the
+  member's own suite offline and makes `tests/integration/test_durable_store_live.py` the only
+  evidence for anything about PostgreSQL. The cluster accepts the revision, stamps it, is unchanged
+  by a repeat application, and empties on the downgrade -- and **both declared constraints are
+  enforced rather than merely emitted**, which is what
+  [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
+  gap-free mission timeline on ([durable-store-first-run.md](../release-evidence/phase-3/durable-store-first-run.md)).
+  Still owed on the store: a session factory and transaction boundary, then a repository; the
+  durable concurrency mechanism, which needs its own record and a real PostgreSQL race; a second
+  revision, without which mismatch and failure recovery have no migration path to test; and
+  applying the history to the persistent database, which no runbook yet describes.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in

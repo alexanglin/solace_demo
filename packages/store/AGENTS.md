@@ -6,7 +6,8 @@ These instructions apply to every file under `packages/store/`. Read the reposit
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the planned PostgreSQL repository and transaction boundary. It is not implemented yet.
+This member is the PostgreSQL repository and transaction boundary. Its schema history now exists and
+has been applied to a real cluster; no repository, session, or transaction has been built yet.
 Read the authority for each concern before changing it:
 
 | Concern | Authority or reference |
@@ -35,6 +36,10 @@ Read the authority for each concern before changing it:
 | PostgreSQL major and durable data layout | [ADR-0060](../../docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) |
 | Audit ordinal in normalized dashboard state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Command dispatch lifecycle and its counted send budget | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
+| Every wait an engine may make, and the relations between them | [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) |
+| Test isolation strategy, and what an offline test may claim | [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) |
+| Migration-tree home, and how a revision earns its coverage | [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) |
+| The audit ordinal, and the two tables that issue and hold it | [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
 
 An Accepted architecture decision record (ADR) governs if code, schema, tests, deployment, or prose
 disagrees. A persistent data shape, transaction boundary, reset scope, migration policy, technology or
@@ -51,7 +56,7 @@ method.
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
 | `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
 | `src/aerial_rescue_store/engine.py` | The only module that names SQLAlchemy: the pure argument decision, and the lazy engine it builds |
-| `src/aerial_rescue_store/migration.py` | Where the schema history is, how it is configured, and how it renders without a database |
+| `src/aerial_rescue_store/migration.py` | Where the schema history is, how a rendering run and a live run are each configured, and how it renders without a database. It still opens nothing: a live run's connection is supplied by the caller |
 | `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
 
@@ -60,12 +65,18 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**Nothing here is durable yet.** An engine can be built and a revision can be rendered, but there is no
-session, transaction adapter, repository, package-owned readiness or health check, or live test, and
-**nothing has opened a connection or applied anything to a cluster**. No workspace member declares this
-package as a dependency or imports it. SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are
-declared and locked. The migration tree exists at the home [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md)
-places it at `src/aerial_rescue_store/migrations/` and rejects the repository-root path the
+**The schema is real; nothing above it is.** The first revision has been applied to a PostgreSQL 18.6
+cluster, which accepted it, stamped it, enforced both of its constraints, and emptied on its downgrade
+([durable-store-first-run.md](../../release-evidence/phase-3/durable-store-first-run.md)). There is
+still no session, transaction adapter, repository, or package-owned readiness or health check, and no
+workspace member declares this package as a dependency or imports it. **This member's own suite still
+opens no connection**, and under [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)
+it never will; the live evidence lives in `tests/integration/test_durable_store_live.py`.
+
+SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are declared and locked. The migration tree
+exists at the home
+[ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md)
+places it at `src/aerial_rescue_store/migrations/`, rejecting the repository-root path the
 implementation-plan blueprint used to sketch.
 
 `asyncpg` is a runtime dependency this package never imports. It is reached only through the dialect
@@ -78,18 +89,19 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
-| A schema on a real cluster | Nothing named. The first revision exists and renders; applying it is the live probe [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) governs, and it is the next increment |
-| A repository, a session, or a transaction | Nothing named. They follow the applied schema |
+| A repository, a session, or a transaction | Nothing named. The schema they need is applied and proven; they follow the session factory |
+| A second revision, and therefore a migration *path* | Nothing named. Mismatch and failure recovery cannot be tested against a history of length one |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
 connection just to make an absent capability look started. Each lands through red-green-refactor with
 its member-local tests and affected integration evidence.
 
-The PostgreSQL container in `deploy/compose.yaml` is runnable, but it has no project schema. The existing
-live probe proves only that a TCP connection is accepted on the loopback port. Static Compose and image
-tests prove configuration policy, not authentication, migration, transaction, restart, or durability
-behavior.
+The PostgreSQL container in `deploy/compose.yaml` is runnable and **the operator's `POSTGRES_DB` still
+has no project schema**: the live probe migrates a database it creates and drops, and never that one.
+Applying the history to the persistent database is a separate operation, separately authorized, that no
+runbook yet describes. Static Compose and image tests prove configuration policy, not authentication,
+transaction, restart, or durability behavior.
 
 ## 3. Keep policy, representation, orchestration, and persistence separate
 
@@ -223,9 +235,9 @@ ADR-0003 selects async SQLAlchemy 2.x, `asyncpg`, and Alembic. Adding them means
 dependencies, synchronizing the shared lock for both supported platforms, and proving the built wheel;
 do not substitute SQLite or a synchronous driver because it makes a test easier.
 
-No migration tree exists yet, but its home is settled.
-[ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) places it
-at `src/aerial_rescue_store/migrations/`, inside the coverage prefix and inside the wheel, and rejects the
+The migration tree exists at the home
+[ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) settles:
+`src/aerial_rescue_store/migrations/`, inside the coverage prefix and inside the wheel, rather than the
 repository-root path the blueprint used to sketch. Three consequences bind every revision: `env.py` is
 hand-written because the generated one does not survive strict type checking; a revision has to be
 renderable by Alembic's offline mode to earn its Tier 2 coverage, because every live probe is outside the
@@ -300,10 +312,12 @@ cancellation, or concurrent races. Use PostgreSQL with the per-run database or t
 strategy selected by the governing decision for those integration claims; never point tests at persistent
 mission data or replace the selected database with SQLite and call the result equivalent.
 
-The current live stack probe is marked `phase0`, `docker`, and `broker` and proves only loopback TCP
-acceptance. Running it needs authorized container setup. No current store test proves authentication,
-schema, repository behavior, migrations, transactions, or durability: the member's suite is offline by
-construction, which is what earns its Tier 2 gate, and it can therefore never establish any of those.
+`tests/integration/test_durable_store_live.py` carries `docker` and not `broker`, and proves the schema
+claims: acceptance, the stamp, repeat application, constraint enforcement, and the downgrade. It proves
+nothing about transactions, isolation, restart durability, pool cancellation, or races, and there is
+still no repository or session for it to exercise. The member's own suite is offline by construction,
+which is what earns its Tier 2 gate, and it can therefore never establish any of those either. Report
+the two classes separately; one never stands in for the other.
 
 ## 9. Workspace hygiene and required verification
 

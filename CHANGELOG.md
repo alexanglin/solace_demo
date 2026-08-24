@@ -10,6 +10,50 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **PostgreSQL has accepted the schema, and the constraints turn out to be real.** Every claim this
+  repository could make about its durable schema was, until now, a claim about *emitted text*.
+  `packages/store`'s suite runs the revision bodies against a statement-emitting context and asserts
+  the data definition character by character -- which is what earns the member's Tier 2 gate, and
+  which [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) is
+  explicit establishes nothing whatsoever about PostgreSQL. Nothing in the tree had ever opened a
+  database connection.
+
+  `tests/integration/test_durable_store_live.py` is the live class that record specifies. It carries
+  `docker` and deliberately **not** `broker`, because a resource marker declares what a test needs;
+  all 30 tests under `tests/integration/` stay deselected from every blocking stage. Each case gets
+  a database named for the run, created before it and dropped after it -- never the operator's
+  `POSTGRES_DB`, and `run_database_name` **refuses** to derive a name equal to it, so "a probe never
+  touches persistent mission data" is executed rather than remembered. The comparison is against
+  `os.environ` rather than a constant, because a constant matching `.env.example` would silently
+  diverge from an edited `.env`.
+
+  **The finding that mattered is that both constraints are enforced, not merely written.** An
+  insert of `next_ordinal = 0` is refused by `ck_audit_sequence_ordinal_positive`, and a second
+  record at a mission ordinal already taken is refused by `pk_audit_record`.
+  [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
+  gap-free mission timeline on exactly those two objects, and the whole of the prior evidence for
+  them was that the right `CREATE TABLE` text had been produced. The cluster also stamps the
+  revision, is unchanged by a second application of the same head, and empties on the downgrade.
+  Three consecutive runs, PostgreSQL 18.6, zero leaked databases, and `aerial_rescue` still holding
+  zero tables ([durable-store-first-run.md](release-evidence/phase-3/durable-store-first-run.md)).
+
+  Getting there needed one piece of production code. `migrations/env.py` read
+  `config.attributes["connection"]` and **nothing in the repository had ever written that key**, so
+  the tree could render a revision and could not apply one. `live_config` is that single assignment,
+  and it lives in `migration.py` for the reason ADR-0087 gives for `env.py` carrying no branch: a
+  decision covered only by a live run is a decision in the wrong place. Both configurations are now
+  built by the same function, so the live and rendering paths cannot drift apart in which history
+  they read, and the member stays at 100% of statements and branches.
+
+  What this does **not** do, stated plainly because a green durable-store probe is the easiest thing
+  here to over-read: nothing about transaction visibility, isolation, restart durability, pool
+  cancellation, or concurrent races; nothing about a repository or session, because neither exists;
+  and no migration *path*, because a history of length one has none. It also leaves the operator's
+  own database untouched and unmigrated -- applying the history there is a separate, separately
+  authorized operation no runbook yet describes.
+
+  This is also the first `async` code in the repository.
+
 - **The schema has a history, and its first revision covers itself without a database.** The Alembic
   tree lives at `packages/store/src/aerial_rescue_store/migrations/` where
   [ADR-0087](docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) put it,
