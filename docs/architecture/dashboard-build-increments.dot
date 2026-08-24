@@ -1,0 +1,70 @@
+digraph DashboardBuildIncrements {
+  graph [
+    rankdir=LR,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.40",
+    ranksep="0.75",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=18,
+    label="Dashboard build increments — Lane A (browser) and the Lane B work that unblocks it",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F7F9FC",
+    fontname="Helvetica",
+    fontsize=10,
+    margin="0.16,0.11"
+  ];
+
+  edge [
+    color="#52657A",
+    fontcolor="#314158",
+    fontname="Helvetica",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  subgraph cluster_lane_a {
+    label="Lane A — apps/dashboard/src (fixture-driven, no backend required)";
+    color="#2F6FB7";
+    style="rounded";
+    a1 [label="A1\nentry point + app shell\nharness revision ACK", fillcolor="#E8F7F1"];
+    a2 [label="A2\ncontracts layer\ncodegen + validator registry\n+ freshness gate"];
+    a3 [label="A3\ncanonical digest module"];
+    a4 [label="A4\npure reducer\n+ timeline model"];
+    a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
+    a6 [label="A6\nmutation client"];
+    a7 [label="A7\npresentation state\nmap adapter + components"];
+    a8 [label="A8\nscreenshot baselines\nacceptance suite green", fillcolor="#DFF7EE", color="#008F6B"];
+    a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8;
+  }
+
+  subgraph cluster_lane_b {
+    label="Lane B — vertical unblockers (owners outside apps/dashboard)";
+    labelloc=b;
+    color="#8193A6";
+    style="rounded,dashed";
+    r1 [label="R1\ndashboard wire-shape schemas\nmanifest + golden fixtures", fillcolor="#FDEBD0", color="#B7791F"];
+    r2 [label="R2\nscenario catalog + loader\nADR-0100"];
+    r3 [label="R3\nPython projections + fold\ndigest-parity fixtures"];
+    r4 [label="R4\nstore read path\nUI-slice revision (ADR-0095)"];
+    r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101"];
+    r6 [label="R6\nrecorder + replay validator\nADR-0094"];
+    r7 [label="R7\ncanonical-doc propagation"];
+  }
+
+  r1 -> a2 [label="gates the typed core", color="#B7791F", penwidth=1.6];
+  r3 -> a4 [label="parity oracle", style=dashed];
+  r2 -> r5 [label="catalog data", style=dashed];
+  r4 -> r5 [label="snapshot + timeline reads", style=dashed];
+  r5 -> a5 [label="live SSE + HTTP", style=dashed];
+  r6 -> a5 [label="replay bundles", style=dashed];
+}

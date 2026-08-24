@@ -29,6 +29,7 @@ documents merely to keep them aligned.
 | Numeric parameters and the instrument or evidence that measures each one | [`operating-parameters.md`](operating-parameters.md) |
 | Capability and evidence claim ceiling | [`LIMITATIONS.md`](LIMITATIONS.md) |
 | Threats, trust boundaries, and enumerated approval bypasses | [`security/`](security/threat-model.md) |
+| Dashboard build increments, browser state composition, and increment blockers | [`FRONTEND_BUILD.md`](FRONTEND_BUILD.md) |
 
 When a change crosses owners, update each affected owner in the same change, but keep the shared fact in
 only one place. In particular, inspect these relationships:

@@ -382,6 +382,8 @@ contract, and operator-flow evidence.
   Deliver the current API process's bearer through the local startup path, and re-establish that runtime
   context after an API restart before retrying a mutation
   ([ADR-0024](adr/0024-local-operator-api-boundary.md)).
+- The dashboard-internal build increments that satisfy these bullets, and the blocker each one
+  waits on, are sequenced in [FRONTEND_BUILD.md](FRONTEND_BUILD.md).
 
 ### Phase 4: Edge intelligence and evidence interface
 

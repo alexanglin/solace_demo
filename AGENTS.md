@@ -90,6 +90,8 @@ The system must support mission planning, sector assignment, live telemetry, int
 - The dashboard must work at the reference MacBook's normal resolution without developer tools.
 - Provide loading, empty, degraded, offline, retrying, failure, and recovered states.
 - Preserve map attribution and asset licensing requirements.
+- The dashboard build sequence and its blocker register live in
+  [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md).
 
 ## 5. Test-driven development
 

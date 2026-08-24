@@ -10,6 +10,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The dashboard build has one guide, and it defers to every canonical owner.**
+  [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md) sequences the UI-first slice from the committed
+  red acceptance contract to a green product surface: eight browser increments, seven vertical
+  unblockers with named owners, the join that makes the committed schemas the one prerequisite for
+  the typed core, and a staleness register for the passages the UI-slice records supersede. A
+  generated diagram carries the two lanes, and the documentation canonical-owner table now names
+  the guide so the facts it holds have exactly one home.
+
 - **ADR-0006's atomic set exists, and the three writes it fixes now commit and roll back together.**
   `packages/store` could open a session, bound a transaction, and append an audit record. It could not
   consume an approval, claim an idempotency key, or stage a command -- and the reason was named in
