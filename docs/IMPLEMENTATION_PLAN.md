@@ -163,7 +163,8 @@ packages/                      (exists)  four active members and one typed packa
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/                       (exists)  the durable target, its bounds, its engine, and a schema
+  store/                       (exists)  the durable target, its bounds, its engine, a schema, a
+                                         session and transaction boundary, and the audit repository
     src/aerial_rescue_store/migrations/  Alembic revisions, inside the member that owns them
     tests/                     (exists)  member-local unit tests
   observability/               (scaffold)
@@ -331,9 +332,18 @@ contract, and operator-flow evidence.
   enforced rather than merely emitted**, which is what
   [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
   gap-free mission timeline on ([durable-store-first-run.md](../release-evidence/phase-3/durable-store-first-run.md)).
-  Still owed on the store: a session factory and transaction boundary, then a repository; the
-  durable concurrency mechanism, which needs its own record and a real PostgreSQL race; a second
-  revision, without which mismatch and failure recovery have no migration path to test; and
+  **Done: the schema has a unit of work above it.** `session.py` opens sessions and bounds one
+  transaction; `audit.py` appends a record at an ordinal issued by the conditional upsert
+  [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) selected.
+  The isolation level that claim depends on is no longer inherited from the cluster:
+  [ADR-0089](adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED` on the
+  engine, having measured that under `REPEATABLE READ` the second appender is refused rather than
+  ordered. Two appenders for one mission now take 1 and 2 against a live cluster, with the second
+  observed **waiting** rather than merely finishing later, and the three server-side bounds are read
+  back from a session rather than inferred from the driver arguments.
+  Still owed on the store: the approval, idempotency, outbox, and ledger repositories, which need the
+  durable concurrency mechanism selected in a record and proven with a race that holds a denial; a
+  second revision, without which mismatch and failure recovery have no migration path to test; and
   applying the history to the persistent database, which no runbook yet describes.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).

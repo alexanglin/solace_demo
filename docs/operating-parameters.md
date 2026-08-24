@@ -458,8 +458,13 @@ Only the lock timeout gates safety: a refusal there is the difference between a 
 consumption and an indefinite hold on the approval row. Exceeding any other row produces a failed
 request, never an unsafe one.
 
-Five of these are server-side settings and **nothing applies them yet**. They are values in a typed
-record until the engine that sets them exists.
+Three of these are settings this member applies to the server, per session: the statement, lock, and
+idle-in-transaction bounds reach the connection through `connect_args["server_settings"]` in
+`packages/store/src/aerial_rescue_store/engine.py`. Two more are read from the cluster rather than set
+on it. **All three applied bounds have now been read back from a live session** and report `5s`, `5s`,
+and `15s`, and a statement past the first is cancelled by the server rather than left running
+(`tests/integration/test_durable_store_live.py`). ADR-0085's consequence that "nothing applies them
+yet" was true when that record landed one increment ahead of its adapter.
 
 ## Parameters still to be set
 

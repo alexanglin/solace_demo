@@ -42,7 +42,7 @@ member's test directory; keep only real cross-component evidence here.
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
 | `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
 | `test_backlog_recovery_live.py` | Spool 500 drone commands across a 23-drone fleet with no consumer bound, then measure how long one fleet-simulator run takes to drain them, under the instrument [ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) defines |
-| `test_durable_store_live.py` | Create a database named for the run, apply the store's Alembic history to it, assert the tables, the stamped revision, the enforcement of both declared constraints, a second application changing nothing, and an emptying downgrade, then drop it |
+| `test_durable_store_live.py` | Create a database named for the run, apply the store's Alembic history to it, assert the tables, the stamped revision, the enforcement of both declared constraints, a second application changing nothing, and an emptying downgrade; then, on a migrated database, read the server-side bounds and isolation level back from a session, commit and abandon a transaction, and race two audit appenders for one mission. Drop it afterwards |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -354,11 +354,21 @@ subject is a schema rather than a message. It is also the first `async` code in 
 
 A green result establishes that PostgreSQL accepts the declared history, stamps it, is unchanged by
 a repeat application, enforces the constraints the revision declares rather than only carrying their
-text, and empties on the downgrade. It establishes **nothing** about transaction visibility,
-isolation, restart durability, pool cancellation, concurrent races, migration from a prior revision,
-mismatch, or failure recovery -- and nothing at all about a repository or session, because none
-exists. The member's own suite establishes none of these either, by construction; that division is
-the whole point of ADR-0086 and is the easiest claim in this repository to overstate.
+text, and empties on the downgrade. It now also establishes what the unit of work above that schema
+does on a cluster: the three server-side bounds and the stated isolation level are what a session
+opened through this engine actually carries, read back from the server rather than inferred from the
+arguments handed to the driver; a committed record is visible to a session that did not write it; an
+abandoned transaction leaves neither a record nor a gap; and two appenders for one mission take 1 and
+2 because the second **waits** on the row lock the first holds until it commits, which is the
+property [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)
+rests the gap-free timeline on.
+
+It establishes **nothing** about restart durability, interrupted-process rollback, pool cancellation
+as a durable outcome, migration from a prior revision, mismatch, or failure recovery. It establishes
+nothing about the approval-consumption transaction either: that one must yield exactly one commit and
+one hard denial, and an ordinal race holds no denial, so this is not a substitute for it. The member's
+own suite establishes none of these, by construction; that division is the whole point of ADR-0086 and
+is the easiest claim in this repository to overstate.
 
 ## 10. Evidence and change coordination
 

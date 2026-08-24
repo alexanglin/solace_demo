@@ -10,6 +10,48 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The durable schema has a unit of work above it, and the ordinal is now proven under a real race.**
+  `packages/store` could open a pool and apply a revision; it could not open a session, bound a
+  transaction, or write a row. `session.py` and `audit.py` are those two things, and the second is the
+  first repository this project has.
+
+  The interesting half is not the code. `audit.py` issues a per-mission ordinal with the conditional
+  upsert [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)
+  selected, and that record rests the gap-free mission timeline -- and through ADR-0067 and ADR-0009
+  the replay determinism oracle -- on one sentence: a second appender for the same mission **waits**.
+  Nothing had ever run two. Now `tests/integration/test_durable_store_live.py` does: the first appender
+  takes ordinal 1 and holds its transaction open, the second is started and observed *still unfinished*
+  after a window far below the five-second lock wait, and only then is the first released, whereupon
+  the second takes 2. A transaction abandoned before commit leaves neither a record nor a gap, so the
+  next append is 1 again.
+
+  **Staging that race found a decision nobody had made.** ADR-0088's wait is only a wait at one
+  isolation level, and no record named one:
+  [ADR-0085](docs/adr/0085-bound-every-durable-store-wait.md) *measured* the cluster's
+  `read committed` default and put no isolation row in its table, and `engine.py` passed no
+  `isolation_level`, so the property arrived from a cluster setting rather than from this repository --
+  which `packages/store/AGENTS.md` forbids in as many words. Measured on the pinned cluster, the same
+  race under `REPEATABLE READ` does not order the second appender at all: it is refused with
+  `could not serialize access due to concurrent update`, and gets no ordinal.
+  [ADR-0089](docs/adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED` on
+  the engine and records that measurement, along with the lost-update hazard the level hands to
+  everything here that is not one conditional statement.
+
+  A second thing became observed rather than configured. ADR-0085's three server-side bounds were
+  passed to the driver and never read back; `SHOW` on a live session now reports `5s`, `5s`, and `15s`,
+  and a statement past the first is cancelled by the server. `docs/operating-parameters.md` said
+  "nothing applies them yet", which stopped being true one increment ago and is corrected.
+
+  What this does **not** do. Nothing about the approval-consumption transaction, whose concurrency
+  mechanism [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) requires and no record has
+  selected: that one must yield exactly one commit and one *hard denial*, and an ordinal race holds no
+  denial, so it is not a substitute. Nothing about restart durability or interrupted-process rollback --
+  no process was killed. Nothing about a migration path, because the history is still one revision long.
+  Nothing about the operator's own database, which still holds zero tables. The boundary's rollback on
+  cancellation is proven against a fake, which establishes intent and call order and, by
+  [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md), can never
+  establish more. The member stays at 100% of statements and branches, offline, by construction.
+
 - **PostgreSQL has accepted the schema, and the constraints turn out to be real.** Every claim this
   repository could make about its durable schema was, until now, a claim about *emitted text*.
   `packages/store`'s suite runs the revision bodies against a statement-emitting context and asserts

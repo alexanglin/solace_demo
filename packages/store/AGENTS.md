@@ -7,7 +7,8 @@ These instructions apply to every file under `packages/store/`. Read the reposit
 rules still apply.
 
 This member is the PostgreSQL repository and transaction boundary. Its schema history now exists and
-has been applied to a real cluster; no repository, session, or transaction has been built yet.
+has been applied to a real cluster, and a session, a transaction boundary, and the audit repository
+now sit above it. No approval, idempotency, outbox, or ledger repository has been built yet.
 Read the authority for each concern before changing it:
 
 | Concern | Authority or reference |
@@ -55,7 +56,9 @@ method.
 | `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
 | `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
-| `src/aerial_rescue_store/engine.py` | The only module that names SQLAlchemy: the pure argument decision, and the lazy engine it builds |
+| `src/aerial_rescue_store/engine.py` | The pure argument decision, and the lazy engine it builds, with the isolation level stated rather than inherited ([ADR-0089](../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md)) |
+| `src/aerial_rescue_store/session.py` | The session factory, the transaction boundary that commits on a clean exit and rolls back on every other, and the bounded explicit shutdown |
+| `src/aerial_rescue_store/audit.py` | The append-only audit log and the per-mission ordinal ([ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)). It opens no transaction: the caller's is what makes the guarantee |
 | `src/aerial_rescue_store/migration.py` | Where the schema history is, how a rendering run and a live run are each configured, and how it renders without a database. It still opens nothing: a live run's connection is supplied by the caller |
 | `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
@@ -65,13 +68,21 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**The schema is real; nothing above it is.** The first revision has been applied to a PostgreSQL 18.6
-cluster, which accepted it, stamped it, enforced both of its constraints, and emptied on its downgrade
-([durable-store-first-run.md](../../release-evidence/phase-3/durable-store-first-run.md)). There is
-still no session, transaction adapter, repository, or package-owned readiness or health check, and no
-workspace member declares this package as a dependency or imports it. **This member's own suite still
-opens no connection**, and under [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)
-it never will; the live evidence lives in `tests/integration/test_durable_store_live.py`.
+**The schema is real, and one unit of work now sits above it.** The first revision has been applied
+to a PostgreSQL 18.6 cluster, which accepted it, stamped it, enforced both of its constraints, and
+emptied on its downgrade
+([durable-store-first-run.md](../../release-evidence/phase-3/durable-store-first-run.md)). Above it,
+`session.py` opens sessions and bounds one transaction, and `audit.py` appends a record at an ordinal
+the counter issues inside that transaction. Both are proven on a cluster: the three server-side bounds
+and the stated isolation level are read back from a live session, a committed record is visible to a
+second session, an abandoned one leaves neither a row nor a gap, and two appenders for one mission are
+ordered by the row lock the first holds rather than by luck.
+
+There is still no repository for approvals, idempotency, the outbox, or the paid-call ledger, no
+package-owned readiness or health check, and no workspace member declares this package as a
+dependency. **This member's own suite still opens no connection**, and under
+[ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
+will; every live claim above lives in `tests/integration/test_durable_store_live.py`.
 
 SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are declared and locked. The migration tree
 exists at the home
@@ -88,10 +99,8 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
-| A repository, a session, or a transaction | Nothing named. The schema they need is applied and proven; they follow the session factory |
 | A second revision, and therefore a migration *path* | Nothing named. Mismatch and failure recovery cannot be tested against a history of length one |
-| Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
+| Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race. The audit repository needed no such record because [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) had already selected its mechanism, and an ordinal race holds no denial to select one from |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
 connection just to make an absent capability look started. Each lands through red-green-refactor with
@@ -159,9 +168,13 @@ are durable under ADR-0003, but no accepted decision currently adds the audit ap
 Do not silently enlarge or shrink it.
 
 The selected durable concurrency mechanism must yield exactly one commit and one hard denial and cannot
-rely on process-local locking or an unprotected check-then-write. Isolation level, conditional updates,
-constraints, and row or advisory locking remain undecided; select them in an ADR and prove the outcome with
-a real PostgreSQL race test. Do not let a driver default decide the safety property.
+rely on process-local locking or an unprotected check-then-write. The isolation level is settled:
+[ADR-0089](../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED`
+on the engine, having measured that the stricter level refuses the audit appender rather than ordering
+it. Under that level a read-then-write across two statements can be lost, so anything here that is not
+one conditional statement needs its own answer. Conditional updates, constraints, and row or advisory
+locking remain undecided; select them in an ADR and prove the outcome with a real PostgreSQL race test.
+Do not let a driver default decide the safety property.
 
 Preserve the different repeat outcomes:
 
@@ -312,10 +325,13 @@ cancellation, or concurrent races. Use PostgreSQL with the per-run database or t
 strategy selected by the governing decision for those integration claims; never point tests at persistent
 mission data or replace the selected database with SQLite and call the result equivalent.
 
-`tests/integration/test_durable_store_live.py` carries `docker` and not `broker`, and proves the schema
-claims: acceptance, the stamp, repeat application, constraint enforcement, and the downgrade. It proves
-nothing about transactions, isolation, restart durability, pool cancellation, or races, and there is
-still no repository or session for it to exercise. The member's own suite is offline by construction,
+`tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. It proves the schema
+claims -- acceptance, the stamp, repeat application, constraint enforcement, and the downgrade -- and
+now the unit of work above them: the server-side bounds and isolation level read back from a session,
+commit visibility, an abandoned transaction leaving no gap, and two appenders for one mission ordered
+by the row lock. It still proves nothing about restart durability, interrupted-process rollback, the
+approval transaction's single hard denial, or a migration path. The member's own suite is offline by
+construction,
 which is what earns its Tier 2 gate, and it can therefore never establish any of those either. Report
 the two classes separately; one never stands in for the other.
 
