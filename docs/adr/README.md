@@ -26,7 +26,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0006](0006-proposal-bound-single-use-approvals.md) | Approvals bind to a proposal digest, are single-use, and expire | Accepted |
 | [0007](0007-solace-first-implementation-policy.md) | Prefer supported Solace components over project-owned infrastructure | Accepted |
 | [0008](0008-abstention-over-recorded-substitution.md) | Degraded live simulation abstains rather than substituting recorded evidence | Accepted |
-| [0009](0009-isolated-side-effect-free-replay.md) | Replay is structurally isolated and side-effect free | Accepted |
+| [0009](0009-isolated-side-effect-free-replay.md) | Replay is structurally isolated and side-effect free | Superseded by ADR-0094 |
 | [0010](0010-uv-workspace-and-toolchain.md) | uv workspace with per-member packages | Accepted |
 | [0011](0011-no-exception-lint-typecheck-and-complexity-budgets.md) | Lint and typecheck all code with no escape hatches, and enforce complexity budgets | Accepted |
 | [0012](0012-git-hooks-with-ci-as-authority.md) | Staged git hooks for fast feedback, with CI as the authority | Accepted |
@@ -41,7 +41,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0021](0021-contract-artifact-manifest.md) | Validate contract artifacts through one offline manifest | Accepted |
 | [0022](0022-recursive-diagram-integrity.md) | Verify recursive diagram source and PNG integrity | Accepted |
 | [0023](0023-executable-deep-quality-gates.md) | Make complexity, duplication, and mutation gates executable | Accepted |
-| [0024](0024-local-operator-api-boundary.md) | Protect local mutations with loopback, Host, Origin, and a per-runtime bearer | Accepted |
+| [0024](0024-local-operator-api-boundary.md) | Protect local mutations with loopback, Host, Origin, and a per-runtime bearer | Superseded by ADR-0096 |
 | [0025](0025-narrow-ruff-subprocess-waivers.md) | Narrow Ruff subprocess waivers and record incompatible rule choices | Accepted |
 | [0026](0026-expiring-dependency-waivers.md) | Expiring, reviewed waivers for known upstream advisories | Accepted |
 | [0027](0027-integer-only-canonical-serialization.md) | Canonicalize digests over an integer-only JSON profile | Accepted |
@@ -61,7 +61,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0041](0041-deny-by-default-command-authority-table.md) | Close the command-type set with a deny-by-default command-authority table | Accepted |
 | [0042](0042-approval-time-to-live.md) | Approval time to live of 60 seconds | Accepted |
 | [0043](0043-docker-broker-with-solace-cloud-showcase.md) | Run the PubSub+ software event broker in Docker as the broker, with Solace Cloud as a non-gating showcase profile | Accepted |
-| [0044](0044-docker-compose-runtime-with-official-agent-mesh-image.md) | Run every component except Ollama in Docker Compose, with Agent Mesh from its official image | Accepted |
+| [0044](0044-docker-compose-runtime-with-official-agent-mesh-image.md) | Run every component except Ollama in Docker Compose, with Agent Mesh from its official image | Superseded by ADR-0096 |
 | [0045](0045-fail-closed-compose-policy-gate.md) | Enforce a fail-closed compose policy gate at both blocking stages | Accepted |
 | [0046](0046-generated-local-certificate-authority.md) | Secure the local broker with a generated per-checkout certificate authority | Accepted |
 | [0047](0047-override-the-asteval-pin-to-close-cve-2026-55244.md) | Override the asteval pin to 1.0.9 and close CVE-2026-55244 | Accepted |
@@ -84,7 +84,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
 | [0066](0066-select-commit-stage-tests-from-an-import-graph.md) | Select commit-stage tests from a project-owned import graph | Accepted |
-| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Accepted |
+| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Superseded by ADR-0093 |
 | [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
 | [0069](0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md) | Close the gateway-operation set with a deny-by-default operation table | Accepted |
 | [0070](0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) | Reserve `reply` as the reply channel's mission level, and narrow the Event Mesh Tool's grant to it | Accepted |
@@ -107,6 +107,14 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0087](0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) | Put the migration tree inside the member that owns the schema, and cover its revisions offline | Accepted |
 | [0088](0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) | Order the mission timeline by a per-mission audit ordinal advanced inside the writing transaction | Accepted |
 | [0089](0089-state-read-committed-rather-than-inherit-it.md) | State `READ COMMITTED` on the engine rather than inherit it from the cluster | Accepted |
+| [0090](0090-make-the-wilderness-dashboard-ui-first.md) | Make the wilderness mission dashboard a UI-first real slice | Accepted |
+| [0091](0091-pin-the-dashboard-runtime-and-stack.md) | Pin the dashboard runtime and production stack | Accepted |
+| [0092](0092-commit-a-strict-wilderness-scenario-catalog.md) | Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation | Accepted |
+| [0093](0093-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
+| [0094](0094-validate-replay-before-browser-playback.md) | Validate replay in a zero-network one-shot container before browser playback | Accepted |
+| [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Accepted |
+| [0096](0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) | Publish the dashboard through Caddy and keep FastAPI on a private Unix socket | Accepted |
+| [0097](0097-close-the-ui-slice-http-contract.md) | Close the UI slice HTTP contract and mutation refusal order | Accepted |
 
 ## Decisions still open
 

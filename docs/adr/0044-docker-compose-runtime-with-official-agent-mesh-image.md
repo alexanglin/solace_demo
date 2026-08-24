@@ -1,6 +1,6 @@
 # ADR-0044: Run every component except Ollama in Docker Compose, with Agent Mesh from its official image
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0096
 - **Date:** 2026-08-20
 - **Deciders:** Alex Anglin
 - **Supersedes:** the rejected alternative in [ADR-0004](0004-split-python-runtimes.md), "Running

@@ -34,6 +34,10 @@ check-dashboard:
     pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
     pre-commit run --all-files --hook-stage pre-push dashboard-quality-full
 
+# Run the complete dashboard browser acceptance gate with its runtime, cache, and artifact checks.
+check-dashboard-browser:
+    pre-commit run --all-files --hook-stage pre-push dashboard-playwright-full
+
 # Verify the mandatory AAA structure of every project-owned executable test.
 check-aaa:
     pre-commit run --all-files --hook-stage pre-commit test-aaa

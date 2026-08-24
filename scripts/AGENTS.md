@@ -34,7 +34,7 @@ executable.
 | --- | --- |
 | `hooks/quality-components.sh` | Side-effect-free, sourced component activation and root Python discovery |
 | `hooks/agent-mesh/` | Agent Mesh configuration and whole-tree type-check wrappers |
-| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, test, and build wrappers |
+| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, unit, Playwright acceptance, and build wrappers |
 | `hooks/deploy/` | Compose-policy and Trivy-configuration wrapper orchestration |
 | `hooks/deps/` | Lock synchronization and consistency plus audit and waiver-gate orchestration |
 | `hooks/docs/` | Documentation facts and links plus recursive diagram freshness |
@@ -97,8 +97,11 @@ superseding decision.
   a project does not change pytest discovery, mypy configuration, or Python import resolution.
 - Dashboard execution wrappers call committed lint, type-check, test, and build scripts through
   `pnpm --dir apps/dashboard`. The TypeScript-policy wrapper enumerates inputs and launches its pure
-  Python gate instead. Do not replace a package command with a convenient direct tool invocation that
-  bypasses project references or policy.
+  Python gate instead. The Playwright wrapper additionally refuses a runtime that differs from the
+  manifest, verifies discovery against the manifest-owned test inventory, requires the package-pinned
+  Chromium revision to be cached before it starts, and scans retained reports for the synthetic bearer
+  sentinel even after a browser failure. It never downloads a browser from a local hook. Do not replace
+  a package command with a convenient direct tool invocation that bypasses project references or policy.
 - Static Compose and Dockerfile hooks must remain Docker-free. Image pin resolution, pulls, builds, and
   scans are explicit CI or operator work and must not be smuggled into a fast configuration hook.
 - Secret generation must retain restrictive creation permissions, atomic role-environment replacement,
