@@ -32,6 +32,7 @@ from aerial_rescue_store.bounds import (
 )
 from aerial_rescue_store.engine import (
     IDLE_IN_TRANSACTION_SETTING,
+    ISOLATION_LEVEL,
     LOCK_TIMEOUT_SETTING,
     SERVER_SETTINGS,
     STATEMENT_TIMEOUT_SETTING,
@@ -160,6 +161,20 @@ class EngineArgumentTests(unittest.TestCase):
         self.assertEqual(
             (EngineRefusal.UNSUPPORTED_RETRIES, 1),
             (captured.value.refusal, captured.value.value),
+        )
+
+
+class IsolationLevelTests(unittest.TestCase):
+    def test_the_isolation_level_is_stated_rather_than_left_to_the_driver(self) -> None:
+        # Arrange
+        bounds = BOUNDS
+
+        # Act
+        arguments = engine_arguments(SETTINGS, bounds)
+
+        # Assert
+        self.assertEqual(
+            ("READ COMMITTED", ISOLATION_LEVEL), (ISOLATION_LEVEL, arguments.isolation_level)
         )
 
 

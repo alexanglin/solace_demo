@@ -19,6 +19,11 @@ password.
 Three of the four server-side bounds are applied per session through the connection's
 ``server_settings``, not on the cluster. A cluster-wide setting would apply this member's bounds
 to ``psql``, to the migration runner, and to every later consumer that needs different ones.
+
+The isolation level is stated for the same reason the bounds are.
+[ADR-0089](../../../../docs/adr/0089-state-read-committed-rather-than-inherit-it.md) records why
+it cannot be left to the cluster: the audit ordinal's ordering rests on a waiting appender, and
+under ``REPEATABLE READ`` the second appender does not wait -- it is refused.
 """
 
 from __future__ import annotations
@@ -41,6 +46,9 @@ if TYPE_CHECKING:
 
 CONNECT_TIMEOUT: Final = "timeout"
 SERVER_SETTINGS: Final = "server_settings"
+
+ISOLATION_LEVEL: Final = "READ COMMITTED"
+"""Stated rather than inherited, because ADR-0088's ordering depends on it (ADR-0089)."""
 
 STATEMENT_TIMEOUT_SETTING: Final = "statement_timeout"
 LOCK_TIMEOUT_SETTING: Final = "lock_timeout"
@@ -68,6 +76,7 @@ class EngineArguments:
     pool_size: int
     max_overflow: int
     pool_timeout: int
+    isolation_level: str
     connect_args: Mapping[str, object]
 
 
@@ -104,6 +113,7 @@ def engine_arguments(settings: DatabaseSettings, bounds: EngineBounds) -> Engine
         pool_size=bounds.pool_size,
         max_overflow=bounds.pool_overflow,
         pool_timeout=bounds.checkout_timeout_seconds,
+        isolation_level=ISOLATION_LEVEL,
         connect_args={
             CONNECT_TIMEOUT: bounds.connect_timeout_seconds,
             SERVER_SETTINGS: {
@@ -135,5 +145,6 @@ def create_engine(settings: DatabaseSettings, bounds: EngineBounds) -> AsyncEngi
         pool_size=arguments.pool_size,
         max_overflow=arguments.max_overflow,
         pool_timeout=arguments.pool_timeout,
+        isolation_level=arguments.isolation_level,
         connect_args=dict(arguments.connect_args),
     )
