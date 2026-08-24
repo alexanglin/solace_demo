@@ -217,6 +217,12 @@ SHOWN_BOUNDS: Final = (
     text("SHOW idle_in_transaction_session_timeout"),
 )
 SHOWN_ISOLATION: Final = text("SHOW transaction_isolation")
+
+SHOWN_DEADLOCK_DETECTION: Final = (text("SHOW deadlock_timeout"),)
+EXPECTED_DEADLOCK_DETECTION: Final = ("1s",)
+"""What the cluster renders its own ``deadlock_timeout`` as. The store never sets it: ADR-0090
+derives the lock wait from it instead, so ``SERVER_DEADLOCK_TIMEOUT_MILLISECONDS`` is a reading of
+this cluster rather than an assumption about it."""
 LONGER_THAN_THE_STATEMENT_BOUND: Final = text("SELECT pg_sleep(6)")
 STATEMENT_TIMEOUT_MESSAGE: Final = "canceling statement due to statement timeout"
 
@@ -636,6 +642,18 @@ class AuditAppendLiveTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual((ISOLATION_LEVEL.lower(),), shown)
+
+    async def test_the_cluster_reports_the_deadlock_interval_the_lock_wait_is_derived_from(
+        self,
+    ) -> None:
+        # Arrange
+        statements = SHOWN_DEADLOCK_DETECTION
+
+        # Act
+        shown = await _shown(self.engine, statements)
+
+        # Assert
+        self.assertEqual(EXPECTED_DEADLOCK_DETECTION, shown)
 
     async def test_a_statement_past_the_bound_is_cancelled_by_the_server(self) -> None:
         # Arrange
