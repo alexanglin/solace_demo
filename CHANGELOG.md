@@ -10,6 +10,34 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The schema has a history, and its first revision covers itself without a database.** The Alembic
+  tree lives at `packages/store/src/aerial_rescue_store/migrations/` where
+  [ADR-0087](docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) put it,
+  with `versions/v1/` sharded by release series before the fan-out cap can be reached. There is no
+  `alembic.ini`: the configuration is built from the package's own location, so a caller cannot point
+  the runner at a different history by editing a file, and an installed wheel finds its own revisions.
+  Verified by building it -- `env.py`, the revision template, and the revision are all in the wheel.
+
+  The first revision creates the two tables
+  [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) decided:
+  `audit_sequence`, whose only purpose is to be locked, and the append-only `audit_record` keyed by
+  mission and ordinal together.
+
+  **The revision is 100% covered, offline, by running it.** That was the whole bet of ADR-0087, and it
+  holds: the emitted data definition the tests assert is the data definition the revision issues.
+
+  Two findings changed the code rather than the plan. Alembic 1.19 deprecates its legacy splitting of
+  `version_locations`, and because this repository turns warnings into errors the deprecation was a
+  test failure rather than a log line -- fixed by setting the `path_separator` Alembic asks for. And
+  `env.py` originally branched on whether a connection was supplied, which left one statement and one
+  branch reachable only by a live run: enough to hold the member at exactly 95.00% branch coverage, one
+  uncovered branch from failing. **That branch is now a pure function in `migration.py` with ordinary
+  tests, and `env.py` carries no decision at all** -- a file Alembic executes by path is the worst
+  place to put one, because covering it needs a migration run. The member is back to 100% of both.
+
+  What this does not do: **nothing has been applied to a cluster.** Rendering statements proves they
+  are emitted, not that PostgreSQL accepts them. That is the live probe, and it is next.
+
 - **The audit ordinal becomes an ordering authority instead of a column type.**
   [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) has always called the append-only audit
   ordinal "the ordering authority for the mission timeline", and

@@ -51,6 +51,8 @@ method.
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
 | `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
 | `src/aerial_rescue_store/engine.py` | The only module that names SQLAlchemy: the pure argument decision, and the lazy engine it builds |
+| `src/aerial_rescue_store/migration.py` | Where the schema history is, how it is configured, and how it renders without a database |
+| `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
 
 The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
@@ -58,11 +60,11 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**Nothing here is durable yet.** An engine can be built, but there is no session, transaction adapter,
-table model, schema, migration, repository, package-owned readiness or health check, or live test, and
-nothing has opened a connection. No workspace member declares this package as a dependency or imports
-it. SQLAlchemy 2.0.52 and `asyncpg` 0.31.0 are declared and locked; Alembic is not. The migration tree's
-home is decided but empty: [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md)
+**Nothing here is durable yet.** An engine can be built and a revision can be rendered, but there is no
+session, transaction adapter, repository, package-owned readiness or health check, or live test, and
+**nothing has opened a connection or applied anything to a cluster**. No workspace member declares this
+package as a dependency or imports it. SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are
+declared and locked. The migration tree exists at the home [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md)
 places it at `src/aerial_rescue_store/migrations/` and rejects the repository-root path the
 implementation-plan blueprint used to sketch.
 
@@ -76,7 +78,8 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
-| The migration tree and any table | Nothing named. The layout is settled by [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) and the first revision's shape by [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
+| A schema on a real cluster | Nothing named. The first revision exists and renders; applying it is the live probe [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) governs, and it is the next increment |
+| A repository, a session, or a transaction | Nothing named. They follow the applied schema |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
