@@ -20,12 +20,15 @@ from typing import TYPE_CHECKING, Final, cast
 from aerial_rescue_store.migration import (
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
+    CONNECTION_ATTRIBUTE,
     PARAMSTYLE,
     SCRIPT_DIRECTORY,
+    URL_OPTION,
     VERSION_SERIES,
     downgrade_statements,
     environment_arguments,
     heads,
+    live_config,
     migration_config,
     revisions,
     upgrade_statements,
@@ -201,6 +204,40 @@ class EnvironmentArgumentTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(rendered)
+
+
+class LiveConfigurationTests(unittest.TestCase):
+    def test_a_live_configuration_carries_the_connection_it_applies_through(self) -> None:
+        # Arrange
+        connection = cast("Connection", object())
+
+        # Act
+        config = live_config(connection)
+
+        # Assert
+        self.assertIs(connection, config.attributes[CONNECTION_ATTRIBUTE])
+
+    def test_a_live_configuration_reads_this_package_own_history(self) -> None:
+        # Arrange
+        offline = heads(migration_config(PROBE_URL))
+
+        # Act
+        live = heads(live_config(cast("Connection", object())))
+
+        # Assert
+        self.assertEqual(offline, live)
+
+    def test_a_live_configuration_applies_revisions_instead_of_rendering_them(self) -> None:
+        # Arrange
+        config = live_config(cast("Connection", object()))
+
+        # Act
+        arguments = environment_arguments(
+            config.attributes[CONNECTION_ATTRIBUTE], config.get_main_option(URL_OPTION)
+        )
+
+        # Assert
+        self.assertFalse(arguments.as_sql)
 
 
 if __name__ == "__main__":

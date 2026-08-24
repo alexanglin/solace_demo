@@ -11,8 +11,9 @@ There is no ``alembic.ini``. The configuration is built here, from the package's
 caller cannot point the runner at a different history by changing a file on disk, and an installed
 wheel finds its own revisions.
 
-This module renders statements. It does not apply them: the live runner is a separate concern and
-needs a connection this module never opens.
+This module opens nothing. It renders statements, and it configures the live run that applies
+them -- but the connection that run applies through is supplied by the caller, so the decision of
+*how* a run is configured stays here with ordinary tests while the connection stays outside.
 """
 
 from __future__ import annotations
@@ -50,6 +51,9 @@ CONNECTION_ATTRIBUTE: Final = "connection"
 PARAMSTYLE_OPTION: Final = "paramstyle"
 PARAMSTYLE: Final = "named"
 
+LIVE_URL: Final = ""
+"""A live run reaches its database through the connection, so ``env.py`` reads no URL."""
+
 AUDIT_SEQUENCE_TABLE: Final = "audit_sequence"
 AUDIT_RECORD_TABLE: Final = "audit_record"
 
@@ -71,6 +75,27 @@ def migration_config(url: str) -> Config:
         "version_locations", os.pathsep.join(str(path) for path in version_locations())
     )
     config.set_main_option(URL_OPTION, url)
+    return config
+
+
+def live_config(connection: Connection) -> Config:
+    """Return a configuration that applies this package's history through ``connection``.
+
+    Alembic reaches a live connection through ``config.attributes`` rather than through an
+    option, because a connection is an object and the option table holds strings. Putting that
+    one assignment here rather than in a caller keeps ``env.py`` branchless and keeps the live
+    and rendering configurations built by the same function, so they cannot drift apart in
+    which history they read.
+
+    Args:
+        connection: The open connection the revisions are applied through. Its transaction,
+            its lifetime, and the database it addresses all belong to the caller.
+
+    Returns:
+        The configuration. Building it opens nothing; the caller's connection is already open.
+    """
+    config = migration_config(LIVE_URL)
+    config.attributes[CONNECTION_ATTRIBUTE] = connection
     return config
 
 
