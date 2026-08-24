@@ -36,9 +36,11 @@ needs its own case, and several need a second revision or a mechanism no record 
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import unittest
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, override
@@ -46,6 +48,7 @@ from uuid import uuid4
 
 import pytest
 from aerial_rescue_store import StoreError
+from aerial_rescue_store.audit import AuditRecord, append
 from aerial_rescue_store.bounds import (
     CHECKOUT_TIMEOUT_SECONDS,
     CONNECT_RETRIES,
@@ -58,7 +61,7 @@ from aerial_rescue_store.bounds import (
     STATEMENT_TIMEOUT_MILLISECONDS,
     EngineBounds,
 )
-from aerial_rescue_store.engine import create_engine
+from aerial_rescue_store.engine import ISOLATION_LEVEL, create_engine
 from aerial_rescue_store.migration import (
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
@@ -66,6 +69,7 @@ from aerial_rescue_store.migration import (
     HEAD_REVISION,
     live_config,
 )
+from aerial_rescue_store.session import create_session_factory, transaction
 from aerial_rescue_store.settings import database_settings
 from alembic import command
 from sqlalchemy import (
@@ -79,11 +83,12 @@ from sqlalchemy import (
     table,
     text,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 if TYPE_CHECKING:
     from aerial_rescue_store.settings import DatabaseSettings
     from sqlalchemy.ext.asyncio import AsyncEngine
+    from sqlalchemy.sql.elements import TextClause
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker]
 
@@ -141,6 +146,45 @@ RECORD_ROWS: Final = table(
 )
 STAMPED_REVISION: Final = select(column("version_num", String)).select_from(table(VERSION_TABLE))
 """Every statement below is a typed expression, so no table name is interpolated into SQL."""
+
+MISSION_ORDINALS: Final = (
+    select(RECORD_ROWS.c.ordinal, RECORD_ROWS.c.kind)
+    .where(RECORD_ROWS.c.mission_id == MISSION)
+    .order_by(RECORD_ROWS.c.ordinal)
+)
+
+EXPECTED_BOUNDS: Final = ("5s", "5s", "15s")
+"""What ADR-0085's three server-side milliseconds normalise to when PostgreSQL renders them."""
+
+SHOWN_BOUNDS: Final = (
+    text("SHOW statement_timeout"),
+    text("SHOW lock_timeout"),
+    text("SHOW idle_in_transaction_session_timeout"),
+)
+SHOWN_ISOLATION: Final = text("SHOW transaction_isolation")
+LONGER_THAN_THE_STATEMENT_BOUND: Final = text("SELECT pg_sleep(6)")
+STATEMENT_TIMEOUT_MESSAGE: Final = "canceling statement due to statement timeout"
+
+HELD_WINDOW_SECONDS: Final = 0.5
+"""How long the waiting appender is watched. Far below ADR-0085's five-second lock wait, so a
+blocked appender is still blocked when the window ends rather than already refused."""
+
+
+class AbandonedError(Exception):
+    """Raised inside a transaction to abandon it, so the rollback is the caller's own decision."""
+
+
+def _record(mission: str, kind: str) -> AuditRecord:
+    """Return one synthetic audit record for this probe."""
+    return AuditRecord(
+        mission_id=mission,
+        kind=kind,
+        occurred_at=OCCURRED_AT,
+        payload=PAYLOAD,
+        correlation_id=CORRELATION,
+        causation_id=None,
+        traceparent=TRACEPARENT,
+    )
 
 
 class ProbeRefusal(Enum):
@@ -393,6 +437,178 @@ class FirstRevisionLiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             ((VERSION_TABLE,), None),
             (await _table_names(self.engine), await _stamped_revision(self.engine)),
+        )
+
+
+async def _append_and_hold(
+    engine: AsyncEngine, mission: str, took: asyncio.Future[int], release: asyncio.Event
+) -> None:
+    """Append, publish the ordinal taken, and keep the transaction open until released."""
+    async with transaction(create_session_factory(engine)) as session:
+        took.set_result(await append(session, _record(mission, "holder")))
+        await release.wait()
+
+
+async def _append_once(engine: AsyncEngine, mission: str, kind: str) -> int:
+    """Append one record in its own committed transaction and return its ordinal."""
+    async with transaction(create_session_factory(engine)) as session:
+        return await append(session, _record(mission, kind))
+
+
+async def _abandon_an_append(engine: AsyncEngine, mission: str) -> None:
+    """Append, then abandon the transaction, so the rollback is what ends it."""
+    with contextlib.suppress(AbandonedError):
+        async with transaction(create_session_factory(engine)) as session:
+            await append(session, _record(mission, "abandoned"))
+            raise AbandonedError
+
+
+@dataclass(frozen=True)
+class Race:
+    """What two appenders for one mission did, and whether the second had to wait."""
+
+    first: int
+    second: int
+    second_waited: bool
+
+
+async def _two_appenders_on_one_mission(engine: AsyncEngine, mission: str) -> Race:
+    """Run the race ADR-0088's ordering claim is about, and observe the wait itself.
+
+    The first appender takes its ordinal and holds the transaction open. The second is then
+    started and watched for a window far below the lock wait: if it is still unfinished when the
+    window ends, the row lock is what is holding it, not the scheduler. Only then is the first
+    released, so the second's ordinal is issued after the first commits rather than beside it.
+    """
+    took: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+    release = asyncio.Event()
+    async with asyncio.TaskGroup() as group:
+        _ = group.create_task(_append_and_hold(engine, mission, took, release))
+        first = await took
+        waiter = group.create_task(_append_once(engine, mission, "waiter"))
+        finished, _ = await asyncio.wait({waiter}, timeout=HELD_WINDOW_SECONDS)
+        release.set()
+    return Race(first=first, second=waiter.result(), second_waited=not finished)
+
+
+async def _shown(engine: AsyncEngine, statements: tuple[TextClause, ...]) -> tuple[str, ...]:
+    """Return what the server reports for each setting, on one session from this engine."""
+    async with engine.connect() as connection:
+        shown = [str(await connection.scalar(statement)) for statement in statements]
+    return tuple(shown)
+
+
+async def _ordinals(engine: AsyncEngine) -> tuple[tuple[int, str], ...]:
+    """Return every record this probe's mission holds, as ordinal and kind, in ordinal order."""
+    async with engine.connect() as connection:
+        result = await connection.execute(MISSION_ORDINALS)
+    return tuple((int(row[0]), str(row[1])) for row in result.all())
+
+
+class AuditAppendLiveTests(unittest.IsolatedAsyncioTestCase):
+    """Each case gets a migrated database of its own, created here and dropped in teardown."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create this case's database, open an engine on it, and bring it to head."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+        await _apply(self.engine, HEAD_REVISION)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection, then drop the database this case created."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_every_server_side_bound_reaches_a_session_rather_than_only_the_driver(
+        self,
+    ) -> None:
+        # Arrange
+        statements = SHOWN_BOUNDS
+
+        # Act
+        shown = await _shown(self.engine, statements)
+
+        # Assert
+        self.assertEqual(EXPECTED_BOUNDS, shown)
+
+    async def test_the_isolation_level_the_engine_states_is_the_one_the_server_reports(
+        self,
+    ) -> None:
+        # Arrange
+        statements = (SHOWN_ISOLATION,)
+
+        # Act
+        shown = await _shown(self.engine, statements)
+
+        # Assert
+        self.assertEqual((ISOLATION_LEVEL.lower(),), shown)
+
+    async def test_a_statement_past_the_bound_is_cancelled_by_the_server(self) -> None:
+        # Arrange
+        statement = LONGER_THAN_THE_STATEMENT_BOUND
+
+        # Act
+        with pytest.raises(DBAPIError) as cancelled:
+            async with self.engine.connect() as connection:
+                await connection.execute(statement)
+
+        # Assert
+        self.assertIn(STATEMENT_TIMEOUT_MESSAGE, str(cancelled.value.orig))
+
+    async def test_a_committed_record_is_visible_to_a_session_that_did_not_write_it(self) -> None:
+        # Arrange
+        before = await _ordinals(self.engine)
+
+        # Act
+        ordinal = await _append_once(self.engine, MISSION, "committed")
+
+        # Assert
+        self.assertEqual(
+            ((), 1, ((1, "committed"),)), (before, ordinal, await _ordinals(self.engine))
+        )
+
+    async def test_an_abandoned_append_leaves_neither_a_record_nor_a_gap(self) -> None:
+        # Arrange
+        await _abandon_an_append(self.engine, MISSION)
+
+        # Act
+        ordinal = await _append_once(self.engine, MISSION, "after")
+
+        # Assert
+        self.assertEqual((1, ((1, "after"),)), (ordinal, await _ordinals(self.engine)))
+
+    async def test_two_appenders_for_one_mission_are_ordered_by_the_lock_the_first_holds(
+        self,
+    ) -> None:
+        # Arrange
+        mission = MISSION
+
+        # Act
+        race = await _two_appenders_on_one_mission(self.engine, mission)
+
+        # Assert
+        self.assertEqual(
+            (1, 2, True, ((1, "holder"), (2, "waiter"))),
+            (race.first, race.second, race.second_waited, await _ordinals(self.engine)),
+        )
+
+    async def test_appending_never_alters_a_record_already_written(self) -> None:
+        # Arrange
+        first = await _append_once(self.engine, MISSION, "first")
+
+        # Act
+        second = await _append_once(self.engine, MISSION, "second")
+
+        # Assert
+        self.assertEqual(
+            (1, 2, ((1, "first"), (2, "second"))),
+            (first, second, await _ordinals(self.engine)),
         )
 
 
