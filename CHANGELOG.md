@@ -10,6 +10,47 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The durable store has its first behaviour, and it is the one that decides where the credential
+  can travel.** `packages/store` had been a docstring-only scaffold since the workspace was laid
+  out, and it is named as the blocker in three places: the gateway's half of the command dispatch
+  lifecycle, because `ACCEPTED` in
+  [ADR-0074](docs/adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*; the
+  at-least-once intake claim in [TECH_DEBT.md](TECH_DEBT.md); and the append-only audit ordinal that
+  [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) makes the mission timeline's ordering
+  authority.
+
+  The first module is not a table. It is `DatabaseSettings` -- where the cluster is, who connects,
+  and the credential -- resolved from an injected environment mapping and an injected deploy
+  directory, with no default and no read at import. It was chosen to be first because it is the only
+  candidate with **no undecided parameter in front of it**: `deploy/compose.yaml` already names the
+  user and the database, `scripts/broker-secrets.sh` already writes the credential, and ADR-0003
+  already fixes the driver. The seven connection and transaction bounds the member's guide blocks
+  implementation on belong to an engine, which is a later increment and a record of its own.
+
+  **The credential is a member of the settings value and never a member of the data source name.**
+  That separation is structural rather than textual, and the difference matters: a URL carrying a
+  password has to be escaped correctly and redacted at every place it is logged, and one missed call
+  site publishes it into a public repository. Here there is no call site to miss -- the credential
+  reaches the driver as a separate connect argument. The alternative that was rejected is relying on
+  the generator's hexadecimal alphabet to keep the value URL-safe, which would have made a
+  correctness property of this module a silent coupling to a shell script.
+
+  One test sweeps **every** refusal the module can raise and asserts that none of them exposes the
+  credential, so a later refusal that leaks fails here rather than in a log.
+
+  **Activation is the other half of this change.** A `tests/` directory is what
+  [ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md) treats as
+  the moment a member stops being a scaffold, so the Tier 2 gate now applies to every statement and
+  branch under `packages/store/src` -- and it applies from tests that never touch a database, because
+  `scripts/hooks/python/pytest-full.sh` excludes `docker`-marked tests from the same run that
+  measures coverage. The member reports 100% statements and 100% branches against a required 95%.
+  `tools/quality_gate_tests/coverage/test_member_scaffold.py` pins the repository fact and moved with
+  it; the count in `TECH_DEBT.md` was already stale at six and is now five.
+
+  What this does **not** do: nothing is persisted, nothing connects, and no schema exists. The
+  at-least-once intake claim is unchanged, and every "the store is a scaffold" sentence in a dated
+  evidence record still describes what that run did not settle.
+
 - **The backlog-recovery target is measured, and the number is 7.141 seconds against a target of
   10.** `docs/operating-parameters.md` has carried "500 critical messages drain within 10 seconds
   after reconnect" since the service-level profile was written, in a table with no instrument

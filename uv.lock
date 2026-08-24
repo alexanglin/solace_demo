@@ -173,6 +173,12 @@ source = { editable = "services/scenario_service" }
 name = "aerial-rescue-store"
 version = "0.0.0"
 source = { editable = "packages/store" }
+dependencies = [
+    { name = "aerial-rescue-domain" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "aerial-rescue-domain", editable = "packages/domain" }]
 
 [[package]]
 name = "annotated-doc"

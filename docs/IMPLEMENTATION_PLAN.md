@@ -156,14 +156,16 @@ services/                      (scaffold) four typed service package shells
   scenario_service/
   evidence_service/
   recorder/
-packages/                      (scaffold) five typed library package shells
-  broker/
+packages/                      (exists)  four active members and one typed package shell
+  broker/                      (exists)  subscriptions, queue projection, messaging, SEMP
+    tests/                     (exists)  member-local unit and property tests
   contracts/                   (exists)  canonical serialization, digest, topic grammar, envelope profile
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/
-  observability/
+  store/                       (exists)  the durable target and its credential boundary
+    tests/                     (exists)  member-local unit tests
+  observability/               (scaffold)
 migrations/                              Alembic revisions for the durable store
 deploy/                        (exists)  held to the compose policy gate on every commit
   compose.yaml                 (exists)  broker, Postgres, Agent Mesh, services, discovery agent

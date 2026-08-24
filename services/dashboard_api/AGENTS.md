@@ -126,7 +126,7 @@ This service coordinates narrower owners; it does not duplicate them:
 - Use `packages/domain` for mission transitions, approval decisions and consumption, command authority,
   broker-role authority, and other pure policy. Never copy a state table or grant matrix into a route.
 - Keep durable missions, proposals, approvals, idempotency records, audit rows, and their transactions
-  behind `packages/store`. Process memory and logs are not authority, and the store is still a scaffold.
+  behind `packages/store`. Process memory and logs are not authority, and the store holds no durable schema yet.
 - Keep every direct `solace` import, vendor callback value, subscription, publisher acknowledgement,
   reconnect loop, and transport exception inside `packages/broker`. Vendor types and broad `Any` values
   must not cross into HTTP or domain policy.
