@@ -103,6 +103,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0083](0083-pace-the-tick-loop-at-a-fixed-rate.md) | Pace the tick loop at a fixed rate, and count what overruns | Accepted |
 | [0084](0084-give-backlog-recovery-an-instrument.md) | Give backlog recovery an instrument, and say what it does not measure | Accepted |
 | [0085](0085-bound-every-durable-store-wait.md) | Bound every durable-store wait, and derive each from a number the repository already carries | Accepted |
+| [0086](0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) | Prove the durable store on a database the run creates and drops, and keep its member suite offline | Accepted |
 
 ## Decisions still open
 
