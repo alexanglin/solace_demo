@@ -1,6 +1,6 @@
 # ADR-0085: Bound every durable-store wait, and derive each from a number the repository already carries
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0090
 - **Date:** 2026-08-23
 - **Deciders:** Alex Anglin
 - **Supersedes:** none
