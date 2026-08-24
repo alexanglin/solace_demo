@@ -50,6 +50,7 @@ method.
 | `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
 | `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md)) |
+| `src/aerial_rescue_store/engine.py` | The only module that names SQLAlchemy: the pure argument decision, and the lazy engine it builds |
 | `tests/` | Member-local unit and refusal evidence |
 
 The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
@@ -57,18 +58,22 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**Nothing here is durable yet.** There is no engine, session, transaction adapter, table model, schema,
-migration, repository, connection, package-owned readiness or health check, or live test. No workspace
-member declares this package as a dependency or imports it. Async SQLAlchemy 2.x, `asyncpg`, and Alembic
-are accepted choices in [ADR-0003](../../docs/adr/0003-postgres-durable-mission-store.md), and none is
-declared or locked for this member today. The repository-root `migrations/` path shown in the
-implementation-plan blueprint does not exist.
+**Nothing here is durable yet.** An engine can be built, but there is no session, transaction adapter,
+table model, schema, migration, repository, package-owned readiness or health check, or live test, and
+nothing has opened a connection. No workspace member declares this package as a dependency or imports
+it. SQLAlchemy 2.0.52 and `asyncpg` 0.31.0 are declared and locked; Alembic is not. The repository-root
+`migrations/` path shown in the implementation-plan blueprint does not exist.
+
+`asyncpg` is a runtime dependency this package never imports. It is reached only through the dialect
+named in the URL, and failures are discriminated on typed `sqlalchemy.exc` classes. Keep it that way:
+it ships no `py.typed` marker, so importing it would need the narrow relaxation
+[ADR-0028](../../docs/adr/0028-untyped-solace-client-boundary.md) had to grant the Solace client.
 
 Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| An engine or session factory | Declaring and locking SQLAlchemy, `asyncpg`, and Alembic, which this member's manifest still does not name. The bounds it needs are no longer a blocker: [ADR-0085](../../docs/adr/0085-bound-every-durable-store-wait.md) settles them and `bounds.py` carries them |
+| A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
 | The migration tree and any table | The repository-layout and verification decision §7 requires: location, coverage ownership, scaffold activation, and runtime-image inclusion |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
