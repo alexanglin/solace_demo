@@ -109,6 +109,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0089](0089-state-read-committed-rather-than-inherit-it.md) | State `READ COMMITTED` on the engine rather than inherit it from the cluster | Accepted |
 | [0090](0090-bound-the-lock-wait-below-the-statement-time.md) | Bound the lock wait below the statement time, so a contended row is distinguishable | Accepted |
 | [0091](0091-consume-an-approval-under-its-own-row-lock.md) | Consume an approval under its own row lock, and let the domain's refusal be the denial | Accepted |
+| [0092](0092-claim-an-idempotency-key-with-one-conflicting-insert.md) | Claim an idempotency key with one conflicting insert, and let the domain say what a repeat means | Accepted |
 
 ## Decisions still open
 
