@@ -1,7 +1,7 @@
 """Whether the preflight refuses to start the Agent Mesh when the locked model is not served.
 
 The mesh joined the default profile, recorded in
-[ADR-0098](../../../docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md), so ``just up``
+[ADR-0102](../../../docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md), so ``just up``
 starts it on every run. Nothing in the container's readiness path touches Ollama, so
 without this check a stopped daemon produces a healthy container whose first prompt fails. This is
 the readiness half of the digest comparison

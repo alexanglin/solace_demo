@@ -41,7 +41,7 @@ ROLE_ENVIRONMENT = "secrets/.env.roles"
 """The generated file Compose reads for the nine role identities; never tracked."""
 SESSION_VARIABLE = "SESSION_SECRET_KEY"
 """The Web UI's session signing key. The image ships a placeholder and the upstream check is
-presence-only, so an unreplaced value signs real sessions (ADR-0098)."""
+presence-only, so an unreplaced value signs real sessions (ADR-0102)."""
 
 
 def _variable(role: Principal, suffix: str) -> str:

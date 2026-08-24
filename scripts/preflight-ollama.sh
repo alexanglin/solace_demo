@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Refuse to start the Agent Mesh unless the locked local model is actually served
-# (docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md).
+# (docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md).
 #
 # The mesh joined the default profile, so `just up` now starts the component the demonstration
 # is about. Nothing in the container's readiness path touches Ollama: the management server's

@@ -1,7 +1,7 @@
 """Whether the Agent Mesh starts with the default profile, and waits for the broker.
 
 The Agent Mesh is the demonstration's subject, so a stack that is up must include it
-([ADR-0098](../../../docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md)). The compose
+([ADR-0102](../../../docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). The compose
 policy gate cannot prove this: its profile rule only refuses a profile name outside the closed set,
 and an absent key reads as ``[]`` either way. What is left to prove is the part it cannot see --
 that the service declares no profile at all, that it still waits for a healthy broker, and that it

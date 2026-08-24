@@ -3,7 +3,7 @@
 - **Recorded:** 2026-08-24
 - **Host:** Apple Silicon, macOS arm64. Docker Desktop.
 - **Scope:** the **default profile after the Agent Mesh joined it**
-  ([ADR-0098](../../docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md)) — the ordered
+  ([ADR-0102](../../docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)) — the ordered
   four-phase startup, the generated session key reaching the container, and the mesh reaching healthy
   and serving its agent cards. This does **not** cover the `services` or `event-portal` profiles, the
   Solace Cloud showcase, or the behaviour of the mesh with Ollama stopped. None of those was
@@ -15,7 +15,7 @@ lives under the untracked `deploy/secrets/`. Only lengths and file modes are rep
 ## Why this record exists
 
 The Agent Mesh was opt-in: `agent-mesh` carried `profiles: ["mesh"]`, so `just up` started the broker
-and Postgres and nothing else, and every recorded mesh run typed `--profile mesh` by hand. ADR-0098
+and Postgres and nothing else, and every recorded mesh run typed `--profile mesh` by hand. ADR-0102
 moves it into the default profile and replaces the one-line `up` recipe with an ordered four-phase
 startup, because the authorization matrix is applied by a separate step and a mesh that connects
 before it runs comes up healthy on factory authority.
@@ -72,7 +72,7 @@ Phase 3 reported `qwen3:4b` served at digest `359d7dd4…fae7`, matching `agent-
 This is the first time the locked digest has been compared against a running daemon; the offline
 validator proves only lock form and membership.
 
-**Phase 4 is the measurement ADR-0098 needed.** The mesh had been running for two days on the previous
+**Phase 4 is the measurement ADR-0102 needed.** The mesh had been running for two days on the previous
 environment. Compose detected the changed environment, recreated the container, and it reached healthy
 **12 seconds** after the phase began — against a healthcheck that allows a 60-second start period and
 twenty 15-second retries. The six-minute worst case the record accepts was nowhere near reached on
@@ -91,7 +91,7 @@ agents would fail this check.
 
 ## What this run does not establish
 
-- **The container's behaviour with Ollama stopped is still unmeasured.** ADR-0098 reasons that
+- **The container's behaviour with Ollama stopped is still unmeasured.** ADR-0102 reasons that
   `/readyz` is broker-connected and database-connected and every flow thread alive, and that no app
   declares a database and no custom check is configured, so nothing in that path touches Ollama and
   the container would report healthy with the daemon down. That remains a code-path inference. The
@@ -101,7 +101,7 @@ agents would fail this check.
 - **What provisioning does to an already-connected mesh** was not tested in isolation. Phase 2 ran
   against a broker whose matrix was already current, so nothing changed underneath a live connection.
 - **A cold first run on a clean machine** was not performed. The image was already built, so the
-  3.92 GB-based build ADR-0098 warns about is not in the phase-4 figure.
+  3.92 GB-based build ADR-0102 warns about is not in the phase-4 figure.
 - The `services` and `event-portal` profiles, the Solace Cloud showcase, and any agent invocation
   (a prompt, a delegation, a tool call) were not exercised here. Those remain covered by
   [`mesh-first-run.md`](mesh-first-run.md), [`event-mesh-gateway-first-run.md`](event-mesh-gateway-first-run.md),

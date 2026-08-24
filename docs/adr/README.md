@@ -119,7 +119,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Accepted |
 | [0096](0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) | Publish the dashboard through Caddy and keep FastAPI on a private Unix socket | Accepted |
 | [0097](0097-close-the-ui-slice-http-contract.md) | Close the UI slice HTTP contract and mutation refusal order | Accepted |
-| [0098](0098-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
+| [0102](0102-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
 
 ## Decisions still open
 

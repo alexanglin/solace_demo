@@ -5,7 +5,7 @@
 # Profiles:
 #   default       broker, postgres, and the Agent Mesh from its derived official image. The
 #                 mesh joined the default profile when agent-mesh/configs/ landed, which is
-#                 the condition docs/adr/0044 set and docs/adr/0098 executes. `just up` is
+#                 the condition docs/adr/0044 set and docs/adr/0102 executes. `just up` is
 #                 the supported entry point: it provisions the authorization matrix before
 #                 the mesh connects, and a bare `docker compose up` does not.
 #   services      the application services; each command imports its package and exits,

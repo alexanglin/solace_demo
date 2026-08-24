@@ -253,7 +253,7 @@ just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone dr
 ```
 
 `just up` starts the default profile, which now includes the Agent Mesh
-([ADR-0098](docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
+([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
 order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.
 Add another profile with `COMPOSE_PROFILES=services just up`; that one is inert until the services
 gain entrypoints. Editing a file under `agent-mesh/configs/` does **not** restart the mesh: the

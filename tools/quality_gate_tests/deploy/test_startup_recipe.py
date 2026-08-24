@@ -1,7 +1,7 @@
 """Whether ``just up`` starts the stack in the order the authorization matrix requires.
 
 The Agent Mesh joined the default profile, recorded in
-[ADR-0098](../../../docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md), so ``just up``
+[ADR-0102](../../../docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md), so ``just up``
 now starts it on every run. That makes the recipe's order load-bearing rather than cosmetic.
 
 ``just provision`` writes the nine least-privilege identities and disables the factory ``default``

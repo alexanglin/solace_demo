@@ -1,4 +1,4 @@
-# ADR-0098: Start the Agent Mesh with the default profile, behind an ordered startup
+# ADR-0102: Start the Agent Mesh with the default profile, behind an ordered startup
 
 - **Status:** Accepted
 - **Date:** 2026-08-24
