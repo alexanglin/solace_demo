@@ -105,6 +105,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0085](0085-bound-every-durable-store-wait.md) | Bound every durable-store wait, and derive each from a number the repository already carries | Accepted |
 | [0086](0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) | Prove the durable store on a database the run creates and drops, and keep its member suite offline | Accepted |
 | [0087](0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) | Put the migration tree inside the member that owns the schema, and cover its revisions offline | Accepted |
+| [0088](0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) | Order the mission timeline by a per-mission audit ordinal advanced inside the writing transaction | Accepted |
 
 ## Decisions still open
 

@@ -76,7 +76,7 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | A session factory and transaction boundary | Nothing named. It is the next increment, and it needs no decision this repository has not already made |
-| The migration tree and any table | The durable schema's shape, which is the next record. The layout is settled by [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md): `src/aerial_rescue_store/migrations/`, hand-written `env.py`, revisions covered offline |
+| The migration tree and any table | Nothing named. The layout is settled by [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) and the first revision's shape by [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
 | Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
