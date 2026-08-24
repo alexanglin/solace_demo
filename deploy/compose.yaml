@@ -3,9 +3,11 @@
 # every commit. Run `just secrets` once, then `just up`.
 #
 # Profiles:
-#   default       broker and postgres, the only services with behaviour today
-#   mesh          Agent Mesh from its official image; inert until agent-mesh/configs/ holds
-#                 the first configuration, which is when it moves to the default profile
+#   default       broker, postgres, and the Agent Mesh from its derived official image. The
+#                 mesh joined the default profile when agent-mesh/configs/ landed, which is
+#                 the condition docs/adr/0044 set and docs/adr/0098 executes. `just up` is
+#                 the supported entry point: it provisions the authorization matrix before
+#                 the mesh connects, and a bare `docker compose up` does not.
 #   services      the application services; each command imports its package and exits,
 #                 because no entrypoint exists yet; documented, not live behaviour
 #   event-portal  the Event Management Agent for Event Portal runtime discovery; an amd64
@@ -128,7 +130,6 @@ services:
       context: ./agent-mesh
       dockerfile: Dockerfile
     image: aerial-rescue/agent-mesh:1.28.7
-    profiles: ["mesh"]
     environment:
       # The image defaults developer mode on, binds the Web UI to every interface inside
       # the container, and ships a placeholder session secret; each is overridden here.
@@ -137,7 +138,7 @@ services:
       SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
       # The runtime's own identity. The Event Mesh Gateway and Tool are separate roles with
       # separate credentials, named by their own configuration under agent-mesh/configs/
-      # when it lands (docs/adr/0061, docs/adr/0032).
+      # (docs/adr/0061, docs/adr/0032).
       #
       # Both spellings are passed. The generic pair is what the image's own defaults read; the
       # role-named pair is what agent-mesh/configs/ references, because a configuration that

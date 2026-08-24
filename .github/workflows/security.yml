@@ -119,7 +119,7 @@ jobs:
       - name: Build the derived images
         run: >-
           docker compose --env-file .env.example -f deploy/compose.yaml
-          --profile mesh --profile services build agent-mesh dashboard-api
+          --profile services build agent-mesh dashboard-api
 
       - name: Scan every pulled and built image
         run: scripts/security/scan-images.sh

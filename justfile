@@ -71,7 +71,7 @@ probe-image:
 
 # Build the derived images and scan every stack image with Trivy. Needs Docker and trivy.
 scan-images:
-    docker compose --env-file .env.example -f deploy/compose.yaml --profile mesh --profile services build agent-mesh dashboard-api
+    docker compose --env-file .env.example -f deploy/compose.yaml --profile services build agent-mesh dashboard-api
     scripts/security/scan-images.sh
 
 # Generate the per-checkout certificate authority, broker certificate, and stack passwords.
@@ -82,10 +82,16 @@ secrets:
 rotate-secrets:
     scripts/broker-secrets.sh --rotate
 
-# Start the broker and Postgres and wait for both to be healthy. Add a profile explicitly:
-# `just up --profile mesh`, `--profile services`, or `--profile event-portal`.
+# Start the whole default stack -- broker, Postgres, and the Agent Mesh -- in the order the
+# authorization matrix requires (docs/adr/0094). The broker is provisioned before the mesh
+# connects, because until it is, the factory `default` username is still enabled and any
+# identity may publish any topic (docs/adr/0061). Compose flags pass through:
+# `just up --force-recreate`. Add a profile with `COMPOSE_PROFILES=services just up`.
 up *ARGS:
-    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml {{ARGS}} up --detach --wait
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait broker postgres
+    uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh
+    scripts/preflight-ollama.sh
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait {{ARGS}}
 
 # Apply the broker authorization matrix over SEMP. Needs a running broker and the
 # credentials `just secrets` writes (docs/adr/0061). Safe to re-run; it converges.
@@ -107,7 +113,7 @@ ps:
 # Point the same stack at the Solace Cloud showcase service (docs/adr/0043). `.env.showcase`
 # is an ignored operator-created copy of .env.example carrying the service's values.
 showcase *ARGS:
-    docker compose --env-file .env.showcase -f deploy/compose.yaml {{ARGS}} up --detach --wait
+    docker compose --env-file .env.showcase -f deploy/compose.yaml {{ARGS}} up --detach --wait broker postgres
 
 # Apply every automatic fix. The only thing here that modifies files.
 fix:

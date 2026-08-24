@@ -12,6 +12,7 @@
 #   secrets/broker-admin-password   32 random bytes, hexadecimal
 #   secrets/postgres-password       32 random bytes, hexadecimal
 #   secrets/semp-discovery-password 32 random bytes, hexadecimal
+#   secrets/session-secret-key      32 random bytes, hexadecimal -- the Web UI session key
 #   secrets/broker-<role>-password  one per broker authorization role, same form
 #   secrets/.env.roles              the same role credentials as Compose variables
 #
@@ -54,7 +55,7 @@ validity_days=365
 
 broker_roles="fleet-simulator command-gateway dashboard-api evidence-service recorder
 event-mesh-gateway event-mesh-tool agent-mesh-agent discovery"
-passwords="broker-admin-password postgres-password semp-discovery-password"
+passwords="broker-admin-password postgres-password semp-discovery-password session-secret-key"
 for role in $broker_roles; do
 	passwords="$passwords broker-$role-password"
 done
@@ -67,6 +68,7 @@ report() {
 	openssl x509 -noout -text -in "$secrets/broker-server.crt" |
 		grep -A1 'Subject Alternative Name' | tail -n 1 | sed 's/^[[:space:]]*//'
 	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery}-password\n' "$secrets"
+	printf 'session:    %s/session-secret-key\n' "$secrets"
 	printf 'roles:      %s/broker-{%s}-password\n' "$secrets" \
 		"$(printf '%s' "$broker_roles" | tr '\n ' ',,')"
 	printf 'compose:    %s/.env.roles\n' "$secrets"
@@ -88,6 +90,11 @@ write_role_environment() {
 		printf 'SOLACE_%s_PASSWORD=%s\n' "$variable" \
 			"$(cat "$secrets/broker-$role-password")" >>"$pending"
 	done
+	# The Web UI's session signing key. The image ships a placeholder, .env.example carries
+	# `<required>`, and the upstream schema check is presence-only, so an unreplaced value
+	# signs real sessions. Generating it here means the fresh-clone path never has to set
+	# it by hand (docs/adr/0094).
+	printf 'SESSION_SECRET_KEY=%s\n' "$(cat "$secrets/session-secret-key")" >>"$pending"
 	mv "$pending" "$secrets/.env.roles"
 	chmod 600 "$secrets/.env.roles"
 }

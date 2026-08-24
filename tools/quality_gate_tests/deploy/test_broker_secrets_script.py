@@ -18,6 +18,7 @@ STACK_PASSWORDS = (
     "secrets/broker-admin-password",
     "secrets/postgres-password",
     "secrets/semp-discovery-password",
+    "secrets/session-secret-key",
 )
 ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in Principal)
 """One per broker authorization role (ADR-0061); the script's own list is held equal below."""
@@ -38,6 +39,9 @@ def _material(deploy: Path) -> dict[str, bytes]:
 
 ROLE_ENVIRONMENT = "secrets/.env.roles"
 """The generated file Compose reads for the nine role identities; never tracked."""
+SESSION_VARIABLE = "SESSION_SECRET_KEY"
+"""The Web UI's session signing key. The image ships a placeholder and the upstream check is
+presence-only, so an unreplaced value signs real sessions (ADR-0098)."""
 
 
 def _variable(role: Principal, suffix: str) -> str:
@@ -79,7 +83,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_twelve_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_thirteen_passwords(self) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -285,6 +289,18 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
             _expected_passwords(deploy),
             _suffixed(_role_environment(deploy), "_PASSWORD"),
         )
+
+    def test_the_role_environment_file_carries_a_generated_session_secret(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        self.generate(repository)
+
+        # Assert
+        secret = _role_environment(repository / "deploy").get(SESSION_VARIABLE, "")
+        self.assertEqual(PASSWORD_HEX_LENGTH, len(secret))
+        self.assertTrue(all(character in "0123456789abcdef" for character in secret))
 
     def test_a_deleted_role_environment_file_is_rewritten_without_rotating_anything(self) -> None:
         # Arrange
