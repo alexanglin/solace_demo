@@ -20,6 +20,7 @@ Before doing any work:
 
 | You need | Read |
 | --- | --- |
+| Demo value thesis, audience journey, and proof requirements | [`docs/SOLACE_VALUE.md`](docs/SOLACE_VALUE.md) |
 | Why a decision was made, and whether it still stands | [`docs/adr/`](docs/adr/README.md) |
 | Delivery sequence, milestones, risks, release criteria | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
 | Component responsibilities, runtime layout, operating modes | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |

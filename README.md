@@ -9,31 +9,35 @@ agent mesh coordinate independently deployed models, with different capabilities
 unreliable connectivity, safely enough that a human still authorizes every consequential
 action?**
 
+The [Solace value guide](docs/SOLACE_VALUE.md) makes the evaluation lens explicit: search and rescue is
+the pressure test; agent coordination, selective event-to-agent bridging, durable delivery,
+broker-enforced authority, and observable proof are the demonstration.
+
 ## Status
 
-**No operational demonstration runs yet.** This is a repository under construction. The Agent
-Mesh runtime now starts and its agents discover and delegate to each other, but no mission,
-no drone, no evidence, and no approval exists: none of the application services has an
-entrypoint, and no application event has ever been published.
+**No end-to-end operational demonstration has run yet.** This is a repository under construction.
+Committed local slices now exercise Agent Mesh discovery and delegation, both official Event Mesh
+plugins, broker authorization and guaranteed delivery, fleet telemetry, and drone-side command
+consumption. The mission dashboard, evidence path, persistent command authorization, complete human
+approval flow, recording and replay, and the cross-system audit trace are not assembled.
 
 | Area | State |
 | --- | --- |
 | Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
-| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: four configurations under `agent-mesh/configs/` |
+| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: five configurations under `agent-mesh/configs/` |
 | Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the default profile's **first live run is recorded** in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
 | Broker authorization | Nine least-privilege client usernames on deny-by-default ACL profiles, **applied to the running container**; approval-bypass cases B17, B18, and B19 pass against it ([`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md)) |
 | Live Ollama messaging and the Agent Mesh runtime | **Running.** The `mesh` profile carries the Orchestrator, a specialised agent, a versioned workflow, and the HTTP/SSE Web UI on a digest-locked local model; agent-card discovery, structured workflow invocation, and one model-chosen A2A delegation are asserted against the running broker ([`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md)) |
-| Application events, durable queues, and the command gateway | Not started: no queue exists, no application CloudEvent has been published, and the Event Mesh Gateway and Tool are unconfigured |
+| Application events and official Event Mesh plugins | **Live slices recorded.** Fleet telemetry crosses the broker; one salient CloudEvent becomes a structured A2A task; one Event Mesh Tool request receives a validated, non-actuating command-gateway reply ([`fleet-simulator-first-run.md`](release-evidence/phase-3/fleet-simulator-first-run.md), [`event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md), [`event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)) |
+| Guaranteed delivery and drone command consumption | **Live slices recorded.** Durable queues, settlement, bounded redelivery, dead-message handling, backlog drain, and drone-side command consumption are exercised against the local broker; an actual broken-session reconnect and gateway-side persistent dispatch remain unproved ([`guaranteed-delivery-first-run.md`](release-evidence/phase-2/guaranteed-delivery-first-run.md), [`backlog-recovery-first-run.md`](release-evidence/phase-2/backlog-recovery-first-run.md), [`command-dispatch-first-run.md`](release-evidence/phase-3/command-dispatch-first-run.md)) |
 | Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
-| Solace Cloud | A non-gating showcase profile for the Cloud console; no gate depends on it |
-| Everything else | Typed package manifests with no runtime behaviour |
+| Solace Cloud | A non-gating showcase profile for the Cloud console; it has not been exercised, and no gate depends on it |
+| End-to-end mission experience | Not assembled: the dashboard, evidence service, persistent approval-to-command path, recorder/replayer, and complete audit trace remain release work |
 
-One application module contains production code today, and one verification module checks
-Agent Mesh configuration without running it. Every other package under `packages/` and
-`services/` is a manifest and an empty namespace, deliberately: the verification machinery
-was built first so that no behaviour could land untested. Sequenced delivery and exit
-criteria are in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+Sequenced delivery and exit criteria are in
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md); committed live observations are scoped in
+[`release-evidence/`](release-evidence/).
 
 ## The mission scenario
 
@@ -109,6 +113,7 @@ disagree.
 
 | You need | Read |
 | --- | --- |
+| Why the demo centers Solace, and what the audience must see | [`docs/SOLACE_VALUE.md`](docs/SOLACE_VALUE.md) |
 | Why a decision was made, and whether it still stands | [`docs/adr/`](docs/adr/README.md) |
 | Delivery sequence, milestones, release criteria | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
 | Component responsibilities and operating modes | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
