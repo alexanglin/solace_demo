@@ -163,10 +163,10 @@ packages/                      (exists)  four active members and one typed packa
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/                       (exists)  the durable target and its credential boundary
+  store/                       (exists)  the durable target, its bounds, and its engine
+    src/aerial_rescue_store/migrations/  Alembic revisions, inside the member that owns them
     tests/                     (exists)  member-local unit tests
   observability/               (scaffold)
-migrations/                              Alembic revisions for the durable store
 deploy/                        (exists)  held to the compose policy gate on every commit
   compose.yaml                 (exists)  broker, Postgres, Agent Mesh, services, discovery agent
   agent-mesh/Dockerfile        (exists)  official image plus the two hashed plugin wheels

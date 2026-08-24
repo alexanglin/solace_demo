@@ -10,6 +10,45 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The migration tree goes inside the member that owns the schema, and its revisions earn their
+  coverage rather than being excused from it.** `packages/store/AGENTS.md` required the question
+  settled "before the first revision", naming five parts: location, local guidance, scaffold
+  activation, coverage ownership, and runtime-image inclusion.
+  [ADR-0087](docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) settles
+  all five at `packages/store/src/aerial_rescue_store/migrations/`.
+
+  Four measured facts rule out the repository-root path the implementation-plan blueprint has sketched
+  since it was written. `tools/coverage_gate.py` attributes a file by the single prefix
+  `<member>/src/`; `pytest-full.sh` instruments only those directories, so a root tree is not merely
+  unattributed but uninstrumented; `tools/member_scaffold.py` walks `src/` alone, so a schema could
+  have landed while the member still reported `SCAFFOLD`; and `deploy/application/Dockerfile` has no
+  `COPY migrations`. [ADR-0017](docs/adr/0017-mutation-tool-score-and-risk-tiers.md) already places
+  the durable store *and its migrations* in Tier 2 per member, so the root location would have made an
+  accepted decision unenforceable by construction.
+
+  **The coverage question was answered by running Alembic rather than by arguing about it.** Offline
+  mode executes a revision's `upgrade` and `downgrade` bodies with no database and emits the
+  data-definition statements they would issue. That makes a member-local test genuine coverage of the
+  revision, so **no `omit` is added** -- which matters because
+  [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) puts every live
+  probe outside the blocking suite, leaving an `omit` as the only alternative, and this tree has no
+  escape hatches to spend.
+
+  The cost is stated rather than hidden: a revision now has to be renderable offline to be coverable,
+  so a query-driven data backfill earns nothing from that test and needs its own live evidence.
+
+  `env.py` is hand-written because the generated one does not survive strict type checking --
+  `fileConfig(config.config_file_name)` passes `str | None` into a `str` -- and there is no
+  `# type: ignore` anywhere in this tree to be the first. The revision template is customised so a
+  generated file already carries its docstrings and annotations, and the filename template avoids the
+  `N999` module-name rule the default hexadecimal prefix trips. `versions/` is sharded by release
+  series **before** it needs to be, because the fan-out cap grants an exemption only where fan-out
+  cannot be removed, and a versions directory can always be decomposed.
+
+  Three shell gates enumerated a repository-root `migrations` directory that has never existed, in
+  `quality-components.sh`, `cognitive-complexity-full.sh`, and `duplication-full.sh`. They are
+  corrected here so no gate implies a location this record rejects.
+
 - **The durable store gets two test classes, and neither may borrow the other's claim.**
   [ADR-0003](docs/adr/0003-postgres-durable-mission-store.md) left the isolation strategy open --
   "a per-run database or transactional rollback" -- and the store's guide requires tests to use "the
