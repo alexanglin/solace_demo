@@ -194,7 +194,7 @@ Broker arrival order, file line order, event time, identifier, trace context, an
 `sequence` do not replace it. Preserve original producer sequence for stale-update and diagnostic rules,
 but use the durable ordinal to select and order export rows.
 
-`packages/store` is currently a scaffold: no audit model, migration, append operation, transaction,
+`packages/store` holds no durable schema: no audit model, migration, append operation, transaction,
 ordinal, export query, or recovery behavior exists. `packages/broker` currently exposes a direct
 receiver, not a durable queue consumer, and supplies no recorder acknowledgement, redelivery, expiry,
 dead-message, or offline-backlog path. Therefore this service cannot yet claim complete capture,

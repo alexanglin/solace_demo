@@ -42,39 +42,43 @@ version pin, durability claim, safety behavior, or gating parameter requires the
 work specified by the root guide. Do not settle one in an ORM default, migration comment, or repository
 method.
 
-## 2. Preserve the current scaffold truth
+## 2. What the member owns, and what it still does not
 
-Apart from this guide and its symlink, the implementation scaffold contains only:
-
-| Path | Current responsibility |
+| Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, and Tier 2 status |
-| `src/aerial_rescue_store/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_store/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | The package shell, the Python range, Tier 2, and the one workspace dependency |
+| `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
+| `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
+| `tests/` | Member-local unit and refusal evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no repository, transaction adapter, table model, schema, migration,
-connection factory, package-owned readiness or health check, or store-local test. Async SQLAlchemy 2.x,
-`asyncpg`, and Alembic are accepted choices in ADR-0003, but none is declared or locked for this member
-today. The repository-root `migrations/` path shown in the implementation-plan blueprint does not exist.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies this member as
-`SCAFFOLD`, and
+The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
+such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
+pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
+**Nothing here is durable yet.** There is no engine, session, transaction adapter, table model, schema,
+migration, repository, connection, package-owned readiness or health check, or live test. No workspace
+member declares this package as a dependency or imports it. Async SQLAlchemy 2.x, `asyncpg`, and Alembic
+are accepted choices in [ADR-0003](../../docs/adr/0003-postgres-durable-mission-store.md), and none is
+declared or locked for this member today. The repository-root `migrations/` path shown in the
+implementation-plan blueprint does not exist.
 
-Activation applies the Tier 2 gates immediately. Never add a dummy model, placeholder migration, empty
-test directory, fake repository, or no-op connection just to make the package look started. The first real
-behavior lands through red-green-refactor with its member-local tests and affected integration evidence.
+Still absent, and each blocked by something named rather than by effort:
+
+| Not here | What it waits on |
+| --- | --- |
+| An engine or session factory | The connection and transaction bounds, which have no row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md); §7 makes an open parameter a blocker rather than a licence to pick a default |
+| The migration tree and any table | The repository-layout and verification decision §7 requires: location, coverage ownership, scaffold activation, and runtime-image inclusion |
+| Approval consumption, the idempotency claim, and outbox staging | The durable concurrency mechanism §4 requires, which must be selected in a record and proven with a real PostgreSQL race |
+
+Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
+connection just to make an absent capability look started. Each lands through red-green-refactor with
+its member-local tests and affected integration evidence.
 
 The PostgreSQL container in `deploy/compose.yaml` is runnable, but it has no project schema. The existing
 live probe proves only that a TCP connection is accepted on the loopback port. Static Compose and image
 tests prove configuration policy, not authentication, migration, transaction, restart, or durability
-behavior. `AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and do not activate this scaffold.
+behavior.
 
 ## 3. Keep policy, representation, orchestration, and persistence separate
 
@@ -281,9 +285,9 @@ strategy selected by the governing decision for those integration claims; never 
 mission data or replace the selected database with SQLite and call the result equivalent.
 
 The current live stack probe is marked `phase0`, `docker`, and `broker` and proves only loopback TCP
-acceptance. Running it needs authorized container setup and is not required for this guide-only change. No
-current store test proves authentication, schema, repository behavior, migrations, transactions, or
-durability.
+acceptance. Running it needs authorized container setup. No current store test proves authentication,
+schema, repository behavior, migrations, transactions, or durability: the member's suite is offline by
+construction, which is what earns its Tier 2 gate, and it can therefore never establish any of those.
 
 ## 9. Workspace hygiene and required verification
 
