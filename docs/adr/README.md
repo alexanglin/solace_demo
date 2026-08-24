@@ -123,6 +123,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0103](0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) | Adjudicate dashboard coverage and require separate browser evidence | Accepted |
 | [0104](0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) | Bound dashboard schema strings and arrays explicitly | Accepted |
 | [0105](0105-authenticate-private-scenario-and-fleet-run-control.md) | Authenticate private scenario and fleet run control over bounded HTTP | Accepted |
+| [0106](0106-register-strict-python-wire-models-before-http-runtime.md) | Register strict Python wire models before the HTTP runtime | Accepted |
 
 ## Decisions still open
 
