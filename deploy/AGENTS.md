@@ -106,15 +106,18 @@ and positive and negative conformance tests together.
   and never place Cloud credentials in continuous integration or tracked files.
 - A bind-mounted Agent Mesh configuration does not restart the running process. Recreate the container
   before claiming a configuration or image change was exercised.
-- `just up *ARGS` places arguments before the `up` subcommand, so use it for global flags such as
-  `--profile`. For `up` options such as `--force-recreate` or `--build`, use the raw command with those
-  flags after `up`:
+- `just up *ARGS` places arguments after the `up` subcommand, so `up` options such as
+  `--force-recreate` and `--build` pass through directly. Select an extra profile with the
+  `COMPOSE_PROFILES` environment variable, which Compose reads on its own:
 
 ```sh
-docker compose --env-file .env --env-file deploy/secrets/.env.roles \
-  -f deploy/compose.yaml --profile mesh \
-  up --detach --wait --force-recreate --build
+just up --force-recreate --build
+COMPOSE_PROFILES=services just up
 ```
+
+  `just up` is the supported entry point. A bare `docker compose up` reads only `.env`, where the six
+  Agent Mesh role credentials do not live, so the references expand to empty and the broker refuses
+  the connection as the shutdown factory `default` username, retrying without an error.
 
 ## 6. Required verification
 

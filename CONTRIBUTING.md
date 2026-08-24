@@ -187,10 +187,9 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 ([ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)):
 
 ```sh
-cp .env.example .env   # then set SESSION_SECRET_KEY; the role credentials are generated, not copied
+cp .env.example .env   # every credential and the session key are generated, never copied
 just secrets           # certificate authority, broker certificate, passwords, and secrets/.env.roles
-just up                # broker and Postgres, waiting for both to be healthy
-just provision --namespace aerial-rescue-mesh   # identities, ACL profiles, and the A2A grant
+just up                # broker, Postgres, provisioning, the Ollama preflight, then the Agent Mesh
 just ps                # service health
 just logs              # follow the logs
 just down              # stop; volumes are kept
@@ -224,7 +223,7 @@ lives under the ignored `deploy/secrets/`, its name matches `.gitignore`'s `.env
 stops on the missing file rather than starting a service with a blank identity.
 
 `just provision` needs `--namespace aerial-rescue-mesh` to write the A2A grant; without it the three
-Agent Mesh roles get no A2A exception and the `mesh` profile cannot reach its own topics
+Agent Mesh roles get no A2A exception and the mesh cannot reach its own topics
 ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)).
 
 It also takes `--drone <id>`, repeated once per drone, and creates one durable command queue for
@@ -238,15 +237,18 @@ grant tables, so nothing else needs naming on the command line:
 just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone drone-thermal-02
 ```
 
-`just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
-the second is inert until the services gain entrypoints. Editing a file under `agent-mesh/configs/`
-does **not** restart the `mesh` profile: the directory is a bind mount, so `up --wait` reports the
-running container healthy and keeps serving the old configuration. Add `--force-recreate` after a
-configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
+`just up` starts the default profile, which now includes the Agent Mesh
+([ADR-0098](docs/adr/0098-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
+order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.
+Add another profile with `COMPOSE_PROFILES=services just up`; that one is inert until the services
+gain entrypoints. Editing a file under `agent-mesh/configs/` does **not** restart the mesh: the
+directory is a bind mount, so `up --wait` reports the running container healthy and keeps serving the
+old configuration. Run `just up --force-recreate` after a configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
 is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
-`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: its first live run is recorded in
-[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). For the
-`mesh`, `services`, and `event-portal` profiles, which remain unstarted, until each is recorded under
+`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: the broker and Postgres first live run is recorded in
+[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), and the
+Agent Mesh in [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md).
+For the `services` and `event-portal` profiles, which remain unstarted, until each is recorded under
 `release-evidence/` the healthcheck commands and the image-internal details are design, not evidence.
 
 ## Fail-closed gates
@@ -339,9 +341,9 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   `packages/contracts`, `packages/domain`, and `services/command_gateway` -- are fully scored. What
   remains is the AAA checker's three modules, carried as a row in
   [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
-- The `mesh`, `services`, and `event-portal` profiles are defined and held to the policy gate but have
-  never been started, so the Agent Mesh management-server probe and the Event Management Agent's secret
-  mount are still design rather than measurement. The broker image's `curl` and the `openssl` flags
+- The `services` and `event-portal` profiles are defined and held to the policy gate but have never
+  been started, so the Event Management Agent's secret mount is still design rather than measurement.
+  The Agent Mesh management-server probe is measurement: it decides whether the default stack is up. The broker image's `curl` and the `openssl` flags
   under LibreSSL were confirmed by the default profile's first live run and are recorded in
   [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). No hook
   can prove any of them: a policy gate reads the compose file and cannot see inside an image.

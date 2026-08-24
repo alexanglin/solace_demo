@@ -90,7 +90,7 @@ The current prerequisite boundaries are deliberately not interchangeable:
 - `test_first_live_stack.py` needs the generated checkout-local authority and a healthy default stack.
   Its sockets do not require namespace or ACL provisioning, and it does not authenticate to PostgreSQL.
 - `test_agent_mesh_live.py` additionally needs the provisioned A2A namespace and role matrix, a healthy
-  `mesh` profile serving the committed configurations, and host Ollama serving the locked model. Recreate
+  default profile serving the committed configurations, and host Ollama serving the locked model. Recreate
   the Agent Mesh container after a bind-mounted configuration change; `up --wait` alone can keep the old
   process and old configuration.
 - `test_event_mesh_gateway_live.py` needs the same live Agent Mesh boundary with the gateway app loaded,

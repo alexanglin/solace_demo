@@ -55,7 +55,7 @@ digraph AerialRescueMesh {
       postgres [label="PostgreSQL 18 container\ndurable mission store (ADR-0003)", shape=cylinder, fillcolor="#EEF2F6"];
 
       subgraph cluster_sam {
-        label="Agent Mesh 1.28.7 — official image + pinned plugins — profile mesh";
+        label="Agent Mesh 1.28.7 — official image + pinned plugins — default profile";
         color="#00A67D";
         style="rounded";
         sam_gateways [label="Official gateways and tool\nHTTP/SSE • Event Mesh Gateway 1.1.0\nEvent Mesh Tool 0.1.1", fillcolor="#DFF7EE", color="#008F6B"];
