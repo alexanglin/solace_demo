@@ -3,9 +3,10 @@
 This package is the browser command center for the wilderness mission slice. A1 is green: the
 production HTML host loads the real entry module, which renders sibling banner and main landmarks,
 explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is in
-progress: the 19 browser-facing schemas and shared polarity fixtures are committed, while scenario
-and private-control schemas plus strict service twins still gate A2. The remaining Playwright
-contract stays intentionally red while A2-A8 are implemented.
+progress: the 19 browser-facing schemas plus two scenario-file and eight private-control schemas have
+shared manifest-owned polarity fixtures. Only strict service-owned Pydantic twins and HTTP/OpenAPI
+expectations still gate A2. The remaining Playwright contract stays intentionally red while A2-A8 are
+implemented.
 
 ## Contract boundary
 

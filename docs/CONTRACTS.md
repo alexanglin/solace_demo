@@ -175,6 +175,89 @@ audit timeline observe every answer without knowing anything about the Event Mes
 Solace request/reply. The record is the weaker of the two: losing it costs an audit line, never an
 answer or a command.
 
+## Scenario catalog files
+
+The scenario service's file boundary is the pair accepted by
+[ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md):
+`scenarios/catalog.v1.json` selects definitions by catalog identity, and
+`scenarios/v1/wilderness-missing-person.r1.json` is the revision-one wilderness definition. The
+normative file schemas are `schemas/v1/scenario/catalog.schema.json` and
+`schemas/v1/scenario/definition.schema.json`; the corresponding golden fixtures prove the shared
+structural contract but are not production catalog files.
+
+Both documents use integer version `1`, lie inside the canonical JSON profile, and are closed. The
+catalog binds scenario identifier `wilderness-missing-person` and revision `1` to a repository-owned
+definition path and the lowercase SHA-256 of that definition's bytes. A caller supplies the scenario
+identity, never a filesystem path. The loader must retain the source bytes long enough to reject
+duplicate keys and floating-point values, resolve only a regular file inside its injected catalog root,
+and verify the catalog digest before accepting a definition. The file, depth, collection, and prepared
+workload bounds live in
+[operating-parameters.md](operating-parameters.md#scenario-catalog-files).
+
+The definition separates three kinds of fact:
+
+- presentation and discovery metadata: title, summary, synthetic search-area size, last-known point,
+  search polygon, and twenty sector polygons, all coordinates expressed as integer microdegrees;
+- twenty explicit `SIMULATED_DRONE` members, each carrying every input required to construct one
+  `DroneStart`, plus the tick interval, connectivity thresholds, uniform sweep count, and explicit
+  heartbeat-loss schedule; and
+- three `DECLARED_ONLY` external descriptors, which are presentation metadata and can never be adapted
+  into `FleetScenario` or acquire connectivity or telemetry.
+
+Only the simulated members are projected into the fleet runtime. Geometry, catalog metadata,
+declared-only members, run mode, mission lifecycle, and a random seed are absent from that projection.
+Scenario identity selects a reusable definition; `missionId` and `runId` identify one execution and are
+created outside the scenario file.
+
+## Private run-control HTTP
+
+[ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
+private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use the
+same route grammar under distinct exact Hosts and distinct bearer credentials; neither private listener
+publishes a host port.
+
+| Method and path | Request | Successful response |
+| --- | --- | --- |
+| `POST /internal/v1/runs` | service-specific start request | service-specific run status |
+| `GET /internal/v1/runs/{runId}` | none | service-specific run status |
+| `POST /internal/v1/runs/{runId}/cancel` | service-specific cancel request | service-specific run status |
+
+The eight closed RPC schemas under `schemas/v1/rpc/` are the four documents in each row below. Every
+document carries integer `controlVersion: 1` and uses the canonical JSON profile. Start, status, and an
+established-cancel success deliberately share one run-status representation.
+
+| Document | Required contract members and meaning |
+| --- | --- |
+| scenario-control start request | `scenarioId`, integer `scenarioRevision`, stable `missionId`, and stable `runId` |
+| scenario-control run status | scenario, mission, and run identities; `PLANNED`, `SEARCHING`, `EXHAUSTED`, or `ABORTED`; truthful 23/20/3 participation counts; completed-tick and telemetry-publication counters |
+| scenario-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
+| scenario-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
+| fleet-control start request | stable `runId` and exactly one nested lossless `FleetScenario` projection |
+| fleet-control run status | mission and run identities; `ACCEPTED`, `RUNNING`, `EXHAUSTED`, `CANCELLED`, or `FAILED`; completed-tick and telemetry-publication counters |
+| fleet-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
+| fleet-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
+
+The nested fleet scenario contains the mission identifier, twenty explicit simulated starts, tick
+interval, connectivity thresholds, uniform sweep count, and a flat bounded list of `{droneId,
+tickOrdinal}` heartbeat absences. It contains no scenario identity, geometry, declared-only member,
+mode, lifecycle, or seed. The publication counter records successful fleet publication and is not a
+proxy for best-effort recorder receipt.
+
+Private requests with bodies are refused in this order: Host syntax and exact allowlist, bearer, JSON
+media type and raw-body bound, canonical duplicate-key or floating-point violation, strict schema,
+path/body run binding, then operation policy. Reads enforce Host and bearer before lookup. Refusals
+distinguish malformed admission, run conflict or absence, cancellation not established, and internal
+failure; scenario control additionally distinguishes scenario lookup/revision and fleet availability,
+while fleet control additionally distinguishes capacity and run failure. Exact body, connection,
+response, and shared cancellation bounds live in
+[operating-parameters.md](operating-parameters.md#private-run-control).
+
+The stable `runId` is the private idempotency identity. Repeating the same canonical start for the same
+run returns current status without launching another run; changing the body for an existing run is
+`RUN_CONFLICT`. A caller that cannot establish whether start succeeded queries that same run and never
+automatically repeats start. Cancel reports success only after the run is stopped or already terminal;
+otherwise it returns `CANCELLATION_NOT_ESTABLISHED` and does not claim reset.
+
 ## Local HTTP API
 
 The UI-first dashboard API is the closed surface accepted by
@@ -218,12 +301,13 @@ is never persisted or logged, and is not accepted from a cookie, query parameter
 The dynamic no-store shell transfers it once; bootstrap removes the source node and retains the value
 only in memory.
 
-Browser mutations must also carry an `Origin` whose parsed scheme, host, and port exactly match the
-configured dashboard origin. Wildcard, `null`, suffix, substring, missing, and malformed values are
-forbidden. Read-only routes deliberately do not require the bearer; every route remains subject to Host
-validation. The refusal order is Host, Origin, bearer, media type and body size, idempotency key,
-canonical decode, strict request schema, then the route operation. The complete rationale is in
-[ADR-0024](adr/0024-local-operator-api-boundary.md) and
+Every mutation must also carry an `Origin` whose parsed scheme, host, and port exactly match the
+configured dashboard origin. Wildcard, `null`, suffix, substring, missing, repeated, and malformed values
+are forbidden; caller classification never weakens the rule. Read-only routes deliberately do not
+require the bearer; every route remains subject to Host validation. The refusal order is Host, Origin,
+bearer, media type and body size, idempotency key, canonical decode, strict request schema, then the route
+operation. The complete rationale is in
+[ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) and
 [ADR-0097](adr/0097-close-the-ui-slice-http-contract.md); credential entropy is in
 [operating-parameters.md](operating-parameters.md#local-operator-credential).
 

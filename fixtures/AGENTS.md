@@ -30,6 +30,8 @@ editing it:
 | Shared TypeScript validation obligations | [ADR-0058](../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
 | Ordered dashboard projection, reduced state, snapshots, and replay | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
 | Explicit dashboard collection bounds | [ADR-0104](../docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
+| Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
+| Authenticated private scenario and fleet control | [ADR-0105](../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
 
 An Accepted architecture decision record (ADR) governs if a fixture, manifest entry, schema,
 implementation, test, or document disagrees. Changing accepted shape, polarity, refusal behavior,
@@ -53,6 +55,8 @@ The current version-one fixture families have distinct jobs:
 | `golden/v1/event/<event>/` | Composed envelope, type, dataschema, and payload binding cases |
 | `golden/v1/topics/` | Schema-valid accepted/refused parser cases plus schema-invalid case documents |
 | `golden/v1/dashboard/<shape>/` | Browser-bound accepted documents and one-member schema refusals |
+| `golden/v1/rpc/<body>/` | Command-gateway and private scenario/fleet RPC baselines with one-member schema refusals |
+| `golden/v1/scenario/<document>/` | Scenario catalog/definition baselines with one-member schema refusals; not production catalog files |
 
 [`schemas/contract-manifest.toml`](../schemas/contract-manifest.toml) is the only ownership registry.
 Every `fixtures/golden/**/*.json` artifact must:

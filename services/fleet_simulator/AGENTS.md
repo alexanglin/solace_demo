@@ -45,12 +45,15 @@ concern before changing it:
 | Evidence lifecycle and explicit abstention | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 | Evidence score, bands, and corroboration floor | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
 | Durable command queues, one per drone | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| Frozen explicit fleet input with no seed | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
+| Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
+| Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
-Do not settle a state transition, simulation parameter, clock or random-source policy, broker grant,
-delivery claim, run-mode boundary, scenario shape, physics rule, or verification change in a service-local
-constant or comment. Put each fact in its canonical authority and make the coordinated change required by
-the root guide.
+Do not settle a state transition, simulation parameter, clock policy, broker grant, delivery claim,
+run-mode boundary, scenario shape, physics rule, or verification change in a service-local constant or
+comment. Put each fact in its canonical authority and make the coordinated change required by the root
+guide.
 
 ## 2. What the member owns, and what it still does not
 
@@ -73,7 +76,7 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A console script and a runnable Compose command | A scenario to run. ADR-0077 leaves producing one to the scenario service, and `deploy/compose.yaml` keeps its import-and-exit shell |
+| A console script and a runnable Compose command | The production catalog, scenario loader, and private run-control runtime. Their schemas are decided, but `deploy/compose.yaml` still keeps an import-and-exit shell |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
 | Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
 | Exactly-once command effects, backlog recovery, and reconnect reconciliation | The same scaffold. Intake settles after publisher confirmation, and its receipts die with the process, so the claim is at-least-once with duplicates possible across a restart |
@@ -100,11 +103,12 @@ and coordinates typed ports. It does not become a second owner for policy or wir
   belong behind the store boundary. A process-local simulation object may describe the current synthetic
   world; it is not authority for a durable approval, command result, idempotency decision, or mission
   timeline.
-- Accept already validated, versioned scenario inputs and their resolved deterministic seed at the
-  composition boundary. Scenario loading, versioning, and seed application remain the scenario service's
-  responsibilities, but no scenario-service-to-simulator protocol is decided today. Do not invent one in
-  this member, import another service's implementation, read an arbitrary scenario file from deep inside
-  the simulator, or make the scenario service's absence grant this process a second broker role.
+- Accept only ADR-0105's validated fleet-control start document at the composition boundary. Its nested
+  `FleetScenario` projection is explicit and carries no seed or random source. ADR-0100 leaves catalog
+  loading and version validation with the scenario service; ADR-0105 defines the private start, status,
+  cancel, authentication, and reconciliation protocol, but no HTTP runtime implements it yet. Do not
+  import another service's implementation, read a scenario file inside the simulator, or make the absent
+  runtime grant this process a second broker role.
 - The evidence service owns model-output validation, provenance and hashes, and publication of a versioned
   evidence decision. The simulator may exercise the pure evidence lifecycle and score with truthful
   synthetic inputs; it does not become the production evidence-decision publisher or invent a model result.
@@ -117,43 +121,44 @@ and coordinates typed ports. It does not become a second owner for policy or wir
 - Declare every imported workspace member and third-party distribution in this member's manifest. The
   root environment installs all workspace members together and can mask a missing declaration.
 
-Prefer explicit typed ports for clock, random source, identifier source, producer sequence, scenario
-input, broker transport, persistence, and failure injection. Add a shared abstraction only after two real
-consumers need it; do not move simulator-specific state into a generic package pre-emptively. Keep package
-imports side-effect free: no environment reads, file reads, clock reads, random seeding, sockets, tasks,
-threads, signal handlers, or global mutable fleet at import time.
+Prefer explicit typed ports for clock, identifier source, producer sequence, scenario input, broker
+transport, persistence, and failure injection. Add a shared abstraction only after two real consumers
+need it; do not move simulator-specific state into a generic package pre-emptively. Keep package imports
+side-effect free: no environment reads, file reads, clock reads, sockets, tasks, threads, signal handlers,
+or global mutable fleet at import time.
 
 ## 4. Make deterministic simulation an observable contract
 
-Determinism is a property of the complete adapter fold, not merely of calling `random.seed` once.
+Determinism is a property of the complete adapter fold over explicit integer input. No random source is
+part of that input or fold.
 
 - Keep the tick loop's own timekeeping on the injected `Pacer`
   ([ADR-0083](../../docs/adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)): the interval is measured from
   the start of each tick, an overrun is counted rather than absorbed, and a lost interval is never made
   up. `MonotonicPacer` is the only sleep and the only monotonic read in this member; do not add a second
   one, and do not pace from the stamp source's wall clock.
-- Inject a virtual or controlled clock and an explicit random source. Do not call the ambient wall clock,
-  monotonic clock, global `random`, UUID generator, or scheduler from simulation logic. Inject event IDs,
-  trace IDs, producer sequences, and any other nondeterministic values at the boundary that owns them.
+- Inject a virtual or controlled clock. Do not call the ambient wall clock, monotonic clock, UUID
+  generator, or scheduler from simulation logic. Inject event IDs, trace IDs, producer sequences, and any
+  other nondeterministic values at the boundary that owns them.
 - Define exactly how events at the same simulated instant are ordered. Preserve that ordering through
   queues and folds; never rely on set, hash, filesystem, task-scheduling, or broker-arrival order.
 - Advance time deliberately in tests. Do not use real sleeps, polling races, or host performance as a
   simulation oracle. A slow machine and a fast machine must produce the same domain outcomes from the same
-  accepted scenario, seed, clock schedule, and injected identifiers.
+  accepted scenario, clock schedule, and injected identifiers.
 - Keep producer sequence scoped to the producer that minted it. It rejects stale updates inside one
   stream and never orders drones against each other or replaces the durable audit ordinal.
 - Apply one domain observation or event per adapter decision. Compare the domain state before and after
   when a downstream edge depends on that change; do not infer an edge from elapsed wall time or from an
   event that may have been dropped.
 - Keep fault schedules in validated, versioned scenario data or an explicit test port. A hidden
-  environment switch, magic drone identifier, uncontrolled random branch, or debug-only mutation is not a
+  environment switch, magic drone identifier, uncontrolled branch, or debug-only mutation is not a
   reproducible failure injection.
 - Keep run mode explicit. A deterministic live simulation is still a live simulation; it does not become
-  replay because it uses a fixed seed. Replay consumes a committed stream and has a different process
+  replay because its inputs are fixed. Replay consumes a committed stream and has a different process
   graph and oracle.
 
 Raw event identifiers, timestamps, and trace context may legitimately differ between separately generated
-runs of the same seeded scenario. Replay itself consumes a committed stream, and its acceptance oracle is
+runs of the same explicit scenario. Replay itself consumes a committed stream, and its acceptance oracle is
 the digest of canonical reduced dashboard state rather than equality of generated CloudEvents, log lines,
 or broker delivery order. Do not weaken normal envelope uniqueness merely to make a raw-stream comparison
 pass.
@@ -292,14 +297,14 @@ For the first behavior in this member:
 2. Add the smallest member-local test under `services/fleet_simulator/tests/` with the mandatory AAA
    structure.
 3. Run the AAA gate and focused test; observe the intended red result before production code.
-4. Add the minimum typed adapter behavior with the clock, randomness, identifiers, ports, and settings it
+4. Add the minimum typed adapter behavior with the clock, identifiers, ports, and settings it
    actually uses injected.
 5. Run the member suite, every affected package and service, Tier 2 coverage, and the required contract,
    integration, failure-injection, performance, security, and replay evidence.
 
 Cover behavior at the right level after its owner exists:
 
-- identical domain outcomes for repeated runs of the same accepted scenario, seed, clock schedule, and
+- identical domain outcomes for repeated runs of the same accepted scenario, clock schedule, and
   injected identifiers, including deterministic same-instant ordering;
 - mission, sector, command, connectivity, and evidence folds using the domain's legal and refused edges,
   without copying their transition tables into the test oracle;
@@ -379,6 +384,6 @@ While the files are untracked, inspect the guide directly and rely on the explic
 ordinary Git diff discovery cannot see it. After staging only the approved files, inspect the complete
 cached diff and its whitespace check. Confirm the literal symlink target is `AGENTS.md`, then confirm
 scaffold or active status, dependency and tier declarations, domain ownership, scenario version, clock and
-seed injection, broker grants, delivery claims, operating parameters, tests, runtime behavior, and affected
-documentation agree. Report offline, container, live broker, persistence, and performance evidence
+no-seed boundary, broker grants, delivery claims, operating parameters, tests, runtime behavior, and
+affected documentation agree. Report offline, container, live broker, persistence, and performance evidence
 separately; one class never proves another.

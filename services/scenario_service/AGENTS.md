@@ -46,12 +46,14 @@ it:
 | Sector ownership and connectivity edges | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Frozen simulator scenario boundary | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Deterministic tick and ordering semantics | [ADR-0078](../../docs/adr/0078-one-tick-is-one-observation-per-drone.md) |
+| Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
+| Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
-disagrees. Do not settle a document format, schema dialect, version marker, catalog identity, file layout,
-seed, HTTP route, authentication rule, delivery mechanism, start/reset transaction, persistence scope, or
-operating parameter in a service-local constant or comment. Put each fact in its canonical authority and
-make the coordinated change required by the root guide.
+disagrees. Do not change the accepted document format, schema dialect, version marker, catalog identity,
+file layout, no-seed rule, private HTTP contract, authentication rule, delivery mechanism, start/reset
+transaction, persistence scope, or operating parameter in a service-local constant or comment. Put each
+fact in its canonical authority and make the coordinated change required by the root guide.
 
 ## 2. Preserve the current scaffold truth
 
@@ -64,10 +66,12 @@ Apart from this guide and its symlink, the member contains only:
 | `src/aerial_rescue_scenario_service/py.typed` | Empty marker for future distributed type information |
 
 The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no scenario directory, catalog, manifest, document format, schema,
-fixture, Pydantic model, loader, lifecycle coordinator, internal HTTP server or client, simulator handoff,
-store adapter, composition root, liveness probe, readiness probe, or member-local test. No workspace
-member declares this package as a dependency or imports it.
+mutation configuration. The repository now owns scenario-file and private-control schemas, manifest
+entries, and synthetic golden fixtures outside this member under `schemas/` and `fixtures/`. It still has
+no production `scenarios/` directory or catalog files, Pydantic model, loader, lifecycle coordinator,
+internal HTTP server or client, simulator handoff, store adapter, composition root, liveness probe,
+readiness probe, or member-local test. No workspace member declares this package as a dependency or
+imports it.
 
 [`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
 `SCAFFOLD`, and
@@ -117,8 +121,8 @@ description, asset record, search polygon, weather summary, time-since-contact v
 
 Keep ownership separated:
 
-- This member owns parsing and validating the eventual untrusted versioned document, catalog discovery,
-  and only the lifecycle coordination a later contract assigns to it.
+- This member owns parsing and validating the accepted untrusted versioned document, catalog discovery,
+  and the private lifecycle coordination ADR-0105 assigns to it.
 - The fleet simulator owns `FleetScenario`, `DroneStart`, their construction refusals, tick behavior,
   physical state, telemetry, and simulator composition. Do not copy those types or their refusal table.
 - `packages/domain` owns mission, sector, and connectivity transitions. A scenario document may supply
@@ -131,23 +135,21 @@ Keep ownership separated:
 - The dashboard API owns the public scenario discovery, start, and reset routes. This member must not
   duplicate their browser-facing Host, Origin, bearer, OpenAPI, or idempotency boundary.
 
-ADR-0077 fixes the output semantics, but it does not authorize a dependency from one service package to
-another or define a serializable handoff. Decide the dependency direction and process boundary before
-importing the fleet simulator package here. Never duplicate `FleetScenario` to avoid that decision,
-import a simulator composition root, or pass loose mappings that force the simulator to re-validate an
-unowned second representation.
+ADR-0105 now defines the serializable handoff over authenticated private HTTP: this member sends the
+lossless fleet-control start document to the separate fleet process and validates its typed status or
+refusal. That contract does not authorize a dependency from one service package to another and no client
+or server exists yet. Never import a simulator composition root, duplicate `FleetScenario`, or pass loose
+mappings that create an unowned second representation.
 
 Do not describe the frozen dataclass as deeply immutable or tamper-proof. Its
 `absent_heartbeats` member is typed as a `Mapping`, and the current constructor neither copies nor freezes
 a caller-owned mapping. Treat it as an accepted value by convention at the boundary; changing its
 immutability guarantee belongs to the simulator owner and ADR-0077 coordination.
 
-## 4. Follow ADR-0077, not the stale seed prose
+## 4. Preserve the explicit no-seed contract
 
-The sentence in `docs/ARCHITECTURE.md` saying the scenario service applies a deterministic random seed,
-and seed language that remains in the fleet-simulator guide, conflict with the more specific Accepted
-ADR-0077. The ADR governs: `FleetScenario` carries no seed, the tick fold consumes no randomness, and its
-fault schedule and motion are explicit integer data.
+ADR-0077 and ADR-0100 govern: `FleetScenario` and its accepted scenario definition carry no seed, the tick
+fold consumes no randomness, and fault schedules and motion are explicit integer data.
 
 - Do not add a `seed` member, call ambient or global random functions, seed a process-wide generator, or
   describe current determinism as seeded.
@@ -166,56 +168,30 @@ replay consumes a committed versioned event stream through a structurally isolat
 fixed scenario replay, compare raw event identifiers or timestamps as its determinism oracle, or let a
 recorded event become live scenario input.
 
-## 5. Define the document and catalog before loading one
+## 5. Implement the decided document and catalog without claiming runtime
 
-The implementation-plan blueprint sketches a future repository-root `scenarios/` directory, but that
-directory does not exist and no Accepted decision fixes its location. ADR-0077 explicitly leaves the
-scenario document's file format, schema, version marker, directory, and delivery protocol open. It also
-does not define a catalog manifest, scenario identifier, metadata shape, compatibility policy, digest,
-fixture family, or filename mapping.
+ADR-0100 selects canonical JSON, integer version `1`, `scenarios/catalog.v1.json`, and
+`scenarios/v1/wilderness-missing-person.r1.json`. The language-neutral catalog and definition schemas,
+their manifest entries, and synthetic polarity fixtures now exist under `schemas/` and `fixtures/`.
+Those artifacts establish representation only: the two production files, strict Pydantic twins, loader,
+and simulator adaptation remain unimplemented.
 
-Resolve those facts before the first document or loader lands. A versioned scenario contract must make at
-least these questions explicit:
+Treat every future production document and catalog entry as untrusted even though it is committed.
+Retain source bytes long enough to refuse duplicate keys and floating-point values before Pydantic can
+collapse or coerce them, validate the closed schema, and only then construct focused values. Never accept
+unknown fields, repair an identifier, case-fold a name, silently apply a default version, or partially
+load a document from a newer contract.
 
-- which file format and strict parser are authoritative;
-- how the document identifies its schema/version and how unsupported versions refuse;
-- whether scenario definitions have a manifest and which component owns it;
-- how one stable `scenarioId` maps deterministically to one catalog definition or bounded artifact set
-  without depending on filesystem order;
-- which metadata discovery may return without constructing a run;
-- whether and how a document is digested, persisted, or named in audit history;
-- which compatibility changes are allowed inside a version and how migrations occur; and
-- which directory and guide own accepted, refused, privacy, and scale fixtures.
+Resolve `scenarioId` through the validated catalog rather than turning caller input into a path. The
+selected definition must be a regular file inside the injected catalog root and its exact bytes must
+match the catalog's SHA-256. Refuse traversal, absolute paths, symlink escape, missing or non-regular
+artifacts, digest mismatch, duplicate or ambiguous catalog identity, and paths outside that root. Do not
+fetch a runtime URL, execute configuration code, import a module named by a document, or let filesystem
+order choose a definition.
 
-Do not place a scenario schema into `schemas/contract-manifest.toml` by default. That registry currently
-owns language-neutral wire-contract JSON Schemas and their golden fixtures. The fixtures guide requires a
-new top-level scenario fixture class to have a named owner, privacy rules, executable consumer, and
-verification path before its first artifact. Decide whether scenario configuration belongs in that wire
-registry or in a separate offline catalog instead of using an existing manifest merely because it is
-available.
-
-Treat every document and catalog entry as untrusted input even when committed. Use a strict Pydantic model
-at the file boundary, then adapt accepted fields into focused values. If the selected format is JSON, its
-strict decoder must reject repeated keys and floating-point values before Pydantic can collapse or coerce
-them. Use the contracts-owned canonical decoder only if the scenario contract explicitly adopts that
-canonical profile and its bounds. For another format, select a parser whose duplicate, number, tag, alias,
-and executable-construction behavior is explicitly bounded and tested. Never accept unknown fields,
-repair an identifier, case-fold a name, silently apply a default version, or partially load a document
-from a newer contract.
-
-Every catalog backend must resolve a validated `scenarioId` deterministically and refuse missing,
-duplicate, or ambiguous definitions. If the governing contract selects a filesystem-backed catalog, never
-turn the caller's identifier directly into a path: resolve it through the validated inventory and refuse
-traversal, absolute paths, symlink escape, missing or non-regular artifacts, and paths outside the decided
-root. Inject that root and filesystem port instead of reading the current directory or user home as
-ambient configuration. Do not fetch scenario documents or assets from a runtime URL, execute
-configuration code, import a module named by a document, or let last-definition-wins behavior resolve
-duplicates.
-
-Bound document bytes, nesting, catalog entries, roster size, schedule entries, load duration, and
-concurrent loads through values owned by `docs/operating-parameters.md`. No such scenario-specific bounds
-are set today. An open parameter blocks the dependent runtime behavior; it is not permission to choose a
-local default.
+The byte, nesting, catalog, roster, and heartbeat-schedule bounds are now owned by
+`docs/operating-parameters.md`. Enforce them at the raw file and model boundaries; a green schema fixture
+is not evidence that the absent loader applies them.
 
 ## 6. Map simulator-bound values losslessly and preserve refusals
 
@@ -236,10 +212,10 @@ The current `FleetScenario` boundary refuses, in a fixed owning implementation:
 - a negative scheduled tick ordinal.
 
 Pydantic owns the external shape and type refusal. The simulator constructor owns whether the resulting
-combination can fold. Translate an expected `ScenarioError` into the later contract's typed, redacted
-outcome; do not catch it and retry with repaired data, replace it with a generic accepted scenario, or
-restate the whole table in a second validator. Unexpected errors retain their stack traces only through
-redacted structured diagnostics.
+combination can fold. Translate an expected `ScenarioError` into ADR-0105's typed, redacted refusal; do
+not catch it and retry with repaired data, replace it with a generic accepted scenario, or restate the
+whole table in a second validator. Unexpected errors retain their stack traces only through redacted
+structured diagnostics.
 
 Preserve the current model's deliberately narrow semantics:
 
@@ -254,11 +230,11 @@ Preserve the current model's deliberately narrow semantics:
 - a position can fail at a coordinate boundary during a later tick even if construction succeeded; and
 - weather summary and time since last contact are audit metadata that currently affect no decision.
 
-The initial workload calls for twenty deterministic simulations and three model-backed edge agents, but no
-committed catalog proves that composition. A `FleetScenario` roster describes simulated drones; do not
-assume it also contains the three separately deployed edge agents or that all twenty simulations belong in
-one catalog definition. Decide the catalog and process composition, keep every simulator roster explicit,
-and verify the complete workload at acceptance scale. The current live fleet evidence uses a smaller
+ADR-0100 fixes the prepared workload at twenty deterministic simulations plus three declared-only edge
+descriptors, but the committed schemas and golden fixtures are not the production catalog or fleet-scale
+runtime evidence. A `FleetScenario` roster contains only the twenty simulated members; it never contains
+the three declared-only descriptors. Keep every simulator roster explicit and verify the complete
+workload after the production definition and loader land. The current live fleet evidence uses a smaller
 literal and explicitly is not fleet-scale evidence. Never hardcode the workload as a service default or
 generate a roster from a count.
 
@@ -270,23 +246,18 @@ as both, or reuse a mission identifier because the same scenario was selected ag
 currently carries no scenario identity, and no topic or event records which catalog entry produced a run.
 Do not claim scenario provenance in recordings or audit until a governing contract adds it.
 
-ADR-0061 establishes only one internal direction: the dashboard API calls the scenario service over HTTP.
-It does not define internal routes, port, bind address, request or response models, authentication,
-authorization, timeouts, retries, cancellation, error status, readiness, or how a scenario reaches the
-separate fleet-simulator process. In particular:
+ADR-0105 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
+and distinct bearer checks, bounded calls, stable-run idempotency, uncertain-start status reconciliation,
+and shared cancellation budget. This member must expose the scenario-control routes and call the fleet
+control routes through typed boundaries. It never copies the public dashboard route table, applies the
+browser Origin rule internally, automatically repeats an uncertain start, shares either private bearer,
+or imports another service implementation. None of that private HTTP runtime exists yet.
 
-- do not copy the public `/api/v1/scenarios` route table into this service;
-- do not apply ADR-0024's browser Host, Origin, or per-process bearer rules to an internal caller without
-  a decision, and do not assume the Compose network is authenticated merely because it is local;
-- do not create a broker topic, broker credential, shared volume handoff, environment-variable payload,
-  arbitrary file rendezvous, or database polling path to bypass the missing protocol; and
-- do not import another service's composition root to avoid defining a process boundary.
-
-Scenario start and reset span several future owners. No decision assigns mission identifier generation,
-current-scenario selection, run-mode selection, simulator construction, durable mission binding,
-idempotency propagation, partial-start rollback, or restart recovery to this member. Do not hide those
-facts in process memory or let an internal endpoint independently repeat the dashboard's mutation effect.
-Define the transaction and compensation behavior before coordinating multiple components.
+The caller supplies stable mission and run identities. The same run and canonical start body returns
+current status; different content is `RUN_CONFLICT`; an uncertain start is reconciled by querying that
+run. The contract does not itself implement durable mission binding, the public idempotency transaction,
+startup reconciliation, or partial-failure compensation. Do not hide those absent authorities in process
+memory or let the private endpoint independently repeat the dashboard mutation.
 
 Reset is not a mission transition. It terminates the current mission and creates a new mission with a new
 identifier; it never rewinds a terminal mission, reuses identity, or edits append-only history. The SQL
@@ -331,10 +302,10 @@ import, generic contracts healthcheck, open TCP socket, inherited Postgres depen
 fixture proves none of those.
 
 Keep package imports side-effect free. Configuration reads, catalog scans, file opens, Pydantic model
-construction, identifier generation, clocks, random sources, database clients, HTTP clients or servers,
-threads, tasks, signal handlers, and background watchers belong behind one explicit composition entry
-point. Bound every request, load, queue, task group, retry, drain, and shutdown deadline through an owned
-parameter. Make cancellation release files, requests, tasks, and clients without corrupting durable state.
+construction, identifier generation, clocks, database clients, HTTP clients or servers, threads, tasks,
+signal handlers, and background watchers belong behind one explicit composition entry point. Bound every
+request, load, queue, task group, retry, drain, and shutdown deadline through an owned parameter. Make
+cancellation release files, requests, tasks, and clients without corrupting durable state.
 
 ## 9. Testing and evidence
 
@@ -364,11 +335,11 @@ operating-system isolation boundary. Cover these classes as their contracts land
   members through their decided owners, propagation of each owning refusal class, and proof that no
   implicit default or second representation changes an input;
 - explicit rosters and fault schedules, scenario versus mission identity, fresh mission identity on reset,
-  and repeated loading with no clock, random, filesystem-order, or ambient-state difference;
+  and repeated loading with no clock, filesystem-order, or ambient-state difference;
 - liveness versus catalog and mode readiness, startup with a partially invalid catalog, reload policy,
   cancellation during load or internal HTTP work, and bounded graceful shutdown;
 - internal HTTP validation, authentication, timeout, cancellation, retry, and response behavior after its
-  protocol is decided;
+  protocol ADR-0105 defines;
 - same-key, different-key, concurrent, restart, and partial-failure start/reset behavior after idempotency
   ownership and transaction semantics are decided;
 - live, degraded, and replay composition with no mode crossing, no recorded substitution, and no broker,

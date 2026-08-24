@@ -54,17 +54,21 @@ green there on 2026-08-24:
   [`services/recorder`](../services/recorder/AGENTS.md).
 - R1's browser-facing 19-shape schema, manifest, and fixture subincrement is green against the
   intended-red inventory begun at `f29d543` and its bounded-input extension in
-  [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). R1 still
-  owes the catalog and scenario-definition documents, eight internal scenario/fleet start, status,
-  cancel, and refusal shapes, strict service-owned Pydantic twins, and HTTP/OpenAPI expectation
-  registries before A2 may start. The browser-facing values in
+  [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). The
+  scenario catalog/definition schemas and the eight private scenario/fleet control schemas, manifest
+  entries, and polarity fixtures are also green from the intended-red inventory in
+  [`test_scenario_control_contracts.py`](../tests/contract/test_scenario_control_contracts.py). R1 still
+  owes strict service-owned Pydantic twins and HTTP/OpenAPI expectation registries before A2 may start.
+  The browser-facing values in
   [`dashboard-fixtures.ts`](../apps/dashboard/tests/e2e/support/dashboard-fixtures.ts) remain a
   test-side reference, not a production contract.
 - [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects one event kind,
   and no reduced-state fold exists in Python;
   [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
-  no read path; the `scenarios/` catalog directory that
-  [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes does not exist.
+  no read path. R1's scenario schemas and golden fixtures are contract evidence, not production
+  catalog files: the `scenarios/` directory that
+  [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes remains owned by R2 and does
+  not exist.
 
 ## 3. The governing decisions
 
@@ -101,6 +105,9 @@ green there on 2026-08-24:
   service-integration, and production end-to-end evidence.
 - [ADR-0104](adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) — the two additional
   cross-language schema assertions needed for nonempty strings and bounded or exact arrays.
+- [ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) — the two authenticated
+  private HTTP hops, their eight shared-schema messages, refusal order, idempotent reconciliation, and
+  one cancellation budget.
 
 ## 4. Build increments
 
@@ -162,20 +169,24 @@ production A8 evidence also waits on R8 and R9.
 
 ### Lane B — the vertical unblockers
 
-- **R1 — dashboard wire-shape schemas.** *Status: in progress. Browser schema/fixture subincrement is
-  green from the intended-red contract commits beginning at `f29d543`. Owners: `schemas/`, `services/dashboard_api`,
-  `services/scenario_service`, and `services/fleet_simulator`.* The browser-facing inventory now has an
+- **R1 — dashboard wire-shape schemas.** *Status: in progress. Browser and scenario/private-control
+  schema/fixture subincrements are green from intended-red contract commits beginning at `f29d543`.
+  Owners: `schemas/`, `services/dashboard_api`, `services/scenario_service`, and
+  `services/fleet_simulator`.* The browser-facing inventory now has an
   exact 19-shape contract under [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py):
   closed schemas, manifest ownership, polarity pairs, integer scenario revision, sector authority,
-  ordered-event timelines, operation-state separation, and replay integrity. It remains blocked until
-  the catalog/definition and eight internal-control shapes, strict service-owned Pydantic models, and
-  HTTP/OpenAPI expectation registries land. `packages/contracts` remains the owner of the pure Python
-  projections and fold in R3 and does not take a Pydantic dependency. ADR-0094/0097/0100/0101 decide the
-  shapes; the e2e fixture is a reference, never the type authority. R1 remains the single prerequisite
-  for A2 and everything after it.
+  ordered-event timelines, operation-state separation, and replay integrity. The separate inventory in
+  [`test_scenario_control_contracts.py`](../tests/contract/test_scenario_control_contracts.py) now pins
+  two scenario-file shapes and eight private-control shapes, their closed members, status reuse, fleet
+  projection boundary, manifest ownership, and polarity pairs. R1 remains blocked only on strict
+  service-owned Pydantic models and HTTP/OpenAPI expectation registries. `packages/contracts` remains
+  the owner of the pure Python projections and fold in R3 and does not take a Pydantic dependency.
+  ADR-0094/0097/0100/0101/0105 decide the shapes; the e2e fixture is a reference, never the type
+  authority. R1 remains the single prerequisite for A2 and everything after it.
 - **R2 — scenario catalog and loader.** *Status: not started. Owner: `services/scenario_service`.*
-  The two committed catalog files and the strict loader
-  [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
+  R1 supplies contract schemas and shared golden examples only. R2 owns the two production files under
+  `scenarios/`, their strict bounded loader, digest/path validation, and lossless 20-simulation
+  projection [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
 - **R3 — Python contract twins.** *Status: not started. Owner: `packages/contracts`.* The missing
   projections, the ordered-event wrapper, the reduced-state fold and state document, the first
   real use of the replay-state digest context, and the Python-and-TypeScript digest-parity
@@ -204,9 +215,9 @@ production A8 evidence also waits on R8 and R9.
   successor still disagrees with the record.
 - **R8 — scenario and fleet live control.** *Status: not started. Owner:
   `services/scenario_service` and `services/fleet_simulator`.* Add the authenticated private HTTP
-  control surface, exact 20-simulation projection, bounded pacing and cancellation, guaranteed
-  connectivity and sector transitions, and the 14-tick/280-publication proof and separate publication
-  counter defined in
+  control surface [ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) defines,
+  the exact 20-simulation projection, bounded pacing and cancellation, guaranteed connectivity and
+  sector transitions, and the 14-tick/280-publication proof and separate publication counter defined in
   [`operating-parameters.md`](operating-parameters.md#workload-and-service-level-profile).
 - **R9 — production packaging and exact service selection.** *Status: not started. Owner:
   `deploy/`, `services/dashboard_api`, and `justfile`.* Preserve
@@ -259,7 +270,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 
 | Row | Blocked dashboard work | Missing today | Owner |
 | --- | --- | --- | --- |
-| R1 | A2, and through it the typed core A4-A7 | remaining scenario/internal schemas, service-owned Pydantic twins, and HTTP/OpenAPI expectations | `schemas/`, dashboard/scenario/fleet services |
+| R1 | A2, and through it the typed core A4-A7 | service-owned Pydantic twins and HTTP/OpenAPI expectations | dashboard/scenario/fleet services |
 | R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
 | R3 | digest and reducer parity proof for A3-A4 | projections, ordered-event wrapper, Python fold, parity fixtures | `packages/contracts` |
 | R4 | snapshot timeline and resume reads | store read path, persistence revision | `packages/store` |

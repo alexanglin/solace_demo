@@ -7,7 +7,8 @@ These instructions apply to every file under `services/dashboard_api/`. Read the
 rules still apply.
 
 This member is the planned Tier 2 local HTTP and server-sent-event boundary for scenario control,
-operator decisions, health, readiness, and normalized dashboard events. It is not implemented yet.
+validated replay, health, readiness, and normalized dashboard events. The current UI slice deliberately
+has no approval, command, evidence, model, rescue, or escalation route. It is not implemented yet.
 Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
@@ -48,6 +49,10 @@ Read the owner of each concern before changing it:
 | Gateway RPC and authoritative event record | [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md) |
 | Reserved reply channel and narrow tool grant | [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
 | Mission lifecycle and reset semantics | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
+| Dashboard Unix-socket and bootstrap relay | [ADR-0096](../../docs/adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) |
+| Closed UI-slice public API | [ADR-0097](../../docs/adr/0097-close-the-ui-slice-http-contract.md) |
+| Ordered dashboard SSE frames and cursors | [ADR-0101](../../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
+| Authenticated private scenario client | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,
@@ -99,24 +104,23 @@ profile, the dependency-waiver prose, or a green static policy check as runtime 
 
 ## 3. Keep the public boundary narrow and delegate ownership
 
-The initial public surface is exactly the seven routes in `docs/CONTRACTS.md`:
+The UI-first public surface is exactly the route set ADR-0097 and `docs/CONTRACTS.md` define:
 
 | Method and path | Planned responsibility |
 | --- | --- |
 | `GET /api/v1/health` | Report process liveness only |
-| `GET /api/v1/readiness` | Report whether the selected mode can start a scenario |
+| `GET /api/v1/readiness?mode=degradedLive\|replay` | Report whether the selected mode can start a scenario |
 | `GET /api/v1/scenarios` | Return available synthetic scenarios and metadata |
 | `POST /api/v1/scenarios/{scenarioId}/start` | Start a deterministic live or replay run |
-| `POST /api/v1/scenarios/current/reset` | Return local components to their defined initial state |
+| `POST /api/v1/scenarios/current/reset` | Cancel and replace a live mission, or create a fresh replay session |
 | `GET /api/v1/events` | Stream normalized dashboard events with SSE |
-| `POST /api/v1/missions/{missionId}/approvals` | Record an approve or reject decision bound to one proposal |
+| `GET /api/v1/replays/{sessionId}` | Return one read-only validated replay bundle |
+| `GET /` and `GET /assets/{asset}` | Serve the dynamic bootstrap shell and hashed local assets |
 
-Requests and responses use typed Pydantic models at the HTTP trust boundary and generate OpenAPI from
-that owned surface. That headline does not define the missing request, response, error, refusal, header,
-or status-code schemas. Define those contracts and their compatibility policy before implementing them;
-do not infer a body from a UI mockup, use a loose mapping as a temporary public shape, or expose an extra
-route because an implementation needs one. In particular, ADR-0067 requires clients to resynchronize
-from a full snapshot after overload, but neither a snapshot shape nor its transport route exists yet.
+There is no approval route or placeholder in this slice. The committed dashboard schemas define the
+request, response, error, snapshot, ordered-event, overload, and replay documents. Strict service-owned
+Pydantic twins and generated OpenAPI remain absent and still block implementation; do not infer them from
+a UI mockup, use a loose mapping temporarily, or expose an extra route because implementation wants one.
 
 This service coordinates narrower owners; it does not duplicate them:
 
@@ -130,10 +134,11 @@ This service coordinates narrower owners; it does not duplicate them:
 - Keep every direct `solace` import, vendor callback value, subscription, publisher acknowledgement,
   reconnect loop, and transport exception inside `packages/broker`. Vendor types and broad `Any` values
   must not cross into HTTP or domain policy.
-- Call the scenario-service boundary through an injected typed client once its internal HTTP protocol is
-  decided. ADR-0061 says that the dashboard calls it over HTTP and that it has no broker identity; it does
-  not define internal routes, authentication, retries, timeouts, start/reset coordination, or response
-  shapes. Do not import another service's implementation or copy the public dashboard routes inward.
+- Call the scenario-service boundary through an injected typed client that implements ADR-0105's private
+  start, status, cancel, authentication, timeout, and typed-refusal contract. Preserve the caller-supplied
+  stable run identity, never automatically repeat an uncertain start, and reconcile it by querying the
+  same run. No such client exists yet. Do not import another service's implementation or copy the public
+  dashboard routes inward.
 - Keep shared logs, metrics, traces, and redaction helpers in `packages/observability` once two real
   consumers establish them. A log line is neither an audit row nor a dashboard event.
 
@@ -147,53 +152,48 @@ startup belong behind one explicit composition entry point.
 
 ## 4. Enforce the local operator boundary before route handling
 
-Loopback is one control, not the whole authorization design. Preserve every independent part of
-ADR-0024:
+The relay, Host, Origin, and bearer checks are independent controls. Preserve the current decisions in
+ADR-0096 and ADR-0097:
 
-- Bind the API process only to an IPv4 or IPv6 loopback address, never a wildcard or non-loopback
-  interface. The current Docker port mapping does not prove that a compliant in-container bind is
-  reachable. Resolve that topology explicitly rather than silently binding the process to `0.0.0.0` or
-  copying another component's exception.
+- Bind the API process only to `/run/aerial-rescue/dashboard-api.sock`. Caddy is the sole publisher at
+  `127.0.0.1:8080`; the API must not also bind an IP interface or publish a host port.
 - On every request, parse exactly one syntactically valid `Host` and require its host-and-port tuple to
   equal one configured allowlist entry. Reject a missing, malformed, duplicated, wildcard, suffix,
   substring, or non-allowlisted value before route handling, including on health and SSE requests.
-- Require the current process's bearer in `Authorization: Bearer ...` on exactly the three mutation
+- Require the current process's bearer in `Authorization: Bearer ...` on exactly the two UI-slice mutation
   routes. Do not accept it in a cookie, query string, body, URL, alternate header, or log field.
-- For a request known to come from the browser dashboard, also require a parsed `Origin` whose scheme,
-  host, and port exactly equal the configured dashboard origin. Reject an omitted, malformed, wildcard,
-  `null`, suffix, substring, wrong-scheme, wrong-host, or wrong-port value.
+- On every mutation, require a parsed `Origin` whose scheme, host, and port exactly equal the configured
+  dashboard origin. Reject an omitted, malformed, wildcard, `null`, suffix, substring, wrong-scheme,
+  wrong-host, or wrong-port value. Never weaken this requirement through caller classification.
 - Generate the bearer from the operating system's cryptographically secure random source at every API
   process start, using the entropy owned by `docs/operating-parameters.md`. Keep it only in memory,
   invalidate it at exit, and never persist, display in a URL, or log it.
 - Derive the non-secret local operator identity only from successful validation of the current bearer.
   Never accept or override that identity from a body, and never record the bearer literal as identity.
-- Leave the four read-only routes bearer-free exactly as ADR-0024 requires. They remain Host-protected.
+- Leave every read-only UI-slice route bearer-free. They remain Host-protected.
 
-Host, Origin, and bearer checks are separate controls. CORS response headers are not authorization, and
-loopback alone does not stop DNS rebinding or a hostile web page. Do not trust `Forwarded`,
+Host, Origin, bearer, and the private Unix socket are separate controls. CORS response headers are not
+authorization, and loopback publication alone does not stop DNS rebinding or a hostile web page. Do not trust `Forwarded`,
 `X-Forwarded-Host`, `X-Forwarded-Proto`, or another proxy assertion unless a later contract defines and
 authenticates a proxy boundary. Keep security middleware ahead of route dependencies and body effects so
 a refusal cannot start a scenario, allocate an SSE client, mutate storage, publish, or disclose a route's
 internal behavior.
 
-ADR-0024 does not define how the server can distinguish a browser from a non-browser request when
-`Origin` is absent, or how repeated `Origin` fields are normalized or refused. Resolve those cases in the
-owned security contract before implementation. Do not classify a request from `User-Agent`, from the mere
-presence of `Origin`, or from another caller-controlled hint. Applying Origin validation to every mutation
-would be a stricter new rule and requires the governing decision rather than a service-local shortcut.
+Reject an absent or repeated `Origin` on every mutation before route effects. Do not classify a request
+from `User-Agent`, from the presence of `Origin`, or from another caller-controlled hint.
 
-The startup path that transfers the fresh bearer to the local dashboard, the configured Host and Origin
-values, and the browser's in-memory storage mechanism are also not decided. Do not invent a cookie, query
-parameter, generated source file, persistent browser store, or diagnostic endpoint to bridge that gap. A
-process restart invalidates the old context; the dashboard must receive the new credential through the
-eventual local startup path before retrying a mutation.
+ADR-0096 fixes the startup transfer: the dynamic no-store shell injects the fresh bearer and non-secret
+runtime identifier, and browser bootstrap removes their source nodes and retains the bearer only in
+memory. That server path is not implemented. Do not replace it with a cookie, query parameter, generated
+source file, persistent browser store, or diagnostic endpoint. A process restart invalidates the old
+context; a stale browser disables mutation and requires an explicit document reload before retrying.
 
 Never log credentials, authorization headers, cookies, unrestricted request headers or bodies, tenant
 values, database or broker URLs containing credentials, or internal exception representations that carry
 them. Expected authentication and validation failures become typed, redacted outcomes. Health responses
 and refusal details must not expose secret or private configuration.
 
-## 5. Validate requests and persist idempotency and approvals durably
+## 5. Validate requests and persist dashboard operations durably
 
 HTTP parsing is a trust boundary. Retain raw JSON text long enough to use the contracts-owned canonical
 decoder before framework coercion can erase repeated object keys or convert disallowed floating-point
@@ -206,43 +206,22 @@ Bound request bodies, parsing work, timeouts, dependency waits, retry counts, co
 generation with values owned by `docs/operating-parameters.md`. An open row is a design obligation, not
 permission to choose a convenient local default.
 
-Every mutation requires a durable idempotency key and stores a hash of the canonical request body. For a
-normal mutation, the same key and same canonical body must not perform a second effect; the same key with a
-different body refuses without an effect. Claim and persist the key under concurrency so two simultaneous
-requests cannot both start or reset. An in-process dictionary cannot prove behavior across a restart and
-must not be used as authority. The response to a same-body repeat, idempotency header name, key syntax and
-bounds, result and failure shape, retention, transaction owner, and status mapping remain undecided.
+Each mutation requires a lowercase UUID version 4 idempotency key. Its durable operation stores the
+canonical request digest and exact response status and bytes. The same key and body returns that response;
+different content refuses without an effect. Claim and persist the operation under concurrency; an
+in-process dictionary is never authority. A mutation is not automatically repeated after `401`, runtime
+replacement, or an uncertain private response.
 
-Approvals deliberately do not replay a successful result. A repeated approval consumption is a hard
-denial even when the idempotency key and body match; the denied bypass attempt is audited and surfaced to
-the dashboard. Preserve the division of authority:
+No dashboard-operation persistence or orchestration exists yet. Do not claim durability, reconciliation,
+or exact-response replay until the owning store revision and real concurrent/restart tests exist. This UI
+slice has no approval route; approval, command, model, evidence, rescue, and escalation workflows remain
+follow-on work and gain no placeholder handler.
 
-- The endpoint records an approve or reject decision for one exact mission and proposal, bound to the
-  proposal's canonicalization and score versions and the exact action parameters the operator saw.
-- Treat every body-supplied proposal, digest, version, action, state, and operator field as untrusted.
-  Load the authoritative proposal and recheck the exact action through the owned contract and domain
-  policy; never promote the body into authoritative proposal state.
-- Obtain operator identity from the current bearer and obtain both the aware UTC and monotonic clock
-  readings from injected ports. Supply the approval time to live from its operating parameter with no
-  service-local default, and expose the resulting expiry instant to the operator.
-- A replan or changed evidence set supersedes an open proposal. A changed mission, proposal, action,
-  canonicalization version, score version, digest, expired clock, regressed clock, or repeated use
-  refuses through the domain's typed rule rather than a route-local approximation.
-- The API records decisions; it never moves an approval to `EXECUTED`, dispatches an action, publishes a
-  drone command, or treats an approval CloudEvent as store authority. Only the command gateway consumes
-  a durable approval and may publish an executable command.
-
-No durable proposal, approval, idempotency, audit, or reset schema exists yet. The exact transaction that
-records a decision and its audit and broker effects is also not settled. Do not claim an atomic set,
-publish-before-commit, acknowledge-before-commit, or bolt an in-memory compromise onto the safety gate.
-Define the schema and transaction in their owners, use an outbox where the decision requires one, and test
-the real PostgreSQL isolation and recovery behavior before making durability claims.
-
-Reset is not a mission transition. It terminates the current mission and creates a new mission with a new
-identifier; it never rewinds a terminal mission or reuses its identity. The SQL deletion and preservation
-scope for mission, audit, approval, idempotency, outbox, ledger, and provenance records is still open. Do
-not `TRUNCATE`, drop or recreate a schema, delete a volume, or silently discard audit history to implement
-the public wording “initial state.” Set the durable reset contract and partial-failure behavior first.
+Reset is not a mission transition. After cancellation is established within the shared budget, retain
+history, abort only a nonterminal predecessor, and create a fresh `PLANNED` successor. If cancellation
+cannot be established, return the typed refusal and change nothing. Replay reset creates a fresh
+cursor-zero session without mutating an operational mission. Never `TRUNCATE`, drop a schema, delete a
+volume, rewind a terminal mission, or silently discard audit history.
 
 ## 6. Respect broker authority and validate every event
 
@@ -311,12 +290,11 @@ work, and disconnect cleanup. Cancellation must release that client's registrati
 task immediately enough to satisfy the soak and shutdown gates; one client disconnect must not close a
 shared broker receiver or another client's resources.
 
-Use SSE's standard `text/event-stream` media type and framing. The project mapping into `event`, `data`,
-`id`, and `retry` fields, JSON serialization, heartbeat policy, `Last-Event-ID` behavior, overload-close
-representation, snapshot schema and route, resumption cursor, and client reconnect protocol remain
-undefined. The API package has no buffer or SSE implementation. Inspect the currently committed
-contracts projection and fold before coding; acceptance of ADR-0067 is not proof that each owned artifact
-exists. Do not invent missing wire behavior or write a service-local fold to get ahead of that owner.
+Use SSE's standard `text/event-stream` framing. ADR-0101 permits only `snapshot`, `dashboard-event`, and
+terminal `stream-overloaded` data frames; keepalives are comments, and cursors are opaque and run-bound.
+An unknown, stale, or cross-run cursor receives a fresh snapshot, while overload permits exactly one
+explicit resynchronization. The schemas and fixtures exist, but this package still has no buffer or SSE
+implementation. Do not invent another frame or write a service-local fold.
 
 ADR-0058 requires the browser to validate HTTP, snapshot, and SSE input against committed schemas. That
 independent browser boundary does not replace server-side Pydantic models, canonical ingress validation,
@@ -344,9 +322,9 @@ oracle is the ordered domain outcome and reduced-state digest across the require
 event identifiers, timestamps, transport headers, or diagnostic traces.
 
 Health reports process liveness only. Readiness answers whether the selected mode can start a scenario;
-it is not “the import worked,” “the port is open,” or “every dependency is healthy.” Define a mode-specific
-predicate from typed dependency status once start ownership, scenario protocol, store requirements,
-broker delivery, budget status, and replay inputs are decided. Do not hide a missing critical dependency
+it is not “the import worked,” “the port is open,” or “every dependency is healthy.” Build the
+mode-specific predicate from typed dependency status, including ADR-0105 scenario status, once the store,
+broker-delivery, budget, and replay-input requirements land. Do not hide a missing critical dependency
 behind a generic success or make a deliberately absent replay dependency fail readiness.
 
 Make lifecycle ownership explicit. Startup validates settings and generated material before accepting
@@ -387,19 +365,21 @@ contracts land:
   operator identity, plus credential and header redaction;
 - canonical JSON repeated keys, disallowed floating-point values, unknown fields, strict Pydantic input,
   typed responses and errors, and generated OpenAPI conformance;
-- normal idempotency under same-body, different-body, concurrent, failure, and restart cases, plus the
-  approval-specific hard denial and visible audited bypass attempt;
-- authoritative proposal lookup, exact action and version binding, both clocks, expiry-instant output,
-  supersession, rejection, digest mismatch, and proof that this service never executes an approval;
-- health versus mode-specific readiness, dependency loss and recovery, scenario timeout and cancellation,
-  partial start/reset failure, and safe reset identity once those protocols exist;
+- dashboard-operation idempotency under same-body, different-body, concurrent, failure, and restart cases,
+  exact-response replay, and refusal before any duplicate effect;
+- proof that the closed route inventory has no approval, command, model, evidence, rescue, or escalation
+  handler or placeholder;
+- health versus mode-specific readiness, dependency loss and recovery, ADR-0105 authentication and typed
+  refusal, uncertain-start status reconciliation without a repeated start, bounded cancellation, partial
+  start/reset failure, and safe reset identity;
 - topic and envelope mismatch, payload-schema refusal, unprojected event types, allowed and forbidden
   broker operations, reconnect, duplicates, and out-of-order input;
 - finite SSE buffering, oldest-telemetry eviction, never-droppable classes, typed overload closure,
   snapshot resynchronization, slow clients, disconnect cancellation, resource release, and soak bounds;
   and
-- structurally distinct live, degraded, and replay graphs, replay approval refusal, recorded-event display,
-  deterministic reduced-state digest, and zero replay outbound connections or writes.
+- structurally distinct live, degraded, and replay graphs, absence of replay mutation controls,
+  recorded-event display, deterministic reduced-state digest, and zero replay outbound connections or
+  writes.
 
 Use deterministic clocks, identifiers, scheduler control, and finite streams in offline tests. A fake can
 prove validation, orchestration, call order, cancellation, and buffer policy. It cannot prove loopback
@@ -408,11 +388,11 @@ authorization, durable settlement, process-restart credential invalidation, or o
 blocking. A live negative requires an allowed positive control so an unavailable or universally denying
 dependency cannot appear secure.
 
-The approval-bypass catalogue remains the minimum adversarial oracle, especially its HTTP/store halves,
-stale and wrong-channel credential cases, DNS rebinding, direct-store and model-authored approval cases,
-double submission, proposal-display mismatch, Origin cases, and replay approval refusal. Never weaken a
-domain, contract, security, or browser expectation to accommodate this service, and never modify or delete
-an established test without explicit human permission.
+The approval-bypass catalogue still constrains shared HTTP and store boundaries, but it does not add an
+approval route to this slice. Preserve its stale and wrong-channel credential, DNS-rebinding,
+double-submission, and Origin cases. Never weaken a domain, contract, security, or browser expectation to
+accommodate this service, and never modify or delete an established test without explicit human
+permission.
 
 ## 10. Deployment and workspace hygiene
 

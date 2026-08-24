@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/fleet-control-start-request.schema.json",
+  "description": "The authenticated private request that starts one stable run from one lossless fleet-scenario projection.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "runId",
+    "scenario"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": 1
+    },
+    "runId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "missionId",
+        "drones",
+        "tickIntervalMilliseconds",
+        "connectivityThresholds",
+        "ticksToSweep",
+        "absentHeartbeats"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "drones": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/droneStart"
+          }
+        },
+        "tickIntervalMilliseconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "connectivityThresholds": {
+          "$ref": "#/$defs/connectivityThresholds"
+        },
+        "ticksToSweep": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "absentHeartbeats": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/absentHeartbeat"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "droneStart": {
+      "type": "object",
+      "required": [
+        "droneId",
+        "sectorId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond",
+        "batteryPermille",
+        "northMicrodegreesPerTick",
+        "eastMicrodegreesPerTick",
+        "batteryDrainPermillePerTick"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "sectorId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        },
+        "altitudeMetres": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/altitudeMetres"
+        },
+        "headingDegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/headingDegrees"
+        },
+        "groundSpeedCentimetresPerSecond": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/groundSpeedCentimetresPerSecond"
+        },
+        "batteryPermille": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "northMicrodegreesPerTick": {
+          "type": "integer",
+          "minimum": -90000000,
+          "maximum": 90000000
+        },
+        "eastMicrodegreesPerTick": {
+          "type": "integer",
+          "minimum": -180000000,
+          "maximum": 180000000
+        },
+        "batteryDrainPermillePerTick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "connectivityThresholds": {
+      "type": "object",
+      "required": [
+        "missesToDegraded",
+        "missesToOffline",
+        "heartbeatsToRecover"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "missesToDegraded": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "missesToOffline": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "heartbeatsToRecover": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "absentHeartbeat": {
+      "type": "object",
+      "required": [
+        "droneId",
+        "tickOrdinal"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "tickOrdinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,303 @@
+{
+  "controlVersion": 1,
+  "runId": "run-synthetic-0001",
+  "scenario": {
+    "missionId": "mission-synthetic-0001",
+    "drones": [
+      {
+        "droneId": "drone-sim-01",
+        "sectorId": "sector-01",
+        "latitudeMicrodegrees": 44471000,
+        "longitudeMicrodegrees": -79249000,
+        "altitudeMetres": 83,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-02",
+        "sectorId": "sector-02",
+        "latitudeMicrodegrees": 44472000,
+        "longitudeMicrodegrees": -79248000,
+        "altitudeMetres": 84,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-03",
+        "sectorId": "sector-03",
+        "latitudeMicrodegrees": 44473000,
+        "longitudeMicrodegrees": -79247000,
+        "altitudeMetres": 85,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-04",
+        "sectorId": "sector-04",
+        "latitudeMicrodegrees": 44474000,
+        "longitudeMicrodegrees": -79246000,
+        "altitudeMetres": 86,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-05",
+        "sectorId": "sector-05",
+        "latitudeMicrodegrees": 44475000,
+        "longitudeMicrodegrees": -79245000,
+        "altitudeMetres": 87,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-06",
+        "sectorId": "sector-06",
+        "latitudeMicrodegrees": 44476000,
+        "longitudeMicrodegrees": -79244000,
+        "altitudeMetres": 88,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-07",
+        "sectorId": "sector-07",
+        "latitudeMicrodegrees": 44477000,
+        "longitudeMicrodegrees": -79243000,
+        "altitudeMetres": 89,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-08",
+        "sectorId": "sector-08",
+        "latitudeMicrodegrees": 44478000,
+        "longitudeMicrodegrees": -79242000,
+        "altitudeMetres": 90,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-09",
+        "sectorId": "sector-09",
+        "latitudeMicrodegrees": 44479000,
+        "longitudeMicrodegrees": -79241000,
+        "altitudeMetres": 91,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-10",
+        "sectorId": "sector-10",
+        "latitudeMicrodegrees": 44480000,
+        "longitudeMicrodegrees": -79240000,
+        "altitudeMetres": 92,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-11",
+        "sectorId": "sector-11",
+        "latitudeMicrodegrees": 44481000,
+        "longitudeMicrodegrees": -79239000,
+        "altitudeMetres": 93,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-12",
+        "sectorId": "sector-12",
+        "latitudeMicrodegrees": 44482000,
+        "longitudeMicrodegrees": -79238000,
+        "altitudeMetres": 94,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-13",
+        "sectorId": "sector-13",
+        "latitudeMicrodegrees": 44483000,
+        "longitudeMicrodegrees": -79237000,
+        "altitudeMetres": 95,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-14",
+        "sectorId": "sector-14",
+        "latitudeMicrodegrees": 44484000,
+        "longitudeMicrodegrees": -79236000,
+        "altitudeMetres": 96,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-15",
+        "sectorId": "sector-15",
+        "latitudeMicrodegrees": 44485000,
+        "longitudeMicrodegrees": -79235000,
+        "altitudeMetres": 97,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-16",
+        "sectorId": "sector-16",
+        "latitudeMicrodegrees": 44486000,
+        "longitudeMicrodegrees": -79234000,
+        "altitudeMetres": 98,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-17",
+        "sectorId": "sector-17",
+        "latitudeMicrodegrees": 44487000,
+        "longitudeMicrodegrees": -79233000,
+        "altitudeMetres": 99,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-18",
+        "sectorId": "sector-18",
+        "latitudeMicrodegrees": 44488000,
+        "longitudeMicrodegrees": -79232000,
+        "altitudeMetres": 100,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-19",
+        "sectorId": "sector-19",
+        "latitudeMicrodegrees": 44489000,
+        "longitudeMicrodegrees": -79231000,
+        "altitudeMetres": 101,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      },
+      {
+        "droneId": "drone-sim-20",
+        "sectorId": "sector-20",
+        "latitudeMicrodegrees": 44490000,
+        "longitudeMicrodegrees": -79230000,
+        "altitudeMetres": 102,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 900,
+        "batteryPermille": 1000,
+        "northMicrodegreesPerTick": 10,
+        "eastMicrodegreesPerTick": 10,
+        "batteryDrainPermillePerTick": 5
+      }
+    ],
+    "tickIntervalMilliseconds": 1000,
+    "connectivityThresholds": {
+      "missesToDegraded": 3,
+      "missesToOffline": 6,
+      "heartbeatsToRecover": 2
+    },
+    "ticksToSweep": 12,
+    "absentHeartbeats": [
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 2
+      },
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 3
+      },
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 4
+      },
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 5
+      },
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 6
+      },
+      {
+        "droneId": "drone-sim-07",
+        "tickOrdinal": 7
+      }
+    ]
+  },
+  "unexpected": true
+}

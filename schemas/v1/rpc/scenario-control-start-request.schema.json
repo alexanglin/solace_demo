@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/scenario-control-start-request.schema.json",
+  "description": "The authenticated private request that binds one stable run and mission to one catalog scenario revision.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "scenarioId",
+    "scenarioRevision",
+    "missionId",
+    "runId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": 1
+    },
+    "scenarioId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenarioRevision": {
+      "const": 1
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "runId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

@@ -158,6 +158,45 @@ workload, fleet size, sample count, statistic, discarded warm-up, and machine-st
 and `tests/integration/test_backlog_recovery_live.py` implements it. The record defines the
 measurement; it does not move the target.
 
+## Scenario catalog files
+
+The file contract is fixed by
+[ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) and described in
+[CONTRACTS.md](CONTRACTS.md#scenario-catalog-files). Schema-expressible bounds are held by the scenario
+schemas and root contract tests. Byte, nesting, path, and raw-decoder bounds become executable at the R2
+loader boundary and are not yet runtime evidence.
+
+| Parameter | Value | Instrument and current status |
+| --- | --- | --- |
+| Production scenario artifacts | One catalog at `scenarios/catalog.v1.json` and one revision-one definition at `scenarios/v1/wilderness-missing-person.r1.json` | R2 loader inventory and digest tests; production files are not yet committed |
+| Catalog and definition size | At most 256 KiB each | R2 raw-byte loader boundary test; not yet implemented |
+| Document nesting | At most 16 nested containers | R2 raw-document depth test before model construction; not yet implemented |
+| Catalog entries | At most 20 | `catalog.schema.json` and root schema contract tests |
+| Declared members per definition | At most 64 | `definition.schema.json` and root schema contract tests |
+| Heartbeat-loss ordinals per definition | At most 4,096 | `definition.schema.json` and root schema contract tests |
+| Definition integrity | SHA-256 of the selected definition bytes, rendered as 64 lowercase hexadecimal characters | R2 catalog digest and file-replacement tests; not yet implemented |
+| Prepared declared roster | Exactly 23 members: 20 simulated and 3 declared-only | R2 committed-definition and lossless-projection tests; not yet implemented. The generic schema separately caps definitions at 64 members |
+| Prepared sector geometry | Exactly 20 sector polygons; each polygon has at most 256 integer-microdegree vertices | R2 committed-definition tests; not yet implemented. The generic schema separately caps definitions at 20 sectors and each polygon at 256 vertices |
+| Prepared tick interval | 1,000 ms | Committed definition in R2 and fleet-control projection test; not yet runtime evidence |
+| Prepared sweep requirement | 12 ticks | Committed definition in R2 and fleet-control projection test; not yet runtime evidence |
+| Prepared heartbeat loss | `drone-sim-07` is absent on tick ordinals 2 through 7 inclusive | Committed definition in R2 plus loader and R8 transition tests; not yet runtime evidence |
+
+## Private run control
+
+The two authenticated private HTTP hops and their refusal order are fixed by
+[ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) and described in
+[CONTRACTS.md](CONTRACTS.md#private-run-control-http). The schemas instrument representation now; R8
+must add the server/client timing, authentication, reconciliation, and cancellation evidence.
+
+| Parameter | Value | Instrument and current status |
+| --- | --- | --- |
+| Private request-body size | At most 256 KiB before decoding | R8 scenario/fleet HTTP boundary tests; not yet implemented |
+| Private-hop bearer entropy | 256 independent random bits per hop | R9 secret-generation and Compose-policy tests; not yet implemented |
+| Connection establishment timeout | 1 s per private call | R8 injected HTTPX timeout and boundary tests; not yet implemented |
+| Start or status response timeout | 5 s per call | R8 typed-client timeout tests; not yet implemented |
+| Reset cancellation budget | One shared 15 s monotonic budget from the dashboard operation through the scenario-to-fleet call | R5/R8 fake-clock and process-integration tests; not yet implemented |
+| Private listener host publications | Zero for ports 8081 and 8082 | R9 Compose-policy and exact-service-closure tests; not yet implemented |
+
 ## Dashboard event stream
 
 The ordered dashboard event and the reduced state it folds into are defined by

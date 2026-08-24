@@ -1,0 +1,91 @@
+{
+  "definitionVersion": 1,
+  "identifier": "wilderness-missing-person",
+  "revision": 1,
+  "title": "Wilderness Missing Person",
+  "summary": "A bounded synthetic wilderness search with explicit deterministic flight inputs.",
+  "searchAreaSquareMetres": 18400000,
+  "lastKnownLocation": {
+    "label": "North ridge trail",
+    "latitudeMicrodegrees": 44493100,
+    "longitudeMicrodegrees": -79228400
+  },
+  "searchPolygon": {
+    "vertices": [
+      {
+        "latitudeMicrodegrees": 44470000,
+        "longitudeMicrodegrees": -79250000
+      },
+      {
+        "latitudeMicrodegrees": 44470000,
+        "longitudeMicrodegrees": -79201000
+      },
+      {
+        "latitudeMicrodegrees": 44509000,
+        "longitudeMicrodegrees": -79201000
+      },
+      {
+        "latitudeMicrodegrees": 44470000,
+        "longitudeMicrodegrees": -79250000
+      }
+    ]
+  },
+  "sectors": [
+    {
+      "identifier": "sector-01",
+      "vertices": [
+        {
+          "latitudeMicrodegrees": 44470000,
+          "longitudeMicrodegrees": -79250000
+        },
+        {
+          "latitudeMicrodegrees": 44470000,
+          "longitudeMicrodegrees": -79241000
+        },
+        {
+          "latitudeMicrodegrees": 44479000,
+          "longitudeMicrodegrees": -79241000
+        },
+        {
+          "latitudeMicrodegrees": 44470000,
+          "longitudeMicrodegrees": -79250000
+        }
+      ]
+    }
+  ],
+  "members": [
+    {
+      "identifier": "drone-sim-01",
+      "participation": "SIMULATED_DRONE",
+      "sectorId": "sector-01",
+      "latitudeMicrodegrees": 44472000,
+      "longitudeMicrodegrees": -79248000,
+      "altitudeMetres": 120,
+      "headingDegrees": 90,
+      "groundSpeedCentimetresPerSecond": 850,
+      "batteryPermille": 970,
+      "northMicrodegreesPerTick": 0,
+      "eastMicrodegreesPerTick": 76,
+      "batteryDrainPermillePerTick": 2
+    },
+    {
+      "identifier": "drone-vision-01",
+      "participation": "DECLARED_ONLY",
+      "role": "vision",
+      "executionLabel": "DECLARED ONLY — NOT EXECUTED"
+    }
+  ],
+  "tickIntervalMilliseconds": 1000,
+  "connectivityThresholds": {
+    "missesToDegraded": 3,
+    "missesToOffline": 6,
+    "heartbeatsToRecover": 2
+  },
+  "ticksToSweep": 12,
+  "absentHeartbeats": [
+    {
+      "droneId": "drone-sim-01",
+      "tickOrdinal": 2
+    }
+  ]
+}

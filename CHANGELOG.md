@@ -24,8 +24,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   Draft 2020-12. The 64 Playwright cases remain intact while their serialized fixtures now match the
   contract's integer geometry, discriminated roster, recovery sequence, replay integrity, and
   snapshot-owned mission semantics. All browser collections are explicitly bounded, and snapshot
-  timelines reject telemetry at the schema boundary. R1 remains in progress: scenario-file and private-control schemas,
-  service-owned Pydantic twins, and HTTP/OpenAPI expectations still gate A2.
+  timelines reject telemetry at the schema boundary.
+
+  R1 now also has two strict scenario-file schemas and eight authenticated private-control RPC schemas,
+  each with one manifest-owned baseline and one one-reason negative. The scenario contract keeps catalog
+  identity and geometry outside the lossless 20-simulation `FleetScenario` projection; the private
+  contract reuses one status shape for start, status, and established cancellation, carries explicit
+  publication counters, and separates the dashboard-to-scenario and scenario-to-fleet hops under
+  [ADR-0105](docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md). These are contract
+  shapes and synthetic golden examples, not production scenario files or a running control plane. R1
+  remains in progress: service-owned Pydantic twins and HTTP/OpenAPI expectations still gate A2, while
+  R2 owns the production catalog files and loader.
 
 - **The dashboard has a real shell and frontend verification can no longer pass on incomplete
   evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and
