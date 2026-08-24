@@ -469,6 +469,19 @@ and `15s`, and a statement past the first is cancelled by the server rather than
 (`tests/integration/test_durable_store_live.py`). ADR-0085's consequence that "nothing applies them
 yet" was true when that record landed one increment ahead of its adapter.
 
+## Command outbox
+
+What the central command outbox may hold before staging refuses, and what a refusal does
+([ADR-0093](adr/0093-stage-the-command-outbox-under-a-counted-bound.md)). This is the gateway's own
+outbox; the per-drone edge outbox is a separate, still-open row below.
+
+| Parameter | Value | Instrument |
+| --- | --- | --- |
+| Central outbox maximum unconfirmed records | 500, the workload [ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md)'s instrument uses and [backlog-recovery-first-run.md](../release-evidence/phase-2/backlog-recovery-first-run.md) measured draining in 7.141 s | `MAXIMUM_UNCONFIRMED_RECORDS` in `packages/store/src/aerial_rescue_store/outbox.py`, evaluated inside the staging statement |
+| Central outbox overshoot under concurrency | At most one record per concurrently staging session, which the pool bounds at 5 per process. The effective ceiling is 504 | A consequence of `READ COMMITTED` recorded in ADR-0093, not a configured value |
+| Central outbox byte ceiling | None, deliberately: a staged record is one command envelope, and every member of one is already bounded by the topic and envelope rows above | ADR-0093 records the reasoning; there is nothing to measure |
+| Central outbox overflow behaviour | Staging writes no row and refuses. The continuity-breach audit record is appended by the caller in its own transaction, because adding it to the staging transaction would enlarge [ADR-0006](adr/0006-proposal-bound-single-use-approvals.md)'s atomic set and would roll back with the refusal it records | `OutboxRefusal.AT_CAPACITY` in the module above |
+
 ## Parameters still to be set
 
 Each of these is required by a claim made elsewhere and has no value yet. Every row is a gap, not a
@@ -476,8 +489,8 @@ preference, and must carry a number before the release run.
 
 | Parameter | Required by | Status |
 | --- | --- | --- |
-| Per-drone outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md) | open |
-| Outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped | decided, unquantified |
+| Per-drone **edge** outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md). The central command outbox is settled above; an edge outbox holds telemetry backlogs rather than command envelopes, so its byte ceiling does not follow from the envelope rows | open, and Phase 6's |
+| Per-drone **edge** outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped. The central outbox's version of this is settled above | decided, unquantified |
 | Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |
