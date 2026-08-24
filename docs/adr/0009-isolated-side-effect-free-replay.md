@@ -1,6 +1,6 @@
 # ADR-0009: Replay is structurally isolated and side-effect free
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0093
 - **Date:** 2026-08-18
 
 ## Context

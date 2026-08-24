@@ -1,6 +1,6 @@
 # ADR-0024: Protect local mutations with loopback, Host, Origin, and a per-runtime bearer
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0095
 - **Date:** 2026-08-19
 - **Deciders:** Alex Anglin
 - **Supersedes:** none

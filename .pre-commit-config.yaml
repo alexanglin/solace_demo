@@ -539,6 +539,14 @@ repos:
         always_run: true
         pass_filenames: false
 
+      - id: dashboard-playwright-full
+        name: playwright (dashboard, Chromium acceptance)
+        entry: scripts/hooks/dashboard/dashboard-playwright-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: dashboard-typecheck-full
         name: tsc --noEmit (dashboard, whole project)
         entry: scripts/hooks/dashboard/dashboard-typecheck-full.sh

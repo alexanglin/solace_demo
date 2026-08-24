@@ -151,6 +151,7 @@ class HookRepairTests(QualityGateTestCase):
             "bandit-full",
             "commit-range-whitespace",
             "dashboard-build",
+            "dashboard-playwright-full",
             "dashboard-test-full",
             "dependency-audit",
             "lockfiles-current",
@@ -261,6 +262,7 @@ class HookRepairTests(QualityGateTestCase):
             ("docker", "/deploy/agent-mesh"),
             ("docker", "/deploy/application"),
             ("docker-compose", "/deploy"),
+            ("npm", "/apps/dashboard"),
         }
 
         # Act

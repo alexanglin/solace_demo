@@ -1,6 +1,6 @@
 # ADR-0067: Project application events into normalized dashboard events and fold them into one reduced state
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0092
 - **Date:** 2026-08-21
 - **Deciders:** Alex Anglin
 - **Supersedes:** none

@@ -19,3 +19,8 @@ ignores:
   - node_modules/**
   - .venv/**
   - agent-mesh/.venv/**
+  - apps/dashboard/coverage/**
+  - apps/dashboard/dist/**
+  - apps/dashboard/node_modules/**
+  - apps/dashboard/playwright-report/**
+  - apps/dashboard/test-results/**
