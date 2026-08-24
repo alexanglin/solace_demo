@@ -150,6 +150,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   This is also the first `async` code in the repository.
 
+- **The wilderness dashboard now has an executable browser acceptance contract before its UI is
+  implemented.** Sixty-four Playwright cases cover the map-first shell, honest 20 simulated plus 3
+  declared-only participation, real local MapLibre geometry, fleet/map synchronization, guarded HTTP
+  start and reset actions, ordered timeline behavior, checksummed replay validation, paced playback,
+  independently recomputed digests, source failure, resnapshot and recovery, malformed input at every
+  browser trust boundary, keyboard and axe checks, reduced motion, zero remote requests, deterministic
+  platform-qualified screenshots, both reference viewports, and effective 200% zoom. The test
+  adapter receives serialized
+  bootstrap, HTTP, snapshot, ordered-event, control-frame, and replay-bundle inputs and acknowledges each
+  rendered revision, so tests do not inject a finished view model or race React. It cannot be selected
+  through a production URL or browser storage, and traces, videos, HAR capture, and automatic screenshots
+  are disabled. An exact-runtime, no-download Playwright wrapper now verifies the 64-test discovery
+  inventory, makes the complete Chromium suite authoritative at pre-push and in CI, and scans retained
+  artifacts for the synthetic bearer sentinel.
+  Dependabot now watches the dashboard's exact npm pins as required when the package becomes active.
+
+  This is intentionally the red TDD increment, not a claim that the dashboard is operational. The
+  harness, independent replay digest oracle, strict TypeScript policy, lint, formatting, production
+  build, and Chromium discovery pass; the focused acceptance run fails because the production
+  `TestFixtureSource` has not yet acknowledged its first input revision.
+
 - **The demonstration has a Solace value spine.** [The positioning and evidence
   guide](docs/SOLACE_VALUE.md) now connects each operational pressure in the rescue scenario to a Solace
   mechanism, an audience-visible proof, and an honest evidence status. It makes agent discovery and

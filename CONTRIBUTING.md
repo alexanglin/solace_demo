@@ -20,7 +20,21 @@ misconfiguration audit of `deploy/` fails closed without. Running the stack in `
 needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
 `apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
-matter. Only isolated third-party Node hooks are provisioned by pre-commit itself.
+matter. Only isolated third-party Node hooks are provisioned by pre-commit itself. From the repository
+root, activate the nested manifest's exact package-manager pin, install the frozen dashboard lock, and
+explicitly cache its Chromium before the first pre-push run:
+
+```sh
+corepack enable
+corepack install --global "$(node --print "require('./apps/dashboard/package.json').packageManager")"
+pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+pnpm --dir apps/dashboard exec playwright install chromium
+```
+
+The local Playwright hook never downloads a browser. It first verifies that discovery matches the
+manifest-owned acceptance-test inventory. A missing cache or inventory drift fails before execution;
+continuous integration is the one environment that deliberately installs Chromium and its Linux system
+dependencies before running the same hook.
 
 ## Branching
 
@@ -62,7 +76,7 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, test and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit test, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
@@ -84,6 +98,7 @@ Run them yourself at any time:
 just check-commit      # the fast tier
 just check-push        # the thorough tier
 just check             # both, exactly as CI runs them
+just check-dashboard-browser  # the complete Chromium Playwright acceptance gate
 just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures
 just check-complexity  # Ruff, cognitive complexity, and multi-language duplication
