@@ -252,6 +252,80 @@ class DashboardEventContractTests(unittest.TestCase):
             reference,
         )
 
+    def test_snapshot_timeline_excludes_telemetry_at_the_schema_boundary(self) -> None:
+        # Arrange
+        snapshot = _load(_schema_path("dashboard-snapshot"))
+        timeline = cast("dict[str, object]", _properties(snapshot)["timeline"])
+        items = cast("dict[str, object]", timeline["items"])
+        event = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", items.get("properties", {})).get("event", {}),
+        )
+        variants = cast("list[dict[str, object]]", event.get("anyOf", []))
+        expected = {
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/connectivityChanged",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/missionLifecycle",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/sectorLifecycle",
+        }
+
+        # Act
+        references = {cast("str", variant["$ref"]) for variant in variants}
+
+        # Assert
+        self.assertEqual(expected, references)
+
+
+class DashboardCollectionBoundTests(unittest.TestCase):
+    def test_every_browser_collection_has_its_owned_upper_bound(self) -> None:
+        # Arrange
+        readiness = _load(_schema_path("readiness"))
+        snapshot = _load(_schema_path("dashboard-snapshot"))
+        replay = _load(_schema_path("replay-bundle"))
+        catalog = _load(_schema_path("scenario-catalog"))
+        catalog_definitions = _definitions(catalog)
+        expected = (20, 256, 512, 256, 256)
+
+        # Act
+        actual = (
+            cast("dict[str, object]", _properties(readiness)["reasons"]).get("maxItems"),
+            cast("dict[str, object]", _properties(snapshot)["timeline"]).get("maxItems"),
+            cast("dict[str, object]", _properties(replay)["events"]).get("maxItems"),
+            cast(
+                "dict[str, object]",
+                _properties(catalog_definitions["polygon"])["vertices"],
+            ).get("maxItems"),
+            cast(
+                "dict[str, object]",
+                _properties(catalog_definitions["sectorPolygon"])["vertices"],
+            ).get("maxItems"),
+        )
+
+        # Assert
+        self.assertEqual(expected, actual)
+
+    def test_shared_state_snapshot_and_replay_fixtures_exercise_populated_branches(self) -> None:
+        # Arrange
+        reduced_state = _load(_fixture_path("dashboard-reduced-state", "baseline"))
+        snapshot = _load(_fixture_path("dashboard-snapshot", "baseline"))
+        replay = _load(_fixture_path("replay-bundle", "baseline"))
+        snapshot_state = cast("dict[str, object]", snapshot["state"])
+
+        # Act
+        populated = (
+            bool(cast("list[object]", reduced_state["fleet"])),
+            bool(cast("list[object]", reduced_state["sectors"])),
+            snapshot["currentRun"] is not None,
+            bool(cast("list[object]", snapshot["timeline"])),
+            bool(cast("list[object]", snapshot_state["fleet"])),
+            bool(cast("list[object]", replay["events"])),
+        )
+
+        # Assert
+        self.assertEqual((True, True, True, True, True, True), populated)
+
 
 class DashboardMutationContractTests(unittest.TestCase):
     def test_scenario_revision_is_integer_one_in_catalog_and_start_request(self) -> None:
