@@ -56,6 +56,7 @@ LIVE_URL: Final = ""
 
 AUDIT_SEQUENCE_TABLE: Final = "audit_sequence"
 AUDIT_RECORD_TABLE: Final = "audit_record"
+APPROVAL_TABLE: Final = "approval"
 
 BASE_REVISION: Final = "base"
 HEAD_REVISION: Final = "head"

@@ -41,13 +41,30 @@ import contextlib
 import os
 import unittest
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, override
 from uuid import uuid4
 
 import pytest
+from aerial_rescue_domain.approvals import (
+    Approval,
+    ApprovalError,
+    ApprovalState,
+    ClockReading,
+    Proposal,
+    consume,
+    proposal_digest,
+)
 from aerial_rescue_store import StoreError
+from aerial_rescue_store.approvals import (
+    StoredApproval,
+    StoredApprovalError,
+    load_for_update,
+    persist_consumed,
+    record,
+)
 from aerial_rescue_store.audit import AuditRecord, append
 from aerial_rescue_store.bounds import (
     CHECKOUT_TIMEOUT_SECONDS,
@@ -63,6 +80,7 @@ from aerial_rescue_store.bounds import (
 )
 from aerial_rescue_store.engine import ISOLATION_LEVEL, create_engine
 from aerial_rescue_store.migration import (
+    APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
@@ -82,6 +100,7 @@ from sqlalchemy import (
     select,
     table,
     text,
+    update,
 )
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -103,9 +122,18 @@ RUN_DATABASE_PREFIX: Final = "aerial_rescue_probe_"
 
 VERSION_TABLE: Final = "alembic_version"
 FIRST_REVISION: Final = "0001_audit_log"
+SECOND_REVISION: Final = "0002_approval"
+"""The head this history is at. A literal, so a new revision has to be noticed here too."""
 
-APPLIED_TABLES: Final = tuple(sorted((AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)))
-"""Every table a migrated database holds: the revision's two, and Alembic's own."""
+APPLIED_TABLES: Final = tuple(
+    sorted((APPROVAL_TABLE, AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE))
+)
+"""Every table a migrated database holds: the history's three, and Alembic's own."""
+
+FIRST_REVISION_TABLES: Final = tuple(
+    sorted((AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE))
+)
+"""What the database holds part-way up the history, which a one-revision tree could not show."""
 
 BOUNDS: Final = EngineBounds(
     pool_size=POOL_SIZE,
@@ -373,7 +401,34 @@ class FirstRevisionLiveTests(unittest.IsolatedAsyncioTestCase):
         await _apply(self.engine, HEAD_REVISION)
 
         # Assert
-        self.assertEqual(((), FIRST_REVISION), (before, await _stamped_revision(self.engine)))
+        self.assertEqual(((), SECOND_REVISION), (before, await _stamped_revision(self.engine)))
+
+    async def test_the_history_applies_one_revision_at_a_time(self) -> None:
+        # Arrange
+        await _apply(self.engine, FIRST_REVISION)
+        part_way = (await _table_names(self.engine), await _stamped_revision(self.engine))
+
+        # Act
+        await _apply(self.engine, SECOND_REVISION)
+
+        # Assert
+        self.assertEqual(
+            ((FIRST_REVISION_TABLES, FIRST_REVISION), (APPLIED_TABLES, SECOND_REVISION)),
+            (part_way, (await _table_names(self.engine), await _stamped_revision(self.engine))),
+        )
+
+    async def test_the_step_back_leaves_the_revision_below_it_intact(self) -> None:
+        # Arrange
+        await _apply(self.engine, HEAD_REVISION)
+
+        # Act
+        await _downgrade(self.engine, FIRST_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (FIRST_REVISION_TABLES, FIRST_REVISION),
+            (await _table_names(self.engine), await _stamped_revision(self.engine)),
+        )
 
     async def test_applying_the_same_head_a_second_time_changes_nothing(self) -> None:
         # Arrange
@@ -610,6 +665,274 @@ class AuditAppendLiveTests(unittest.IsolatedAsyncioTestCase):
             (1, 2, ((1, "first"), (2, "second"))),
             (first, second, await _ordinals(self.engine)),
         )
+
+
+CANONICAL_INSTANT: Final = "%Y-%m-%dT%H:%M:%S.%fZ"
+"""ADR-0027's exact millisecond spelling, which the store persists rather than re-encodes."""
+
+APPROVAL_MISSION: Final = "m-approval-probe"
+PROPOSAL: Final = "p-approval-probe"
+OPERATOR: Final = "operator-approval-probe"
+ISSUED_WALL: Final = "2026-08-24T12:00:00.000Z"
+ISSUED_MONOTONIC_MILLISECONDS: Final = 100_000
+TIME_TO_LIVE_MILLISECONDS: Final = 60_000
+
+ACTION_PARAMETERS: Final = {
+    "canonicalizationVersion": 1,
+    "commandType": "escalate_rescue",
+    "latitudeMicrodegrees": 47_000_000,
+    "longitudeMicrodegrees": -122_000_000,
+}
+CANDIDATE: Final = Proposal(
+    mission_id=APPROVAL_MISSION, proposal_id=PROPOSAL, parameters=ACTION_PARAMETERS
+)
+"""What the gateway is about to publish. Its digest is recomputed at consumption, never trusted."""
+
+APPROVED: Final = StoredApproval(
+    mission_id=APPROVAL_MISSION,
+    proposal_id=PROPOSAL,
+    state=ApprovalState.APPROVED,
+    operator_identity=OPERATOR,
+    issued_wall=ISSUED_WALL,
+    issued_monotonic_milliseconds=ISSUED_MONOTONIC_MILLISECONDS,
+    time_to_live_milliseconds=TIME_TO_LIVE_MILLISECONDS,
+    proposal_digest=proposal_digest(CANDIDATE),
+)
+
+INSIDE_THE_WINDOW: Final = ClockReading(
+    wall=datetime.strptime(ISSUED_WALL, CANONICAL_INSTANT).replace(tzinfo=UTC)
+    + timedelta(seconds=1),
+    monotonic=timedelta(milliseconds=ISSUED_MONOTONIC_MILLISECONDS) + timedelta(seconds=1),
+)
+"""Both clocks read one second after issue, so neither regression nor expiry is what refuses."""
+
+COMMITTED: Final = "committed"
+NOT_A_PROTOCOL_STATE: Final = "consumed"
+
+APPROVAL_ROWS: Final = table(
+    APPROVAL_TABLE,
+    column("mission_id", String),
+    column("proposal_id", String),
+    column("state", String),
+    column("operator_identity", String),
+    column("issued_wall", String),
+    column("issued_monotonic_milliseconds", BigInteger),
+    column("time_to_live_milliseconds", BigInteger),
+    column("proposal_digest", String),
+)
+PERSISTED_STATE: Final = select(APPROVAL_ROWS.c.state).where(
+    APPROVAL_ROWS.c.proposal_id == PROPOSAL
+)
+
+
+def _domain(stored: StoredApproval) -> Approval:
+    """Map the persisted record into the domain value, which is the command gateway's step.
+
+    The store never does this: it holds the canonical instant as text and the monotonic reading
+    as a duration, because those are the forms it accepted. Turning them back into clock values
+    belongs to the caller that owns the canonical representation.
+    """
+    return Approval(
+        state=stored.state,
+        operator_identity=stored.operator_identity,
+        issued=ClockReading(
+            wall=datetime.strptime(stored.issued_wall, CANONICAL_INSTANT).replace(tzinfo=UTC),
+            monotonic=timedelta(milliseconds=stored.issued_monotonic_milliseconds),
+        ),
+        time_to_live=timedelta(milliseconds=stored.time_to_live_milliseconds),
+        mission_id=stored.mission_id,
+        proposal_id=stored.proposal_id,
+        proposal_digest=stored.proposal_digest,
+    )
+
+
+async def _record_approved(engine: AsyncEngine) -> None:
+    """Write the operator's decision in its own committed transaction."""
+    async with transaction(create_session_factory(engine)) as session:
+        await record(session, APPROVED)
+
+
+async def _consume(
+    engine: AsyncEngine,
+    *,
+    hold: asyncio.Event | None = None,
+    took: asyncio.Future[bool] | None = None,
+) -> str:
+    """Run the sequence `packages/store/AGENTS.md` fixes, and report what it ended as.
+
+    Load under the row lock, let the caller read its clocks and invoke guarded domain
+    consumption while that lock is held, then persist conditionally. A refusal from either side
+    is returned by name, because which side refused is the whole question ADR-0091 answers.
+    """
+    try:
+        async with transaction(create_session_factory(engine)) as session:
+            loaded = await load_for_update(session, PROPOSAL)
+            if took is not None and not took.done():
+                took.set_result(True)
+            executed = consume(_domain(loaded), CANDIDATE, INSIDE_THE_WINDOW)
+            await persist_consumed(session, replace(loaded, state=executed.state))
+            if hold is not None:
+                await hold.wait()
+    except ApprovalError as denied:
+        return denied.refusal.name
+    except StoredApprovalError as refused:
+        return refused.refusal.name
+    return COMMITTED
+
+
+async def _abandon_a_consumption(engine: AsyncEngine) -> None:
+    """Consume, then abandon the transaction, so the rollback is what ends it."""
+    with contextlib.suppress(AbandonedError):
+        async with transaction(create_session_factory(engine)) as session:
+            loaded = await load_for_update(session, PROPOSAL)
+            executed = consume(_domain(loaded), CANDIDATE, INSIDE_THE_WINDOW)
+            await persist_consumed(session, replace(loaded, state=executed.state))
+            raise AbandonedError
+
+
+@dataclass(frozen=True)
+class Consumption:
+    """What two consumers of one approval did, and whether the second had to wait."""
+
+    first: str
+    second: str
+    second_waited: bool
+
+
+async def _two_consumers_of_one_approval(engine: AsyncEngine) -> Consumption:
+    """Run the race ADR-0091 selects its mechanism for, and observe the wait itself.
+
+    The first consumer takes the row and holds the transaction open. The second is then started
+    and watched for a window far below the lock wait: if it is still unfinished when the window
+    ends, the row lock is what is holding it. Only then is the first released, so the second's
+    decision is made against a committed row rather than beside it.
+    """
+    took: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+    release = asyncio.Event()
+    async with asyncio.TaskGroup() as group:
+        first = group.create_task(_consume(engine, hold=release, took=took))
+        await took
+        second = group.create_task(_consume(engine))
+        finished, _ = await asyncio.wait({second}, timeout=HELD_WINDOW_SECONDS)
+        release.set()
+    return Consumption(first=first.result(), second=second.result(), second_waited=not finished)
+
+
+async def _persisted_state(engine: AsyncEngine) -> str | None:
+    """Return the state the approval row holds, read by a session that did not write it."""
+    async with engine.connect() as connection:
+        state = await connection.scalar(PERSISTED_STATE)
+    return None if state is None else str(state)
+
+
+class ApprovalConsumptionLiveTests(unittest.IsolatedAsyncioTestCase):
+    """Each case gets a migrated database of its own, with one approved proposal in it."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create this case's database, bring it to head, and record one operator approval."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+        await _apply(self.engine, HEAD_REVISION)
+        await _record_approved(self.engine)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection, then drop the database this case created."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_two_consumers_of_one_approval_commit_once_and_deny_once(self) -> None:
+        # Arrange
+        before = await _persisted_state(self.engine)
+
+        # Act
+        consumption = await _two_consumers_of_one_approval(self.engine)
+
+        # Assert
+        self.assertEqual(
+            (
+                ApprovalState.APPROVED.value,
+                COMMITTED,
+                "ALREADY_CONSUMED",
+                True,
+                ApprovalState.EXECUTED.value,
+            ),
+            (
+                before,
+                consumption.first,
+                consumption.second,
+                consumption.second_waited,
+                await _persisted_state(self.engine),
+            ),
+        )
+
+    async def test_a_consumed_approval_is_denied_again_by_a_later_transaction(self) -> None:
+        # Arrange
+        first = await _consume(self.engine)
+
+        # Act
+        second = await _consume(self.engine)
+
+        # Assert
+        self.assertEqual(
+            (COMMITTED, "ALREADY_CONSUMED", ApprovalState.EXECUTED.value),
+            (first, second, await _persisted_state(self.engine)),
+        )
+
+    async def test_an_abandoned_consumption_leaves_the_approval_consumable(self) -> None:
+        # Arrange
+        await _abandon_a_consumption(self.engine)
+
+        # Act
+        after = await _consume(self.engine)
+
+        # Assert
+        self.assertEqual(
+            (COMMITTED, ApprovalState.EXECUTED.value),
+            (after, await _persisted_state(self.engine)),
+        )
+
+    async def test_a_state_outside_the_protocol_is_refused_by_the_database(self) -> None:
+        # Arrange
+        forbidden = (
+            update(APPROVAL_ROWS)
+            .where(APPROVAL_ROWS.c.proposal_id == PROPOSAL)
+            .values(state=NOT_A_PROTOCOL_STATE)
+        )
+
+        # Act
+        with pytest.raises(IntegrityError) as refused:
+            async with self.engine.begin() as connection:
+                await connection.execute(forbidden)
+
+        # Assert
+        self.assertIn("ck_approval_state_in_protocol", str(refused.value.orig))
+
+    async def test_one_proposal_cannot_hold_two_approvals(self) -> None:
+        # Arrange
+        duplicate = insert(APPROVAL_ROWS).values(
+            mission_id=APPROVAL_MISSION,
+            proposal_id=PROPOSAL,
+            state=ApprovalState.APPROVED.value,
+            operator_identity=OPERATOR,
+            issued_wall=ISSUED_WALL,
+            issued_monotonic_milliseconds=ISSUED_MONOTONIC_MILLISECONDS,
+            time_to_live_milliseconds=TIME_TO_LIVE_MILLISECONDS,
+            proposal_digest=APPROVED.proposal_digest,
+        )
+
+        # Act
+        with pytest.raises(IntegrityError) as refused:
+            async with self.engine.begin() as connection:
+                await connection.execute(duplicate)
+
+        # Assert
+        self.assertIn("pk_approval", str(refused.value.orig))
 
 
 if __name__ == "__main__":

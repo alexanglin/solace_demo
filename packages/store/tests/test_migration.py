@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
 from aerial_rescue_store.migration import (
+    APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     CONNECTION_ATTRIBUTE,
@@ -38,6 +39,11 @@ if TYPE_CHECKING:
     from sqlalchemy import Connection
 
 PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
+
+FIRST_REVISION: Final = "0001_audit_log"
+SECOND_REVISION: Final = "0002_approval"
+FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
+"""Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
 class TreeLayoutTests(unittest.TestCase):
@@ -152,6 +158,82 @@ class FirstRevisionTests(unittest.TestCase):
             (
                 f"DROP TABLE {AUDIT_RECORD_TABLE}" in emitted,
                 f"DROP TABLE {AUDIT_SEQUENCE_TABLE}" in emitted,
+            ),
+        )
+
+
+class SecondRevisionTests(unittest.TestCase):
+    """Rendered as the step from the first revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_first_revision_creates_the_approval_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {APPROVAL_TABLE}" in emitted,
+                f"CREATE TABLE {AUDIT_RECORD_TABLE}" in emitted,
+            ),
+        )
+
+    def test_one_proposal_has_one_approval_because_the_proposal_is_the_key(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (proposal_id)", emitted)
+
+    def test_the_state_is_constrained_to_the_protocols_own_spellings(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertIn(
+            "CHECK (state IN ('requested', 'approved', 'rejected', 'expired', "
+            "'superseded', 'executed'))",
+            emitted,
+        )
+
+    def test_both_clock_readings_keep_the_forms_they_were_read_in(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertEqual(
+            (True, True),
+            (
+                "issued_wall VARCHAR(24) NOT NULL" in emitted,
+                "issued_monotonic_milliseconds BIGINT NOT NULL" in emitted,
+            ),
+        )
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, FIRST_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {APPROVAL_TABLE}" in emitted,
+                f"DROP TABLE {AUDIT_RECORD_TABLE}" in emitted,
             ),
         )
 
