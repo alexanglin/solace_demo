@@ -3,7 +3,7 @@
 ## Document status
 
 - **Status:** Active build plan
-- **Last updated:** August 21, 2026
+- **Last updated:** August 24, 2026
 - **Release model:** Incremental, test-driven delivery
 - **Primary audience:** Engineering contributors and search-and-rescue stakeholders
 - **Repository:** Public reference implementation
@@ -147,12 +147,13 @@ mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
   dashboard/
-services/                      (scaffold) four typed service package shells
+services/                      (mixed)   two active members and four typed package shells
   dashboard_api/
   fleet_simulator/             (exists)  scenario boundary, tick fold, telemetry, composition root
     tests/                     (exists)  member-local unit and property tests
-  command_gateway/
-    tests/                               member-local mutation tests
+  command_gateway/             (exists)  deny-by-default operation and actuation tables, the
+                                         request-reply half of the deterministic boundary
+    tests/                     (exists)  member-local mutation tests
   scenario_service/
   evidence_service/
   recorder/
@@ -163,8 +164,9 @@ packages/                      (exists)  four active members and one typed packa
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/                       (exists)  the durable target, its bounds, its engine, a schema, a
-                                         session and transaction boundary, and the audit repository
+  store/                       (exists)  the durable target, its bounds, its engine, a four-revision
+                                         schema, a session and transaction boundary, and the audit,
+                                         approval, idempotency, and command-outbox repositories
     src/aerial_rescue_store/migrations/  Alembic revisions, inside the member that owns them
     tests/                     (exists)  member-local unit tests
   observability/               (scaffold)
@@ -318,8 +320,10 @@ contract, and operator-flow evidence.
   What the plan recorded as this capability's blocker -- the send budget -- turned out not to be
   one: every edge a drone applies is blind to it, and a property test asserts that. The blocker was
   the wire contract.
-  Still owed on this lifecycle: the **gateway's half**, which needs `packages/store`, because
-  `ACCEPTED` in [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
+  Still owed on this lifecycle: the **gateway's half**. `packages/store` no longer blocks it -- the
+  approval, idempotency, and outbox repositories exist and commit together -- but nothing opens the
+  transaction they are for, and `ACCEPTED` in
+  [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
   `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised and the intake claim is
   at-least-once with duplicates possible across a restart. The backlog-recovery measurement this
   consumer unblocked has since been made.
@@ -341,10 +345,24 @@ contract, and operator-flow evidence.
   ordered. Two appenders for one mission now take 1 and 2 against a live cluster, with the second
   observed **waiting** rather than merely finishing later, and the three server-side bounds are read
   back from a session rather than inferred from the driver arguments.
-  Still owed on the store: the approval, idempotency, outbox, and ledger repositories, which need the
-  durable concurrency mechanism selected in a record and proven with a race that holds a denial; a
-  second revision, without which mismatch and failure recovery have no migration path to test; and
-  applying the history to the persistent database, which no runbook yet describes.
+  **Done: ADR-0006's atomic set has all three of its durable halves.** The concurrency mechanism is
+  selected and measured -- [ADR-0091](adr/0091-consume-an-approval-under-its-own-row-lock.md) takes the
+  approval row with a plain `SELECT ... FOR UPDATE` and lets the domain's `ALREADY_CONSUMED` be the
+  denial, having measured that `SKIP LOCKED` hands the second consumer no row at all and that a
+  conditional update alone lets the domain say yes before the store says no.
+  [ADR-0092](adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md) claims a key with one
+  conflicting insert and asks `packages/domain` what a repeat means, and
+  [ADR-0093](adr/0093-stage-the-command-outbox-under-a-counted-bound.md) gives the outbox three states,
+  a bound of 500 unconfirmed records, and an overflow that writes nothing. Three revisions arrived with
+  them, so the history is four long and a migration *path* exists: it is walked one step at a time in
+  both directions against a live cluster. The three writes commit together and roll back together.
+  A measurement on the way found ADR-0085's lock bound unreachable -- with the lock wait equal to the
+  statement time the lock timeout never fires, so a contended row was reported as a stuck statement --
+  and [ADR-0090](adr/0090-bound-the-lock-wait-below-the-statement-time.md) supersedes it at 2 s.
+  Still owed on the store: the paid-call ledger, whose atomic pre-call cap mechanism no record has
+  selected; **a caller**, since no workspace member declares this package as a dependency; restart
+  durability and interrupted-process rollback, which need a probe that kills a process; and applying
+  the history to the persistent database, which no runbook yet describes.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
 - Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in

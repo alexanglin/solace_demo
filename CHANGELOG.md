@@ -10,6 +10,59 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **ADR-0006's atomic set exists, and the three writes it fixes now commit and roll back together.**
+  `packages/store` could open a session, bound a transaction, and append an audit record. It could not
+  consume an approval, claim an idempotency key, or stage a command -- and the reason was named in
+  three places at once: the durable concurrency mechanism "must yield exactly one commit and one hard
+  denial", and conditional updates, constraints, and row or advisory locking were all still open.
+
+  **Three records close it, and each was measured before it was written.**
+  [ADR-0091](docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) ran four candidates against
+  two consumers of one approval row on the pinned cluster. All four commit exactly once; they differ
+  in what the *denial* is, and ADR-0006 is a statement about the denial. `SKIP LOCKED` is the
+  dangerous one -- the second consumer receives **no row**, so "already consumed" and "no such
+  approval" become the same observation. A plain `SELECT ... FOR UPDATE` held across the caller's
+  decision is what makes the second consumer *wait* and then be refused by the protocol's own
+  `ALREADY_CONSUMED`. [ADR-0092](docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md)
+  claims a key with `ON CONFLICT DO NOTHING` and asks `packages/domain` what a repeat means rather
+  than branching on it; a claim abandoned before commit leaves the key claimable, measured, which is
+  what makes it safe to take before the work.
+  [ADR-0093](docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) gives the outbox three
+  states in the domain, a bound of 500 unconfirmed records, and an overflow that writes nothing.
+
+  **The race test has teeth, and that is checked rather than asserted.** With `.with_for_update()`
+  removed from the locking statement, the live case fails with `NOT_CONSUMABLE` where it expects
+  `ALREADY_CONSUMED` -- which is exactly the alternative ADR-0091 rejected. The second consumer's
+  *domain call succeeds* and only a row count stops it, so the gateway would have been told by the
+  protocol that it consumed an approval it did not.
+
+  **Staging the mechanism found a bound that could never fire.** ADR-0085 set the lock wait and the
+  statement time to the same five seconds and claimed, as a consequence, that "a deadlock and a
+  contended wait become distinguishable". Measured with the two equal, `lock_timeout` never fires: the
+  waiting session is told `canceling statement due to statement timeout`, the same class and message a
+  genuinely stuck statement raises. It is the collapse ADR-0085 argued against one level down, unmade
+  one level up. [ADR-0090](docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) supersedes it
+  -- in full, because ADR-0085's own decision refuses to split these numbers -- with the lock wait at
+  2 s and a fourth relation `EngineBounds` refuses at construction.
+
+  **The schema has a path.** Three revisions arrived with the three repositories, so the history is
+  four long and is walked one step at a time in both directions against a live cluster: each revision
+  stamps itself and adds exactly its own tables, and each step back leaves the revision below it
+  intact. Neither was expressible against a history of length one.
+
+  Six rows of [the approval-bypass catalogue](docs/security/approval-bypass-catalogue.md) gain a
+  durable half, B07 among them -- "two concurrent consumptions of the same approval ... asserted under
+  real concurrency, not sequentially" -- which is now proven live rather than owed.
+
+  **What this does not do.** Nothing calls any of it: no workspace member declares `packages/store` as
+  a dependency, so the command gateway's half of the dispatch lifecycle is still owed and command
+  intake is still at-least-once with duplicates possible across a restart. Nothing about restart
+  durability or interrupted-process rollback -- every live case ends its transaction deliberately and
+  no process was killed. Nothing about the paid-call ledger, whose atomic pre-call cap mechanism no
+  record has selected. Nothing about the operator's own database, which still holds zero tables. And
+  nothing about catalogue case B24, a directly written `APPROVED` row, which ADR-0091 says in as many
+  words it does not close.
+
 - **The durable schema has a unit of work above it, and the ordinal is now proven under a real race.**
   `packages/store` could open a pool and apply a revision; it could not open a session, bound a
   transaction, or write a row. `session.py` and `audit.py` are those two things, and the second is the
