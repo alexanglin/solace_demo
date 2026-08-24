@@ -124,6 +124,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0104](0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) | Bound dashboard schema strings and arrays explicitly | Accepted |
 | [0105](0105-authenticate-private-scenario-and-fleet-run-control.md) | Authenticate private scenario and fleet run control over bounded HTTP | Accepted |
 | [0106](0106-register-strict-python-wire-models-before-http-runtime.md) | Register strict Python wire models before the HTTP runtime | Accepted |
+| [0107](0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) | Enable the Pydantic mypy plugin with typed constructors | Accepted |
 
 ## Decisions still open
 
