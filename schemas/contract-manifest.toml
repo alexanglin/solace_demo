@@ -338,7 +338,10 @@ invalid = ["fixtures/golden/v1/dashboard/mutation-outcome/unknown-member.json"]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/ordered-dashboard-event.schema.json"
-valid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/baseline.json"]
+valid = [
+  "fixtures/golden/v1/dashboard/ordered-dashboard-event/baseline.json",
+  "fixtures/golden/v1/dashboard/ordered-dashboard-event/snapshot-anchor-telemetry.json",
+]
 invalid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/unknown-member.json"]
 
 [[contracts]]
@@ -348,7 +351,10 @@ invalid = ["fixtures/golden/v1/dashboard/readiness/unknown-member.json"]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/replay-bundle.schema.json"
-valid = ["fixtures/golden/v1/dashboard/replay-bundle/baseline.json"]
+valid = [
+  "fixtures/golden/v1/dashboard/replay-bundle/baseline.json",
+  "fixtures/golden/v1/dashboard/replay-bundle/reducer-parity.json",
+]
 invalid = ["fixtures/golden/v1/dashboard/replay-bundle/unknown-member.json"]
 
 [[contracts]]
