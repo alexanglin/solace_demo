@@ -174,10 +174,12 @@ and review remain mandatory for those behaviors.
   model, and those are the model-dependent class excluded from the blocking safety gate.
 - **Dashboard integration tests:** Dedicated `*.integration.test.ts` and
   `*.integration.test.tsx` specifications exercise composition across production browser modules. The A1
-  case joins the production HTML host to the real application entry point; once A2-A5 exist, cases also
-  carry serialized boundary input through the production validator, source, reducer, state ownership,
-  and render composition. Their separate non-empty suite blocks at pre-push and in continuous
-  integration, and the complete Vitest coverage run includes them.
+  case joins the production HTML host to the real application entry point. A4 carries a manifest-owned
+  replay through canonical decoding, Ajv and Pydantic validation, and the production Python and
+  TypeScript reducers to compare every checkpoint across ten independent runs. A5 will extend the same
+  class through the source adapters; later cases carry serialized boundary input through state ownership
+  and render composition. The separate non-empty suite blocks at pre-push and in continuous integration,
+  and the complete Vitest coverage run includes it.
 - **End-to-end tests:** Mission start through evidence, connectivity failure, replan, approval, and completion.
 - **User acceptance tests:** The manifest-owned Playwright inventory exercises the selected operator
   slice through serialized fixture inputs, including live/replay labeling and the explicit absence of

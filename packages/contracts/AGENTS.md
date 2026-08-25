@@ -23,6 +23,7 @@ Read the authority for the concern before editing it:
 | Dashboard event projection and reduced state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Dashboard generated types and independent runtime validation | [ADR-0058](../../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
 | Schema-bound dashboard lifecycle sources, families, and projections | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
+| Ordered dashboard-event checkpoint witness | [ADR-0112](../../docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) |
 | Approval identity and consumption | [ADR-0006](../../docs/adr/0006-proposal-bound-single-use-approvals.md), [ADR-0040](../../docs/adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md) |
 
 An Accepted ADR governs if code, tests, fixtures, or prose disagree. A change to a wire shape,

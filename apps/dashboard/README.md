@@ -7,12 +7,12 @@ green: the 19 browser-facing schemas plus two scenario-file and eight private-co
 shared manifest-owned polarity fixtures, strict service-local Python twins at every Python trust
 boundary, and framework-free HTTP expectation registries. A2 is green: generated browser types,
 offline runtime validation, canonical bootstrap refusal, production test-boundary isolation, and
-generated-output freshness are now enforced. The browser half of A3 is green: a hand-written
-canonical encoder, domain-separated Web Crypto digests, ordered-event witnesses, and fixed-work
-digest comparison are covered independently at the frontend threshold. A3 remains in progress until
-R3 supplies the shared Python/TypeScript parity oracle. No FastAPI application, generated OpenAPI,
-reducer, or production browser adapter exists yet, and the remaining Playwright contract stays
-intentionally red while A4-A8 are implemented.
+generated-output freshness are enforced. A3, R3, and A4 are now complete: browser and Python
+canonical digests agree through the shared reducer oracle, and both languages implement the same
+immutable checkpoint, ordered fold, digest rollback, and meaningful-event timeline rules. A5 is the
+next browser increment. No FastAPI application, generated OpenAPI, production event-source adapter,
+or finished command-center presentation exists yet, and the remaining Playwright contract stays
+intentionally red while A5-A8 are implemented.
 
 ## Contract boundary
 
@@ -25,9 +25,19 @@ before narrowing them to the generated types. It neither coerces nor mutates rej
 
 `src/domain/canonical.ts` accepts only already-decoded canonical values, snapshots own data
 properties without invoking accessors, rejects unsupported arrays and objects, and hashes only with
-the platform Web Crypto API. Replay-state and ordered-event contexts remain separate; the latest
-ordered-event witness stays outside reduced mission state. The browser does not yet claim
-cross-language parity because the shared R3 oracle and Python ordered-state fold are still pending.
+the platform Web Crypto API. Replay-state and ordered-event contexts remain separate. Dashboard
+snapshots and replay bundles carry the required top-level `latestEventDigest`: it is `null` exactly
+at ordinal zero and otherwise witnesses the ordered event represented by the anchor. The witness
+stays outside reduced mission state, event frames, replay integrity, and the replay-state digest.
+
+`src/domain/reducer.ts` owns empty, prepared, snapshot, and replay checkpoints plus asynchronous
+ordered folding. Boundary and anchor validation precede ordinal/witness checks; mission and target
+checks precede the copy-on-write state transition; and a supplied server digest is verified before a
+successor is exposed. Structured applied, duplicate, and refused outcomes retain the prior immutable
+checkpoint on every refusal. `src/domain/timeline.ts` replaces a snapshot timeline and appends only
+verified, meaningful non-telemetry suffix events in audit-ordinal order. Shared validated documents
+exercise the Python and TypeScript implementations across ten independent runs, covering canonical
+state bytes, replay-state digests, ordered-event witnesses, fold outcomes, and timeline ordinals.
 
 Bootstrap parsing applies the canonical JSON profile before Ajv. Malformed JSON, duplicate keys,
 floating-point values, unpaired surrogates, unknown members, and other schema failures become typed,

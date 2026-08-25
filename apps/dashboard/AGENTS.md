@@ -2,7 +2,7 @@
 
 The repository-root `AGENTS.md` applies here. Before changing this package, also read
 `apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice and verification ADRs 0094
-through 0106.
+through 0112.
 
 ## Boundaries
 
@@ -21,8 +21,11 @@ through 0106.
 - Apply the canonical JSON profile before validating bootstrap input and keep rejected candidates,
   including bearer values, out of typed refusal details.
 - Hash only validated canonical values through platform Web Crypto. Keep the ordered-event witness
-  outside reduced mission state, compare lowercase SHA-256 values without a data-dependent early exit,
-  and do not claim browser/Python parity without the shared R3 oracle.
+  outside reduced mission state, compare lowercase SHA-256 values without a data-dependent early
+  exit, and do not claim browser/Python parity without the shared R3 oracle.
+- Construct reduced state only through a validated reducer checkpoint. Refusals and server-digest
+  mismatches retain the prior checkpoint, and presentation timelines append only after a verified
+  non-telemetry event is applied.
 - Keep MapLibre geometry, styles, glyphs, fonts, and attribution local. Browser tests must fail on
   any remote request.
 - Do not render approval, command, model, evidence, rescue, or escalation controls in this UI slice.

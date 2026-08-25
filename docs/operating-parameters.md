@@ -213,6 +213,9 @@ so these bounds are about back-pressure, not about the envelope.
 | Readiness reasons | At most 20 | `readiness.schema.json` plus Python/Ajv contract tests |
 | Snapshot non-telemetry timeline | At most 256 ordered events | `dashboard-snapshot.schema.json` plus Python/Ajv contract tests |
 | Validated replay bundle | At most 512 ordered events | `replay-bundle.schema.json` plus replay-validator and browser contract tests |
+| Reducer parity repetitions | 10 independent Python folds and 10 independent TypeScript folds | `reducer-parity.integration.test.ts` compares per-step state bytes, digests, witnesses, outcomes, and timeline ordinals |
+| Parity support process | 5 s timeout and at most 1 MiB of captured output | `PYTHON_RUNNER_TIMEOUT_MILLISECONDS` and `PYTHON_RUNNER_OUTPUT_BYTES` in the dashboard integration test |
+| Parity support input | At most 1 MiB per fixture and at most 100 requested runs | `MAX_FIXTURE_BYTES` and `MAX_PARITY_RUNS` in `reducer_parity_runner.py`; the production fixture requests 10 runs |
 | Search or sector polygon | At most 256 vertices | `scenario-catalog.schema.json` plus scenario-loader contract tests |
 
 ## Connectivity detection

@@ -28,8 +28,8 @@ over the stale passages they supersede.
 
 ## 2. Where the build starts from
 
-The A3/R3 execution branch `feat/dashboard-a3-r3` starts from clean `main` at
-`8ea678f5ec701ed6d18e12364c69f3b542217e88` on 2026-08-25. It retains A1's green
+The R3/A4 execution branch `feat/dashboard-r3-a4` starts from clean `main` at
+`ccacfbe79af82e6c833245646dc16afd07b74825` on 2026-08-25. It retains A1's green
 `24037c7` result and the completed A2 contract boundary:
 
 - The browser acceptance contract is committed and remains red beyond the A1 shell on purpose. The
@@ -47,8 +47,7 @@ The A3/R3 execution branch `feat/dashboard-a3-r3` starts from clean `main` at
   invalid `main` host with a neutral root, loads the real entry module, renders sibling banner and
   main landmarks, acknowledges the fixture revision after render, and keeps the complete unit
   coverage command green. A2 now supplies the production contract boundary; the remaining browser
-  acceptance cases still specify unimplemented A4-A8 behavior plus the R3 parity proof that closes
-  A3.
+  acceptance cases still specify unimplemented A5-A8 behavior.
 - The test harness fakes only serialized boundary inputs
   ([`dashboard-harness.ts`](../apps/dashboard/tests/e2e/support/dashboard-harness.ts)), and the
   start and reset requests are intercepted on the wire by the specifications themselves. A3-A7 can
@@ -79,14 +78,20 @@ The A3/R3 execution branch `feat/dashboard-a3-r3` starts from clean `main` at
   proves that committed output is current without network access. The production Vite-build
   integration check also proves that the test source selector and synthetic bearer sentinel are not
   emitted into browser assets.
-- A3 is in progress. The browser canonicalizer now rejects unsafe integer, string, key, array,
+- A3 is complete. The browser canonicalizer rejects unsafe integer, string, key, array,
   descriptor, object, and cycle forms without invoking accessors; hashes versioned documents with
   platform Web Crypto under separated replay-state and ordered-event contexts; validates the
   ordinal/witness pairing; and compares lowercase SHA-256 values without a data-dependent early exit.
-  The shared Python/TypeScript oracle and ten-run parity evidence remain R3 work, so A3 is not marked
-  complete.
+  The R3 shared Python/TypeScript oracle now exercises canonical state, state and event digests,
+  outcomes, and timeline ordinals across ten independent folds.
 - [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects telemetry and the
-  three validated lifecycle event kinds, but no reduced-state fold exists in Python;
+  three validated lifecycle event kinds and owns the immutable Python reduced-state fold;
+  [`reducer.ts`](../apps/dashboard/src/domain/reducer.ts) and
+  [`timeline.ts`](../apps/dashboard/src/domain/timeline.ts) implement the browser twin and the
+  presentation-only timeline composition. Snapshot and replay anchors now carry the required
+  top-level `latestEventDigest`, which is `null` exactly at ordinal zero and otherwise witnesses the
+  event represented by the anchor. It remains outside reduced mission state, event frames, replay
+  integrity, and replay-state digests.
   [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
   no read path. R1's scenario schemas and golden fixtures are contract evidence, not production
   catalog files: the `scenarios/` directory that
@@ -160,10 +165,10 @@ its entry criteria are met, and when a register row in section 7 is open, the br
 against the committed fixtures behind the eventual interface and never drafts the missing contract
 itself.
 
-**The join.** R1 gated A2, and both are now complete. A2's generated types are what A4 through A7
-consume, so the typed core no longer needs browser-owned wire shapes. A3's browser implementation is
-green and its completion remains joined to R3's cross-language parity oracle. Fixture-driven implementation and adapter tests
-through A7 need no running backend. Live wiring — real SSE, real HTTP responses, and real replay
+**The join.** R1 gated A2, and both are complete. R3 now closes A3's cross-language digest proof and
+supplies the Python contract twin for A4; the A4 browser reducer and timeline are also complete. A5 is
+the next browser increment. Fixture-driven implementation and adapter tests through A7 need no running
+backend. Live wiring — real SSE, real HTTP responses, and real replay
 bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
 
 ![Dashboard build increments](architecture/dashboard-build-increments.png)
@@ -185,19 +190,22 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   check excludes the test selector and synthetic bearer from emitted assets. The check-only generator
   runs offline at pre-commit when an input changes and unconditionally at pre-push; its quality-gate
   tests pin the trigger inventory, command, and failure propagation.
-- **A3 — canonical digest module.** *Status: in progress; browser implementation green, parity
-  blocked by R3.* [`canonical.ts`](../apps/dashboard/src/domain/canonical.ts) implements the browser
+- **A3 — canonical digest module.** *Status: complete.*
+  [`canonical.ts`](../apps/dashboard/src/domain/canonical.ts) implements the browser
   twin of the [`CONTRACTS.md`](CONTRACTS.md) canonical serialization and domain-separated digest
   with platform Web Crypto, descriptor-safe input refusal, ordered-event witness construction, and
   fixed-work lowercase SHA-256 comparison. Unit and integration gates are green at the independent
-  frontend coverage threshold. The shared parity oracle and ten-run Python/TypeScript evidence still
-  arrive with R3, so this row is not complete.
-- **A4 — pure reducer and timeline model.** *Status: not started.* The
-  [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) ordinal and witness
-  discipline — successor accepted, exact duplicate ignored, gap, regression, and digest divergence
-  refused with the alert phrasings the specifications pin — plus the timeline as an append model
-  that telemetry never enters.
-- **A5 — event-source interface and adapters.** *Status: not started.* One interface, three
+  frontend coverage threshold. R3's shared oracle proves the canonical state bytes, replay-state
+  digest, and ordered-event witness across ten independent Python and TypeScript folds.
+- **A4 — pure reducer and timeline model.** *Status: complete.*
+  [`reducer.ts`](../apps/dashboard/src/domain/reducer.ts) implements immutable empty, prepared,
+  snapshot, and replay checkpoints plus asynchronous ordered folding. It accepts successors, returns
+  exact duplicates without changing the checkpoint, refuses gaps, regressions, divergent duplicates,
+  invalid targets, noncanonical anchors, and server-digest mismatches in the fixed precedence, and
+  preserves the prior checkpoint on every refusal. [`timeline.ts`](../apps/dashboard/src/domain/timeline.ts)
+  replaces the validated snapshot baseline and appends only verified non-telemetry suffix events in
+  audit-ordinal order.
+- **A5 — event-source interface and adapters.** *Status: next; not started.* One interface, three
   adapters — the test-fixture source, the live SSE source, and the replay-bundle source — with
   explicit disposal, and the stream-overloaded control frame answered by exactly one
   resynchronization. Live wiring waits on R5; replay bundles wait on R6.
@@ -247,13 +255,15 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   R1 supplies contract schemas and shared golden examples only. R2 owns the two production files under
   `scenarios/`, their strict bounded loader, digest/path validation, and lossless 20-simulation
   projection [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
-- **R3 — Python contract twins.** *Status: in progress. Owner: `packages/contracts`.* The strict
+- **R3 — Python contract twins.** *Status: complete. Owner: `packages/contracts`.* The strict
   broker-source schemas, bindings, and normalized projections selected by
-  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) are green. The ordered-event wrapper, the
+  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md), the ordered-event wrapper, the
   witness-aware reduced-state fold and state document selected by
-  [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md), the first real use
-  of the replay-state and ordered-dashboard-event digest contexts, and the Python-and-TypeScript
-  parity fixtures that make A3 and A4 provable.
+  [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md), and both digest
+  contexts are implemented. Frozen tuple-backed state, copy-on-write folding, structured outcomes,
+  refusal rollback, sector assignment authority, declared-only isolation, and meaningful-event
+  timeline classification match the browser implementation. The shared fixture oracle checks
+  per-step canonical state, digests, witnesses, outcomes, and timeline ordinals across ten runs.
 - **R4 — store read path.** *Status: not started. Owner: `packages/store`.* The ordered
   non-telemetry timeline read, the latest-ordinal and ordered-event-witness read, and the cursor suffix
   behind the
@@ -350,7 +360,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 | --- | --- | --- | --- |
 | R1 | Complete; A2 is done and the typed core A4-A7 is unblocked | none; schemas, fixtures, service-local Python twins, and route expectations are green | dashboard/scenario/fleet services |
 | R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
-| R3 | digest and reducer parity proof for A3-A4 | broker-source projections, witness-aware ordered fold, Python state document, parity fixtures | `packages/contracts` |
+| R3 | Complete; A3 and A4 are done and A5 is next | none; projections, witness-aware folds, state documents, and cross-language parity are green | `packages/contracts`, `apps/dashboard` |
 | R4 | snapshot timeline and resume reads | store timeline, latest ordinal plus witness, cursor suffix, persistence revision | `packages/store` |
 | R5 | live SSE and HTTP in A5-A6 | the API, Caddy relay, bootstrap shell, SSE frames | `services/dashboard_api` |
 | R6 | replay bundles in A5 and A8 replay flows | receiver-only lifecycle recording, two queues, validator, bundle route | `services/recorder` |

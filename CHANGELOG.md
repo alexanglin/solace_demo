@@ -23,11 +23,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   snapshot and replay anchors with top-level `latestEventDigest`. The immutable reducer checkpoint
   holds that witness outside digest-covered reduced mission state and hashes the exact ordered event
   under `ordered-dashboard-event`, so exact duplicate handling is proved rather than inferred from an
-  ordinal. The lifecycle schemas, normalized projection rows, and queue/ACL desired state now exist;
-  the browser canonicalizer now covers descriptor-safe canonical bytes, Web Crypto replay-state and
-  ordered-event digests, witness pairing, and fixed-work digest comparison. The shared R3 fold and
-  cross-language parity oracle, R6 receiver, R8 publishers and reconciliation, and replay runtime
-  remain unimplemented, and the 64 Playwright cases are unchanged.
+  ordinal. Snapshot and replay validators enforce that the witness is `null` exactly at ordinal zero;
+  it remains outside reduced state, event frames, replay integrity, and replay-state digests.
+
+  R3 and A4 now add frozen tuple-backed Python state and its asynchronous TypeScript twin. Both own
+  empty and prepared checkpoints, validate snapshot/replay anchors, apply ordered mission,
+  connectivity, telemetry, and sector events copy-on-write, and return structured applied, duplicate,
+  or refused outcomes without changing the prior checkpoint on refusal. Connectivity remains
+  explicit, sectors remain the sole assignment/lifecycle authority, and declared-only members never
+  gain telemetry or connectivity. Presentation timelines replace their validated snapshot baseline
+  and append only verified non-telemetry suffix events. The shared oracle compares canonical state
+  bytes, replay-state digests, ordered-event witnesses, fold outcomes, and timeline ordinals across ten
+  independent Python and TypeScript runs. A3, R3, and A4 are complete; A5 is next. The R6 receiver, R8
+  publishers and reconciliation, replay runtime, and the UI required to make the unchanged 64
+  Playwright cases green remain unimplemented.
 
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
   its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas
