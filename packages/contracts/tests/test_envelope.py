@@ -123,7 +123,17 @@ COMMAND_RESULT_TOPIC = Topic(
     {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
 )
 
-LIFECYCLE_FIXTURES = Path(__file__).parents[3] / "fixtures" / "golden" / "v1" / "event"
+LIFECYCLE_BASELINES = {
+    "drone-event-connectivity-changed": "drone_event_connectivity_changed_baseline.json",
+    "mission-event-lifecycle": "mission_event_lifecycle_baseline.json",
+    "sector-event-lifecycle": "sector_event_lifecycle_baseline.json",
+}
+"""Each accepted lifecycle source event, committed beside the other baselines.
+
+Naming the committed copy keeps this suite member-local. Mutation runs each Tier 1 member
+from a copied working directory (``docs/TESTING.md``), so a path resolved relative to the
+repository root does not survive the copy and resolves outside the repository instead.
+"""
 
 
 def _baseline() -> dict[str, object]:
@@ -152,10 +162,10 @@ def _command_result_baseline() -> dict[str, object]:
 
 
 def _lifecycle_baseline(name: str) -> dict[str, object]:
-    """Return a fresh lifecycle source event from its accepted golden fixture."""
+    """Return a fresh lifecycle source event from its committed baseline."""
     return cast(
         "dict[str, object]",
-        json.loads((LIFECYCLE_FIXTURES / name / "baseline.json").read_text(encoding="utf-8")),
+        json.loads((BASELINES / LIFECYCLE_BASELINES[name]).read_text(encoding="utf-8")),
     )
 
 
