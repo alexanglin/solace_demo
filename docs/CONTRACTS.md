@@ -211,7 +211,7 @@ created outside the scenario file.
 
 ## Private run-control HTTP
 
-[ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
+[ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
 private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use the
 same route grammar under distinct exact Hosts and distinct bearer credentials; neither private listener
 publishes a host port.
@@ -259,7 +259,7 @@ automatically repeats start. Cancel reports success only after the run is stoppe
 otherwise it returns `CANCELLATION_NOT_ESTABLISHED` and does not claim reset.
 
 The Python trust-boundary twins are now service-local as required by
-[ADR-0106](adr/0106-register-strict-python-wire-models-before-http-runtime.md). The scenario service owns
+[ADR-0108](adr/0108-register-strict-python-wire-models-before-http-runtime.md). The scenario service owns
 the scenario-control server models and separate fleet-control caller models; the fleet simulator owns
 the fleet-control server models; and the dashboard API owns separate scenario-control caller models.
 Each boundary applies the contracts-owned canonical decoder before closed, frozen, strict, alias-only
@@ -441,7 +441,7 @@ only `$schema`, `$id`, `$defs`, `$ref`, `description`, `type`, `const`, `enum`, 
 `minLength`, `minItems`, `maxItems`, `minimum`, `maximum`, `required`, `properties`,
 `additionalProperties`, `propertyNames`, `anyOf`, `allOf`, and `items`, and never `format`, whose
 assertion behaviour is implementation-defined
-([ADR-0104](adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md)).
+([ADR-0106](adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md)).
 Patterns are ASCII-only and use `[0-9]` rather than `\d`, so Python's `re` and ECMA-262 read them
 identically, and the pattern strings in the schemas are the constants in `packages/contracts`.
 

@@ -1,4 +1,4 @@
-# ADR-0103: Adjudicate dashboard coverage and require separate browser evidence
+# ADR-0105: Adjudicate dashboard coverage and require separate browser evidence
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

@@ -149,7 +149,7 @@ hand-written production source.
 is non-empty. Playwright remains separate browser acceptance and does not contribute to package
 coverage. Production-stack end-to-end execution is also separate and remains blocked until the API,
 replay, live fleet control, and exact mission-control package closure exist
-([ADR-0103](../../docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+([ADR-0105](../../docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ```sh
 pnpm --dir apps/dashboard run test:coverage

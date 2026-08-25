@@ -107,7 +107,7 @@ limits and their instruments live only in [operating-parameters.md](operating-pa
   recomputes the aggregate with integer arithmetic, and requires an exact match with every
   hand-written production source enumerated by the wrapper. Missing, empty, skipped, malformed,
   duplicate-key, out-of-inventory, or coverage-ignored evidence fails closed
-  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - **Safety-critical core:** approval authorization, command-gateway dispatch, domain state machines,
   idempotency and sequence rules, evidence scoring, and `packages/contracts` carry the Tier 1 coverage,
   property-based, failure-injection, and mutation obligations.
@@ -184,7 +184,7 @@ and review remain mandatory for those behaviors.
   request interception forbidden. The dedicated continuous-integration job will also run the resourceful
   broker, store, recorder, replay, HTTP, SSE, and packaging integration class. Once admitted, missing
   runtime evidence will fail rather than falling back to fixture acceptance
-  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - **Agent evaluations:** Curated datasets validate delegation, tool selection, structured outputs, refusal of unsafe requests, and approval behavior.
 - **Failure-injection tests:** Broker loss, Agent Mesh container loss, Ollama loss, duplicate and out-of-order events, malformed input, model timeout, invalid output, and recovery.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
@@ -244,7 +244,7 @@ Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, s
 [ADR-0023](adr/0023-executable-deep-quality-gates.md)). Root-workspace strict mypy loads the official
 plugin shipped by the pinned Pydantic dependency so service-owned model constructors remain typed while
 the global explicit-`Any` prohibition stays enabled; a configuration conformance test holds the policy
-selected by [ADR-0107](adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md). The separate
+selected by [ADR-0109](adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md). The separate
 Agent Mesh environment does not load that plugin. Bandit ignores inline suppression comments
 and blocks medium-or-higher findings at medium-or-higher confidence; dependency auditing operates on
 hashed exports of every active uv lock. A reported advisory is adjudicated against
@@ -286,7 +286,7 @@ files for the synthetic bearer sentinel after both passing and failing browser r
 Continuous integration performs the explicit Chromium-only installation before invoking the identical
 pre-push hook. Playwright execution coverage is not merged into the package result, and fixture
 acceptance is not described as production end-to-end evidence
-([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)). jscpd 5.0.14
+([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)). jscpd 5.0.14
 provides the multi-language duplication scan. The cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit

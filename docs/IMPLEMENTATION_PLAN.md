@@ -63,7 +63,7 @@ decision has no ADR yet and one is owed.
 | Continuity | Clearly labeled degraded live simulation, and replay isolated by structural deny sinks rather than by credentials alone | [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) |
 | Deployment boundary | The local workstation's Docker Compose stack; Solace Cloud only as the showcase profile; no AWS deployment in the initial release | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Data | Search-and-rescue artifacts composited onto public-domain wilderness backgrounds; never photographs of real people | [ADR-0013](adr/0013-sar-artifact-imagery-policy.md) |
-| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, tier coverage by risk, and adjudicate dashboard coverage independently from fixture and production browser evidence | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md), [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) |
+| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, tier coverage by risk, and adjudicate dashboard coverage independently from fixture and production browser evidence | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md), [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) |
 | Verification authority | Staged git hooks give fast feedback; CI re-runs the identical hooks and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) |
 | Document precedence | Each normative fact has exactly one home; `AGENTS.md` keeps process rules and this plan keeps sequenced delivery | [ADR-0016](adr/0016-documentation-set-split.md) |
 | Version control | Never commit without explicit human approval | — |
@@ -255,7 +255,7 @@ contract, and operator-flow evidence.
   stages. Phase 3 now contains `apps/dashboard`, so incomplete configuration, missing integration
   discovery, missing source inventory, and incomplete coverage evidence fail closed
   ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
-  [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ### Phase 2: Contracts and broker
 
@@ -378,7 +378,7 @@ contract, and operator-flow evidence.
   blocks separately; the fixed 64-case Playwright inventory remains fixture-driven browser acceptance
   and does not substitute for the later production-stack end-to-end run
   ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
-  [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - Generate and commit dashboard contract types from the versioned schemas, freshness-gate them, validate
   every HTTP/SSE input at runtime, and prove Python and TypeScript refusal parity with the shared golden
   fixtures ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
@@ -440,7 +440,7 @@ contract, and operator-flow evidence.
   integration, and production-stack browser end-to-end execution as separate required claims. The
   production path re-executes the selected existing behaviors only after the mission-control closure is
   available; fixture acceptance cannot substitute for it
-  ([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - Qualify the mode-appropriate operator workflows in live simulation, degraded live simulation, and replay
   at the reference MacBook's normal resolution without developer tools. Playwright acceptance covers the
   accessible proposal-bound approval in the live modes and an unavailable approval control in replay while

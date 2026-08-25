@@ -184,7 +184,7 @@ loader boundary and are not yet runtime evidence.
 ## Private run control
 
 The two authenticated private HTTP hops and their refusal order are fixed by
-[ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) and described in
+[ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) and described in
 [CONTRACTS.md](CONTRACTS.md#private-run-control-http). The schemas instrument representation now; R8
 must add the server/client timing, authentication, reconciliation, and cancellation evidence.
 

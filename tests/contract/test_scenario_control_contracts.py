@@ -1,4 +1,4 @@
-"""The scenario-file and private run-control contract inventory fixed by ADR-0100/0105."""
+"""The scenario-file and private run-control contract inventory fixed by ADR-0100/0107."""
 
 from __future__ import annotations
 

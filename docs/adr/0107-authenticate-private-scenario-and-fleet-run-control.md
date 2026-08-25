@@ -1,4 +1,4 @@
-# ADR-0105: Authenticate private scenario and fleet run control over bounded HTTP
+# ADR-0107: Authenticate private scenario and fleet run control over bounded HTTP
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

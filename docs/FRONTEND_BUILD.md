@@ -17,7 +17,7 @@ The dashboard-slice records
 ([ADR-0094](adr/0094-validate-replay-before-browser-playback.md) through
 [ADR-0101](adr/0101-order-dashboard-events-outside-the-five-field-projection.md)) and the frontend
 verification record
-([ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)) postdate passages
+([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)) postdate passages
 of [`CONTRACTS.md`](CONTRACTS.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), and
 [`operating-parameters.md`](operating-parameters.md). ADR-0102 separately constrains the normal startup
 path that R9 must preserve. Until register row R7 in section 7 is worked off, those Accepted records
@@ -111,18 +111,18 @@ on 2026-08-24:
 - [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md) — Agent Mesh remains part of
   normal default startup; R9 must isolate mission-control by selecting an exact service closure rather
   than by changing that default.
-- [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) — independent
+- [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) — independent
   dashboard coverage adjudication plus separate deterministic integration, fixture acceptance,
   service-integration, and production end-to-end evidence.
-- [ADR-0104](adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) — the two additional
+- [ADR-0106](adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) — the two additional
   cross-language schema assertions needed for nonempty strings and bounded or exact arrays.
-- [ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) — the two authenticated
+- [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) — the two authenticated
   private HTTP hops, their eight shared-schema messages, refusal order, idempotent reconciliation, and
   one cancellation budget.
-- [ADR-0106](adr/0106-register-strict-python-wire-models-before-http-runtime.md) — service-local
+- [ADR-0108](adr/0108-register-strict-python-wire-models-before-http-runtime.md) — service-local
   Pydantic ownership, canonical-first parsing, browser-only classification, and framework-free route
   expectations before a server exists.
-- [ADR-0107](adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) — the pinned root
+- [ADR-0109](adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) — the pinned root
   Pydantic mypy plugin keeps model constructors typed without weakening strict `Any` enforcement.
 
 ## 4. Build increments
@@ -211,7 +211,7 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   with corresponding framework-free `http_contract.py` or `control_http_contract.py` registries.
   `packages/contracts` remains
   the owner of the pure Python projections and fold in R3 and does not take a Pydantic dependency.
-  ADR-0094/0097/0100/0101/0105 decide the shapes; the e2e fixture is a reference, never the type
+  ADR-0094/0097/0100/0101/0107 decide the shapes; the e2e fixture is a reference, never the type
   authority. No FastAPI application, generated OpenAPI document, or listener is part of R1; those remain
   R5/R8 work. R1's completion unblocks A2 and everything after it.
 - **R2 — scenario catalog and loader.** *Status: not started. Owner: `services/scenario_service`.*
@@ -246,7 +246,7 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   successor still disagrees with the record.
 - **R8 — scenario and fleet live control.** *Status: not started. Owner:
   `services/scenario_service` and `services/fleet_simulator`.* Add the authenticated private HTTP
-  control surface [ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) defines,
+  control surface [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines,
   the exact 20-simulation projection, bounded pacing and cancellation, guaranteed connectivity and
   sector transitions, and the 14-tick/280-publication proof and separate publication counter defined in
   [`operating-parameters.md`](operating-parameters.md#workload-and-service-level-profile).
@@ -287,7 +287,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
   the bearer-sentinel scan; the complete coverage wrapper is
   [`dashboard-test-full.sh`](../scripts/hooks/dashboard/dashboard-test-full.sh). The latter emits a
   temporary JSON summary that the independent gate selected by
-  [ADR-0103](adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) adjudicates,
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) adjudicates,
   while
   [`dashboard-integration-full.sh`](../scripts/hooks/dashboard/dashboard-integration-full.sh)
   separately proves the dedicated integration inventory is non-empty. Playwright coverage is never

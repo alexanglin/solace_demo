@@ -14,7 +14,7 @@ command -v uv >/dev/null 2>&1 || {
 	exit 1
 }
 
-# ADR-0103 requires the untrusted report path itself to remain inside the
+# ADR-0105 requires the untrusted report path itself to remain inside the
 # dashboard boundary. Use an absolute path because pnpm changes into the package.
 dashboard_root=$(CDPATH='' cd -- apps/dashboard && pwd)
 evidence_parent="$dashboard_root/coverage"

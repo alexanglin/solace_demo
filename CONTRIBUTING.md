@@ -41,7 +41,7 @@ at pre-push. Coverage is not accepted from Vitest's exit status alone: a project
 the JSON summary against the exact hand-written production-source inventory. Once the mission-control
 closure exists, production-stack browser end-to-end execution will use a separate container-backed
 acceptance command and will never contribute to the package coverage percentage
-([ADR-0103](docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+([ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ## Branching
 

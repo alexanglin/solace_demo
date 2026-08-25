@@ -28,7 +28,7 @@ check-types:
     pre-commit run --all-files --hook-stage pre-push mypy-full
     pre-commit run --all-files --hook-stage pre-push dashboard-typecheck-full
 
-# Hold dashboard policy, types, lint, format, coverage, and integration to ADR-0057 and ADR-0103.
+# Hold dashboard policy, types, lint, format, coverage, and integration to ADR-0057 and ADR-0105.
 check-dashboard:
     pre-commit run --all-files --hook-stage pre-commit typescript-policy
     pre-commit run --all-files --hook-stage pre-push dashboard-contracts-current-all

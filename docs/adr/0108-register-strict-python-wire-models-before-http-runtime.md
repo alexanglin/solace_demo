@@ -1,4 +1,4 @@
-# ADR-0106: Register strict Python wire models before the HTTP runtime
+# ADR-0108: Register strict Python wire models before the HTTP runtime
 
 - **Status:** Accepted
 - **Date:** 2026-08-24
@@ -7,10 +7,10 @@
 
 ## Context
 
-ADR-0097 and ADR-0105 require strict Pydantic models and OpenAPI parity for the dashboard and private
+ADR-0097 and ADR-0107 require strict Pydantic models and OpenAPI parity for the dashboard and private
 control boundaries, but no Python model or FastAPI application exists. Starting with route decorators
 would let framework parsing consume duplicate-key evidence and would make generated OpenAPI the accidental
-contract owner. ADR-0105 also fixes the private route grammar and bodies without assigning successful HTTP
+contract owner. ADR-0107 also fixes the private route grammar and bodies without assigning successful HTTP
 statuses.
 
 Two of the nineteen dashboard schemas, `mutation-outcome` and `source-signal`, are browser-owned state
@@ -63,7 +63,7 @@ dashboard error as its default refusal. The private control routes use:
 This record does not assign individual refusal codes to HTTP statuses. A default typed refusal preserves
 the closed vocabulary until the runtime owner has evidence for a more detailed mapping.
 
-FastAPI 0.141.1, Uvicorn 0.52.3, Pydantic 2.13.4, and HTTPX 0.28.1 remain the pins selected by ADR-0105.
+FastAPI 0.141.1, Uvicorn 0.52.3, Pydantic 2.13.4, and HTTPX 0.28.1 remain the pins selected by ADR-0107.
 HTTPX is installed only in the dashboard API and scenario service, which are callers; the fleet simulator
 does not acquire an unused client dependency.
 
@@ -82,7 +82,7 @@ does not acquire an unused client dependency.
 - **Generate models from FastAPI OpenAPI.** Rejected because the committed schemas, not framework output,
   own compatibility.
 - **Put shared Pydantic models in `packages/contracts`.** Rejected because that package is framework-free
-  Tier 1 code and ADR-0105 requires service ownership.
+  Tier 1 code and ADR-0107 requires service ownership.
 - **Import the callee's models in each client.** Rejected because it couples separately deployed service
   implementations and lets one process package become another's trust boundary.
 - **Model all nineteen dashboard schemas in Python.** Rejected because two are browser-owned state and

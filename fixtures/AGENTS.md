@@ -29,9 +29,9 @@ editing it:
 | Fixture layout and one-reason negatives | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
 | Shared TypeScript validation obligations | [ADR-0058](../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
 | Ordered dashboard projection, reduced state, snapshots, and replay | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
-| Explicit dashboard collection bounds | [ADR-0104](../docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
+| Explicit dashboard collection bounds | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
-| Authenticated private scenario and fleet control | [ADR-0105](../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
+| Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
 
 An Accepted architecture decision record (ADR) governs if a fixture, manifest entry, schema,
 implementation, test, or document disagrees. Changing accepted shape, polarity, refusal behavior,

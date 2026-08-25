@@ -47,9 +47,9 @@ concern before changing it:
 | Durable command queues, one per drone | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Frozen explicit fleet input with no seed | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
-| Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
-| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
-| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
+| Authenticated private run control | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 Do not settle a state transition, simulation parameter, clock policy, broker grant, delivery claim,
@@ -107,9 +107,9 @@ and coordinates typed ports. It does not become a second owner for policy or wir
   belong behind the store boundary. A process-local simulation object may describe the current synthetic
   world; it is not authority for a durable approval, command result, idempotency decision, or mission
   timeline.
-- Accept only ADR-0105's validated fleet-control start document at the composition boundary. Its nested
+- Accept only ADR-0107's validated fleet-control start document at the composition boundary. Its nested
   `FleetScenario` projection is explicit and carries no seed or random source. ADR-0100 leaves catalog
-  loading and version validation with the scenario service; ADR-0105 defines the private start, status,
+  loading and version validation with the scenario service; ADR-0107 defines the private start, status,
   cancel, authentication, and reconciliation protocol. The strict server models and framework-free route
   registry now exist locally, but no HTTP runtime implements them yet. Do not
   import another service's implementation, read a scenario file inside the simulator, or make the absent

@@ -48,9 +48,9 @@ not. Read the owner of each concern before changing it:
 | Frozen simulator scenario boundary | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Deterministic tick and ordering semantics | [ADR-0078](../../docs/adr/0078-one-tick-is-one-observation-per-drone.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
-| Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
-| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
-| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
+| Authenticated private run control | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not change the accepted document format, schema dialect, version marker, catalog identity,
@@ -116,7 +116,7 @@ description, asset record, search polygon, weather summary, time-since-contact v
 Keep ownership separated:
 
 - This member owns parsing and validating the accepted untrusted versioned document, catalog discovery,
-  and the private lifecycle coordination ADR-0105 assigns to it.
+  and the private lifecycle coordination ADR-0107 assigns to it.
 - The fleet simulator owns `FleetScenario`, `DroneStart`, their construction refusals, tick behavior,
   physical state, telemetry, and simulator composition. Do not copy those types or their refusal table.
 - `packages/domain` owns mission, sector, and connectivity transitions. A scenario document may supply
@@ -129,7 +129,7 @@ Keep ownership separated:
 - The dashboard API owns the public scenario discovery, start, and reset routes. This member must not
   duplicate their browser-facing Host, Origin, bearer, OpenAPI, or idempotency boundary.
 
-ADR-0105 now defines the serializable handoff over authenticated private HTTP: this member sends the
+ADR-0107 now defines the serializable handoff over authenticated private HTTP: this member sends the
 lossless fleet-control start document to the separate fleet process and validates its typed status or
 refusal. The distinct fleet-control caller models now exist locally, but no HTTP client or server exists.
 That contract does not authorize a dependency from one service package to another. Never import a
@@ -207,7 +207,7 @@ The current `FleetScenario` boundary refuses, in a fixed owning implementation:
 - a negative scheduled tick ordinal.
 
 Pydantic owns the external shape and type refusal. The simulator constructor owns whether the resulting
-combination can fold. Translate an expected `ScenarioError` into ADR-0105's typed, redacted refusal; do
+combination can fold. Translate an expected `ScenarioError` into ADR-0107's typed, redacted refusal; do
 not catch it and retry with repaired data, replace it with a generic accepted scenario, or restate the
 whole table in a second validator. Unexpected errors retain their stack traces only through redacted
 structured diagnostics.
@@ -241,7 +241,7 @@ as both, or reuse a mission identifier because the same scenario was selected ag
 currently carries no scenario identity, and no topic or event records which catalog entry produced a run.
 Do not claim scenario provenance in recordings or audit until a governing contract adds it.
 
-ADR-0105 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
+ADR-0107 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
 and distinct bearer checks, bounded calls, stable-run idempotency, uncertain-start status reconciliation,
 and shared cancellation budget. The service-local server/caller models and framework-free scenario-route
 registry now express the typed boundary. This member must eventually expose those scenario-control routes
@@ -335,7 +335,7 @@ operating-system isolation boundary. Cover these classes as their contracts land
 - liveness versus catalog and mode readiness, startup with a partially invalid catalog, reload policy,
   cancellation during load or internal HTTP work, and bounded graceful shutdown;
 - internal HTTP validation, authentication, timeout, cancellation, retry, and response behavior after its
-  protocol ADR-0105 defines;
+  protocol ADR-0107 defines;
 - same-key, different-key, concurrent, restart, and partial-failure start/reset behavior after idempotency
   ownership and transaction semantics are decided;
 - live, degraded, and replay composition with no mode crossing, no recorded substitution, and no broker,

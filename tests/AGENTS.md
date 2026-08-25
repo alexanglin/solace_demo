@@ -29,7 +29,7 @@ Use the canonical source for the fact under test instead of treating an assertio
 | Agent Mesh test environment | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md) |
 | Schema identity and one-reason fixtures | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
 | Ordered dashboard state and stream frames | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
-| Dashboard schema collection bounds | [ADR-0104](../docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
+| Dashboard schema collection bounds | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Local broker and non-gating Cloud showcase | [ADR-0043](../docs/adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Static Compose policy | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md) |
 | Generated per-checkout certificate authority | [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md) |

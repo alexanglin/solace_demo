@@ -1,4 +1,4 @@
-# ADR-0107: Enable the Pydantic mypy plugin with typed constructors
+# ADR-0109: Enable the Pydantic mypy plugin with typed constructors
 
 - **Status:** Accepted
 - **Date:** 2026-08-24
@@ -7,14 +7,14 @@
 
 ## Context
 
-ADR-0106 activates strict Pydantic models in three Python 3.14 services. The root mypy policy enables
+ADR-0108 activates strict Pydantic models in three Python 3.14 services. The root mypy policy enables
 `disallow_any_explicit`, while Pydantic's normal dataclass transform synthesizes model constructors that
 accept `Any`. Whole-program strict mypy therefore reports an explicit-`Any` error at every owned model
 class even though the declared fields themselves are fully typed.
 
 Inline ignores, per-module relaxations, or disabling the repository-wide `Any` rule would weaken owned
 code to accommodate framework-generated signatures. Pydantic 2.13.4 ships an official mypy plugin that
-can synthesize field-typed constructors and enforce the model configuration selected by ADR-0106.
+can synthesize field-typed constructors and enforce the model configuration selected by ADR-0108.
 
 ## Decision
 

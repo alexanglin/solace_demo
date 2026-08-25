@@ -53,9 +53,9 @@ Read the owner of each concern before changing it:
 | Dashboard Unix-socket and bootstrap relay | [ADR-0096](../../docs/adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) |
 | Closed UI-slice public API | [ADR-0097](../../docs/adr/0097-close-the-ui-slice-http-contract.md) |
 | Ordered dashboard SSE frames and cursors | [ADR-0101](../../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
-| Authenticated private scenario client | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
-| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
-| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
+| Authenticated private scenario client | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,
@@ -131,7 +131,7 @@ This service coordinates narrower owners; it does not duplicate them:
 - Keep every direct `solace` import, vendor callback value, subscription, publisher acknowledgement,
   reconnect loop, and transport exception inside `packages/broker`. Vendor types and broad `Any` values
   must not cross into HTTP or domain policy.
-- Call the scenario-service boundary through an injected typed client that implements ADR-0105's private
+- Call the scenario-service boundary through an injected typed client that implements ADR-0107's private
   start, status, cancel, authentication, timeout, and typed-refusal contract. Preserve the caller-supplied
   stable run identity, never automatically repeat an uncertain start, and reconcile it by querying the
   same run. No such client exists yet. Do not import another service's implementation or copy the public
@@ -320,7 +320,7 @@ event identifiers, timestamps, transport headers, or diagnostic traces.
 
 Health reports process liveness only. Readiness answers whether the selected mode can start a scenario;
 it is not “the import worked,” “the port is open,” or “every dependency is healthy.” Build the
-mode-specific predicate from typed dependency status, including ADR-0105 scenario status, once the store,
+mode-specific predicate from typed dependency status, including ADR-0107 scenario status, once the store,
 broker-delivery, budget, and replay-input requirements land. Do not hide a missing critical dependency
 behind a generic success or make a deliberately absent replay dependency fail readiness.
 
@@ -366,7 +366,7 @@ contracts land:
   exact-response replay, and refusal before any duplicate effect;
 - proof that the closed route inventory has no approval, command, model, evidence, rescue, or escalation
   handler or placeholder;
-- health versus mode-specific readiness, dependency loss and recovery, ADR-0105 authentication and typed
+- health versus mode-specific readiness, dependency loss and recovery, ADR-0107 authentication and typed
   refusal, uncertain-start status reconciliation without a repeated start, bounded cancellation, partial
   start/reset failure, and safe reset identity;
 - topic and envelope mismatch, payload-schema refusal, unprojected event types, allowed and forbidden

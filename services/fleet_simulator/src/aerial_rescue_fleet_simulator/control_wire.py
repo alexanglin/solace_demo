@@ -48,7 +48,7 @@ StrictOne = Annotated[Literal[1], BeforeValidator(_strict_literal_one)]
 
 
 class _WireModel(BaseModel):
-    """Apply ADR-0106's closed, frozen, strict, alias-only model policy."""
+    """Apply ADR-0108's closed, frozen, strict, alias-only model policy."""
 
     model_config = ConfigDict(
         extra="forbid",

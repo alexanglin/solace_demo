@@ -34,7 +34,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   scenario revision `1`, sector-only assignment authority, declared-only members without fabricated
   connectivity or telemetry, normalized-event timelines, and mutation state outside the reducer.
 
-  [ADR-0104](docs/adr/0104-bound-dashboard-schema-strings-and-arrays-explicitly.md) adds only
+  [ADR-0106](docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) adds only
   `minLength` and `maxItems` to the portable schema vocabulary, which makes nonempty capabilities and
   exact scenario cardinalities expressible without admitting optional `format` behavior or the rest of
   Draft 2020-12. The 64 Playwright cases remain intact while their serialized fixtures now match the
@@ -47,7 +47,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   identity and geometry outside the lossless 20-simulation `FleetScenario` projection; the private
   contract reuses one status shape for start, status, and established cancellation, carries explicit
   publication counters, and separates the dashboard-to-scenario and scenario-to-fleet hops under
-  [ADR-0105](docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md). These are contract
+  [ADR-0107](docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md). These are contract
   shapes and synthetic golden examples, not production scenario files or a running control plane.
 
   R1 is now complete. The dashboard API owns strict Pydantic twins for its seventeen server-facing
@@ -56,12 +56,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   fleet simulator owns the four fleet-control server documents. The two browser-owned documents remain
   explicitly browser-only. Canonical decoding precedes strict model validation, and framework-free
   route registries pin the nine public routes and both three-route private surfaces for later runtime
-  and OpenAPI parity tests. [ADR-0106](docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md)
+  and OpenAPI parity tests. [ADR-0108](docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md)
   records that ownership and keeps the schemas normative.
 
   Root strict mypy now uses Pydantic's pinned plugin so generated model constructors remain field-typed
   without weakening the repository's explicit-`Any` prohibition; a conformance test holds the selected
-  policy ([ADR-0107](docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md)). These
+  policy ([ADR-0109](docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md)). These
   model and route-expectation layers unblock A2, but they do not create a FastAPI application, listener,
   generated OpenAPI document, production catalog, or live control plane. R2 owns the production catalog
   files and loader, and R5/R8 own the HTTP runtimes.
@@ -72,7 +72,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   fixture revision acknowledgement. Unit and HTML-entry integration tests measure the hand-written
   entry module instead of excluding it.
 
-  [ADR-0103](docs/adr/0103-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) gives the
+  [ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) gives the
   frontend the same fail-closed coverage semantics as the Python workspace. The complete Vitest run
   emits V8 JSON into a temporary directory; a typed gate rejects missing, empty, malformed,
   duplicate-key, skipped, ignored, or inventory-incomplete evidence, recomputes every total with integer

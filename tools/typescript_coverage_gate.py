@@ -1,4 +1,4 @@
-"""Fail-closed dashboard coverage adjudication fixed by ADR-0103.
+"""Fail-closed dashboard coverage adjudication fixed by ADR-0105.
 
 Vitest produces evidence; it does not own the verdict.  This module validates the
 coverage summary and the enumerated hand-written source inventory without invoking a
@@ -518,7 +518,7 @@ def evaluate_coverage(
 def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="typescript-coverage-gate",
-        description="Adjudicate dashboard V8 coverage according to ADR-0103.",
+        description="Adjudicate dashboard V8 coverage according to ADR-0105.",
     )
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--dashboard-root", required=True, type=Path)

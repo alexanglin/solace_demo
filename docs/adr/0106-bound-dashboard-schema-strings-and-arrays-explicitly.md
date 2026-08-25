@@ -1,4 +1,4 @@
-# ADR-0104: Bound dashboard schema strings and arrays explicitly
+# ADR-0106: Bound dashboard schema strings and arrays explicitly
 
 - **Status:** Accepted
 - **Date:** 2026-08-24

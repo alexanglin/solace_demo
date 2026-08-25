@@ -75,7 +75,7 @@ class DumpableModel(Protocol):
 
 
 class WireModule(Protocol):
-    """The uniform service-local registry surface fixed by ADR-0106."""
+    """The uniform service-local registry surface fixed by ADR-0108."""
 
     SERVER_MODEL_BY_SCHEMA_ID: Mapping[str, object]
     CLIENT_MODEL_BY_SCHEMA_ID: Mapping[str, object]

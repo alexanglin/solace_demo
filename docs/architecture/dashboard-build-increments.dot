@@ -52,7 +52,7 @@ digraph DashboardBuildIncrements {
     labelloc=b;
     color="#8193A6";
     style="rounded,dashed";
-    r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0106 / 0107", fillcolor="#DFF7EE", color="#008F6B"];
+    r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
     r2 [label="R2\nscenario catalog + loader\nADR-0100"];
     r3 [label="R3\nPython projections + fold\ndigest-parity fixtures"];
     r4 [label="R4\nstore read path\nUI-slice revision (ADR-0095)"];
