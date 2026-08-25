@@ -460,33 +460,43 @@ def _strictly_sorted_identifiers(items: Iterable[FleetMember | Sector]) -> bool:
     return identifiers == tuple(sorted(set(identifiers), key=_byte_key))
 
 
+def _sector_assignment_defect(state: DashboardReducedState) -> tuple[str, object] | None:
+    """Return the first noncanonical sector assignment held by an anchor."""
+    simulated = {
+        member.identifier for member in state.fleet if isinstance(member, SimulatedFleetMember)
+    }
+    for sector in state.sectors:
+        if sector.state is SectorState.UNASSIGNED and sector.assigned_member_id is not None:
+            return ("assignedMemberId", sector.assigned_member_id)
+        if sector.state is not SectorState.UNASSIGNED and sector.assigned_member_id is None:
+            return ("assignedMemberId", None)
+        if sector.assigned_member_id is not None and sector.assigned_member_id not in simulated:
+            return ("assignedMemberId", sector.assigned_member_id)
+    return None
+
+
+def _mission_anchor_defect(state: DashboardReducedState) -> tuple[str, object] | None:
+    """Return the noncanonical unprepared-state defect, when present."""
+    return (
+        ("currentMission", None)
+        if state.current_mission is None
+        and (state.fleet or state.sectors or state.latest_audit_ordinal != 0)
+        else None
+    )
+
+
 def _noncanonical_anchor(state: DashboardReducedState) -> tuple[str, object] | None:
     """Return the first semantic defect that a wire schema cannot express."""
     fleet_order = None if _strictly_sorted_identifiers(state.fleet) else ("fleet", state.fleet)
     sector_order = (
         None if _strictly_sorted_identifiers(state.sectors) else ("sectors", state.sectors)
     )
-    simulated = {
-        member.identifier for member in state.fleet if isinstance(member, SimulatedFleetMember)
-    }
-    sector_semantics: tuple[str, object] | None = None
-    for sector in state.sectors:
-        if sector.state is SectorState.UNASSIGNED and sector.assigned_member_id is not None:
-            sector_semantics = ("assignedMemberId", sector.assigned_member_id)
-            break
-        if sector.state is not SectorState.UNASSIGNED and sector.assigned_member_id is None:
-            sector_semantics = ("assignedMemberId", None)
-            break
-        if sector.assigned_member_id is not None and sector.assigned_member_id not in simulated:
-            sector_semantics = ("assignedMemberId", sector.assigned_member_id)
-            break
-    mission_semantics = (
-        ("currentMission", None)
-        if state.current_mission is None
-        and (state.fleet or state.sectors or state.latest_audit_ordinal != 0)
-        else None
+    return (
+        fleet_order
+        or sector_order
+        or _sector_assignment_defect(state)
+        or _mission_anchor_defect(state)
     )
-    return fleet_order or sector_order or sector_semantics or mission_semantics
 
 
 def _anchor_digest_outcome(
