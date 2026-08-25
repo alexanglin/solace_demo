@@ -384,6 +384,85 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertNotIsInstance(captured.value, canonical.CanonicalizationError)
 
+    def test_dashboard_anchor_models_require_the_ordered_event_witness(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        schema_ids = tuple(
+            f"{SCHEMA_PREFIX}dashboard/{name}.schema.json"
+            for name in ("dashboard-snapshot", "replay-bundle")
+        )
+        documents = tuple(
+            (
+                schema_id,
+                cast(
+                    "dict[str, object]",
+                    canonical.decode(_fixture_path(schema_id, "baseline").read_bytes()),
+                ),
+            )
+            for schema_id in schema_ids
+        )
+        for _, document in documents:
+            document.pop("latestEventDigest", None)
+
+        # Act
+        refusals: list[ValueError] = []
+        for schema_id, document in documents:
+            with pytest.raises(ValueError, match="Field required") as captured:
+                dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(document))
+            refusals.append(captured.value)
+
+        # Assert
+        self.assertEqual(len(documents), len(refusals))
+
+    def test_dashboard_anchor_models_refuse_an_ordinal_witness_mismatch(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        baselines = tuple(
+            (
+                schema_id,
+                cast(
+                    "dict[str, object]",
+                    canonical.decode(_fixture_path(schema_id, "baseline").read_bytes()),
+                ),
+            )
+            for schema_id in (
+                f"{SCHEMA_PREFIX}dashboard/dashboard-snapshot.schema.json",
+                f"{SCHEMA_PREFIX}dashboard/replay-bundle.schema.json",
+            )
+        )
+        cases: list[tuple[str, dict[str, object]]] = []
+        for schema_id, baseline in baselines:
+            state_member = (
+                "state" if schema_id.endswith("dashboard-snapshot.schema.json") else "initialState"
+            )
+            state = cast("dict[str, object]", baseline[state_member])
+            cases.extend(
+                (
+                    (schema_id, {**baseline, "latestEventDigest": None}),
+                    (
+                        schema_id,
+                        {
+                            **baseline,
+                            "latestEventDigest": "0" * 64,
+                            state_member: {**state, "latestAuditOrdinal": 0},
+                        },
+                    ),
+                )
+            )
+
+        # Act
+        refusals: list[ValueError] = []
+        for schema_id, value in cases:
+            with pytest.raises(
+                ValueError,
+                match="latestEventDigest must be null exactly when latestAuditOrdinal is zero",
+            ) as captured:
+                dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(value))
+            refusals.append(captured.value)
+
+        # Assert
+        self.assertEqual(len(cases), len(refusals))
+
     def test_client_and_server_twins_are_distinct_classes_with_the_same_fixture_oracle(
         self,
     ) -> None:

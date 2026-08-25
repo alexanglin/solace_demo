@@ -19,6 +19,7 @@ export interface DashboardSnapshot {
   digest: string;
   currentRun: null | LiveRun | ReplayRun;
   state: DashboardReducedState;
+  latestEventDigest: null | string;
   /**
    * @maxItems 256
    */

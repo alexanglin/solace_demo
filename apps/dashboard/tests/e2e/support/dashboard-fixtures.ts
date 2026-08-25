@@ -583,8 +583,11 @@ function scenarioCatalog(scenarios: readonly ScenarioFixture[] = [scenario]): Da
 function snapshot(
   state: DashboardReducedState,
   timeline: readonly OrderedDashboardEventFixture[],
+  latestEvent: OrderedDashboardEventFixture | null,
 ): DashboardSourceInput {
   const digest = replayStateDigest(state);
+  const latestEventDigest =
+    state.latestAuditOrdinal === 0 ? null : orderedDashboardEventWitness(latestEvent);
   return sourceInput("sse-frame", "snapshot", {
     currentRun: {
       missionId: "mission-synthetic-0001",
@@ -593,6 +596,7 @@ function snapshot(
     },
     cursor: opaqueLiveCursor({ digest, frame: "snapshot" }),
     digest,
+    latestEventDigest,
     runtimeId: "runtime-synthetic-0001",
     snapshotVersion: "dashboard-snapshot/v1",
     state,
@@ -670,6 +674,29 @@ export function replayStateDigest(state: DashboardReducedState): string {
   );
   const material = `aerial-rescue/canonical/v1\nreplay-state\n${canonicalJson(stateWithoutTopLevelDigest)}`;
   return createHash("sha256").update(material, "utf8").digest("hex");
+}
+
+function orderedDashboardEventWitness(orderedEvent: OrderedDashboardEventFixture | null): string {
+  if (orderedEvent === null) {
+    throw new TypeError("a nonempty dashboard checkpoint requires its latest ordered event");
+  }
+  const document = {
+    auditOrdinal: orderedEvent.auditOrdinal,
+    canonicalizationVersion: 1,
+    event: orderedEvent.event,
+  };
+  const material = `aerial-rescue/canonical/v1\nordered-dashboard-event\n${canonicalJson(document)}`;
+  return createHash("sha256").update(material, "utf8").digest("hex");
+}
+
+function latestOrderedEvent(
+  orderedEvents: readonly OrderedDashboardEventFixture[],
+): OrderedDashboardEventFixture {
+  const latest = orderedEvents.at(-1);
+  if (latest === undefined) {
+    throw new TypeError("dashboard fixture has no latest ordered event");
+  }
+  return latest;
 }
 
 function event(
@@ -905,6 +932,7 @@ function replayBundle(overrides: ReplayFixtureOverrides): DashboardSourceInput {
     bundleVersion: "dashboard-replay-bundle/v1",
     events: replayOrderedEvents,
     initialState: replayInitialState,
+    latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
     sessionId: "replay-session-0001",
@@ -945,13 +973,17 @@ export function fixtureForState(
     return script([bootstrap(), readiness(), scenarioCatalog([])]);
   }
   if (viewState === "ready") {
-    return script([...common, snapshot(plannedState(), [])]);
+    return script([...common, snapshot(plannedState(), [], null)]);
   }
   if (viewState === "starting") {
-    return script([...common, snapshot(plannedState(), []), operationSignal("start", "pending")]);
+    return script([
+      ...common,
+      snapshot(plannedState(), [], null),
+      operationSignal("start", "pending"),
+    ]);
   }
   const currentLiveState = liveState();
-  const running = snapshot(currentLiveState, liveTimeline());
+  const running = snapshot(currentLiveState, liveTimeline(), latestOrderedEvent(liveAuditEvents()));
   if (viewState === "resetting") {
     return script([...common, running, operationSignal("reset", "pending")]);
   }
@@ -1027,6 +1059,7 @@ export function malformedBoundaryInputs(
     bundleVersion: "dashboard-replay-bundle/v1",
     events: "not-an-array",
     initialState: replayInitialState,
+    latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
     sessionId: "replay-session-malformed",
@@ -1166,7 +1199,11 @@ export function heartbeatInitialFixture(): DashboardSourceScript {
     bootstrap(),
     readiness(),
     scenarioCatalog(),
-    snapshot(heartbeatBaseState(), heartbeatTimeline()),
+    snapshot(
+      heartbeatBaseState(),
+      heartbeatTimeline(),
+      latestOrderedEvent(heartbeatRecoveryEvents()),
+    ),
   ]);
 }
 

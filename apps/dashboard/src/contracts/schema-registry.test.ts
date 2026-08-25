@@ -110,3 +110,34 @@ test.each(dashboardFixtureCases)(
     expect(JSON.stringify(refused)).not.toContain("synthetic-browser-bearer-do-not-persist");
   },
 );
+
+test.each([
+  {
+    fixtureDirectory: "dashboard-snapshot",
+    schemaId:
+      "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json" as const,
+  },
+  {
+    fixtureDirectory: "replay-bundle",
+    schemaId:
+      "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json" as const,
+  },
+])(
+  "requires latestEventDigest on the $fixtureDirectory anchor",
+  async ({ fixtureDirectory, schemaId }) => {
+    // Arrange
+    const document = await readGoldenFixture(fixtureDirectory, "baseline");
+    const anchor = document as Record<string, unknown>;
+    Reflect.deleteProperty(anchor, "latestEventDigest");
+    const registry = createDashboardSchemaRegistry();
+
+    // Act
+    const result = registry.validate(schemaId, anchor);
+
+    // Assert
+    expect(result).toEqual({
+      failure: { code: "SCHEMA_VALIDATION_FAILED", schemaId },
+      ok: false,
+    });
+  },
+);

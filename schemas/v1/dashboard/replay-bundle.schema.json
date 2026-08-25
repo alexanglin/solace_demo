@@ -9,6 +9,7 @@
     "scenarioId",
     "scenarioRevision",
     "initialState",
+    "latestEventDigest",
     "events",
     "integrity"
   ],
@@ -28,6 +29,16 @@
     },
     "initialState": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
+    },
+    "latestEventDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      ]
     },
     "events": {
       "type": "array",

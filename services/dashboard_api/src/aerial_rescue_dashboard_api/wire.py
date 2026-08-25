@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.instant import parse_instant
@@ -16,6 +16,7 @@ from pydantic import (
     Field,
     RootModel,
     StringConstraints,
+    model_validator,
 )
 
 _SCHEMA_PREFIX = "https://aerial-rescue.invalid/schemas/v1/"
@@ -48,6 +49,13 @@ def _strict_literal_one(value: object) -> object:
         message = "Input should be the integer 1"
         raise ValueError(message)
     return value
+
+
+def _require_ordinal_witness(latest_audit_ordinal: int, latest_event_digest: str | None) -> None:
+    """Require a checkpoint witness exactly when its state has accepted an event."""
+    if (latest_audit_ordinal == 0) != (latest_event_digest is None):
+        message = "latestEventDigest must be null exactly when latestAuditOrdinal is zero"
+        raise ValueError(message)
 
 
 type _Identifier = Annotated[
@@ -249,7 +257,14 @@ class _DashboardSnapshot(_WireModel):
     digest: _Digest
     current_run: _CurrentRun | None = Field(alias="currentRun")
     state: _DashboardReducedState
+    latest_event_digest: _Digest | None = Field(alias="latestEventDigest")
     timeline: Annotated[list[_TimelineOrderedEvent], Field(max_length=256)]
+
+    @model_validator(mode="after")
+    def validate_ordinal_witness(self) -> Self:
+        """Reject a snapshot whose state ordinal and event witness disagree."""
+        _require_ordinal_witness(self.state.latest_audit_ordinal, self.latest_event_digest)
+        return self
 
 
 class _DashboardError(_WireModel):
@@ -287,8 +302,18 @@ class _ReplayBundle(_WireModel):
     scenario_id: _Identifier = Field(alias="scenarioId")
     scenario_revision: _StrictOne = Field(alias="scenarioRevision")
     initial_state: _DashboardReducedState = Field(alias="initialState")
+    latest_event_digest: _Digest | None = Field(alias="latestEventDigest")
     events: Annotated[list[_OrderedDashboardEvent], Field(max_length=512)]
     integrity: _ReplayIntegrity
+
+    @model_validator(mode="after")
+    def validate_ordinal_witness(self) -> Self:
+        """Reject a replay whose initial-state ordinal and event witness disagree."""
+        _require_ordinal_witness(
+            self.initial_state.latest_audit_ordinal,
+            self.latest_event_digest,
+        )
+        return self
 
 
 class _ResetRequest(_WireModel):

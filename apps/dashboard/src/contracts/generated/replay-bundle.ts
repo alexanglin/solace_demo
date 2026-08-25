@@ -18,6 +18,7 @@ export interface DashboardReplayBundle {
   scenarioId: string;
   scenarioRevision: 1;
   initialState: DashboardReducedState;
+  latestEventDigest: null | string;
   /**
    * @maxItems 512
    */
