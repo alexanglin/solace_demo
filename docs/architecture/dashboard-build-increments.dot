@@ -54,20 +54,22 @@ digraph DashboardBuildIncrements {
     style="rounded,dashed";
     r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
     r2 [label="R2\nscenario catalog + loader\nADR-0100"];
-    r3 [label="R3\nPython projections + fold\ndigest-parity fixtures"];
-    r4 [label="R4\nstore read path\nUI-slice revision (ADR-0095)"];
-    r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101"];
-    r6 [label="R6\nrecorder + replay validator\nADR-0094"];
+    r3 [label="R3\nbroker projections + fold\nstate + event digest parity\nADR-0111 / 0112"];
+    r4 [label="R4\nstore timeline + ordinal witness\nUI-slice revision (ADR-0095)"];
+    r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101 / 0112"];
+    r6 [label="R6\nreceiver + 2 recorder queues\n46 endpoints / 460 MB nominal\nreplay validator\nADR-0094 / 0111"];
     r7 [label="R7 — in progress\ncanonical-doc propagation"];
-    r8 [label="R8\nscenario + fleet live control\n14 ticks / 280 publications"];
+    r8 [label="R8\nlive control + lifecycle publishers\nsource identity + sequence\n14 ticks / 280 publications\nADR-0111"];
     r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
   }
 
   r1 -> a2 [label="contract delivered", color="#008F6B", penwidth=1.6];
-  r3 -> a3 [label="digest parity oracle", style=dashed];
-  r3 -> a4 [label="fold parity oracle", style=dashed];
+  r3 -> a3 [label="state + event digest parity", style=dashed];
+  r3 -> a4 [label="witnessed fold parity", style=dashed];
+  r3 -> r6 [label="validated projections", style=dashed];
+  r3 -> r8 [label="source contracts", style=dashed];
   r2 -> r5 [label="catalog data", style=dashed];
-  r4 -> r5 [label="snapshot + timeline reads", style=dashed];
+  r4 -> r5 [label="snapshot + witness reads", style=dashed];
   r5 -> a5 [label="live SSE + HTTP", style=dashed];
   r6 -> a5 [label="replay bundles", style=dashed];
   r8 -> r5 [label="live control + lifecycle events", style=dashed];
