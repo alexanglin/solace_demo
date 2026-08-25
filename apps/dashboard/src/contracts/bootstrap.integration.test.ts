@@ -1,20 +1,21 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { expect, test } from "vitest";
 
 import { consumeDashboardBootstrap } from "./bootstrap";
 import type { DashboardBootstrap } from "./generated";
 
-const bootstrapFixture = new URL(
-  "../../../../fixtures/golden/v1/dashboard/bootstrap/baseline.json",
-  import.meta.url,
+const bootstrapFixture = resolve(
+  process.cwd(),
+  "../../fixtures/golden/v1/dashboard/bootstrap/baseline.json",
 );
 
 test("delivers only a validated raw bootstrap document to a typed consumer", async () => {
   // Arrange
   const rawValidBootstrap = await readFile(bootstrapFixture, "utf8");
   const rawInvalidBootstrap = rawValidBootstrap.replace(
-    /}\s*$/u,
+    /\}\s*$/u,
     ',"unexpected":"must be refused"}',
   );
   const acceptedValues: DashboardBootstrap[] = [];

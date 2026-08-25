@@ -10,6 +10,22 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The dashboard now has a production contract boundary generated from the schemas rather than from
+  its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas
+  plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the repository
+  schemas, resolves their references offline, refuses unknown fields without coercing or mutating the
+  candidate, and returns a generated type only after validation.
+
+  Bootstrap input first crosses the canonical JSON profile, so malformed JSON, duplicate keys,
+  floating-point values, unpaired surrogates, and schema violations produce typed, redacted refusals
+  instead of carrying rejected credentials forward. A production Vite-build integration check proves
+  that the fixture-source selector and synthetic bearer sentinel are absent from emitted browser
+  assets. Deterministic generation is reviewable and fail-closed: explicit generation writes the
+  committed modules, while offline pre-commit and pre-push checks reject missing, changed, or extra
+  output without rewriting it. Generated types keep their separate byte-freshness proof; the
+  hand-written validator and bootstrap boundary remain in strict frontend coverage and deterministic
+  integration. The 64 Playwright cases remain unchanged, and A3 is next.
+
 - **The dashboard browser boundary now has a normative contract instead of test-only TypeScript
   shapes.** Nineteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
   discovery, normalized and ordered events, reduced state, SSE frames and source signals, start and

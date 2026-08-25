@@ -5,17 +5,26 @@ production HTML host loads the real entry module, which renders sibling banner a
 explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is also
 green: the 19 browser-facing schemas plus two scenario-file and eight private-control schemas have
 shared manifest-owned polarity fixtures, strict service-local Python twins at every Python trust
-boundary, and framework-free HTTP expectation registries. A2 is unblocked but not started. No
-FastAPI application, generated OpenAPI, or production browser adapter exists yet, and the remaining
-Playwright contract stays intentionally red while A2-A8 are implemented.
+boundary, and framework-free HTTP expectation registries. A2 is green: generated browser types,
+offline runtime validation, canonical bootstrap refusal, production test-boundary isolation, and
+generated-output freshness are now enforced. A3 is next and not started. No FastAPI application,
+generated OpenAPI, or production browser adapter exists yet, and the remaining Playwright contract
+stays intentionally red while A3-A8 are implemented.
 
 ## Contract boundary
 
-Production browser types will be generated from `schemas/v1/dashboard/`; the hand-written Playwright
-fixtures are serialized examples, never a type authority. The current schema slice covers bootstrap,
-health and readiness, scenario discovery, the five-field normalized event and its audit wrapper,
-reduced state, snapshot and suffix frames, source state, mutations and errors, and replay integrity.
-A2 will add the committed generated types and offline Ajv registry now that R1 is closed.
+Production browser types are generated from the 19 schemas under `schemas/v1/dashboard/`; the
+hand-written Playwright fixtures are serialized examples, never a type authority. One committed
+module per schema and a schema-ID mapping index live under `src/contracts/generated/`. The
+hand-written Ajv 2020-12 registry statically imports those schemas and the canonical vocabulary,
+resolves references without a browser or generator network request, and validates unknown values
+before narrowing them to the generated types. It neither coerces nor mutates rejected candidates.
+
+Bootstrap parsing applies the canonical JSON profile before Ajv. Malformed JSON, duplicate keys,
+floating-point values, unpaired surrogates, unknown members, and other schema failures become typed,
+redacted refusals; only a validated document reaches a typed consumer. The production Vite-build
+integration test verifies that the fixture-source selector and synthetic bearer sentinel are absent
+from emitted HTML and JavaScript.
 
 The contract keeps three facts explicit:
 
@@ -92,6 +101,8 @@ From the repository root, with the pinned Node and pnpm runtimes active:
 
 ```sh
 pnpm --dir apps/dashboard install --frozen-lockfile
+pnpm --dir apps/dashboard run contracts:generate
+pnpm --dir apps/dashboard run contracts:check
 pnpm --dir apps/dashboard run typecheck
 pnpm --dir apps/dashboard run lint
 pnpm --dir apps/dashboard run format:check
@@ -106,6 +117,10 @@ refuses un-pinned Node or pnpm runtimes, verifies discovery against the manifest
 inventory, does not download browsers, requires the package-compatible Chromium revision to be
 present in the local Playwright cache, and scans retained browser artifacts for the synthetic bearer
 sentinel. CI prepares that same Chromium revision before invoking the wrapper.
+
+Run `contracts:generate` only when intentionally refreshing reviewed generated artifacts after a
+schema change. The pre-commit and pre-push freshness stages run `contracts:check` with pnpm offline;
+the check fails on a missing, changed, or extra generated module and never rewrites the tree.
 
 Screenshot baselines are generated only after the coherent UI is green and has been inspected at
 both reference viewports. Snapshot paths include the Playwright project and operating-system
@@ -124,6 +139,11 @@ temporary directory and `tools/typescript_coverage_gate.py` independently matche
 hand-written production source before applying the four coverage dimensions. Test files, generated
 contract types, and declaration files are the only coverage exclusions; an empty inventory, missing
 report, skipped count, unexpected file, or coverage-ignore directive fails closed.
+
+The generated modules are excluded because their source is the schema and their byte-for-byte
+freshness has a separate gate. The hand-written registry and bootstrap boundary remain in the normal
+unit and integration inventory and must satisfy the same four-dimensional threshold as every other
+hand-written production source.
 
 `dashboard-integration-full.sh` separately proves that the dedicated deterministic integration suite
 is non-empty. Playwright remains separate browser acceptance and does not contribute to package

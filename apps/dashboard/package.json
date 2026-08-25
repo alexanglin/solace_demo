@@ -13,6 +13,8 @@
   },
   "scripts": {
     "build": "vite build",
+    "contracts:check": "node scripts/generate-dashboard-contracts.ts --check",
+    "contracts:generate": "node scripts/generate-dashboard-contracts.ts --write",
     "dev": "vite --host 127.0.0.1",
     "dev:test": "vite --host 127.0.0.1 --port 4173 --strictPort --mode test",
     "format:check": "prettier --check .",

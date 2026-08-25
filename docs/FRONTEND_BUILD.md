@@ -25,8 +25,8 @@ govern over the stale passages they supersede.
 
 ## 2. Where the build starts from
 
-The active completion worktree forked clean `main` at `24037c7`; A1 is part of that base and became
-green there on 2026-08-24:
+The active completion worktree forked clean `main` at `5162c67`; A1 then became green at `24037c7`
+on 2026-08-24:
 
 - The browser acceptance contract is committed and remains red beyond the A1 shell on purpose. The
   Playwright specifications under `apps/dashboard/tests/e2e/` pin the complete operator surface —
@@ -41,11 +41,11 @@ green there on 2026-08-24:
   and the manifest, lockfile, and strict toolchain configuration are committed. A1 replaced the
   invalid `main` host with a neutral root, loads the real entry module, renders sibling banner and
   main landmarks, acknowledges the fixture revision after render, and keeps the complete unit
-  coverage command green. The remaining browser acceptance cases still specify unimplemented
-  A2-A8 behavior.
+  coverage command green. A2 now supplies the production contract boundary; the remaining browser
+  acceptance cases still specify unimplemented A3-A8 behavior.
 - The test harness fakes only serialized boundary inputs
   ([`dashboard-harness.ts`](../apps/dashboard/tests/e2e/support/dashboard-harness.ts)), and the
-  start and reset requests are intercepted on the wire by the specifications themselves. A1-A7 can
+  start and reset requests are intercepted on the wire by the specifications themselves. A3-A7 can
   therefore be implemented and reviewed without a running backend. A8 waits for the production sources
   and packaged runtime blockers named below.
 - The dashboard API and scenario service are now active only at their strict wire-model and
@@ -64,6 +64,15 @@ green there on 2026-08-24:
   framework-free public and private route registries for later runtime/OpenAPI parity. The browser-facing values in
   [`dashboard-fixtures.ts`](../apps/dashboard/tests/e2e/support/dashboard-fixtures.ts) remain a
   test-side reference, not a production contract.
+- A2 is complete. The dashboard now commits one generated TypeScript module per browser schema plus
+  the schema-ID mapping index, builds a strict Ajv 2020-12 registry from static repository imports,
+  and validates unknown input before it becomes a generated type. Bootstrap input crosses a
+  canonical-profile decoder before schema validation; malformed JSON, duplicate keys, floats,
+  unpaired surrogates, and schema violations produce typed refusals that do not retain the rejected
+  candidate. Generation resolves only repository-owned schema references, and the check-only hook
+  proves that committed output is current without network access. The production Vite-build
+  integration check also proves that the test source selector and synthetic bearer sentinel are not
+  emitted into browser assets.
 - [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects one event kind,
   and no reduced-state fold exists in Python;
   [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
@@ -126,11 +135,11 @@ its entry criteria are met, and when a register row in section 7 is open, the br
 against the committed fixtures behind the eventual interface and never drafts the missing contract
 itself.
 
-**The join.** R1 gated A2 and is now complete. A2's generated types are what A4 through A7 consume,
-so closing R1 unblocks the entire typed core of Lane A, not merely A2. A1 alone preceded R1; its bootstrap-input
-validation hardens in A2. Fixture-driven implementation and adapter tests through A7 need no running
-backend. Live wiring — real SSE, real HTTP responses, and real replay bundles — waits on R5 and R6;
-production A8 evidence also waits on R8 and R9.
+**The join.** R1 gated A2, and both are now complete. A2's generated types are what A4 through A7
+consume, so the typed core no longer needs browser-owned wire shapes. A3 is next and not started;
+its cross-language parity proof still joins R3. Fixture-driven implementation and adapter tests
+through A7 need no running backend. Live wiring — real SSE, real HTTP responses, and real replay
+bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
 
 ![Dashboard build increments](architecture/dashboard-build-increments.png)
 
@@ -141,12 +150,17 @@ production A8 evidence also waits on R8 and R9.
   renders sibling banner and `main` landmarks, the explicit mode badge, the dashboard-state live
   region, and post-render fixture revision acknowledgement. Unit and HTML-entry integration tests
   measure the hand-written bootstrap rather than excluding it; the full coverage command is green.
-- **A2 — contracts layer.** *Status: not started; unblocked by completed R1.* The generation script, the
-  offline validator registry compiled from the committed schemas, generated types under
-  `apps/dashboard/src/contracts/generated/`, and the freshness gate
-  [ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) still owes, with
-  its conformance test beside the other gate tests under `tools/quality_gate_tests/`.
-- **A3 — canonical digest module.** *Status: not started.* The browser twin of the
+- **A2 — contracts layer.** *Status: complete.* The deterministic generator emits the 19
+  schema-derived TypeScript modules and their schema-ID mapping index under
+  `apps/dashboard/src/contracts/generated/`. The hand-written Ajv 2020-12 registry statically
+  registers the canonical schema and all 19 dashboard schemas, resolves every reference offline,
+  refuses unknown fields without coercion or mutation, and returns typed values only after
+  validation. The bootstrap boundary first enforces the canonical JSON profile and returns redacted,
+  typed refusals for malformed, noncanonical, or schema-invalid input. A production-build integration
+  check excludes the test selector and synthetic bearer from emitted assets. The check-only generator
+  runs offline at pre-commit when an input changes and unconditionally at pre-push; its quality-gate
+  tests pin the trigger inventory, command, and failure propagation.
+- **A3 — canonical digest module.** *Status: not started; next.* The browser twin of the
   [`CONTRACTS.md`](CONTRACTS.md) canonical serialization and digest, using the platform crypto
   API; its parity oracle arrives with R3.
 - **A4 — pure reducer and timeline model.** *Status: not started.* The
@@ -278,8 +292,12 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
   [`dashboard-integration-full.sh`](../scripts/hooks/dashboard/dashboard-integration-full.sh)
   separately proves the dedicated integration inventory is non-empty. Playwright coverage is never
   merged into that package result.
-- The 64 fixture-driven Playwright cases are browser acceptance, not production-stack end-to-end
-  evidence. R9 adds the separate production execution only after R5, R6, and R8 are green.
+- The 64 fixture-driven Playwright cases remain unchanged and are browser acceptance, not
+  production-stack end-to-end evidence. R9 adds the separate production execution only after R5,
+  R6, and R8 are green.
+- A2 adds an offline, check-only generated-contract stage to both hook paths. Contributors explicitly
+  regenerate after a schema change with `pnpm --dir apps/dashboard run contracts:generate`; the
+  blocking `contracts:check` comparison never rewrites the reviewed artifacts.
 - A new untracked file must be passed to the pre-commit hooks explicitly before staging
   ([`AGENTS.md`](AGENTS.md) section 6); diff-based discovery cannot see it.
 
@@ -287,7 +305,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 
 | Row | Blocked dashboard work | Missing today | Owner |
 | --- | --- | --- | --- |
-| R1 | Complete; A2 and the typed core A4-A7 are unblocked | none; schemas, fixtures, service-local Python twins, and route expectations are green | dashboard/scenario/fleet services |
+| R1 | Complete; A2 is done and the typed core A4-A7 is unblocked | none; schemas, fixtures, service-local Python twins, and route expectations are green | dashboard/scenario/fleet services |
 | R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
 | R3 | digest and reducer parity proof for A3-A4 | projections, ordered-event wrapper, Python fold, parity fixtures | `packages/contracts` |
 | R4 | snapshot timeline and resume reads | store read path, persistence revision | `packages/store` |

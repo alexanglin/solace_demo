@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { expect, test, vi } from "vitest";
 
@@ -26,7 +27,7 @@ const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/stream-overloaded.schema.json",
 ] as const;
 
-const goldenFixtureRoot = new URL("../../../../fixtures/golden/v1/dashboard/", import.meta.url);
+const goldenFixtureRoot = resolve(process.cwd(), "../../fixtures/golden/v1/dashboard");
 
 interface DashboardFixtureCase {
   readonly fixtureDirectory: string;
@@ -45,7 +46,7 @@ async function readGoldenFixture(
   fixtureName: "baseline" | "unknown-member",
 ): Promise<unknown> {
   const raw = await readFile(
-    new URL(`${fixtureDirectory}/${fixtureName}.json`, goldenFixtureRoot),
+    resolve(goldenFixtureRoot, fixtureDirectory, `${fixtureName}.json`),
     "utf8",
   );
   return JSON.parse(raw) as unknown;

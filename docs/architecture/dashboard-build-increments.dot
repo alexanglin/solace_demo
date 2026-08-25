@@ -37,8 +37,8 @@ digraph DashboardBuildIncrements {
     color="#2F6FB7";
     style="rounded";
     a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
-    a2 [label="A2 — unblocked\nnot started\ncontracts layer\ncodegen + validator registry\n+ freshness gate"];
-    a3 [label="A3\ncanonical digest module"];
+    a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
+    a3 [label="A3 — next\nnot started\ncanonical digest module"];
     a4 [label="A4\npure reducer\n+ timeline model"];
     a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
     a6 [label="A6\nmutation client"];
@@ -63,7 +63,7 @@ digraph DashboardBuildIncrements {
     r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
   }
 
-  r1 -> a2 [label="typed core unblocked", color="#008F6B", penwidth=1.6];
+  r1 -> a2 [label="contract delivered", color="#008F6B", penwidth=1.6];
   r3 -> a3 [label="digest parity oracle", style=dashed];
   r3 -> a4 [label="fold parity oracle", style=dashed];
   r2 -> r5 [label="catalog data", style=dashed];

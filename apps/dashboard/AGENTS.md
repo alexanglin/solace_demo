@@ -11,6 +11,14 @@ The repository-root `AGENTS.md` applies here. Before changing this package, also
   key, or bootstrap value.
 - Validate every HTTP, bootstrap, SSE, and replay input before it becomes typed state. A refusal
   keeps the last validated mission state visible.
+- Generate production wire types only from the manifest-owned dashboard schemas. Playwright fixture
+  interfaces are never production types, and unknown input is narrowed only after the offline Ajv
+  2020-12 registry accepts it.
+- Keep schema generation and runtime reference resolution repository-local. After an intentional
+  schema change, regenerate the committed modules and run the check-only freshness command; neither
+  the runtime validator nor the freshness hook may fetch a schema.
+- Apply the canonical JSON profile before validating bootstrap input and keep rejected candidates,
+  including bearer values, out of typed refusal details.
 - Keep MapLibre geometry, styles, glyphs, fonts, and attribution local. Browser tests must fail on
   any remote request.
 - Do not render approval, command, model, evidence, rescue, or escalation controls in this UI slice.
@@ -19,6 +27,8 @@ The repository-root `AGENTS.md` applies here. Before changing this package, also
 
 - Keep Playwright specifications under `tests/e2e/` and import `test` and `expect` explicitly from
   `@playwright/test`.
+- Keep fixture-source globals and synthetic bearer sentinels behind the test build boundary. The
+  production-build integration test must prove those tokens are absent from emitted assets.
 - Keep deterministic integration specifications under `src/` with the `*.integration.test.{ts,tsx}`
   suffix. They run both as a dedicated non-empty suite and inside the complete coverage inventory.
 - Do not use V8, c8, Istanbul, or Node coverage-ignore directives in hand-written production source.
@@ -32,6 +42,8 @@ The repository-root `AGENTS.md` applies here. Before changing this package, also
 - Prefer semantic roles and accessible names. A test ID is reserved for volatile screenshot masks or
   a third-party canvas boundary that has no semantic DOM surface.
 - Run tests with the Node and pnpm versions pinned by ADR-0099 and `package.json`.
+- Run `pnpm --dir apps/dashboard run contracts:check` after any generator, schema, generated-type,
+  package-manifest, or lockfile change; use `contracts:generate` only for an intentional refresh.
 - Keep Playwright traces, videos, automatic screenshots, and HAR capture disabled. Curated
   screenshots use only synthetic data and mask runtime identifiers and presentation timestamps.
 - Do not update screenshot baselines until the intended visual change has been inspected at 1440×900

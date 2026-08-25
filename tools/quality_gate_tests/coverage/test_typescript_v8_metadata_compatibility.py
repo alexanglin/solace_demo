@@ -8,7 +8,7 @@ from pathlib import Path
 from tools import typescript_coverage_gate
 
 
-def _complete_summary() -> dict[str, dict[str, int]]:
+def _complete_summary() -> dict[str, object]:
     return {
         dimension: {"total": 1, "covered": 1, "skipped": 0, "pct": 100}
         for dimension in ("lines", "statements", "functions", "branches")

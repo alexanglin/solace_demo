@@ -35,7 +35,7 @@ class DashboardContractGenerationStageTests(QualityGateTestCase):
         path.write_text(
             "#!/bin/sh\n"
             'printf \'%s|%s\\n\' "${COREPACK_ENABLE_NETWORK-unset}" "$*" '
-            '">"$QUALITY_ARGUMENTS_FILE"\n'
+            '>"$QUALITY_ARGUMENTS_FILE"\n'
             'exit "${QUALITY_PNPM_STATUS:-0}"\n',
             encoding="utf-8",
         )
@@ -79,7 +79,7 @@ class DashboardContractGenerationStageTests(QualityGateTestCase):
         # Assert
         self.assert_hook_succeeded(result)
         self.assertEqual(
-            "0|--offline --dir apps/dashboard run contracts:check",
+            "0|--dir apps/dashboard run contracts:check",
             arguments.read_text(encoding="utf-8").strip(),
         )
 

@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -21,7 +23,11 @@ function acknowledgeTestSourceRevision(): void {
 }
 
 function ApplicationShell(): React.JSX.Element {
-  useEffect(acknowledgeTestSourceRevision, []);
+  useEffect(() => {
+    if (import.meta.env.MODE === "test") {
+      acknowledgeTestSourceRevision();
+    }
+  }, []);
 
   return (
     <>

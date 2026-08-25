@@ -356,8 +356,14 @@ def _validate_v8_total_metadata(value: object, label: str, issues: set[str]) -> 
     ]
     if all(count is not None for count in counts) and any(count != 0 for count in counts):
         issues.add(f"{label} counts must all be zero")
-    if metadata["pct"] != "Unknown":
-        issues.add(f'{label}.pct must be "Unknown"')
+    percentage = metadata["pct"]
+    complete_integer = (
+        isinstance(percentage, int)
+        and not isinstance(percentage, bool)
+        and percentage == MAX_PERCENT
+    )
+    if percentage != "Unknown" and not complete_integer:
+        issues.add(f'{label}.pct must be "Unknown" or the integer 100')
 
 
 def _parse_summary(
