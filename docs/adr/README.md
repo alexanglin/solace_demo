@@ -120,6 +120,8 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0100](0100-commit-a-strict-wilderness-scenario-catalog.md) | Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation | Accepted |
 | [0101](0101-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
 | [0102](0102-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
+| [0103](0103-move-the-system-node-runtime-to-26.md) | Move the system Node runtime to 26.7.0 and keep the provisioned hooks on 24 LTS | Accepted |
+| [0104](0104-run-every-commit-stage-hook-at-pre-push.md) | Run every commit-stage hook at pre-push as well | Accepted |
 | [0105](0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) | Adjudicate dashboard coverage and require separate browser evidence | Accepted |
 | [0106](0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) | Bound dashboard schema strings and arrays explicitly | Accepted |
 | [0107](0107-authenticate-private-scenario-and-fleet-run-control.md) | Authenticate private scenario and fleet run control over bounded HTTP | Accepted |

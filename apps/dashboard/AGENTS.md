@@ -1,8 +1,8 @@
 # Dashboard Agent Instructions
 
 The repository-root `AGENTS.md` applies here. Before changing this package, also read
-`apps/dashboard/README.md`, ADR-0057, ADR-0058, the accepted UI-slice ADRs 0094 through 0102,
-ADR-0105, and ADR-0106.
+`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice and verification ADRs 0094
+through 0106.
 
 ## Boundaries
 
@@ -42,7 +42,7 @@ ADR-0105, and ADR-0106.
   when consumed so the synthetic bearer cannot persist there.
 - Prefer semantic roles and accessible names. A test ID is reserved for volatile screenshot masks or
   a third-party canvas boundary that has no semantic DOM surface.
-- Run tests with the Node and pnpm versions pinned by ADR-0099 and `package.json`.
+- Run tests with the Node and pnpm versions pinned by ADR-0103 and `package.json`.
 - Run `pnpm --dir apps/dashboard run contracts:check` after any generator, schema, generated-type,
   package-manifest, or lockfile change; use `contracts:generate` only for an intentional refresh.
 - Keep Playwright traces, videos, automatic screenshots, and HAR capture disabled. Curated

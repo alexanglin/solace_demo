@@ -37,8 +37,9 @@ on 2026-08-24:
   [`apps/dashboard/AGENTS.md`](../apps/dashboard/AGENTS.md) and its inventory is described in
   [`apps/dashboard/README.md`](../apps/dashboard/README.md) and the
   [`CHANGELOG.md`](../CHANGELOG.md) unreleased entry.
-- The runtime and stack are pinned by [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md),
-  and the manifest, lockfile, and strict toolchain configuration are committed. A1 replaced the
+- The stack is pinned by [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md), with the system
+  Node runtime updated by [ADR-0103](adr/0103-move-the-system-node-runtime-to-26.md), and the manifest,
+  lockfile, and strict toolchain configuration are committed. A1 replaced the
   invalid `main` host with a neutral root, loads the real entry module, renders sibling banner and
   main landmarks, acknowledges the fixture revision after render, and keeps the complete unit
   coverage command green. A2 now supplies the production contract boundary; the remaining browser
@@ -100,8 +101,8 @@ on 2026-08-24:
 - [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md) — the UI-first slice: its
   workflow, viewport, fleet composition, declared-only labeling, state vocabulary, and
   zero-remote-request rule.
-- [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md) — every runtime, dependency, and
-  tool pin.
+- [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md) — every dependency and tool pin, plus
+  the runtime policy that ADR-0103 updates.
 - [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) — the committed scenario
   catalog and its strict loader.
 - [ADR-0101](adr/0101-order-dashboard-events-outside-the-five-field-projection.md) — ordered
@@ -111,6 +112,10 @@ on 2026-08-24:
 - [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md) — Agent Mesh remains part of
   normal default startup; R9 must isolate mission-control by selecting an exact service closure rather
   than by changing that default.
+- [ADR-0103](adr/0103-move-the-system-node-runtime-to-26.md) — system Node 26.7.0 for repository-owned
+  dashboard work while the two provisioned third-party hooks remain on Node 24 LTS.
+- [ADR-0104](adr/0104-run-every-commit-stage-hook-at-pre-push.md) — every commit-stage hook also runs
+  at pre-push except the two enumerated repository-wide exceptions.
 - [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) — independent
   dashboard coverage adjudication plus separate deterministic integration, fixture acceptance,
   service-integration, and production end-to-end evidence.

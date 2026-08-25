@@ -18,7 +18,7 @@ Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
 (`brew install graphviz`), `shellcheck`, and `trivy` 0.74.0 (`brew install trivy`), which the pre-push
 misconfiguration audit of `deploy/` fails closed without. Running the stack in `deploy/` additionally
 needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
-`apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
+`apps/dashboard/package.json` exists, install Node 26.7.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
 matter. Only isolated third-party Node hooks are provisioned by pre-commit itself. From the repository
 root, activate the nested manifest's exact package-manager pin, install the frozen dashboard lock, and
@@ -83,12 +83,19 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit/component/integration coverage with independent adjudication, dedicated integration inventory, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Everything the commit stage runs, over the pushed range ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)), plus: full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit/component/integration coverage with independent adjudication, dedicated integration inventory, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
 **~2.7 s**. Re-measure when the suite grows; if it approaches the budget, move work to `pre-push` rather
 than letting people start using `--no-verify`.
+
+A push is at least as strict as the commit it publishes: `default_stages` is
+`[pre-commit, pre-push]`, so every hook runs at both blocking stages. Two opt out and run at the commit
+stage only — `no-commit-to-branch`, which would otherwise refuse every push made from `main`, and the
+stock `gitleaks` hook, which can only scan a staged diff and is replaced at push time by
+`gitleaks-history`. That set is asserted by `tools/quality_gate_tests/hooks/test_hook_semantics.py`, so
+a third exception cannot be added quietly.
 
 Since [ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md) the commit stage runs
 the tests your change reaches rather than all of them, so its cost varies with the diff. A one-file

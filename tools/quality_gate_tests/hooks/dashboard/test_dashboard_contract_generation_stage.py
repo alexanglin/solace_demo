@@ -115,7 +115,7 @@ class DashboardContractGenerationStageTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual(changes, matched)
-        self.assertIn("stages: [pre-commit]", block)
+        self.assertIn("stages: [pre-commit, pre-push]", block)
         self.assertIn(
             "entry: scripts/hooks/dashboard/dashboard-contracts-check.sh",
             block,

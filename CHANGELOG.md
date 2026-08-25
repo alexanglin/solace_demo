@@ -1534,6 +1534,49 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **A push is now at least as strict as the commit it publishes**
+  ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)).
+  [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) tiered the hooks by cost but never made
+  the push stage a superset of the commit stage, so forty-eight hooks — the hygiene checks, the secret
+  and workflow audits, format and lint, the staged-file type checks, the affected-test selections, and
+  the documentation gates — ran at `pre-commit` and nowhere else. A commit can reach a branch without
+  them: `--no-verify`, a named `SKIP`, a commit written before a hook existed, a rebase that rewrote
+  it, or a clone where `pre-commit install` was never run.
+
+  `default_stages` is now `[pre-commit, pre-push]`. Two hooks opt out and are the only two permitted
+  to: `no-commit-to-branch`, which at push time would refuse every push made from `main`, and the stock
+  `gitleaks` hook, which hardcodes `--staged --pre-commit` and would scan an empty diff — its push-stage
+  counterpart `gitleaks-history` scans the whole history instead. That set is asserted by
+  `test_hook_semantics.py`, resolving `default_stages` rather than reading each declaration, so a third
+  exception cannot appear without changing the test and the record.
+
+  **The cost is real and is not tuned away.** `pytest-unit-fast` now runs beside `pytest-full`,
+  `mypy-root` beside `mypy-full`, and the dashboard's staged-file gates beside their `-full`
+  counterparts. Deciding per hook which full-tree gate subsumes which staged-file gate is a judgement
+  with no gate behind it, so it would drift. The nearest constraint is the `push-stage` job's
+  20-minute CI budget, set when that stage measured 2m01s whole-tree — before the dashboard hooks and
+  the five-minute Chromium suite landed.
+
+- **The system Node runtime moves to 26.7.0, and the pin that caught the drift stays exact**
+  ([ADR-0103](docs/adr/0103-move-the-system-node-runtime-to-26.md)).
+  [ADR-0099](docs/adr/0099-pin-the-dashboard-runtime-and-stack.md) pinned Node `24.19.0` and made the
+  fail-closed dashboard wrappers compare the running runtime against `engines.node`. So when the
+  workstation's Homebrew `node` moved on, the pre-push Playwright gate refused to run instead of
+  verifying the browser suite on a runtime nobody had chosen. The refusal was the gate working; the
+  resolution is to choose again.
+
+  **The installed runtime was not the safe answer.** Node's published schedule ends v25 on
+  2026-06-01, so pinning whatever happened to be installed would have committed the project to a line
+  that receives no further security releases — and nothing here would have said so, because
+  pip-audit, Trivy, and Dependabot observe dependencies and images, not the host runtime. v26 becomes
+  long-term support on 2026-10-28 and is maintained until 2029-04-30.
+
+  `engines.node`, both `actions/setup-node` steps in `checks.yml`, the one in `security.yml`, and the
+  `CONTRIBUTING.md` setup sequence now name `26.7.0`, and `@types/node` follows the runtime major to
+  `26.2.0`. The two Node hooks pre-commit provisions through nodeenv — `markdownlint-cli2` and the
+  `jscpd` duplication gate — stay at `24.19.0`: their runtime is hermetic, and markdownlint's
+  dependency tree refuses a Current line.
+
 - **The no-loss claim is narrower, and honest**
   ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
   `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes

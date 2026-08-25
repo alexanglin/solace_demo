@@ -26,6 +26,17 @@ times, and nobody could tell a wedge from a slow suite.
 _TYPE_CHECK_ENTRY = re.compile(r"(?<![\w-])(mypy|tsc|typecheck)(?![\w-])")
 _HOOK_STAGE_ARGUMENT = re.compile(r"--hook-stage\s+([\w-]+)")
 
+COMMIT_STAGE_ONLY_BY_DESIGN = frozenset({"no-commit-to-branch", "gitleaks"})
+"""The commit-stage hooks that deliberately do not also run at pre-push (ADR-0104).
+
+``no-commit-to-branch`` refuses work committed on ``main``. At pre-push it would refuse
+every push made from ``main``, which is the branch this repository publishes.
+
+The stock ``gitleaks`` hook hardcodes ``--staged --pre-commit``, so at pre-push it would
+scan an empty staged diff and report a pass that verified nothing. ``gitleaks-history``
+is its push-stage counterpart and scans the whole history instead.
+"""
+
 
 def _workflow_jobs() -> dict[str, dict[str, object]]:
     """Return every job in every workflow, keyed by ``workflow.yml:job-name``."""
@@ -37,21 +48,33 @@ def _workflow_jobs() -> dict[str, dict[str, object]]:
     return jobs
 
 
+def _hook_definitions() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """Return ``(id, entry, stages)`` for every hook, resolving the configured default.
+
+    A hook that declares no ``stages`` inherits ``default_stages``, so reading the
+    declaration alone would report the wrong stage for most of this configuration.
+    """
+    configuration = yaml.safe_load(
+        (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    default_stages = tuple(configuration.get("default_stages", ()))
+    return tuple(
+        (str(hook["id"]), str(hook.get("entry", "")), tuple(hook.get("stages", default_stages)))
+        for repository in configuration["repos"]
+        for hook in repository["hooks"]
+    )
+
+
 def _type_check_hook_stages() -> dict[str, tuple[str, ...]]:
     """Return the stages each project-owned type-checking hook declares.
 
     A hook is a type-checking hook when its own entry runs one, which is the only
     definition that keeps working when a hook is renamed.
     """
-    configuration = yaml.safe_load(
-        (REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    )
-    default_stages = tuple(configuration.get("default_stages", ()))
     return {
-        hook["id"]: tuple(hook.get("stages", default_stages))
-        for repository in configuration["repos"]
-        for hook in repository["hooks"]
-        if _TYPE_CHECK_ENTRY.search(str(hook.get("entry", "")))
+        identifier: stages
+        for identifier, entry, stages in _hook_definitions()
+        if _TYPE_CHECK_ENTRY.search(entry)
     }
 
 
@@ -190,7 +213,7 @@ class HookSemanticsTests(QualityGateTestCase):
         # Assert
         self.assertIn("3.14.7", source)
         self.assertIn("3.13.15", source)
-        self.assertIn('node-version: "24.19.0"', source)
+        self.assertIn('node-version: "26.7.0"', source)
 
     def test_lockfiles_remain_reviewable_text_diffs(self) -> None:
         # Arrange
@@ -234,6 +257,22 @@ class HookSemanticsTests(QualityGateTestCase):
         # Assert
         self.assertNotEqual({}, jobs)
         self.assertEqual({}, unbounded)
+
+    def test_every_commit_stage_hook_also_runs_at_pre_push(self) -> None:
+        """A push must be at least as strict as the commit it publishes."""
+        # Arrange
+        definitions = _hook_definitions()
+
+        # Act
+        commit_only = {
+            identifier
+            for identifier, _entry, stages in definitions
+            if "pre-commit" in stages and "pre-push" not in stages
+        }
+
+        # Assert
+        self.assertNotEqual((), definitions)
+        self.assertEqual(COMMIT_STAGE_ONLY_BY_DESIGN, commit_only)
 
     def test_every_type_check_hook_is_reached_by_a_continuous_integration_job(self) -> None:
         # Arrange
