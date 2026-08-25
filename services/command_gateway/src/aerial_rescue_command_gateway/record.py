@@ -2,7 +2,7 @@
 
 ``docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md`` requires each answer
 to be published twice: to the requestor's reply topic as the RPC reply, and here as an
-event on the mission's own gateway-response topic, so the recorder, the dashboard, and the
+event on the mission's own gateway-record topic, so the recorder, the dashboard, and the
 audit timeline observe it without knowing anything about the Event Mesh Tool or about
 Solace request/reply.
 
@@ -80,7 +80,7 @@ def response_record(
         RecordError: With ``SEQUENCE_RANGE`` for a sequence the form cannot carry, or
             ``UNPUBLISHABLE`` if the built record does not satisfy the profile it claims.
     """
-    topic = Topic(Family.GATEWAY_RESPONSE, response.mission_id, {"requestId": response.request_id})
+    topic = Topic(Family.GATEWAY_RECORD, response.mission_id, {"requestId": response.request_id})
     declared = event_type(topic)
     envelope = Envelope(
         id=stamp.event_id,

@@ -65,6 +65,11 @@ const dashboardSchemas = [
     typeName: "DashboardBootstrap",
   },
   {
+    fileName: "command-response",
+    schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/command-response.schema.json`,
+    typeName: "DashboardCommandResponse",
+  },
+  {
     fileName: "dashboard-event-frame",
     schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/dashboard-event-frame.schema.json`,
     typeName: "DashboardEventFrame",
@@ -103,6 +108,21 @@ const dashboardSchemas = [
     fileName: "ordered-dashboard-event",
     schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/ordered-dashboard-event.schema.json`,
     typeName: "OrderedDashboardEvent",
+  },
+  {
+    fileName: "operator-command-request",
+    schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/operator-command-request.schema.json`,
+    typeName: "DashboardOperatorCommandRequest",
+  },
+  {
+    fileName: "proposal-decision-request",
+    schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/proposal-decision-request.schema.json`,
+    typeName: "DashboardProposalDecisionRequest",
+  },
+  {
+    fileName: "proposal-decision-response",
+    schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/proposal-decision-response.schema.json`,
+    typeName: "DashboardProposalDecisionResponse",
   },
   {
     fileName: "readiness",

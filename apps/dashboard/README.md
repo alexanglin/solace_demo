@@ -3,20 +3,22 @@
 This package is the browser command center for the wilderness mission slice. A1 is green: the
 production HTML host loads the real entry module, which renders sibling banner and main landmarks,
 explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is also
-green: the 19 browser-facing schemas plus two scenario-file and eight private-control schemas have
+green: the 23 browser-facing schemas plus two scenario-file and eight private-control schemas have
 shared manifest-owned polarity fixtures, strict service-local Python twins at every Python trust
-boundary, and framework-free HTTP expectation registries. A2 is green: generated browser types,
-offline runtime validation, canonical bootstrap refusal, production test-boundary isolation, and
-generated-output freshness are now enforced. The browser half of A3 is green: a hand-written
-canonical encoder, domain-separated Web Crypto digests, ordered-event witnesses, and fixed-work
-digest comparison are covered independently at the frontend threshold. A3 remains in progress until
-R3 supplies the shared Python/TypeScript parity oracle. No FastAPI application, generated OpenAPI,
-reducer, or production browser adapter exists yet, and the remaining Playwright contract stays
-intentionally red while A4-A8 are implemented.
+boundary, and framework-free HTTP expectation registries. The dashboard API owns 21 server-facing
+dashboard models and an exact eleven-route registry; the two new command/proposal-decision mutations
+are contracts, not running handlers. A2 is green: generated browser types, offline runtime
+validation, canonical bootstrap refusal, production test-boundary isolation, and generated-output
+freshness are now enforced. The browser half of A3 is green: a hand-written canonical encoder,
+domain-separated Web Crypto digests, ordered-event witnesses, and fixed-work digest comparison are
+covered independently at the frontend threshold. A3 remains in progress until R3 supplies the shared
+Python/TypeScript parity oracle. No FastAPI application, generated OpenAPI, command or
+proposal-decision mutation client, reducer, or production browser adapter exists yet, and the
+remaining Playwright contract stays intentionally red while A4-A8 are implemented.
 
 ## Contract boundary
 
-Production browser types are generated from the 19 schemas under `schemas/v1/dashboard/`; the
+Production browser types are generated from the 23 schemas under `schemas/v1/dashboard/`; the
 hand-written Playwright fixtures are serialized examples, never a type authority. One committed
 module per schema and a schema-ID mapping index live under `src/contracts/generated/`. The
 hand-written Ajv 2020-12 registry statically imports those schemas and the canonical vocabulary,
@@ -44,6 +46,15 @@ The contract keeps three facts explicit:
 - a reduced-state declared-only member owns only identifier and participation, so
   `DECLARED ONLY — NOT EXECUTED` never becomes fabricated connectivity or telemetry; the scenario
   descriptor separately carries its truthful role and explicit execution label.
+
+The four application-data-plane additions are the closed operator-command request and response and
+the closed proposal-decision request and response. New normalized event variants expose operator
+commands, operator approvals, canonical proposals, evidence decisions, rescue commands, and typed
+audit records as non-droppable timeline facts. Projection removes `missionId` from every payload and
+also removes the internal `evidenceDecisionDigest` from an evidence decision. The direct
+`AGENT_RESPONSE` integration body is not a CloudEvent and never enters the ordered browser timeline.
+These are validation and projection contracts only; they do not make a mutation control or live
+event source available to the browser.
 
 ## Intended component boundaries
 

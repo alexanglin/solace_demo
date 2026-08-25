@@ -2,7 +2,7 @@
 
 ``docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md`` moves a sentence in
 ``docs/CONTRACTS.md`` into a table. The assertions here are about the table being total
-over the thirteen families and about the three sets being exactly what the record names, so
+over the fifteen families and about the three sets being exactly what the record names, so
 a family added without a row fails here rather than defaulting to a guarantee nobody chose.
 
 ``REQUEST_REPLY`` is asserted as its own set rather than folded into either of the others:
@@ -17,7 +17,7 @@ from typing import Final
 
 from aerial_rescue_contracts.topics import Delivery, Family, delivery_for
 
-DIRECT_FAMILY_NAMES: Final = frozenset({"DRONE_TELEMETRY"})
+DIRECT_FAMILY_NAMES: Final = frozenset({"DRONE_TELEMETRY", "GATEWAY_RECORD", "AGENT_RESPONSE"})
 
 REQUEST_REPLY_FAMILY_NAMES: Final = frozenset({"GATEWAY_REQUEST", "GATEWAY_RESPONSE"})
 
@@ -29,7 +29,7 @@ GUARANTEED_FAMILY_NAMES: Final = frozenset(
         "DRONE_COMMAND",
         "DRONE_COMMAND_RESULT",
         "AGENT_PROPOSAL",
-        "AGENT_RESPONSE",
+        "EVIDENCE_DECISION",
         "AUDIT",
         "MISSION_EVENT",
         "SECTOR_EVENT",
@@ -53,7 +53,7 @@ class DeliveryTableTests(unittest.TestCase):
         # Assert
         self.assertEqual(families, bound)
 
-    def test_the_three_guarantees_partition_the_thirteen_families(self) -> None:
+    def test_the_three_guarantees_partition_the_fifteen_families(self) -> None:
         # Arrange
         expected = frozenset(family.name for family in Family)
 
@@ -61,9 +61,9 @@ class DeliveryTableTests(unittest.TestCase):
         covered = DIRECT_FAMILY_NAMES | REQUEST_REPLY_FAMILY_NAMES | GUARANTEED_FAMILY_NAMES
 
         # Assert
-        self.assertEqual((expected, 13), (covered, len(covered)))
+        self.assertEqual((expected, 15), (covered, len(covered)))
 
-    def test_routine_telemetry_is_the_only_direct_family(self) -> None:
+    def test_telemetry_gateway_records_and_structured_agent_responses_are_direct(self) -> None:
         # Arrange
         guarantee = Delivery.DIRECT
 

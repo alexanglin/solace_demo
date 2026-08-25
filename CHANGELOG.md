@@ -10,14 +10,51 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Solace application data-plane contract is closed without claiming that its runtime exists.**
+  [ADR-0114](docs/adr/0114-define-durable-application-processing.md) expands the unique topic taxonomy
+  to fourteen families and selects the durable inbox/outbox and application-processing semantics;
+  [ADR-0116](docs/adr/0116-close-the-application-data-plane-wire-documents.md) supplies the closed
+  operator-command, approval, structured agent-response, canonical-proposal, evidence-decision,
+  rescue-command, typed-audit, and dashboard HTTP documents. The manifest grows by 17 schemas, from 49
+  to 66, including four additions that take the dashboard inventory from 19 to 23. Generated
+  TypeScript consumes all 23; the dashboard API owns strict Pydantic twins for 21 server-facing shapes
+  and a framework-free eleven-route registry.
+
+  The fifteen-family classification is wire- and delivery-disjoint: twelve families are
+  notification-only, `GATEWAY_REQUEST` and `GATEWAY_RESPONSE` carry request/reply RPC, and
+  `AGENT_RESPONSE` carries the direct non-CloudEvent integration body. ADR-0118 separates the private
+  response and mission record: the reserved `reply` topic carries only the raw RPC body, while a real
+  mission `GATEWAY_RECORD` topic carries only the bound CloudEvent observed by the dashboard
+  and recorder. Crossed topic/body combinations and caller-selected delivery are refused before broker
+  I/O.
+
+  The deny-by-default application grant tables now total 15 publish and 31 subscribe rows: Agent Mesh
+  agents retain A2A authority but no application publication; the command gateway consumes direct
+  agent responses and publishes canonical proposals; the evidence service publishes durable evidence
+  decisions; the dashboard consumes them; and the receiver-only recorder remains application-wide but
+  never records a reserved raw RPC reply. The resulting desired state has 18 publish and 35 subscribe
+  exceptions and 45 endpoints with 450 MB nominal reservation. The new normalized projection adds
+  non-droppable timeline-only operator-command, operator-approval, agent-proposal, evidence-decision,
+  rescue-command, and typed-audit variants; it removes `missionId` from every projected payload and the
+  internal `evidenceDecisionDigest` from evidence decisions.
+
+  This tranche provides schemas, fixtures, pure validation/projection, strict model and route
+  registries, and desired policy tables only. It does not provide FastAPI handlers, continuously
+  running evidence/recorder services, command dispatch, the broker's representation-aware delivery
+  router, or ADR-0114's additive Alembic migrations and SQLAlchemy repositories. Earlier Unreleased
+  totals of 13 families, 46 endpoints, 49 schemas, 19 dashboard schemas, 17 dashboard server models,
+  and nine public routes describe pre-ADR-0114/0116 snapshots and are superseded by the totals above.
+
 - **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
   implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
   guaranteed, schema-bound mission, connectivity, and sector application events, gives each source an
   independent run-scoped producer identity and sequence, and routes them through the receiver-only
   recorder into durable audit order. The family, delivery, and ACL tables and their desired-state
   provisioner now include the scenario-service role and two recorder lifecycle queues, so the reference
-  inventory is 46 endpoints with 460 MB of nominal reservation. This is an offline desired-state claim;
-  the R6 recorder receiver and R8 lifecycle publishers are still pending.
+  inventory was 46 endpoints with 460 MB of nominal reservation at that tranche. ADR-0114 later
+  replaces that inventory with 45 endpoints and 450 MB after removing the command gateway's proposal
+  queue. Both are offline desired-state claims; the R6 recorder receiver and R8 lifecycle publishers
+  are still pending.
 
   [ADR-0112](docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) corrects the v1
   snapshot and replay anchors with top-level `latestEventDigest`. The immutable reducer checkpoint
@@ -30,8 +67,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   remain unimplemented, and the 64 Playwright cases are unchanged.
 
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
-  its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas
-  plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the repository
+  its Playwright examples.** The original A2 tranche committed one TypeScript module for each of 19
+  dashboard schemas plus a schema-ID mapping index; ADR-0116 extends that same generated and validated
+  boundary to the current 23 schemas. A strict Ajv 2020-12 registry statically registers the repository
   schemas, resolves their references offline, refuses unknown fields without coercing or mutating the
   candidate, and returns a generated type only after validation.
 
@@ -46,7 +84,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   integration. The 64 Playwright cases remain unchanged, and A3 is next.
 
 - **The dashboard browser boundary now has a normative contract instead of test-only TypeScript
-  shapes.** Nineteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
+  shapes.** The original UI slice's nineteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
   discovery, normalized and ordered events, reduced state, SSE frames and source signals, start and
   reset, typed errors and mutation outcomes, and checksummed replay bundles. Every schema has one
   manifest-owned accepted fixture and one one-reason negative, and the contract tests pin integer
@@ -69,13 +107,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   [ADR-0107](docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md). These are contract
   shapes and synthetic golden examples, not production scenario files or a running control plane.
 
-  R1 is now complete. The dashboard API owns strict Pydantic twins for its seventeen server-facing
+  At the original R1 checkpoint, the dashboard API owned strict Pydantic twins for seventeen server-facing
   dashboard documents and four scenario-control caller documents; the scenario service owns its two
   file models, four scenario-control server documents, and four fleet-control caller documents; and the
   fleet simulator owns the four fleet-control server documents. The two browser-owned documents remain
   explicitly browser-only. Canonical decoding precedes strict model validation, and framework-free
-  route registries pin the nine public routes and both three-route private surfaces for later runtime
-  and OpenAPI parity tests. [ADR-0108](docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md)
+  route registries pinned nine public routes and both three-route private surfaces for later runtime
+  and OpenAPI parity tests. ADR-0116 now raises those dashboard totals to 21 server-facing models and
+  eleven public routes while leaving the private surfaces unchanged. [ADR-0108](docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md)
   records that ownership and keeps the schemas normative.
 
   Root strict mypy now uses Pydantic's pinned plugin so generated model constructors remain field-typed

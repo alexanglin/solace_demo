@@ -172,7 +172,7 @@ second raw-ingress adapter. Parse the topic first and select the contract delibe
   transport. The reserved `reply` level names no mission, and the reply must not be recorded or replayed
   as a mission event.
 - The command gateway republishes each answer as a CloudEvent on
-  `aerial-rescue/v1/{missionId}/gateway/response/{requestId}`. That mission-scoped CloudEvent is the
+  `aerial-rescue/v1/{missionId}/gateway/record/{requestId}`. That mission-scoped CloudEvent is the
   authoritative record for the recorder, dashboard, and audit timeline. Do not duplicate it with the
   raw reply or derive it yourself.
 

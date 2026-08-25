@@ -80,11 +80,16 @@ def subscription_for(family: Family) -> str:
     Returns:
         The subscription text, built the way ``format_topic`` builds a topic: the versioned
         namespace prefix, the mission identifier level, then the family template with every
-        variable level replaced by a single-level wildcard.
+        variable level replaced by a single-level wildcard. The raw gateway-response
+        family fixes the mission level to the reserved reply identifier, so its publish
+        exception cannot reach a real mission.
     """
+    mission_level = (
+        RESERVED_REPLY_MISSION if family is Family.GATEWAY_RESPONSE else SINGLE_LEVEL_WILDCARD
+    )
     levels = (
         namespace_prefix(),
-        SINGLE_LEVEL_WILDCARD,
+        mission_level,
         *(_wildcarded(level) for level in family.levels),
     )
     return LEVEL_SEPARATOR.join(levels)

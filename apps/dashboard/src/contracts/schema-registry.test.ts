@@ -7,6 +7,7 @@ import { DASHBOARD_SCHEMA_IDS, createDashboardSchemaRegistry } from "./schema-re
 
 const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json",
@@ -15,6 +16,9 @@ const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/mutation-outcome.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json",
@@ -80,7 +84,7 @@ test("builds the dashboard schema registry and resolves every reference without 
   );
 
   // Assert
-  expect(results).toHaveLength(19);
+  expect(results).toHaveLength(23);
   expect(results.every((result) => result.ok)).toBe(true);
   expect(fetchSpy).not.toHaveBeenCalled();
 });

@@ -68,15 +68,21 @@ _PUBLISH: Final[Mapping[Principal, frozenset[Family]]] = {
         }
     ),
     Principal.COMMAND_GATEWAY: frozenset(
-        {Family.DRONE_COMMAND, Family.GATEWAY_RESPONSE, Family.AUDIT}
+        {
+            Family.DRONE_COMMAND,
+            Family.GATEWAY_RESPONSE,
+            Family.GATEWAY_RECORD,
+            Family.AGENT_PROPOSAL,
+            Family.AUDIT,
+        }
     ),
     Principal.DASHBOARD_API: frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
     Principal.SCENARIO_SERVICE: frozenset({Family.MISSION_EVENT}),
-    Principal.EVIDENCE_SERVICE: frozenset({Family.AUDIT}),
+    Principal.EVIDENCE_SERVICE: frozenset({Family.EVIDENCE_DECISION, Family.AUDIT}),
     Principal.RECORDER: frozenset(),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.AGENT_RESPONSE}),
     Principal.EVENT_MESH_TOOL: frozenset({Family.GATEWAY_REQUEST}),
-    Principal.AGENT_MESH_AGENT: frozenset({Family.AGENT_PROPOSAL, Family.AGENT_RESPONSE}),
+    Principal.AGENT_MESH_AGENT: frozenset(),
     Principal.DISCOVERY: frozenset(),
 }
 """Total over the roles; a test asserts it.
@@ -94,7 +100,7 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.OPERATOR_COMMAND,
             Family.OPERATOR_APPROVAL,
             Family.GATEWAY_REQUEST,
-            Family.AGENT_PROPOSAL,
+            Family.AGENT_RESPONSE,
             Family.DRONE_COMMAND_RESULT,
         }
     ),
@@ -104,14 +110,17 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.DRONE_EVENT,
             Family.DRONE_COMMAND,
             Family.DRONE_COMMAND_RESULT,
+            Family.GATEWAY_RECORD,
             Family.AGENT_PROPOSAL,
             Family.AGENT_RESPONSE,
+            Family.EVIDENCE_DECISION,
             Family.AUDIT,
         }
     ),
     Principal.SCENARIO_SERVICE: frozenset(),
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
-    Principal.RECORDER: frozenset(Family),
+    Principal.RECORDER: frozenset(Family)
+    - frozenset({Family.GATEWAY_REQUEST, Family.GATEWAY_RESPONSE}),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.DRONE_EVENT}),
     Principal.EVENT_MESH_TOOL: frozenset(),
     Principal.AGENT_MESH_AGENT: frozenset(),
@@ -119,8 +128,9 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
 }
 """Total over the roles; a test asserts it.
 
-``RECORDER`` reads every family because the replay fixtures it writes must be able to
-reproduce the whole mission; it holds no publish grant, so the breadth costs nothing.
+``RECORDER`` reads every notification and integration family because the replay fixtures
+it writes must be able to reproduce the whole mission; the two raw RPC families are
+excluded because their mission-scoped outcome is carried by ``GATEWAY_RECORD``.
 ``AGENT_MESH_AGENT`` reads nothing here because agents receive work over A2A rather than
 over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``), and
 ``EVENT_MESH_TOOL`` reads nothing here because the only thing it consumes is its own

@@ -18,12 +18,15 @@ from enum import Enum
 from typing import Final
 
 from aerial_rescue_contracts.canonical import canonical_bytes
+from aerial_rescue_contracts.envelope import Envelope, envelope_document
 
 CANONICALIZATION_VERSION: Final = 1
 """The version a digest-covered payload must declare inside the hashed bytes."""
 
 VERSION_FIELD: Final = "canonicalizationVersion"
 DIGEST_FIELD: Final = "digest"
+PROPOSAL_DIGEST_FIELD: Final = "proposalDigest"
+EVIDENCE_DECISION_DIGEST_FIELD: Final = "evidenceDecisionDigest"
 
 _PREFIX: Final = b"aerial-rescue/canonical/v1"
 _SEPARATOR: Final = b"\n"
@@ -37,6 +40,7 @@ class Context(Enum):
     """
 
     PROPOSAL = "proposal-digest"
+    SOURCE_EVENT = "source-event"
     REPLAY_STATE = "replay-state"
     EVIDENCE = "evidence"
     IDEMPOTENCY_BODY = "idempotency-body"
@@ -74,7 +78,60 @@ def digest(context: Context, payload: object) -> str:
         DigestError: If the payload is not an object or does not declare the version.
         CanonicalizationError: If any value falls outside the canonical profile.
     """
-    covered = _covered_members(payload)
+    covered = _covered_members(payload, DIGEST_FIELD)
+    return _digest_covered(context, covered)
+
+
+def proposal_digest(payload: Mapping[str, object]) -> str:
+    """Return ADR-0116's digest of one accepted canonical proposal payload.
+
+    Exactly the top-level ``proposalDigest`` member is omitted. In particular, this
+    typed helper does not inherit the generic ``digest`` member exclusion.
+    """
+    covered = _covered_members(payload, PROPOSAL_DIGEST_FIELD)
+    return _digest_covered(Context.PROPOSAL, covered)
+
+
+def source_event_digest(envelope: Envelope) -> str:
+    """Bind a proposal to the complete accepted source-event envelope.
+
+    The wire envelope has its own ``specversion`` rather than a digest canonicalization
+    member. Wrapping its reconstructed canonical document puts
+    ``canonicalizationVersion`` inside the covered bytes without changing the CloudEvents
+    profile or omitting any event member.
+    """
+    covered: Mapping[object, object] = {
+        VERSION_FIELD: CANONICALIZATION_VERSION,
+        "event": envelope_document(envelope),
+    }
+    return _digest_covered(Context.SOURCE_EVENT, covered)
+
+
+def proposal_digest_matches(payload: Mapping[str, object]) -> bool:
+    """Verify an accepted proposal's supplied self-integrity digest."""
+    supplied = payload.get(PROPOSAL_DIGEST_FIELD)
+    computed = proposal_digest(payload)
+    return isinstance(supplied, str) and matches(supplied, computed)
+
+
+def evidence_decision_digest(payload: Mapping[str, object]) -> str:
+    """Return ADR-0116's digest of one accepted evidence-decision payload.
+
+    Exactly the top-level ``evidenceDecisionDigest`` member is omitted.
+    """
+    covered = _covered_members(payload, EVIDENCE_DECISION_DIGEST_FIELD)
+    return _digest_covered(Context.EVIDENCE, covered)
+
+
+def evidence_decision_digest_matches(payload: Mapping[str, object]) -> bool:
+    """Verify an accepted evidence decision's supplied self-integrity digest."""
+    supplied = payload.get(EVIDENCE_DECISION_DIGEST_FIELD)
+    computed = evidence_decision_digest(payload)
+    return isinstance(supplied, str) and matches(supplied, computed)
+
+
+def _digest_covered(context: Context, covered: Mapping[object, object]) -> str:
+    """Hash already selected members in one versioned, separated context."""
     material = _PREFIX + _SEPARATOR + context.value.encode() + _SEPARATOR + canonical_bytes(covered)
     return hashlib.sha256(material).hexdigest()
 
@@ -84,11 +141,11 @@ def matches(expected: str, actual: str) -> bool:
     return hmac.compare_digest(expected, actual)
 
 
-def _covered_members(payload: object) -> dict[object, object]:
-    """Return the members a digest covers, refusing a payload the contract excludes."""
+def _covered_members(payload: object, omitted_field: str) -> dict[object, object]:
+    """Return all members except one named top-level self-integrity field."""
     if not isinstance(payload, Mapping):
         raise DigestError(DigestRefusal.NOT_AN_OBJECT, payload)
     version = payload.get(VERSION_FIELD)
     if type(version) is not int or version != CANONICALIZATION_VERSION:
         raise DigestError(DigestRefusal.VERSION, version)
-    return {key: item for key, item in payload.items() if key != DIGEST_FIELD}
+    return {key: item for key, item in payload.items() if key != omitted_field}

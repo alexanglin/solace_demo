@@ -22,6 +22,7 @@ DASHBOARD_SERVER_SCHEMA_IDS = frozenset(
         f"{SCHEMA_PREFIX}dashboard/{name}.schema.json"
         for name in (
             "bootstrap",
+            "command-response",
             "dashboard-event-frame",
             "dashboard-event",
             "dashboard-reduced-state",
@@ -29,6 +30,9 @@ DASHBOARD_SERVER_SCHEMA_IDS = frozenset(
             "error",
             "health",
             "ordered-dashboard-event",
+            "operator-command-request",
+            "proposal-decision-request",
+            "proposal-decision-response",
             "readiness",
             "replay-bundle",
             "replay-integrity",
@@ -148,7 +152,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, actual)
         self.assertEqual(
-            19,
+            23,
             len(DASHBOARD_SERVER_SCHEMA_IDS | DASHBOARD_BROWSER_ONLY_SCHEMA_IDS),
         )
 
@@ -245,6 +249,32 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
         # Assert
         self.assertNotIsInstance(captured.value, canonical.CanonicalizationError)
+
+    def test_dashboard_event_model_accepts_the_closed_gateway_response_projection(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        schema_id = f"{SCHEMA_PREFIX}dashboard/dashboard-event.schema.json"
+        document = {
+            "kind": "gatewayResponse",
+            "eventClass": "AUDIT",
+            "mission": "mission-01",
+            "time": "2026-08-25T12:00:00.000Z",
+            "data": {
+                "rpcVersion": 1,
+                "requestId": "request-01",
+                "operation": "command-authority",
+                "commandType": "escalate-rescue",
+                "outcome": "answered",
+                "actuated": False,
+                "authority": "operator-approval",
+            },
+        }
+
+        # Act
+        parsed = dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(document))
+
+        # Assert
+        self.assertEqual(document, parsed.model_dump(mode="python", by_alias=True))
 
     def test_integer_constants_refuse_boolean_equivalence_at_each_service_boundary(self) -> None:
         # Arrange

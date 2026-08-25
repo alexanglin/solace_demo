@@ -28,6 +28,7 @@ FIXTURE_ROOT = REPO_ROOT / "fixtures/golden/v1/dashboard"
 
 PUBLIC_SCHEMA_NAMES = (
     "bootstrap",
+    "command-response",
     "dashboard-event",
     "dashboard-event-frame",
     "dashboard-reduced-state",
@@ -36,6 +37,9 @@ PUBLIC_SCHEMA_NAMES = (
     "health",
     "mutation-outcome",
     "ordered-dashboard-event",
+    "operator-command-request",
+    "proposal-decision-request",
+    "proposal-decision-response",
     "readiness",
     "replay-bundle",
     "replay-integrity",
@@ -47,6 +51,13 @@ PUBLIC_SCHEMA_NAMES = (
     "start-response",
     "stream-overloaded",
 )
+
+DASHBOARD_BRANCHES = {
+    "operator-command-request": ("baseline", "escalate-rescue"),
+    "command-response": ("baseline",),
+    "proposal-decision-request": ("baseline", "reject"),
+    "proposal-decision-response": ("baseline", "reject"),
+}
 
 
 def _schema_path(name: str) -> Path:
@@ -127,19 +138,32 @@ class DashboardWireInventoryTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, actual)
 
-    def test_every_public_dashboard_schema_is_manifest_owned_with_one_reason_pair(self) -> None:
+    def test_every_public_dashboard_schema_is_manifest_owned_with_branch_complete_polarity(
+        self,
+    ) -> None:
         # Arrange
         manifest = tomllib.loads(
             (REPO_ROOT / "schemas/contract-manifest.toml").read_text(encoding="utf-8")
         )
         entries = cast("list[dict[str, object]]", manifest["contracts"])
-        expected = {
-            _schema_path(name).relative_to(REPO_ROOT).as_posix(): (
-                [_fixture_path(name, "baseline").relative_to(REPO_ROOT).as_posix()],
-                [_fixture_path(name, "unknown-member").relative_to(REPO_ROOT).as_posix()],
+        expected = {}
+        for name in PUBLIC_SCHEMA_NAMES:
+            branches = DASHBOARD_BRANCHES.get(name, ("baseline",))
+            expected[_schema_path(name).relative_to(REPO_ROOT).as_posix()] = (
+                [
+                    _fixture_path(name, branch).relative_to(REPO_ROOT).as_posix()
+                    for branch in branches
+                ],
+                [
+                    _fixture_path(
+                        name,
+                        "unknown-member" if branch == "baseline" else f"{branch}-unknown-member",
+                    )
+                    .relative_to(REPO_ROOT)
+                    .as_posix()
+                    for branch in branches
+                ],
             )
-            for name in PUBLIC_SCHEMA_NAMES
-        }
 
         # Act
         actual = {
@@ -221,6 +245,35 @@ class DashboardStateAuthorityTests(unittest.TestCase):
 
 
 class DashboardEventContractTests(unittest.TestCase):
+    def test_the_event_union_has_the_exact_eleven_normalized_kinds_and_classes(self) -> None:
+        # Arrange
+        event_schema = _load(_schema_path("dashboard-event"))
+        expected = {
+            "droneTelemetry": "TELEMETRY",
+            "connectivityChanged": "CONNECTIVITY",
+            "missionLifecycle": "MISSION",
+            "sectorLifecycle": "MISSION",
+            "operatorCommand": "COMMAND",
+            "operatorApproval": "APPROVAL",
+            "agentProposal": "EVIDENCE",
+            "evidenceDecision": "EVIDENCE",
+            "droneCommand": "COMMAND",
+            "gatewayResponse": "AUDIT",
+            "auditRecord": "AUDIT",
+        }
+
+        # Act
+        actual = {
+            cast("str", cast("dict[str, object]", _properties(branch)["kind"])["const"]): cast(
+                "str",
+                cast("dict[str, object]", _properties(branch)["eventClass"])["const"],
+            )
+            for branch in _definitions(event_schema).values()
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
+
     def test_the_normalized_event_retains_exactly_the_five_accepted_members(self) -> None:
         # Arrange
         event_schema = _load(_schema_path("dashboard-event"))
@@ -282,6 +335,20 @@ class DashboardEventContractTests(unittest.TestCase):
             "#/$defs/missionLifecycle",
             "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
             "#/$defs/sectorLifecycle",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/operatorCommand",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/operatorApproval",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/agentProposal",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/evidenceDecision",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/droneCommand",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/gatewayResponse",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/auditRecord",
         }
 
         # Act

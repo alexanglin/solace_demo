@@ -1,0 +1,22 @@
+{
+  "auditVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "recordId": "audit-command-escalate-refused-0001",
+  "recordType": "command-authorization",
+  "commandId": "command-synthetic-0004",
+  "operatorId": "operator-synthetic-0001",
+  "action": {
+    "commandType": "escalate-rescue",
+    "droneId": "drone-synthetic-01",
+    "proposalId": "proposal-synthetic-0001",
+    "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+    "proposalVersion": 1,
+    "evidenceDecisionId": "decision-synthetic-0001",
+    "evidenceDecisionDigest": "3c3775801fc324695e0f1eca64cf8fa91d6f213eec7968c71ffe8db61ce6abe3",
+    "evidenceDecisionVersion": 1,
+    "latitudeMicrodegrees": 45123456,
+    "longitudeMicrodegrees": -75123456
+  },
+  "outcome": "refused",
+  "reason": "approval-expired"
+}

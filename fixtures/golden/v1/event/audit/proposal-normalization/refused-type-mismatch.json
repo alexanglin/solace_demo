@@ -1,0 +1,24 @@
+{
+  "specversion": "1.0",
+  "id": "event-audit-proposal-refused-0001",
+  "source": "urn:aerial-rescue:command-gateway:gateway-synthetic-01",
+  "type": "aerial-rescue.v1.drone.telemetry",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:06:02.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json",
+  "data": {
+    "auditVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "recordId": "audit-proposal-refused-0001",
+    "recordType": "proposal-normalization",
+    "agentName": "VisionAgent",
+    "invocationId": "invocation-synthetic-0003",
+    "correlationId": "correlation-synthetic-0003",
+    "outcome": "refused",
+    "reason": "digest-mismatch"
+  },
+  "sequence": "000000000000013",
+  "correlationid": "correlation-synthetic-0003",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

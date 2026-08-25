@@ -107,13 +107,12 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual({Delivery.GUARANTEED}, guarantees)
 
-    def test_the_command_gateway_is_owed_the_four_families_the_record_names(self) -> None:
+    def test_the_command_gateway_is_owed_the_three_guaranteed_inputs_the_record_names(self) -> None:
         # Arrange
         expected = frozenset(
             {
                 Family.OPERATOR_COMMAND,
                 Family.OPERATOR_APPROVAL,
-                Family.AGENT_PROPOSAL,
                 Family.DRONE_COMMAND_RESULT,
             }
         )
@@ -124,7 +123,7 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, owed)
 
-    def test_the_dashboard_api_is_owed_every_grant_but_droppable_telemetry(self) -> None:
+    def test_the_dashboard_api_has_no_queue_for_its_three_direct_inputs(self) -> None:
         # Arrange
         subscribed = grants(Principal.DASHBOARD_API, Access.SUBSCRIBE)
 
@@ -132,7 +131,10 @@ class DerivationTests(unittest.TestCase):
         owed = guaranteed_grants(Principal.DASHBOARD_API)
 
         # Assert
-        self.assertEqual(frozenset({Family.DRONE_TELEMETRY}), subscribed - owed)
+        self.assertEqual(
+            frozenset({Family.DRONE_TELEMETRY, Family.GATEWAY_RECORD, Family.AGENT_RESPONSE}),
+            subscribed - owed,
+        )
 
     def test_the_recorder_is_owed_the_ten_guaranteed_families(self) -> None:
         # Arrange
@@ -324,11 +326,11 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(len(names), len(set(names)))
 
-    def test_the_small_fixture_has_twenty_two_family_queues_a_drone_each_and_the_dead_letter(
+    def test_the_small_fixture_has_twenty_one_family_queues_a_drone_each_and_the_dead_letter(
         self,
     ) -> None:
         # Arrange
-        expected = 22 + len(DRONES) + 1
+        expected = 21 + len(DRONES) + 1
 
         # Act
         queues = desired_queues(DRONES)
@@ -336,9 +338,9 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, len(queues))
 
-    def test_the_reference_fleet_reserves_forty_six_queues_and_460_megabytes(self) -> None:
+    def test_the_reference_fleet_reserves_forty_five_queues_and_450_megabytes(self) -> None:
         # Arrange
-        expected = (46, 460)
+        expected = (45, 450)
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)

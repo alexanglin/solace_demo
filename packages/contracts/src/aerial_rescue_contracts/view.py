@@ -30,6 +30,7 @@ MAX_BUFFERED_EVENTS: Final = 256
 """Dashboard events held per server-sent-event client; see ``docs/operating-parameters.md``."""
 
 MISSION_KEY: Final = "missionId"
+EVIDENCE_DECISION_DIGEST_KEY: Final = "evidenceDecisionDigest"
 
 
 class EventClass(Enum):
@@ -81,7 +82,7 @@ def _malformed(attribute: str, value: object) -> NoReturn:
 def _closed_members(data: Mapping[str, object], required: tuple[str, ...]) -> None:
     """Require exactly the declared lifecycle members in deterministic refusal order."""
     allowed = frozenset(required)
-    unknown = sorted((name for name in data if name not in allowed), key=lambda name: name.encode())
+    unknown = sorted(name for name in data if name not in allowed)
     if unknown:
         name = unknown[0]
         _malformed(name, data[name])
@@ -142,6 +143,9 @@ class Projection:
     kind: str
     event_class: EventClass
     _validate_payload: PayloadValidator = field(default=_accept_payload, repr=False, compare=False)
+    omitted_data_members: frozenset[str] = field(
+        default=frozenset({MISSION_KEY}), repr=False, compare=False
+    )
 
 
 PROJECTIONS: Final[Mapping[str, Projection]] = {
@@ -155,6 +159,33 @@ PROJECTIONS: Final[Mapping[str, Projection]] = {
     "aerial-rescue.v1.sector.event.lifecycle": Projection(
         "sectorLifecycle", EventClass.MISSION, _validate_sector_lifecycle
     ),
+    "aerial-rescue.v1.operator.command.assign-sector": Projection(
+        "operatorCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.operator.command.escalate-rescue": Projection(
+        "operatorCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.operator.approval.approve": Projection(
+        "operatorApproval", EventClass.APPROVAL
+    ),
+    "aerial-rescue.v1.operator.approval.reject": Projection(
+        "operatorApproval", EventClass.APPROVAL
+    ),
+    "aerial-rescue.v1.agent.proposal.candidate-location": Projection(
+        "agentProposal", EventClass.EVIDENCE
+    ),
+    "aerial-rescue.v1.evidence.decision": Projection(
+        "evidenceDecision",
+        EventClass.EVIDENCE,
+        omitted_data_members=frozenset({MISSION_KEY, EVIDENCE_DECISION_DIGEST_KEY}),
+    ),
+    "aerial-rescue.v1.gateway.record": Projection("gatewayResponse", EventClass.AUDIT),
+    "aerial-rescue.v1.drone.command.escalate-rescue": Projection(
+        "droneCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.audit.proposal-normalization": Projection("auditRecord", EventClass.AUDIT),
+    "aerial-rescue.v1.audit.evidence-decision": Projection("auditRecord", EventClass.AUDIT),
+    "aerial-rescue.v1.audit.command-authorization": Projection("auditRecord", EventClass.AUDIT),
 }
 """A new row lands together with its state rule, golden fixtures, and manifest entry."""
 
@@ -199,7 +230,11 @@ def project(envelope: Envelope) -> DashboardEvent:
     projection._validate_payload(envelope.data)
     if envelope.data.get(MISSION_KEY) != envelope.subject:
         _malformed(MISSION_KEY, envelope.data.get(MISSION_KEY))
-    data = {key: value for key, value in envelope.data.items() if key != MISSION_KEY}
+    data = {
+        key: value
+        for key, value in envelope.data.items()
+        if key not in projection.omitted_data_members
+    }
     return DashboardEvent(
         projection.kind,
         projection.event_class,

@@ -63,12 +63,12 @@ NAMESPACE = "acme/dev"
 CREDENTIAL = "fixture-not-a-real-credential"
 CREDENTIALS = {role: CREDENTIAL for role in Principal}
 
-EXPECTED_PUBLISH_EXCEPTIONS = 18
-EXPECTED_SUBSCRIBE_EXCEPTIONS = 33
+EXPECTED_PUBLISH_EXCEPTIONS = 19
+EXPECTED_SUBSCRIBE_EXCEPTIONS = 35
 
 DRONES = ("drone-vision-01", "drone-thermal-02")
-EXPECTED_QUEUES = 25
-EXPECTED_QUEUE_SUBSCRIPTIONS = 24
+EXPECTED_QUEUES = 24
+EXPECTED_QUEUE_SUBSCRIPTIONS = 23
 
 
 class FakeBroker:
@@ -197,6 +197,18 @@ class DesiredStateTests(unittest.TestCase):
             rendered,
         )
 
+    def test_the_profiles_total_nineteen_publish_and_thirty_five_subscribe_exceptions(self) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+
+        # Act
+        totals = tuple(
+            sum(len(_exceptions_of(state, role, access)) for role in Principal) for access in Access
+        )
+
+        # Assert
+        self.assertEqual((19, 35), totals)
+
     def test_only_the_three_agent_mesh_roles_carry_the_a2a_exception(self) -> None:
         # Arrange
         state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
@@ -279,6 +291,29 @@ class DesiredStateTests(unittest.TestCase):
         # Assert
         self.assertEqual((True, False), held)
 
+    def test_the_command_gateway_publishes_raw_responses_only_on_the_reserved_reply_channel(
+        self,
+    ) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+
+        # Act
+        published = _exceptions_of(state, Principal.COMMAND_GATEWAY, Access.PUBLISH)
+
+        # Assert
+        self.assertEqual(
+            (
+                True,
+                False,
+                True,
+            ),
+            (
+                "aerial-rescue/v1/reply/gateway/response/*" in published,
+                "aerial-rescue/v1/*/gateway/response/*" in published,
+                "aerial-rescue/v1/*/gateway/record/*" in published,
+            ),
+        )
+
     def test_the_tool_holds_the_reply_channel_instead_of_the_gateway_response_family(
         self,
     ) -> None:
@@ -301,7 +336,7 @@ class DesiredStateTests(unittest.TestCase):
         # Assert
         self.assertIn(reply, _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE))
 
-    def test_the_recorder_profile_reads_every_family_and_writes_none(self) -> None:
+    def test_the_recorder_profile_reads_every_non_rpc_family_and_writes_none(self) -> None:
         # Arrange
         state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
@@ -312,7 +347,7 @@ class DesiredStateTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((frozenset(), len(tuple(Family))), held)
+        self.assertEqual((frozenset(), len(tuple(Family)) - 2), held)
 
     def test_lifecycle_acl_exceptions_are_projected_offline_for_the_runtime_roles(self) -> None:
         # Arrange
@@ -342,10 +377,10 @@ class DesiredStateTests(unittest.TestCase):
                         "aerial-rescue/v1/*/drone/*/event/*",
                         "aerial-rescue/v1/*/drone/*/command/*",
                         "aerial-rescue/v1/*/drone/*/command-result/*",
-                        "aerial-rescue/v1/*/gateway/request/*",
-                        "aerial-rescue/v1/*/gateway/response/*",
+                        "aerial-rescue/v1/*/gateway/record/*",
                         "aerial-rescue/v1/*/agent/proposal/*/*",
                         "aerial-rescue/v1/*/agent/response/*",
+                        "aerial-rescue/v1/*/evidence/decision/*",
                         "aerial-rescue/v1/*/audit/*",
                         "aerial-rescue/v1/*/mission/event/*",
                         "aerial-rescue/v1/*/sector/*/event/*",

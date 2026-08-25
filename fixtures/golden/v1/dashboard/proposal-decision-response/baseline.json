@@ -1,0 +1,10 @@
+{
+  "operationVersion": "dashboard-proposal-decision-response/v1",
+  "missionId": "mission-synthetic-0001",
+  "proposalId": "proposal-synthetic-0001",
+  "approvalId": "approval-synthetic-0001",
+  "eventId": "event-operator-approval-0001",
+  "decision": "approve",
+  "issuedAt": "2026-08-25T12:01:00.000Z",
+  "expiresAt": "2026-08-25T12:06:00.000Z"
+}

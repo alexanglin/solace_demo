@@ -134,6 +134,10 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0114](0114-define-durable-application-processing.md) | Define durable application processing | Accepted |
 | [0115](0115-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
 | [0116](0116-close-the-application-data-plane-wire-documents.md) | Close the application data-plane wire documents | Accepted |
+| [0117](0117-preserve-mission-scoped-gateway-response-records.md) | Preserve mission-scoped gateway response records | Superseded by ADR-0118 |
+| [0118](0118-separate-gateway-records-from-private-replies.md) | Separate mission gateway records from private replies | Accepted |
+| [0119](0119-require-migrated-sqlalchemy-durable-tables.md) | Require migrated SQLAlchemy durable tables | Accepted |
+| [0120](0120-bind-proposals-to-the-complete-source-event.md) | Bind proposals to the complete source event | Accepted |
 
 ## Decisions still open
 

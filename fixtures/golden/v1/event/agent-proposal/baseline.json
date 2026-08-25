@@ -1,0 +1,29 @@
+{
+  "specversion": "1.0",
+  "id": "event-agent-proposal-0001",
+  "source": "urn:aerial-rescue:command-gateway:gateway-synthetic-01",
+  "type": "aerial-rescue.v1.agent.proposal.candidate-location",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:03:00.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/agent-proposal.schema.json",
+  "data": {
+    "canonicalizationVersion": 1,
+    "proposalVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "proposalId": "proposal-synthetic-0001",
+    "proposalType": "candidate-location",
+    "agentName": "VisionAgent",
+    "sourceInvocationId": "invocation-synthetic-0001",
+    "sourceEventId": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6c",
+    "sourceEventDigest": "9716b17a9f5a0cfcb645d9e7abdf1e5905fdf17c327d7e0f955eedd444057b52",
+    "commandType": "escalate-rescue",
+    "droneId": "drone-synthetic-01",
+    "latitudeMicrodegrees": 45123456,
+    "longitudeMicrodegrees": -75123456,
+    "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761"
+  },
+  "sequence": "000000000000005",
+  "correlationid": "correlation-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

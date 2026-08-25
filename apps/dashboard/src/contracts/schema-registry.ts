@@ -2,6 +2,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import canonicalSchema from "../../../../schemas/v1/canonical.schema.json";
 import bootstrapSchema from "../../../../schemas/v1/dashboard/bootstrap.schema.json";
+import commandResponseSchema from "../../../../schemas/v1/dashboard/command-response.schema.json";
 import dashboardEventFrameSchema from "../../../../schemas/v1/dashboard/dashboard-event-frame.schema.json";
 import dashboardEventSchema from "../../../../schemas/v1/dashboard/dashboard-event.schema.json";
 import dashboardReducedStateSchema from "../../../../schemas/v1/dashboard/dashboard-reduced-state.schema.json";
@@ -10,6 +11,9 @@ import errorSchema from "../../../../schemas/v1/dashboard/error.schema.json";
 import healthSchema from "../../../../schemas/v1/dashboard/health.schema.json";
 import mutationOutcomeSchema from "../../../../schemas/v1/dashboard/mutation-outcome.schema.json";
 import orderedDashboardEventSchema from "../../../../schemas/v1/dashboard/ordered-dashboard-event.schema.json";
+import operatorCommandRequestSchema from "../../../../schemas/v1/dashboard/operator-command-request.schema.json";
+import proposalDecisionRequestSchema from "../../../../schemas/v1/dashboard/proposal-decision-request.schema.json";
+import proposalDecisionResponseSchema from "../../../../schemas/v1/dashboard/proposal-decision-response.schema.json";
 import readinessSchema from "../../../../schemas/v1/dashboard/readiness.schema.json";
 import replayBundleSchema from "../../../../schemas/v1/dashboard/replay-bundle.schema.json";
 import replayIntegritySchema from "../../../../schemas/v1/dashboard/replay-integrity.schema.json";
@@ -24,6 +28,7 @@ import type { DashboardDocumentBySchemaId } from "./generated";
 
 export const DASHBOARD_SCHEMA_IDS = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json",
@@ -32,6 +37,9 @@ export const DASHBOARD_SCHEMA_IDS = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/mutation-outcome.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json",
@@ -70,6 +78,7 @@ export interface DashboardSchemaRegistry {
 
 const dashboardSchemas = [
   bootstrapSchema,
+  commandResponseSchema,
   dashboardEventFrameSchema,
   dashboardEventSchema,
   dashboardReducedStateSchema,
@@ -78,6 +87,9 @@ const dashboardSchemas = [
   healthSchema,
   mutationOutcomeSchema,
   orderedDashboardEventSchema,
+  operatorCommandRequestSchema,
+  proposalDecisionRequestSchema,
+  proposalDecisionResponseSchema,
   readinessSchema,
   replayBundleSchema,
   replayIntegritySchema,

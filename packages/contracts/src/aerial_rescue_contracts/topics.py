@@ -1,6 +1,6 @@
 """Typed builder and parser for the application topic families.
 
-The thirteen families are the ones ``docs/CONTRACTS.md`` names under ``aerial-rescue/v1``,
+The fifteen families are the ones ``docs/CONTRACTS.md`` names under ``aerial-rescue/v1``,
 and the grammar of every variable level is the decision in
 ``docs/adr/0036-ascii-topic-grammar-bound-to-event-type.md``. Because every level is
 drawn from an allowlist, a formatted topic can never carry a Solace subscription
@@ -36,7 +36,12 @@ AGENT_NAME_PATTERN: Final = "^[A-Za-z0-9_]{1,64}$"
 """The ASCII subset of the character class Agent Mesh 1.28.7 coerces agent names to."""
 
 TYPE_PATTERN: Final = "^aerial-rescue\\.v1(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*){2,3}$"
-"""The form of a CloudEvents ``type`` derived from a topic."""
+"""The syntactic form of a type discriminator derived from an application topic.
+
+Only a family with an envelope binding uses the value as a CloudEvents ``type``.
+RPC and the direct Agent Response integration body retain the deterministic derivation
+for grammar checks, but it does not turn either representation into a CloudEvent.
+"""
 
 RESERVED_REPLY_MISSION: Final = "reply"
 """The mission level of the command-gateway reply channel, which names no mission.
@@ -52,11 +57,21 @@ WILDCARD_CHARACTERS: Final = frozenset({"*", ">"})
 MISSION_PARAMETER: Final = "missionId"
 DRONE_PARAMETER: Final = "droneId"
 SECTOR_PARAMETER: Final = "sectorId"
+PROPOSAL_PARAMETER: Final = "proposalId"
+REQUESTOR_PARAMETER: Final = "requestorId"
 
 _PREFIX_LEVELS: Final = tuple(namespace_prefix().split("/"))
 _TYPE_PREFIX: Final = namespace_prefix().replace("/", ".") + "."
 _IDENTIFIER_PARAMETERS: Final = frozenset(
-    {MISSION_PARAMETER, DRONE_PARAMETER, SECTOR_PARAMETER, "commandId", "requestId"}
+    {
+        MISSION_PARAMETER,
+        DRONE_PARAMETER,
+        SECTOR_PARAMETER,
+        PROPOSAL_PARAMETER,
+        REQUESTOR_PARAMETER,
+        "commandId",
+        "requestId",
+    }
 )
 
 
@@ -98,7 +113,7 @@ def _placeholder(level: str) -> str:
 
 
 class Family(Enum):
-    """The thirteen topic families, as templates after the mission identifier level."""
+    """The fifteen topic families, as templates after the mission identifier level."""
 
     OPERATOR_COMMAND = "operator/command/{commandType}"
     OPERATOR_APPROVAL = "operator/approval/{decision}"
@@ -107,9 +122,11 @@ class Family(Enum):
     DRONE_COMMAND = "drone/{droneId}/command/{commandType}"
     DRONE_COMMAND_RESULT = "drone/{droneId}/command-result/{commandId}"
     GATEWAY_REQUEST = "gateway/request/{operation}"
-    GATEWAY_RESPONSE = "gateway/response/{requestId}"
+    GATEWAY_RESPONSE = "gateway/response/{requestorId}"
+    GATEWAY_RECORD = "gateway/record/{requestId}"
     AGENT_PROPOSAL = "agent/proposal/{agentName}/{proposalType}"
     AGENT_RESPONSE = "agent/response/{agentName}"
+    EVIDENCE_DECISION = "evidence/decision/{proposalId}"
     AUDIT = "audit/{recordType}"
     MISSION_EVENT = "mission/event/{eventType}"
     SECTOR_EVENT = "sector/{sectorId}/event/{eventType}"
@@ -129,14 +146,15 @@ class Family(Enum):
         """Return the template's literal levels joined with dots, which names the family.
 
         Distinct from :attr:`type_suffix`, which keeps the kind and decision placeholders
-        because a CloudEvents type fills them with the value the event carried. A name for
-        the family itself carries none of them: one name covers every kind in the family.
+        because a topic-derived type discriminator fills them with the value the message
+        carried. A name for the family itself carries none of them: one name covers every
+        kind in the family.
         """
         return ".".join(level for level in self.levels if not _is_placeholder(level))
 
     @property
     def type_suffix(self) -> str:
-        """Return the CloudEvents type suffix: the template without its instance levels."""
+        """Return the type-discriminator suffix: the template without instance levels."""
         kept = (
             level
             for level in self.levels
@@ -162,18 +180,22 @@ _DELIVERY: Final[Mapping[Family, Delivery]] = {
     Family.DRONE_COMMAND_RESULT: Delivery.GUARANTEED,
     Family.GATEWAY_REQUEST: Delivery.REQUEST_REPLY,
     Family.GATEWAY_RESPONSE: Delivery.REQUEST_REPLY,
+    Family.GATEWAY_RECORD: Delivery.DIRECT,
     Family.AGENT_PROPOSAL: Delivery.GUARANTEED,
-    Family.AGENT_RESPONSE: Delivery.GUARANTEED,
+    Family.AGENT_RESPONSE: Delivery.DIRECT,
+    Family.EVIDENCE_DECISION: Delivery.GUARANTEED,
     Family.AUDIT: Delivery.GUARANTEED,
     Family.MISSION_EVENT: Delivery.GUARANTEED,
     Family.SECTOR_EVENT: Delivery.GUARANTEED,
 }
 """Total over the families; a test asserts it.
 
-``DRONE_TELEMETRY`` is direct because a current position supersedes a stale one, which is
-what ``docs/CONTRACTS.md`` has always said. The two gateway families are neither: their
-reply queue is a temporary one Solace AI Connector names and binds itself, so this project
-provisions no endpoint for them
+``DRONE_TELEMETRY`` is direct because a current position supersedes a stale one.
+``AGENT_RESPONSE`` is a structured plugin-integration body consumed synchronously rather
+than a durable application notification. ``GATEWAY_RECORD`` is the direct mission fact
+separate from the raw response. The request and response RPC families use a temporary
+reply queue Solace AI Connector names and binds itself, so this project provisions no
+endpoint for them
 (``docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md``).
 """
 
@@ -355,7 +377,10 @@ def parse_topic(text: object) -> Topic:
 
 
 def event_type(topic: Topic) -> str:
-    """Return the CloudEvents type of a topic: its family suffix with the kind levels filled."""
+    """Return the topic-derived type discriminator with its kind levels filled.
+
+    The value is a CloudEvents ``type`` only when ``envelope.BINDINGS`` admits it.
+    """
     segments = []
     for level in topic.family.type_suffix.split("."):
         if _is_placeholder(level):
@@ -367,7 +392,7 @@ def event_type(topic: Topic) -> str:
 
 
 def parse_event_type(text: object) -> tuple[Family, dict[str, str]]:
-    """Recover the family and the kind parameters from a CloudEvents type.
+    """Recover the family and kind parameters from a topic-derived type discriminator.
 
     Args:
         text: The candidate type.

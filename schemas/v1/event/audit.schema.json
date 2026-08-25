@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/audit.schema.json",
+  "description": "A typed audit outcome with its record type, producer, schema, and payload branch bound together.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/proposalNormalization"
+    },
+    {
+      "$ref": "#/$defs/evidenceDecision"
+    },
+    {
+      "$ref": "#/$defs/commandAuthorization"
+    }
+  ],
+  "$defs": {
+    "proposalNormalization": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:command-gateway:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.audit.proposal-normalization"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json#/$defs/proposalNormalization"
+            }
+          }
+        }
+      ]
+    },
+    "evidenceDecision": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:evidence-service:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.audit.evidence-decision"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json#/$defs/evidenceDecision"
+            }
+          }
+        }
+      ]
+    },
+    "commandAuthorization": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:command-gateway:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.audit.command-authorization"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json#/$defs/commandAuthorization"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

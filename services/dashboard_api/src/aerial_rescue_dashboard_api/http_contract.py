@@ -69,6 +69,30 @@ ROUTE_EXPECTATIONS = (
         ),
     ),
     (
+        "POST",
+        "/api/v1/missions/{missionId}/commands",
+        (),
+        _json(_schema("operator-command-request")),
+        (
+            (202, _json(_schema("command-response"))),
+            (401, _ERROR),
+            (409, _ERROR),
+            ("default", _ERROR),
+        ),
+    ),
+    (
+        "POST",
+        "/api/v1/missions/{missionId}/proposals/{proposalId}/decisions",
+        (),
+        _json(_schema("proposal-decision-request")),
+        (
+            (202, _json(_schema("proposal-decision-response"))),
+            (401, _ERROR),
+            (409, _ERROR),
+            ("default", _ERROR),
+        ),
+    ),
+    (
         "GET",
         "/api/v1/events",
         (),

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
+  "description": "The exact authenticated dashboard body for an approval or rejection of one proposal.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "proposalId",
+    "proposalDigest",
+    "proposalVersion",
+    "evidenceDecisionId",
+    "evidenceDecisionDigest",
+    "evidenceDecisionVersion",
+    "decision",
+    "action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "proposalId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "proposalDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "proposalVersion": {
+      "const": 1
+    },
+    "evidenceDecisionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "evidenceDecisionDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "evidenceDecisionVersion": {
+      "const": 1
+    },
+    "decision": {
+      "enum": [
+        "approve",
+        "reject"
+      ]
+    },
+    "action": {
+      "$ref": "#/$defs/action"
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "required": [
+        "commandType",
+        "droneId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "commandType": {
+          "const": "escalate-rescue"
+        },
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        }
+      }
+    }
+  }
+}

@@ -58,7 +58,7 @@ def _refusal_of(stamp: RecordStamp) -> tuple[Enum, object]:
 
 
 class RecordTests(unittest.TestCase):
-    def test_the_record_is_published_on_the_request_s_own_response_topic(self) -> None:
+    def test_the_record_is_published_on_the_request_s_own_record_topic(self) -> None:
         # Arrange
         response = _answered()
 
@@ -66,7 +66,7 @@ class RecordTests(unittest.TestCase):
         topic, _document = response_record(response, STAMP)
 
         # Assert
-        self.assertEqual(f"aerial-rescue/v1/{MISSION}/gateway/response/{REQUEST_ID}", topic)
+        self.assertEqual(f"aerial-rescue/v1/{MISSION}/gateway/record/{REQUEST_ID}", topic)
 
     def test_the_record_carries_the_reply_body_verbatim_as_its_payload(self) -> None:
         # Arrange
@@ -101,7 +101,7 @@ class RecordTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            ("urn:aerial-rescue:service:command-gateway", REQUEST_ID, event_source()),
+            ("urn:aerial-rescue:command-gateway:command-gateway", REQUEST_ID, event_source()),
             (document["source"], document["correlationid"], document["source"]),
         )
 
@@ -136,7 +136,7 @@ class RecordTests(unittest.TestCase):
         _topic, document = response_record(response, STAMP)
 
         # Assert
-        self.assertEqual("aerial-rescue.v1.gateway.response", parse_envelope(document).type)
+        self.assertEqual("aerial-rescue.v1.gateway.record", parse_envelope(document).type)
 
     def test_a_refused_answer_is_recorded_the_same_way(self) -> None:
         # Arrange
@@ -228,7 +228,7 @@ class SequenceTests(unittest.TestCase):
 class ProducerIdentityTests(unittest.TestCase):
     def test_the_source_is_the_service_urn_the_envelope_profile_accepts(self) -> None:
         # Arrange
-        expected = "urn:aerial-rescue:service:command-gateway"
+        expected = "urn:aerial-rescue:command-gateway:command-gateway"
 
         # Act
         source = event_source()

@@ -57,6 +57,7 @@ type _Identifier = Annotated[
         max_length=64,
     ),
 ]
+type _AgentName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_]{1,64}$")]
 type _Kind = Annotated[
     str,
     StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", max_length=32),
@@ -77,10 +78,45 @@ type _StrictOne = Annotated[Literal[1], BeforeValidator(_strict_literal_one)]
 type _MissionLifecycle = Literal["PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"]
 type _Connectivity = Literal["CONNECTED", "DEGRADED", "OFFLINE"]
 type _SectorState = Literal["UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED"]
+type _AgentAbstentionReason = Literal[
+    "timeout", "transport-error", "model-error", "invalid-output", "identity-mismatch"
+]
 
 
 class _WireModel(BaseModel):
     model_config = _MODEL_CONFIG
+
+
+class _AssignSectorAction(_WireModel):
+    command_type: Literal["assign-sector"] = Field(alias="commandType")
+    drone_id: _Identifier = Field(alias="droneId")
+    sector_id: _Identifier = Field(alias="sectorId")
+
+
+class _EscalateRescueCommandAction(_WireModel):
+    command_type: Literal["escalate-rescue"] = Field(alias="commandType")
+    drone_id: _Identifier = Field(alias="droneId")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: _Digest = Field(alias="evidenceDecisionDigest")
+    evidence_decision_version: _StrictOne = Field(alias="evidenceDecisionVersion")
+    latitude_microdegrees: _Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: _Longitude = Field(alias="longitudeMicrodegrees")
+
+
+type _OperatorCommandAction = Annotated[
+    _AssignSectorAction | _EscalateRescueCommandAction,
+    Field(discriminator="command_type"),
+]
+
+
+class _EscalateRescueAction(_WireModel):
+    command_type: Literal["escalate-rescue"] = Field(alias="commandType")
+    drone_id: _Identifier = Field(alias="droneId")
+    latitude_microdegrees: _Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: _Longitude = Field(alias="longitudeMicrodegrees")
 
 
 class _Bootstrap(_WireModel):
@@ -151,15 +187,392 @@ class _SectorLifecycleEvent(_WireModel):
     data: _SectorLifecycleData
 
 
+class _OperatorCommandData(_WireModel):
+    operator_command_version: _StrictOne = Field(alias="operatorCommandVersion")
+    command_id: _Identifier = Field(alias="commandId")
+    operator_id: _Identifier = Field(alias="operatorId")
+    action: _OperatorCommandAction
+
+
+class _OperatorCommandEvent(_WireModel):
+    kind: Literal["operatorCommand"]
+    event_class: Literal["COMMAND"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _OperatorCommandData
+
+
+class _OperatorApprovalData(_WireModel):
+    operator_approval_version: _StrictOne = Field(alias="operatorApprovalVersion")
+    approval_id: _Identifier = Field(alias="approvalId")
+    operator_id: _Identifier = Field(alias="operatorId")
+    issued_at: _Instant = Field(alias="issuedAt")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: _Digest = Field(alias="evidenceDecisionDigest")
+    evidence_decision_version: _StrictOne = Field(alias="evidenceDecisionVersion")
+    action: _EscalateRescueAction
+
+
+class _ApprovedOperatorApprovalData(_OperatorApprovalData):
+    decision: Literal["approve"]
+    expires_at: _Instant = Field(alias="expiresAt")
+
+
+class _RejectedOperatorApprovalData(_OperatorApprovalData):
+    decision: Literal["reject"]
+
+
+type _OperatorApprovalDataValue = Annotated[
+    _ApprovedOperatorApprovalData | _RejectedOperatorApprovalData,
+    Field(discriminator="decision"),
+]
+
+
+class _OperatorApprovalEvent(_WireModel):
+    kind: Literal["operatorApproval"]
+    event_class: Literal["APPROVAL"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _OperatorApprovalDataValue
+
+
+class _AgentProposalData(_WireModel):
+    canonicalization_version: _StrictOne = Field(alias="canonicalizationVersion")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_type: Literal["candidate-location"] = Field(alias="proposalType")
+    agent_name: _AgentName = Field(alias="agentName")
+    source_invocation_id: _Identifier = Field(alias="sourceInvocationId")
+    source_event_id: _Identifier = Field(alias="sourceEventId")
+    source_event_digest: _Digest = Field(alias="sourceEventDigest")
+    command_type: Literal["escalate-rescue"] = Field(alias="commandType")
+    drone_id: _Identifier = Field(alias="droneId")
+    latitude_microdegrees: _Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: _Longitude = Field(alias="longitudeMicrodegrees")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+
+
+class _AgentProposalEvent(_WireModel):
+    kind: Literal["agentProposal"]
+    event_class: Literal["EVIDENCE"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _AgentProposalData
+
+
+class _LiveModelContributor(_WireModel):
+    evidence_item_id: _Identifier = Field(alias="evidenceItemId")
+    source_id: _Identifier = Field(alias="sourceId")
+    origin: Literal["live-model"]
+    weight: Literal[35]
+    provenance_digest: _Digest = Field(alias="provenanceDigest")
+
+
+class _LiveSensorContributor(_WireModel):
+    evidence_item_id: _Identifier = Field(alias="evidenceItemId")
+    source_id: _Identifier = Field(alias="sourceId")
+    origin: Literal["live-sensor"]
+    weight: Literal[40]
+    provenance_digest: _Digest = Field(alias="provenanceDigest")
+
+
+type _EvidenceContributor = Annotated[
+    _LiveModelContributor | _LiveSensorContributor,
+    Field(discriminator="origin"),
+]
+
+
+class _EvidenceDecisionData(_WireModel):
+    canonicalization_version: _StrictOne = Field(alias="canonicalizationVersion")
+    evidence_decision_version: _StrictOne = Field(alias="evidenceDecisionVersion")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+
+
+class _ContributingEvidenceDecisionData(_EvidenceDecisionData):
+    outcome: Literal["contributing"]
+    score_version: _StrictOne = Field(alias="scoreVersion")
+    score: _Percent
+    band: Literal["none", "weak", "supported", "corroborated"]
+    contributors: Annotated[list[_EvidenceContributor], Field(min_length=1, max_length=23)]
+
+
+class _ManualReviewEvidenceDecisionData(_EvidenceDecisionData):
+    outcome: Literal["manual-review"]
+    reason: Literal["policy-referral", "conflicting-evidence", "insufficient-live-sources"]
+
+
+class _AbstainedEvidenceDecisionData(_EvidenceDecisionData):
+    outcome: Literal["abstained"]
+    reason: Literal[
+        "timeout",
+        "transport-error",
+        "model-error",
+        "invalid-output",
+        "identity-mismatch",
+        "declined",
+    ]
+
+
+class _RejectedEvidenceDecisionData(_EvidenceDecisionData):
+    outcome: Literal["rejected"]
+    reason: Literal[
+        "invalid-output",
+        "identity-mismatch",
+        "provenance-missing",
+        "provenance-mismatch",
+        "recorded-origin",
+        "human-dismissal",
+    ]
+
+
+type _EvidenceDecisionDataValue = Annotated[
+    _ContributingEvidenceDecisionData
+    | _ManualReviewEvidenceDecisionData
+    | _AbstainedEvidenceDecisionData
+    | _RejectedEvidenceDecisionData,
+    Field(discriminator="outcome"),
+]
+
+
+class _EvidenceDecisionEvent(_WireModel):
+    kind: Literal["evidenceDecision"]
+    event_class: Literal["EVIDENCE"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _EvidenceDecisionDataValue
+
+
+class _DroneCommandData(_WireModel):
+    drone_id: _Identifier = Field(alias="droneId")
+    command_id: _Identifier = Field(alias="commandId")
+    approval_id: _Identifier = Field(alias="approvalId")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: _Digest = Field(alias="evidenceDecisionDigest")
+    evidence_decision_version: _StrictOne = Field(alias="evidenceDecisionVersion")
+    latitude_microdegrees: _Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: _Longitude = Field(alias="longitudeMicrodegrees")
+
+
+class _DroneCommandEvent(_WireModel):
+    kind: Literal["droneCommand"]
+    event_class: Literal["COMMAND"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _DroneCommandData
+
+
+class _GatewayResponseData(_WireModel):
+    rpc_version: _StrictOne = Field(alias="rpcVersion")
+    request_id: _Identifier = Field(alias="requestId")
+    operation: _Kind
+    command_type: _Kind = Field(alias="commandType")
+    actuated: bool
+
+
+class _AnsweredGatewayResponseData(_GatewayResponseData):
+    outcome: Literal["answered"]
+    authority: _Kind
+
+
+class _RefusedGatewayResponseData(_GatewayResponseData):
+    outcome: Literal["refused"]
+    refusal: _Kind
+
+
+type _GatewayResponseDataValue = Annotated[
+    _AnsweredGatewayResponseData | _RefusedGatewayResponseData,
+    Field(discriminator="outcome"),
+]
+
+
+class _GatewayResponseEvent(_WireModel):
+    kind: Literal["gatewayResponse"]
+    event_class: Literal["AUDIT"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _GatewayResponseDataValue
+
+
+class _ProposalNormalizationAuditData(_WireModel):
+    audit_version: _StrictOne = Field(alias="auditVersion")
+    record_id: _Identifier = Field(alias="recordId")
+    record_type: Literal["proposal-normalization"] = Field(alias="recordType")
+    agent_name: _AgentName = Field(alias="agentName")
+    invocation_id: _Identifier = Field(alias="invocationId")
+    correlation_id: _Identifier = Field(alias="correlationId")
+
+
+class _NormalizedProposalAuditData(_ProposalNormalizationAuditData):
+    outcome: Literal["normalized"]
+    source_event_id: _Identifier = Field(alias="sourceEventId")
+    source_event_digest: _Digest = Field(alias="sourceEventDigest")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+
+
+class _AbstainedProposalAuditData(_ProposalNormalizationAuditData):
+    outcome: Literal["abstained"]
+    reason: _AgentAbstentionReason
+
+
+class _RefusedProposalAuditData(_ProposalNormalizationAuditData):
+    outcome: Literal["refused"]
+    reason: Literal[
+        "schema-invalid",
+        "correlation-mismatch",
+        "identity-mismatch",
+        "unsupported-action",
+        "digest-mismatch",
+    ]
+
+
+class _EvidenceDecisionAuditData(_WireModel):
+    audit_version: _StrictOne = Field(alias="auditVersion")
+    record_id: _Identifier = Field(alias="recordId")
+    record_type: Literal["evidence-decision"] = Field(alias="recordType")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: _Digest = Field(alias="evidenceDecisionDigest")
+
+
+class _ContributingEvidenceAuditData(_EvidenceDecisionAuditData):
+    outcome: Literal["contributing"]
+
+
+class _ManualReviewEvidenceAuditData(_EvidenceDecisionAuditData):
+    outcome: Literal["manual-review"]
+    reason: Literal["policy-referral", "conflicting-evidence", "insufficient-live-sources"]
+
+
+class _AbstainedEvidenceAuditData(_EvidenceDecisionAuditData):
+    outcome: Literal["abstained"]
+    reason: Literal[
+        "timeout",
+        "transport-error",
+        "model-error",
+        "invalid-output",
+        "identity-mismatch",
+        "declined",
+    ]
+
+
+class _RejectedEvidenceAuditData(_EvidenceDecisionAuditData):
+    outcome: Literal["rejected"]
+    reason: Literal[
+        "invalid-output",
+        "identity-mismatch",
+        "provenance-missing",
+        "provenance-mismatch",
+        "recorded-origin",
+        "human-dismissal",
+    ]
+
+
+class _CommandAuthorizationAuditData(_WireModel):
+    audit_version: _StrictOne = Field(alias="auditVersion")
+    record_id: _Identifier = Field(alias="recordId")
+    record_type: Literal["command-authorization"] = Field(alias="recordType")
+    command_id: _Identifier = Field(alias="commandId")
+    operator_id: _Identifier = Field(alias="operatorId")
+
+
+class _AuthorizedAssignSectorAuditData(_CommandAuthorizationAuditData):
+    action: _AssignSectorAction
+    outcome: Literal["authorized"]
+
+
+class _AuthorizedEscalateRescueAuditData(_CommandAuthorizationAuditData):
+    action: _EscalateRescueCommandAction
+    outcome: Literal["authorized"]
+    approval_id: _Identifier = Field(alias="approvalId")
+
+
+type _CommandRefusalReason = Literal[
+    "approval-missing",
+    "approval-rejected",
+    "approval-expired",
+    "approval-superseded",
+    "approval-consumed",
+    "proposal-mismatch",
+    "evidence-decision-mismatch",
+    "action-mismatch",
+    "idempotency-conflict",
+    "outbox-full",
+]
+
+
+class _RefusedAssignSectorAuditData(_CommandAuthorizationAuditData):
+    action: _AssignSectorAction
+    outcome: Literal["refused"]
+    reason: _CommandRefusalReason
+
+
+class _RefusedEscalateRescueAuditData(_CommandAuthorizationAuditData):
+    action: _EscalateRescueCommandAction
+    outcome: Literal["refused"]
+    reason: _CommandRefusalReason
+
+
+type _AuditDataValue = (
+    _NormalizedProposalAuditData
+    | _AbstainedProposalAuditData
+    | _RefusedProposalAuditData
+    | _ContributingEvidenceAuditData
+    | _ManualReviewEvidenceAuditData
+    | _AbstainedEvidenceAuditData
+    | _RejectedEvidenceAuditData
+    | _AuthorizedAssignSectorAuditData
+    | _AuthorizedEscalateRescueAuditData
+    | _RefusedAssignSectorAuditData
+    | _RefusedEscalateRescueAuditData
+)
+
+
+class _AuditRecordEvent(_WireModel):
+    kind: Literal["auditRecord"]
+    event_class: Literal["AUDIT"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _AuditDataValue
+
+
 type _DashboardEventValue = Annotated[
     _DroneTelemetryEvent
     | _ConnectivityChangedEvent
     | _MissionLifecycleEvent
-    | _SectorLifecycleEvent,
+    | _SectorLifecycleEvent
+    | _OperatorCommandEvent
+    | _OperatorApprovalEvent
+    | _AgentProposalEvent
+    | _EvidenceDecisionEvent
+    | _DroneCommandEvent
+    | _GatewayResponseEvent
+    | _AuditRecordEvent,
     Field(discriminator="kind"),
 ]
 type _TimelineEventValue = Annotated[
-    _ConnectivityChangedEvent | _MissionLifecycleEvent | _SectorLifecycleEvent,
+    _ConnectivityChangedEvent
+    | _MissionLifecycleEvent
+    | _SectorLifecycleEvent
+    | _OperatorCommandEvent
+    | _OperatorApprovalEvent
+    | _AgentProposalEvent
+    | _EvidenceDecisionEvent
+    | _DroneCommandEvent
+    | _GatewayResponseEvent
+    | _AuditRecordEvent,
     Field(discriminator="kind"),
 ]
 
@@ -416,6 +829,60 @@ class _StreamOverloaded(_WireModel):
     reason: Literal["NON_DROPPABLE_BUFFER_FULL"]
 
 
+class _OperatorCommandRequest(_WireModel):
+    mission_id: _Identifier = Field(alias="missionId")
+    action: _OperatorCommandAction
+
+
+class _CommandResponse(_WireModel):
+    operation_version: Literal["dashboard-command-response/v1"] = Field(alias="operationVersion")
+    mission_id: _Identifier = Field(alias="missionId")
+    command_id: _Identifier = Field(alias="commandId")
+    event_id: _Identifier = Field(alias="eventId")
+
+
+class _ProposalDecisionRequest(_WireModel):
+    mission_id: _Identifier = Field(alias="missionId")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    proposal_digest: _Digest = Field(alias="proposalDigest")
+    proposal_version: _StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: _Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: _Digest = Field(alias="evidenceDecisionDigest")
+    evidence_decision_version: _StrictOne = Field(alias="evidenceDecisionVersion")
+    decision: Literal["approve", "reject"]
+    action: _EscalateRescueAction
+
+
+class _ProposalDecisionResponse(_WireModel):
+    operation_version: Literal["dashboard-proposal-decision-response/v1"] = Field(
+        alias="operationVersion"
+    )
+    mission_id: _Identifier = Field(alias="missionId")
+    proposal_id: _Identifier = Field(alias="proposalId")
+    approval_id: _Identifier = Field(alias="approvalId")
+    event_id: _Identifier = Field(alias="eventId")
+    issued_at: _Instant = Field(alias="issuedAt")
+
+
+class _ApprovedProposalDecisionResponse(_ProposalDecisionResponse):
+    decision: Literal["approve"]
+    expires_at: _Instant = Field(alias="expiresAt")
+
+
+class _RejectedProposalDecisionResponse(_ProposalDecisionResponse):
+    decision: Literal["reject"]
+
+
+type _ProposalDecisionResponseValue = Annotated[
+    _ApprovedProposalDecisionResponse | _RejectedProposalDecisionResponse,
+    Field(discriminator="decision"),
+]
+
+
+class _ProposalDecisionResponseDocument(RootModel[_ProposalDecisionResponseValue]):
+    model_config = _ROOT_MODEL_CONFIG
+
+
 class _ScenarioControlStartRequest(_WireModel):
     control_version: _StrictOne = Field(alias="controlVersion")
     scenario_id: _Identifier = Field(alias="scenarioId")
@@ -476,6 +943,7 @@ def _rpc_schema(name: str) -> str:
 SERVER_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
     {
         _dashboard_schema("bootstrap"): _Bootstrap,
+        _dashboard_schema("command-response"): _CommandResponse,
         _dashboard_schema("dashboard-event-frame"): _DashboardEventFrame,
         _dashboard_schema("dashboard-event"): _DashboardEvent,
         _dashboard_schema("dashboard-reduced-state"): _DashboardReducedState,
@@ -483,6 +951,9 @@ SERVER_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
         _dashboard_schema("error"): _DashboardError,
         _dashboard_schema("health"): _Health,
         _dashboard_schema("ordered-dashboard-event"): _OrderedDashboardEvent,
+        _dashboard_schema("operator-command-request"): _OperatorCommandRequest,
+        _dashboard_schema("proposal-decision-request"): _ProposalDecisionRequest,
+        _dashboard_schema("proposal-decision-response"): _ProposalDecisionResponseDocument,
         _dashboard_schema("readiness"): _Readiness,
         _dashboard_schema("replay-bundle"): _ReplayBundle,
         _dashboard_schema("replay-integrity"): _ReplayIntegrity,

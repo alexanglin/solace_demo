@@ -282,6 +282,44 @@ carries only the values.
 
 The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 
+## Durable application processing
+
+[ADR-0114](adr/0114-define-durable-application-processing.md) fixes the bounds around the general
+application inbox/outbox and the centrally simulated edge. The contract and values are accepted; the
+new Alembic revisions, SQLAlchemy repositories, workers, and service integrations are not implemented
+yet, so the instruments below name the tests each increment must add rather than runtime evidence.
+
+| Parameter | Value | Instrument and current status |
+| --- | --- | --- |
+| Application-outbox drain batch | At most 50 oldest eligible `STAGED` rows per connected epoch | ordered-claim, independent-outcome, crash, refusal, and ambiguity tests; pending |
+| Per-drone critical outbox records | At most 500 unconfirmed records, independently per simulated drone | SQLAlchemy repository capacity and concurrent-claim tests plus reconnect-drain integration; pending |
+| Per-drone critical outbox bytes | At most 2 MiB of exact canonical topic, headers, and body bytes, independently per simulated drone | SQLAlchemy repository byte-cap and rollback tests; pending |
+| Per-drone critical overflow | Refuse the new critical record without eviction and append a continuity-breach audit outcome | transaction rollback, saturation, and audit-order tests; pending |
+| Telemetry records buffered | 0 | fleet outbox tests prove `DRONE_TELEMETRY` never enters PostgreSQL and direct congestion increments the drop counter; pending |
+
+The record and byte limits apply simultaneously to staged and reconciliation-needed critical
+publications. Reaching either refuses the new critical transition without eviction. The general
+50-row batch is a work cap, not a bulk-transaction size: no database transaction spans broker I/O, and
+one row's refusal or ambiguity cannot confirm another row.
+
+## Evidence scoring
+
+The score is a deterministic simulation heuristic selected by ADR-0114, not a calibrated probability.
+Only `CONTRIBUTING` live evidence enters it; recorded-origin evidence is refused, and the corroborated
+band still requires at least two distinct live source identifiers.
+
+| Parameter | Value | Instrument and current status |
+| --- | --- | --- |
+| Weak band | Inclusive score 25 through 49 | Tier 1 domain boundary and property tests; composition-root wiring pending |
+| Supported band | Inclusive score 50 through 74 | Tier 1 domain boundary and property tests; composition-root wiring pending |
+| Corroborated band | Inclusive score 75 through 100, with at least two distinct live sources | Tier 1 domain and approval-bypass tests; evidence-service integration pending |
+| Live sensor contribution | Integer weight 40 | closed evidence-decision schema plus Tier 1 score tests; service mapping pending |
+| Live model contribution | Integer weight 35 | closed evidence-decision schema plus Tier 1 score tests; service mapping pending |
+
+Scores 0 through 24 are `NONE`. One sensor plus one model reaches 75, two sensors reach 80, and two
+models reach only 70. Eligibility never authorizes escalation; the exact proposal/evidence approval
+binding and command-gateway transaction remain separate controls.
+
 ## Broker authorization
 
 The roles, their grants, and the deny-by-default rule are
@@ -291,10 +329,10 @@ over the roles and names every family's publisher set; this section carries only
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
-| Authorization roles | 9, one ACL profile each | `Principal` in `packages/domain`; a test asserts the nine names |
+| Authorization roles | 10, one ACL profile per role | `Principal` in `packages/domain`; a totality test asserts the ten names |
 | Role name bound | at most 32 characters and inside the topic kind form, because the name is also the ACL profile name | `MAX_KIND_LENGTH` and `KIND_PATTERN` from `packages/contracts`, asserted per role |
 | ACL profile default actions | `disallow` for publish topic, subscribe topic, and subscribe share name; `allow` for client connect | `packages/broker/src/aerial_rescue_broker/provisioning.py`, asserted per profile |
-| Topic exceptions written | 16 publish and 31 subscribe across the nine profiles, the A2A grant included | asserted by the apply test in `packages/broker/tests/test_provisioning.py` |
+| Topic exceptions written | 18 publish and 35 subscribe across the ten profiles, including A2A and the reserved reply-channel exception | asserted by the desired-state apply test in `packages/broker/tests/test_provisioning.py`; live reprovisioning remains pending |
 | SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
 | SEMP collection page size | 100 rows asked for per read; the broker pages at ten unless asked for more | `PAGE_SIZE` in the same module, asserted by a transport test |
@@ -313,7 +351,11 @@ supersedable, and the endpoints that carry the guaranteed families are the secti
 | --- | --- | --- |
 | Guaranteed publication timeout | 10 s per publication | `PUBLISH_TIMEOUT_MILLISECONDS` in `packages/broker/src/aerial_rescue_broker/messaging.py`, asserted by a publisher test |
 | Direct publisher buffer capacity | 0, so a publication is refused when the transport is full rather than queued or buffered without bound | `DIRECT_BUFFER_CAPACITY` in the same module, asserted by a publisher test |
-| Client connection retries and reconnection attempts | 0 each, so an absent or refusing broker fails the caller instead of retrying without a log line | `CONNECTION_RETRIES` and `RECONNECTION_ATTEMPTS` in the same module, asserted by a properties test |
+| Connection-attempt timeout | 1,000 ms per attempt | selected by [ADR-0113](adr/0113-bound-solace-recovery-and-queue-retirement.md); exact SDK-property and failure-injection tests are pending |
+| Initial connection retries | 2 retries after the first attempt | selected by ADR-0113; exact SDK-property and exhaustion tests are pending |
+| Connection retries per host | 0 | selected by ADR-0113; exact SDK-property test is pending |
+| Active-session reconnection attempts | 30 | selected by ADR-0113; disconnect, exhaustion, and nonzero-exit tests are pending |
+| Wait between active reconnection attempts | 1,000 ms | selected by ADR-0113; deterministic reconnect-schedule test is pending |
 
 ## Guaranteed-delivery endpoints
 
@@ -333,13 +375,13 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
 | Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
 | Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
-| Endpoints the reference fleet needs | 46: 22 family queues, 23 per-drone command queues, and the dead-message queue; the implemented desired-state provisioner derives all 46, while the R6 recorder receiver and R8 lifecycle publishers remain pending | derived from the subscribe grants as extended by ADR-0111 and asserted by the provisioner tests; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
+| Endpoints the reference fleet needs | 45: 21 family queues, 23 per-drone command queues, and the dead-message queue | derived from the ADR-0114 subscribe grants and guaranteed-delivery table and asserted by the desired-state tests; live reprovisioning is pending. The message VPN's measured ceilings are 1,000 endpoints and 1,500 MB of spool, read over SEMP on 2026-08-23 |
 
 The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
 in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
 that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
 a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
-and ADR-0111's 46 desired queues reserve a nominal 460 MB against the VPN's
+and ADR-0114's 45 desired queues reserve a nominal 450 MB against the VPN's
 measured 1500 MB. **Expiry** follows from the worst
 declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
 case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,
@@ -351,9 +393,9 @@ behind it, and it is a different fact from the command send budget, which counts
 put a command on the wire ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
 
 None of these gates safety: exceeding any one costs a delivery and leaves a counted dead-message
-entry, never a command published without an approval. The backlog-recovery row itself remains
-unmeasured. The consumer it waited on now exists -- the fleet simulator drains its own drones'
-queues -- so what is left is the measurement rather than a component to measure.
+entry, never a command published without an approval. The backlog-recovery row is measured by the
+500-message live instrument above. That measurement models an absent consumer; it does not prove the
+ADR-0113 broken-session reconnect, rebind, outbox-drain, or readiness-recovery behavior.
 
 ## Model spend budget
 
@@ -481,9 +523,9 @@ window would make the tick rate depend on how much command traffic arrived -- fa
 slow when idle, which is backwards -- and the loop has no pacing of its own to fall back on. A
 poll adds no wall clock to a tick, and the per-drone cap is what bounds the work instead.
 
-Neither gates safety, and neither is the measurement. The backlog-recovery row stays unmeasured;
-what changed is that a consumer now exists to measure it against, which is the obligation
-ADR-0080 recorded when it provisioned the endpoints.
+Neither gates safety, and neither is the measurement. The separate live backlog-recovery instrument
+measured the 500-message drain in 7.141 seconds at worst; it models an absent consumer rather than a
+broken transport session or an ADR-0113 reconnect.
 
 ## Durable store
 
@@ -500,7 +542,7 @@ connects yet.
 | Pool overflow | 0, so exhaustion is a bounded refusal rather than an unbounded queue | `POOL_OVERFLOW` in the same module, which refuses a negative count and accepts zero |
 | Connection checkout timeout | 2 s, the connected command path's own p95 target | `CHECKOUT_TIMEOUT_SECONDS` in the same module |
 | Connect timeout | 5 s | `CONNECT_TIMEOUT_SECONDS` in the same module |
-| Connect retries | 0, matching the broker adapter's connection and reconnection attempts | `CONNECT_RETRIES` in the same module |
+| Connect retries | 0, so a store connection failure returns to the service's bounded lifecycle rather than multiplying the database driver's attempts | `CONNECT_RETRIES` in the same module |
 | Statement timeout | 5 s, applied server-side per session so a cancelled caller does not leave the work running | `STATEMENT_TIMEOUT_MILLISECONDS` in the same module |
 | Lock timeout | 2 s, applied server-side. Strictly above the cluster's 1 s deadlock detection, so a deadlock and a contended wait stay distinguishable, and strictly below the statement timeout, so a contended wait and a stuck statement stay distinguishable. It is the connected command path's p95 target, the row the checkout timeout also derives from | `LOCK_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value at or below `SERVER_DEADLOCK_TIMEOUT_MILLISECONDS` and a value at or above `STATEMENT_TIMEOUT_MILLISECONDS` |
 | Idle-in-transaction timeout | 15 s, applied server-side. Contains one lock wait plus one statement, which is the longest legal transaction and is now 7 s | `IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS` in the same module; `EngineBounds` refuses a value below the sum of the two |
@@ -531,14 +573,15 @@ yet" was true when that record landed one increment ahead of its adapter.
 
 What the central command outbox may hold before staging refuses, and what a refusal does
 ([ADR-0093](adr/0093-stage-the-command-outbox-under-a-counted-bound.md)). This is the gateway's own
-outbox; the per-drone edge outbox is a separate, still-open row below.
+command-specific outbox; ADR-0114's general application outbox and per-drone critical bounds are
+separate rows under [Durable application processing](#durable-application-processing).
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Central outbox maximum unconfirmed records | 500, the workload [ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md)'s instrument uses and [backlog-recovery-first-run.md](../release-evidence/phase-2/backlog-recovery-first-run.md) measured draining in 7.141 s | `MAXIMUM_UNCONFIRMED_RECORDS` in `packages/store/src/aerial_rescue_store/outbox.py`, evaluated inside the staging statement |
 | Central outbox overshoot under concurrency | At most one record per concurrently staging session, which the pool bounds at 5 per process. The effective ceiling is 504 | A consequence of `READ COMMITTED` recorded in ADR-0093, not a configured value |
 | Central outbox byte ceiling | None, deliberately: a staged record is one command envelope, and every member of one is already bounded by the topic and envelope rows above | ADR-0093 records the reasoning; there is nothing to measure |
-| Central outbox overflow behaviour | Staging writes no row and refuses. The continuity-breach audit record is appended by the caller in its own transaction, because adding it to the staging transaction would enlarge [ADR-0006](adr/0006-proposal-bound-single-use-approvals.md)'s atomic set and would roll back with the refusal it records | `OutboxRefusal.AT_CAPACITY` in the module above |
+| Central outbox overflow behaviour | Staging writes no command row and refuses. ADR-0114 enlarges an accepted command authorization to include its typed audit record in the same transaction; a refused overflow remains a separately durable refusal outcome rather than a partial accepted authorization | `OutboxRefusal.AT_CAPACITY` in the module above; command-gateway integration is pending |
 
 ## Parameters still to be set
 
@@ -547,8 +590,5 @@ preference, and must carry a number before the release run.
 
 | Parameter | Required by | Status |
 | --- | --- | --- |
-| Per-drone **edge** outbox maximum records and bytes | The bounded-outbox claim in [CONTRACTS.md](CONTRACTS.md). The central command outbox is settled above; an edge outbox holds telemetry backlogs rather than command envelopes, so its byte ceiling does not follow from the envelope rows | open, and Phase 6's |
-| Per-drone **edge** outbox overflow behaviour | A critical-record overflow must refuse the write and emit a continuity-breach audit record; a critical record is never silently dropped. The central outbox's version of this is settled above | decided, unquantified |
-| Evidence band boundaries: the lower bound in hundredths of the weak, supported, and corroborated bands | The band-keyed escalation eligibility in [LIMITATIONS.md](LIMITATIONS.md) and [ADR-0076](adr/0076-evidence-score-bands.md). The two-source corroboration floor is structural rather than numeric and is not open | open |
 | Ollama `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE` | Warm-model residency across missions | open |
 | Instrument definition per service-level row: start point, end point, clock, sample count, statistic, warm-up discarded, machine-state precondition | Every row of the table above | open |

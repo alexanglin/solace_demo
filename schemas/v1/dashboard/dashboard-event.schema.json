@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json",
-  "description": "One normalized dashboard event, with transport-only envelope members removed.",
+  "description": "One normalized dashboard event, with transport-only and internal integrity members removed.",
   "anyOf": [
     {
       "$ref": "#/$defs/droneTelemetry"
@@ -14,18 +14,33 @@
     },
     {
       "$ref": "#/$defs/sectorLifecycle"
+    },
+    {
+      "$ref": "#/$defs/operatorCommand"
+    },
+    {
+      "$ref": "#/$defs/operatorApproval"
+    },
+    {
+      "$ref": "#/$defs/agentProposal"
+    },
+    {
+      "$ref": "#/$defs/evidenceDecision"
+    },
+    {
+      "$ref": "#/$defs/droneCommand"
+    },
+    {
+      "$ref": "#/$defs/gatewayResponse"
+    },
+    {
+      "$ref": "#/$defs/auditRecord"
     }
   ],
   "$defs": {
     "droneTelemetry": {
       "type": "object",
-      "required": [
-        "kind",
-        "eventClass",
-        "mission",
-        "time",
-        "data"
-      ],
+      "required": ["kind", "eventClass", "mission", "time", "data"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -80,13 +95,7 @@
     },
     "connectivityChanged": {
       "type": "object",
-      "required": [
-        "kind",
-        "eventClass",
-        "mission",
-        "time",
-        "data"
-      ],
+      "required": ["kind", "eventClass", "mission", "time", "data"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -103,21 +112,14 @@
         },
         "data": {
           "type": "object",
-          "required": [
-            "droneId",
-            "connectivity"
-          ],
+          "required": ["droneId", "connectivity"],
           "additionalProperties": false,
           "properties": {
             "droneId": {
               "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
             },
             "connectivity": {
-              "enum": [
-                "CONNECTED",
-                "DEGRADED",
-                "OFFLINE"
-              ]
+              "enum": ["CONNECTED", "DEGRADED", "OFFLINE"]
             }
           }
         }
@@ -125,13 +127,7 @@
     },
     "missionLifecycle": {
       "type": "object",
-      "required": [
-        "kind",
-        "eventClass",
-        "mission",
-        "time",
-        "data"
-      ],
+      "required": ["kind", "eventClass", "mission", "time", "data"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -148,18 +144,11 @@
         },
         "data": {
           "type": "object",
-          "required": [
-            "lifecycle"
-          ],
+          "required": ["lifecycle"],
           "additionalProperties": false,
           "properties": {
             "lifecycle": {
-              "enum": [
-                "PLANNED",
-                "SEARCHING",
-                "EXHAUSTED",
-                "ABORTED"
-              ]
+              "enum": ["PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"]
             }
           }
         }
@@ -167,13 +156,7 @@
     },
     "sectorLifecycle": {
       "type": "object",
-      "required": [
-        "kind",
-        "eventClass",
-        "mission",
-        "time",
-        "data"
-      ],
+      "required": ["kind", "eventClass", "mission", "time", "data"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -190,23 +173,14 @@
         },
         "data": {
           "type": "object",
-          "required": [
-            "sectorId",
-            "state",
-            "assignedMemberId"
-          ],
+          "required": ["sectorId", "state", "assignedMemberId"],
           "additionalProperties": false,
           "properties": {
             "sectorId": {
               "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
             },
             "state": {
-              "enum": [
-                "UNASSIGNED",
-                "ASSIGNED",
-                "AT_RISK",
-                "SEARCHED"
-              ]
+              "enum": ["UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED"]
             },
             "assignedMemberId": {
               "anyOf": [
@@ -219,6 +193,1509 @@
               ]
             }
           }
+        }
+      }
+    },
+    "operatorCommand": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "operatorCommand"
+        },
+        "eventClass": {
+          "const": "COMMAND"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "operatorCommandVersion",
+                "commandId",
+                "operatorId",
+                "action"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "operatorCommandVersion": {
+                  "const": 1
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": ["commandType", "droneId", "sectorId"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "assign-sector"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "sectorId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "operatorCommandVersion",
+                "commandId",
+                "operatorId",
+                "action"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "operatorCommandVersion": {
+                  "const": 1
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "commandType",
+                    "droneId",
+                    "proposalId",
+                    "proposalDigest",
+                    "proposalVersion",
+                    "evidenceDecisionId",
+                    "evidenceDecisionDigest",
+                    "evidenceDecisionVersion",
+                    "latitudeMicrodegrees",
+                    "longitudeMicrodegrees"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "escalate-rescue"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "proposalVersion": {
+                      "const": 1
+                    },
+                    "evidenceDecisionId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "evidenceDecisionDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "evidenceDecisionVersion": {
+                      "const": 1
+                    },
+                    "latitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+                    },
+                    "longitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "operatorApproval": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "operatorApproval"
+        },
+        "eventClass": {
+          "const": "APPROVAL"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "operatorApprovalVersion",
+                "approvalId",
+                "operatorId",
+                "issuedAt",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "evidenceDecisionVersion",
+                "action",
+                "decision",
+                "expiresAt"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "operatorApprovalVersion": {
+                  "const": 1
+                },
+                "approvalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "issuedAt": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "commandType",
+                    "droneId",
+                    "latitudeMicrodegrees",
+                    "longitudeMicrodegrees"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "escalate-rescue"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "latitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+                    },
+                    "longitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+                    }
+                  }
+                },
+                "decision": {
+                  "const": "approve"
+                },
+                "expiresAt": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "operatorApprovalVersion",
+                "approvalId",
+                "operatorId",
+                "issuedAt",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "evidenceDecisionVersion",
+                "action",
+                "decision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "operatorApprovalVersion": {
+                  "const": 1
+                },
+                "approvalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "issuedAt": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "commandType",
+                    "droneId",
+                    "latitudeMicrodegrees",
+                    "longitudeMicrodegrees"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "escalate-rescue"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "latitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+                    },
+                    "longitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+                    }
+                  }
+                },
+                "decision": {
+                  "const": "reject"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "agentProposal": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "agentProposal"
+        },
+        "eventClass": {
+          "const": "EVIDENCE"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "canonicalizationVersion",
+            "proposalVersion",
+            "proposalId",
+            "proposalType",
+            "agentName",
+            "sourceInvocationId",
+            "sourceEventId",
+            "sourceEventDigest",
+            "commandType",
+            "droneId",
+            "latitudeMicrodegrees",
+            "longitudeMicrodegrees",
+            "proposalDigest"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "canonicalizationVersion": {
+              "const": 1
+            },
+            "proposalVersion": {
+              "const": 1
+            },
+            "proposalId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "proposalType": {
+              "const": "candidate-location"
+            },
+            "agentName": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+            },
+            "sourceInvocationId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "sourceEventId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "sourceEventDigest": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+            },
+            "commandType": {
+              "const": "escalate-rescue"
+            },
+            "droneId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "latitudeMicrodegrees": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+            },
+            "longitudeMicrodegrees": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+            },
+            "proposalDigest": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+            }
+          }
+        }
+      }
+    },
+    "evidenceDecision": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "evidenceDecision"
+        },
+        "eventClass": {
+          "const": "EVIDENCE"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "canonicalizationVersion",
+                "evidenceDecisionVersion",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "outcome",
+                "scoreVersion",
+                "score",
+                "band",
+                "contributors"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "canonicalizationVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "contributing"
+                },
+                "scoreVersion": {
+                  "const": 1
+                },
+                "score": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "band": {
+                  "enum": ["none", "weak", "supported", "corroborated"]
+                },
+                "contributors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 23,
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "evidenceItemId",
+                          "sourceId",
+                          "origin",
+                          "weight",
+                          "provenanceDigest"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "evidenceItemId": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                          },
+                          "sourceId": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                          },
+                          "origin": {
+                            "const": "live-model"
+                          },
+                          "weight": {
+                            "const": 35
+                          },
+                          "provenanceDigest": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "evidenceItemId",
+                          "sourceId",
+                          "origin",
+                          "weight",
+                          "provenanceDigest"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "evidenceItemId": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                          },
+                          "sourceId": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                          },
+                          "origin": {
+                            "const": "live-sensor"
+                          },
+                          "weight": {
+                            "const": 40
+                          },
+                          "provenanceDigest": {
+                            "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "canonicalizationVersion",
+                "evidenceDecisionVersion",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "canonicalizationVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "manual-review"
+                },
+                "reason": {
+                  "enum": [
+                    "policy-referral",
+                    "conflicting-evidence",
+                    "insufficient-live-sources"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "canonicalizationVersion",
+                "evidenceDecisionVersion",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "canonicalizationVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "abstained"
+                },
+                "reason": {
+                  "enum": [
+                    "timeout",
+                    "transport-error",
+                    "model-error",
+                    "invalid-output",
+                    "identity-mismatch",
+                    "declined"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "canonicalizationVersion",
+                "evidenceDecisionVersion",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "canonicalizationVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionVersion": {
+                  "const": 1
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "rejected"
+                },
+                "reason": {
+                  "enum": [
+                    "invalid-output",
+                    "identity-mismatch",
+                    "provenance-missing",
+                    "provenance-mismatch",
+                    "recorded-origin",
+                    "human-dismissal"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "droneCommand": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "droneCommand"
+        },
+        "eventClass": {
+          "const": "COMMAND"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "droneId",
+            "commandId",
+            "approvalId",
+            "proposalId",
+            "proposalDigest",
+            "proposalVersion",
+            "evidenceDecisionId",
+            "evidenceDecisionDigest",
+            "evidenceDecisionVersion",
+            "latitudeMicrodegrees",
+            "longitudeMicrodegrees"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "droneId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "commandId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "approvalId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "proposalId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "proposalDigest": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+            },
+            "proposalVersion": {
+              "const": 1
+            },
+            "evidenceDecisionId": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            },
+            "evidenceDecisionDigest": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+            },
+            "evidenceDecisionVersion": {
+              "const": 1
+            },
+            "latitudeMicrodegrees": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+            },
+            "longitudeMicrodegrees": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+            }
+          }
+        }
+      }
+    },
+    "gatewayResponse": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "gatewayResponse"
+        },
+        "eventClass": {
+          "const": "AUDIT"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "rpcVersion",
+                "requestId",
+                "operation",
+                "commandType",
+                "outcome",
+                "actuated",
+                "authority"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rpcVersion": {
+                  "const": 1
+                },
+                "requestId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operation": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                },
+                "commandType": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                },
+                "outcome": {
+                  "const": "answered"
+                },
+                "actuated": {
+                  "type": "boolean"
+                },
+                "authority": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "rpcVersion",
+                "requestId",
+                "operation",
+                "commandType",
+                "outcome",
+                "actuated",
+                "refusal"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rpcVersion": {
+                  "const": 1
+                },
+                "requestId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operation": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                },
+                "commandType": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                },
+                "outcome": {
+                  "const": "refused"
+                },
+                "actuated": {
+                  "type": "boolean"
+                },
+                "refusal": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "auditRecord": {
+      "type": "object",
+      "required": ["kind", "eventClass", "mission", "time", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "auditRecord"
+        },
+        "eventClass": {
+          "const": "AUDIT"
+        },
+        "mission": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "time": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "agentName",
+                "invocationId",
+                "correlationId",
+                "outcome",
+                "sourceEventId",
+                "sourceEventDigest",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "proposal-normalization"
+                },
+                "agentName": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+                },
+                "invocationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "correlationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "normalized"
+                },
+                "sourceEventId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "sourceEventDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "agentName",
+                "invocationId",
+                "correlationId",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "proposal-normalization"
+                },
+                "agentName": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+                },
+                "invocationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "correlationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "abstained"
+                },
+                "reason": {
+                  "enum": [
+                    "timeout",
+                    "transport-error",
+                    "model-error",
+                    "invalid-output",
+                    "identity-mismatch"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "agentName",
+                "invocationId",
+                "correlationId",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "proposal-normalization"
+                },
+                "agentName": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+                },
+                "invocationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "correlationId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "outcome": {
+                  "const": "refused"
+                },
+                "reason": {
+                  "enum": [
+                    "schema-invalid",
+                    "correlation-mismatch",
+                    "identity-mismatch",
+                    "unsupported-action",
+                    "digest-mismatch"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "outcome"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "evidence-decision"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "outcome": {
+                  "const": "contributing"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "evidence-decision"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "outcome": {
+                  "const": "manual-review"
+                },
+                "reason": {
+                  "enum": [
+                    "policy-referral",
+                    "conflicting-evidence",
+                    "insufficient-live-sources"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "evidence-decision"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "outcome": {
+                  "const": "abstained"
+                },
+                "reason": {
+                  "enum": [
+                    "timeout",
+                    "transport-error",
+                    "model-error",
+                    "invalid-output",
+                    "identity-mismatch",
+                    "declined"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "proposalId",
+                "proposalDigest",
+                "proposalVersion",
+                "evidenceDecisionId",
+                "evidenceDecisionDigest",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "evidence-decision"
+                },
+                "proposalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "proposalDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "proposalVersion": {
+                  "const": 1
+                },
+                "evidenceDecisionId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "evidenceDecisionDigest": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                },
+                "outcome": {
+                  "const": "rejected"
+                },
+                "reason": {
+                  "enum": [
+                    "invalid-output",
+                    "identity-mismatch",
+                    "provenance-missing",
+                    "provenance-mismatch",
+                    "recorded-origin",
+                    "human-dismissal"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "commandId",
+                "operatorId",
+                "action",
+                "outcome"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "command-authorization"
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": ["commandType", "droneId", "sectorId"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "assign-sector"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "sectorId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    }
+                  }
+                },
+                "outcome": {
+                  "const": "authorized"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "commandId",
+                "operatorId",
+                "action",
+                "outcome",
+                "approvalId"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "command-authorization"
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "commandType",
+                    "droneId",
+                    "proposalId",
+                    "proposalDigest",
+                    "proposalVersion",
+                    "evidenceDecisionId",
+                    "evidenceDecisionDigest",
+                    "evidenceDecisionVersion",
+                    "latitudeMicrodegrees",
+                    "longitudeMicrodegrees"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "escalate-rescue"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "proposalVersion": {
+                      "const": 1
+                    },
+                    "evidenceDecisionId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "evidenceDecisionDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "evidenceDecisionVersion": {
+                      "const": 1
+                    },
+                    "latitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+                    },
+                    "longitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+                    }
+                  }
+                },
+                "outcome": {
+                  "const": "authorized"
+                },
+                "approvalId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "commandId",
+                "operatorId",
+                "action",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "command-authorization"
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": ["commandType", "droneId", "sectorId"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "assign-sector"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "sectorId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    }
+                  }
+                },
+                "outcome": {
+                  "const": "refused"
+                },
+                "reason": {
+                  "enum": [
+                    "approval-missing",
+                    "approval-rejected",
+                    "approval-expired",
+                    "approval-superseded",
+                    "approval-consumed",
+                    "proposal-mismatch",
+                    "evidence-decision-mismatch",
+                    "action-mismatch",
+                    "idempotency-conflict",
+                    "outbox-full"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "auditVersion",
+                "recordId",
+                "recordType",
+                "commandId",
+                "operatorId",
+                "action",
+                "outcome",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "auditVersion": {
+                  "const": 1
+                },
+                "recordId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "recordType": {
+                  "const": "command-authorization"
+                },
+                "commandId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "operatorId": {
+                  "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "commandType",
+                    "droneId",
+                    "proposalId",
+                    "proposalDigest",
+                    "proposalVersion",
+                    "evidenceDecisionId",
+                    "evidenceDecisionDigest",
+                    "evidenceDecisionVersion",
+                    "latitudeMicrodegrees",
+                    "longitudeMicrodegrees"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandType": {
+                      "const": "escalate-rescue"
+                    },
+                    "droneId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "proposalDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "proposalVersion": {
+                      "const": 1
+                    },
+                    "evidenceDecisionId": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+                    },
+                    "evidenceDecisionDigest": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+                    },
+                    "evidenceDecisionVersion": {
+                      "const": 1
+                    },
+                    "latitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+                    },
+                    "longitudeMicrodegrees": {
+                      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+                    }
+                  }
+                },
+                "outcome": {
+                  "const": "refused"
+                },
+                "reason": {
+                  "enum": [
+                    "approval-missing",
+                    "approval-rejected",
+                    "approval-expired",
+                    "approval-superseded",
+                    "approval-consumed",
+                    "proposal-mismatch",
+                    "evidence-decision-mismatch",
+                    "action-mismatch",
+                    "idempotency-conflict",
+                    "outbox-full"
+                  ]
+                }
+              }
+            }
+          ]
         }
       }
     }

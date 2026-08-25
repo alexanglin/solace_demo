@@ -44,7 +44,7 @@ Editable source: [`docs/architecture/aerial-rescue-mesh-overview.dot`](architect
 - **Evidence Fusion agent** correlates structured visual, thermal, positional, and contextual evidence.
 - **Three edge agents** run as separately deployable Agent Mesh processes with distinct agent cards, Ollama models, capabilities, queues, and broker identities.
 - **HTTP/SSE Web UI gateway** provides the upstream Agent Mesh chat/task surface on loopback for direct inspection of discovered agents and streamed task results.
-- **Event Mesh Gateway 1.1.0** is the pinned official ingress plugin, configured in `agent-mesh/configs/event-mesh-gateway.yaml` and running as a fifth app on the `event-mesh-gateway` identity. Its data-plane queue is temporary and not configurable, so ingress into the mesh is at-least-once only while it is connected ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)). It allowlists salient application topics, uses structured invocation and JSON Schemas where supported, translates events into A2A tasks, forwards correlation context, and routes success and failure outputs to non-authoritative result topics. Routine telemetry never enters this gateway.
+- **Event Mesh Gateway 1.1.0** is the pinned official ingress plugin, configured in `agent-mesh/configs/event-mesh-gateway.yaml` and running as a fifth app on the `event-mesh-gateway` identity. Its data-plane queue is temporary and not configurable, so ingress into the mesh is at-least-once only while it is connected ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)). It allowlists salient application topics, uses structured invocation and JSON Schemas where supported, translates events into A2A tasks, forwards correlation context, and routes success and failure outputs to the direct, non-authoritative Agent Response integration topic. The closed result schema is committed; configuring and proving that structured egress remains implementation work. Routine telemetry never enters this gateway.
 - **Event Mesh Tool 0.1.1** is the pinned official request/reply plugin for read-only status queries and action proposals. Its broker identity can publish only to command-gateway request topics and cannot publish executable or authorized command topics.
 - **The `general` and `planning` configurations** are supplied through LiteLLM-compatible model settings by either a paid provider (Anthropic or OpenAI) or local Ollama. Paid mode is the default for acceptance runs; local-only is a first-class, tested configuration so the system runs with no API key. Exactly one provider is active per run and readiness reports which. See [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md).
 
@@ -86,9 +86,23 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   a process entry point needs a scenario the scenario service does not yet produce. Strict local
   fleet-control server models and a framework-free route-expectation registry now exist, but no private
   HTTP listener or generated OpenAPI does.
-- **Command gateway:** Owns deterministic mission-command policy, idempotency, proposal-bound approval checks, durable outbox state, and executable command publication. Agent credentials cannot bypass it.
-- **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable store for mission state, inbox/outbox records, proposals, approvals, idempotency results, evidence provenance, and audit records. Access is through async SQLAlchemy 2.x with `asyncpg`, and schema is managed with Alembic migrations. Broker acknowledgement occurs only after the related durable transaction commits. An append-only audit table with a monotonic ordinal is the ordering authority for the mission timeline. See [ADR-0003](adr/0003-postgres-durable-mission-store.md).
-- **Broker adapter:** Wraps the Solace PubSub+ Messaging API for Python 1.11 (or an explicitly reviewed compatible patch) in the Python 3.14 application environment and isolates connection, publishing, subscription, acknowledgement, retry, and shutdown behavior. Agent Mesh keeps the separate PubSub+ client version resolved by its own lockfile.
+- **Command gateway:** Owns deterministic mission-command policy, direct Agent Response normalization,
+  canonical proposal persistence/publication, idempotency, proposal-and-evidence-bound approval checks,
+  typed authorization audit, command progress, outbox state, and executable command publication. Its
+  request/reply half is implemented; normalization, durable broker consumers, authorization, and
+  gateway-side dispatch are not. Agent credentials cannot bypass it.
+- **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable
+  store for mission state, broker inbox/outbox records, proposals, approvals, idempotency results,
+  evidence provenance and decisions, command progress and receipts, and audit records. Access is through
+  async SQLAlchemy 2.x with `asyncpg`, and every durable table and constraint is introduced through an
+  append-only Alembic revision. The existing four-revision history implements the audit, approval,
+  idempotency, and command-outbox slice; ADR-0114's broker inbox, general application outbox, proposal,
+  evidence, progress, and receipt revisions and repositories are still absent. Broker acknowledgement
+  occurs only after the related durable transaction commits. An append-only audit table with a monotonic
+  ordinal is the ordering authority for the mission timeline. See
+  [ADR-0003](adr/0003-postgres-durable-mission-store.md) and
+  [ADR-0114](adr/0114-define-durable-application-processing.md).
+- **Broker adapter:** Wraps the Solace PubSub+ Messaging API for Python 1.11 (or an explicitly reviewed compatible patch) in the Python 3.14 application environment and isolates connection, publishing, subscription, acknowledgement, retry, and shutdown behavior. Delivery must be derived from validated topic/representation identity, including Gateway Response's reserved RPC and direct mission-record branches. ADR-0113 fixes bounded reconnect/readiness behavior; the typed router and reconnect lifecycle remain implementation work. Agent Mesh keeps the separate PubSub+ client version resolved by its own lockfile.
 - **Scenario service:** Validates the versioned scenario catalog and definitions, preserves their
   explicit roster, geometry, and heartbeat-loss schedule, losslessly projects only simulated members
   into the fleet input, and exposes lifecycle operations. The input carries no seed or random source.
@@ -101,19 +115,24 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   lifecycle coordination, lifecycle publication, HTTP client/server, listener, and generated OpenAPI
   are not.
 - **Evidence service:** Validates model observations, attaches provenance and hashes, delegates score
-  calculation to pure Tier 1 domain logic, and publishes the resulting versioned evidence decision. In a
-  live simulation, model failure produces an explicit abstention or manual-review outcome; recorded
-  evidence is never substituted.
+  calculation to pure Tier 1 domain logic, and transactionally persists and stages the versioned
+  evidence decision plus typed audit. The closed schemas and 25/50/75 bands with 40/35 source weights
+  are decided and committed; the member remains a scaffold with no consumer, repository, publisher, or
+  runtime. In a live simulation, model failure produces an explicit abstention or manual-review outcome;
+  recorded evidence is never substituted.
 - **Recorder/replayer:** Is the receiver-only path from validated broker lifecycle sources into durable
   audit order, committing guaranteed input before acknowledgement, and writes sanitized CloudEvents to
-  NDJSON for the isolated replay path
-  ([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)). The service remains a scaffold; those
-  runtime responsibilities are R6 work.
-- **Dashboard API:** Owns the UI-slice scenario control, health, readiness, replay, static-shell, and
-  server-sent-event boundary. **Wire boundary only today:** strict server/caller Pydantic models and the
-  framework-free public route-expectation registry are implemented; the FastAPI application, generated
-  OpenAPI, Unix-socket listener, scenario client, persistence, and SSE runtime are not. This slice has no
-  approval, command, evidence, model, rescue, or escalation route.
+  NDJSON for the isolated replay path. It classifies all fourteen application families, persists the
+  eleven notification-only families plus the direct mission-scoped Gateway Response record, excludes
+  raw reserved-topic RPC replies, and treats direct telemetry and Agent Response as their explicit lossy
+  classes. The service remains a scaffold; receiver-only composition, inbox deduplication, export, and
+  replay isolation are R6 work.
+- **Dashboard API:** Owns scenario control, health, readiness, replay, the static shell, broker-backed
+  normalized mission state, server-sent events, canonical operator commands, and exact proposal
+  decisions. **Wire boundary only today:** 21 strict server-facing Pydantic models, four private-control
+  caller models, and the framework-free eleven-route public registry are implemented; the FastAPI
+  application, generated OpenAPI, Unix-socket listener, scenario client, persistence, broker consumers,
+  mutation orchestration, and SSE runtime are not.
 
 All Python work runs in an isolated project virtual environment managed by `uv`:
 
@@ -164,10 +183,13 @@ The current UI-first wilderness slice is specified as a map-first command center
 - a non-telemetry mission timeline ordered by audit ordinal; and
 - isolated-replay playback controls and an unmistakable degraded-live or replay badge.
 
-This slice deliberately renders no approval, command, evidence, model, rescue, or escalation control.
-Those broader workflows remain follow-on work, not placeholders in the current route or component tree.
+The current shell renders no approval, command, evidence, model, rescue, or escalation control. The
+closed command and exact proposal-decision HTTP documents now define the follow-on approval surface;
+accessible controls, double-submission resistance, broker-backed state, and replay read-only composition
+remain unimplemented increments rather than placeholders in the current component tree.
 The dashboard uses React and TypeScript with Vite. Validated server-to-browser updates will use SSE;
-validated operator start/reset actions will use JSON HTTP requests. The UI must remain usable at the
+validated operator start, reset, command, and proposal-decision actions will use JSON HTTP requests.
+The UI must remain usable at the
 reference MacBook's normal resolution and must not rely on browser developer tools. Only the A1 shell is
 rendered today; the map, event sources, controls, and production runtime remain build-guide increments.
 
@@ -177,9 +199,10 @@ The project deliberately exercises and exposes both Solace layers:
 
 - **Open-source Agent Mesh Web UI (`localhost:8000` by default):** use the per-request Activity viewer and `Agent Mesh > Agents` registry/topology to inspect tasks, discovered agents, delegation, streamed responses, and artifacts. This is an engineering surface; it is not the authoritative mission dashboard and cannot approve or dispatch an action.
 - **Solace PubSub+ Broker Manager** (`https://localhost:1943` on the container; the browser warns until the per-checkout authority is trusted)**:** show separately named Agent Mesh, gateway, command, simulator, edge-agent, recorder, and dashboard clients; inspect A2A and application topic subscriptions; observe ingress/egress rates; inspect guaranteed queue state; and use Try Me with the scoped A2A namespace during diagnostics.
-- **Aerial Rescue Mesh dashboard:** in the current UI-first slice, show normalized wilderness mission,
-  sector, fleet, connectivity, replay, and timeline state. Evidence, command, approval, rescue, and
-  cross-system workflow views remain follow-on work rather than controls in this slice.
+- **Aerial Rescue Mesh dashboard:** show normalized wilderness mission, sector, fleet, connectivity,
+  proposal, evidence, command, approval, audit, replay, and recovery state. The current shell implements
+  none of those operational views; the application contract supplies their non-droppable timeline
+  records and the two mutation documents for later runtime and UI increments.
 
 The disconnect/reconnect acceptance flow must make Solace's role visible in Broker Manager: an offline drone's durable command queue changes from depth `0` to `1`, then returns to `0` only after reconnect, durable processing, and acknowledgement. Separately, Agent Mesh agent cards and task traffic prove dynamic discovery and A2A delegation over the broker. Screenshots may document these checks only after tenant-specific values and credentials are redacted.
 

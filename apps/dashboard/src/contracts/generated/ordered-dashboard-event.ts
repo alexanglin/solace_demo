@@ -4,10 +4,20 @@
  */
 
 /**
- * One normalized dashboard event, with transport-only envelope members removed.
+ * One normalized dashboard event, with transport-only and internal integrity members removed.
  */
 export type DashboardEvent =
-  DroneTelemetry | ConnectivityChanged | MissionLifecycle | SectorLifecycle;
+  | DroneTelemetry
+  | ConnectivityChanged
+  | MissionLifecycle
+  | SectorLifecycle
+  | OperatorCommand
+  | OperatorApproval
+  | AgentProposal
+  | EvidenceDecision
+  | DroneCommand
+  | GatewayResponse
+  | AuditRecord;
 
 /**
  * One normalized dashboard event paired with its durable positive audit ordinal.
@@ -60,4 +70,425 @@ export interface SectorLifecycle {
     state: "UNASSIGNED" | "ASSIGNED" | "AT_RISK" | "SEARCHED";
     assignedMemberId: null | string;
   };
+}
+export interface OperatorCommand {
+  kind: "operatorCommand";
+  eventClass: "COMMAND";
+  mission: string;
+  time: string;
+  data:
+    | {
+        operatorCommandVersion: 1;
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "assign-sector";
+          droneId: string;
+          sectorId: string;
+        };
+      }
+    | {
+        operatorCommandVersion: 1;
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "escalate-rescue";
+          droneId: string;
+          proposalId: string;
+          proposalDigest: string;
+          proposalVersion: 1;
+          evidenceDecisionId: string;
+          evidenceDecisionDigest: string;
+          evidenceDecisionVersion: 1;
+          latitudeMicrodegrees: number;
+          longitudeMicrodegrees: number;
+        };
+      };
+}
+export interface OperatorApproval {
+  kind: "operatorApproval";
+  eventClass: "APPROVAL";
+  mission: string;
+  time: string;
+  data:
+    | {
+        operatorApprovalVersion: 1;
+        approvalId: string;
+        operatorId: string;
+        issuedAt: string;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        evidenceDecisionVersion: 1;
+        action: {
+          commandType: "escalate-rescue";
+          droneId: string;
+          latitudeMicrodegrees: number;
+          longitudeMicrodegrees: number;
+        };
+        decision: "approve";
+        expiresAt: string;
+      }
+    | {
+        operatorApprovalVersion: 1;
+        approvalId: string;
+        operatorId: string;
+        issuedAt: string;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        evidenceDecisionVersion: 1;
+        action: {
+          commandType: "escalate-rescue";
+          droneId: string;
+          latitudeMicrodegrees: number;
+          longitudeMicrodegrees: number;
+        };
+        decision: "reject";
+      };
+}
+export interface AgentProposal {
+  kind: "agentProposal";
+  eventClass: "EVIDENCE";
+  mission: string;
+  time: string;
+  data: {
+    canonicalizationVersion: 1;
+    proposalVersion: 1;
+    proposalId: string;
+    proposalType: "candidate-location";
+    agentName: string;
+    sourceInvocationId: string;
+    sourceEventId: string;
+    sourceEventDigest: string;
+    commandType: "escalate-rescue";
+    droneId: string;
+    latitudeMicrodegrees: number;
+    longitudeMicrodegrees: number;
+    proposalDigest: string;
+  };
+}
+export interface EvidenceDecision {
+  kind: "evidenceDecision";
+  eventClass: "EVIDENCE";
+  mission: string;
+  time: string;
+  data:
+    | {
+        canonicalizationVersion: 1;
+        evidenceDecisionVersion: 1;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        outcome: "contributing";
+        scoreVersion: 1;
+        score: number;
+        band: "none" | "weak" | "supported" | "corroborated";
+        /**
+         * @minItems 1
+         * @maxItems 23
+         */
+        contributors: (
+          | {
+              evidenceItemId: string;
+              sourceId: string;
+              origin: "live-model";
+              weight: 35;
+              provenanceDigest: string;
+            }
+          | {
+              evidenceItemId: string;
+              sourceId: string;
+              origin: "live-sensor";
+              weight: 40;
+              provenanceDigest: string;
+            }
+        )[];
+      }
+    | {
+        canonicalizationVersion: 1;
+        evidenceDecisionVersion: 1;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        outcome: "manual-review";
+        reason: "policy-referral" | "conflicting-evidence" | "insufficient-live-sources";
+      }
+    | {
+        canonicalizationVersion: 1;
+        evidenceDecisionVersion: 1;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        outcome: "abstained";
+        reason:
+          | "timeout"
+          | "transport-error"
+          | "model-error"
+          | "invalid-output"
+          | "identity-mismatch"
+          | "declined";
+      }
+    | {
+        canonicalizationVersion: 1;
+        evidenceDecisionVersion: 1;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        outcome: "rejected";
+        reason:
+          | "invalid-output"
+          | "identity-mismatch"
+          | "provenance-missing"
+          | "provenance-mismatch"
+          | "recorded-origin"
+          | "human-dismissal";
+      };
+}
+export interface DroneCommand {
+  kind: "droneCommand";
+  eventClass: "COMMAND";
+  mission: string;
+  time: string;
+  data: {
+    droneId: string;
+    commandId: string;
+    approvalId: string;
+    proposalId: string;
+    proposalDigest: string;
+    proposalVersion: 1;
+    evidenceDecisionId: string;
+    evidenceDecisionDigest: string;
+    evidenceDecisionVersion: 1;
+    latitudeMicrodegrees: number;
+    longitudeMicrodegrees: number;
+  };
+}
+export interface GatewayResponse {
+  kind: "gatewayResponse";
+  eventClass: "AUDIT";
+  mission: string;
+  time: string;
+  data:
+    | {
+        rpcVersion: 1;
+        requestId: string;
+        operation: string;
+        commandType: string;
+        outcome: "answered";
+        actuated: boolean;
+        authority: string;
+      }
+    | {
+        rpcVersion: 1;
+        requestId: string;
+        operation: string;
+        commandType: string;
+        outcome: "refused";
+        actuated: boolean;
+        refusal: string;
+      };
+}
+export interface AuditRecord {
+  kind: "auditRecord";
+  eventClass: "AUDIT";
+  mission: string;
+  time: string;
+  data:
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "proposal-normalization";
+        agentName: string;
+        invocationId: string;
+        correlationId: string;
+        outcome: "normalized";
+        sourceEventId: string;
+        sourceEventDigest: string;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "proposal-normalization";
+        agentName: string;
+        invocationId: string;
+        correlationId: string;
+        outcome: "abstained";
+        reason:
+          "timeout" | "transport-error" | "model-error" | "invalid-output" | "identity-mismatch";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "proposal-normalization";
+        agentName: string;
+        invocationId: string;
+        correlationId: string;
+        outcome: "refused";
+        reason:
+          | "schema-invalid"
+          | "correlation-mismatch"
+          | "identity-mismatch"
+          | "unsupported-action"
+          | "digest-mismatch";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "evidence-decision";
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        outcome: "contributing";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "evidence-decision";
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        outcome: "manual-review";
+        reason: "policy-referral" | "conflicting-evidence" | "insufficient-live-sources";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "evidence-decision";
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        outcome: "abstained";
+        reason:
+          | "timeout"
+          | "transport-error"
+          | "model-error"
+          | "invalid-output"
+          | "identity-mismatch"
+          | "declined";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "evidence-decision";
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        outcome: "rejected";
+        reason:
+          | "invalid-output"
+          | "identity-mismatch"
+          | "provenance-missing"
+          | "provenance-mismatch"
+          | "recorded-origin"
+          | "human-dismissal";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "command-authorization";
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "assign-sector";
+          droneId: string;
+          sectorId: string;
+        };
+        outcome: "authorized";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "command-authorization";
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "escalate-rescue";
+          droneId: string;
+          proposalId: string;
+          proposalDigest: string;
+          proposalVersion: 1;
+          evidenceDecisionId: string;
+          evidenceDecisionDigest: string;
+          evidenceDecisionVersion: 1;
+          latitudeMicrodegrees: number;
+          longitudeMicrodegrees: number;
+        };
+        outcome: "authorized";
+        approvalId: string;
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "command-authorization";
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "assign-sector";
+          droneId: string;
+          sectorId: string;
+        };
+        outcome: "refused";
+        reason:
+          | "approval-missing"
+          | "approval-rejected"
+          | "approval-expired"
+          | "approval-superseded"
+          | "approval-consumed"
+          | "proposal-mismatch"
+          | "evidence-decision-mismatch"
+          | "action-mismatch"
+          | "idempotency-conflict"
+          | "outbox-full";
+      }
+    | {
+        auditVersion: 1;
+        recordId: string;
+        recordType: "command-authorization";
+        commandId: string;
+        operatorId: string;
+        action: {
+          commandType: "escalate-rescue";
+          droneId: string;
+          proposalId: string;
+          proposalDigest: string;
+          proposalVersion: 1;
+          evidenceDecisionId: string;
+          evidenceDecisionDigest: string;
+          evidenceDecisionVersion: 1;
+          latitudeMicrodegrees: number;
+          longitudeMicrodegrees: number;
+        };
+        outcome: "refused";
+        reason:
+          | "approval-missing"
+          | "approval-rejected"
+          | "approval-expired"
+          | "approval-superseded"
+          | "approval-consumed"
+          | "proposal-mismatch"
+          | "evidence-decision-mismatch"
+          | "action-mismatch"
+          | "idempotency-conflict"
+          | "outbox-full";
+      };
 }

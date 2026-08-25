@@ -1,0 +1,15 @@
+{
+  "auditVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "recordId": "audit-command-assign-refused-0001",
+  "recordType": "command-authorization",
+  "commandId": "command-synthetic-0003",
+  "operatorId": "operator-synthetic-0001",
+  "action": {
+    "commandType": "assign-sector",
+    "droneId": "drone-synthetic-01",
+    "sectorId": "sector-synthetic-01"
+  },
+  "outcome": "refused",
+  "reason": "outbox-full"
+}

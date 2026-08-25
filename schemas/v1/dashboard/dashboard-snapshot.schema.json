@@ -61,6 +61,27 @@
               },
               {
                 "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/sectorLifecycle"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/operatorCommand"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/operatorApproval"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/agentProposal"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/evidenceDecision"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/droneCommand"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/gatewayResponse"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/auditRecord"
               }
             ]
           }
@@ -71,11 +92,7 @@
   "$defs": {
     "liveRun": {
       "type": "object",
-      "required": [
-        "mode",
-        "missionId",
-        "runId"
-      ],
+      "required": ["mode", "missionId", "runId"],
       "additionalProperties": false,
       "properties": {
         "mode": {
@@ -91,10 +108,7 @@
     },
     "replayRun": {
       "type": "object",
-      "required": [
-        "mode",
-        "sessionId"
-      ],
+      "required": ["mode", "sessionId"],
       "additionalProperties": false,
       "properties": {
         "mode": {

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
+  "description": "The stable committed identity returned for an accepted proposal decision.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/approve"
+    },
+    {
+      "$ref": "#/$defs/reject"
+    }
+  ],
+  "$defs": {
+    "approve": {
+      "type": "object",
+      "required": [
+        "operationVersion",
+        "missionId",
+        "proposalId",
+        "approvalId",
+        "eventId",
+        "decision",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "operationVersion": {
+          "const": "dashboard-proposal-decision-response/v1"
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "proposalId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "approvalId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "eventId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "decision": {
+          "const": "approve"
+        },
+        "issuedAt": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        },
+        "expiresAt": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        }
+      }
+    },
+    "reject": {
+      "type": "object",
+      "required": [
+        "operationVersion",
+        "missionId",
+        "proposalId",
+        "approvalId",
+        "eventId",
+        "decision",
+        "issuedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "operationVersion": {
+          "const": "dashboard-proposal-decision-response/v1"
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "proposalId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "approvalId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "eventId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "decision": {
+          "const": "reject"
+        },
+        "issuedAt": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/instant"
+        }
+      }
+    }
+  }
+}

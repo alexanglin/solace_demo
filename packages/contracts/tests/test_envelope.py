@@ -27,6 +27,7 @@ from aerial_rescue_contracts.envelope import (
     Envelope,
     EnvelopeError,
     EnvelopeRefusal,
+    _lifecycle_source_pattern,
     binding_for,
     check_topic_binding,
     decode_envelope,
@@ -74,7 +75,7 @@ SALIENT_TOPIC = Topic(
 GATEWAY_RESPONSE_SCHEMA = (
     "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
 )
-GATEWAY_RESPONSE_TYPE = "aerial-rescue.v1.gateway.response"
+GATEWAY_RECORD_TYPE = "aerial-rescue.v1.gateway.record"
 GATEWAY_RESPONSE_REQUEST_ID = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
 GATEWAY_RESPONSE_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
@@ -82,8 +83,8 @@ GATEWAY_RESPONSE_BASELINE: dict[str, object] = cast(
 )
 """The command gateway's own record of an answer, committed as its golden fixture."""
 
-GATEWAY_RESPONSE_TOPIC = Topic(
-    Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": GATEWAY_RESPONSE_REQUEST_ID}
+GATEWAY_RECORD_TOPIC = Topic(
+    Family.GATEWAY_RECORD, "m-2026-0001", {"requestId": GATEWAY_RESPONSE_REQUEST_ID}
 )
 
 ASSIGN_SECTOR_SCHEMA = (
@@ -91,7 +92,7 @@ ASSIGN_SECTOR_SCHEMA = (
 )
 ASSIGN_SECTOR_TYPE = "aerial-rescue.v1.drone.command.assign-sector"
 ESCALATE_RESCUE_TYPE = "aerial-rescue.v1.drone.command.escalate-rescue"
-"""The second command type ADR-0041 closes, deliberately left unbound by ADR-0082."""
+"""The approval-bound rescue command ADR-0116 closes and binds."""
 
 ASSIGN_SECTOR_BASELINE: dict[str, object] = cast(
     "dict[str, object]",
@@ -123,7 +124,11 @@ COMMAND_RESULT_TOPIC = Topic(
     {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
 )
 
-LIFECYCLE_FIXTURES = Path(__file__).parents[3] / "fixtures" / "golden" / "v1" / "event"
+OPERATOR_APPROVAL_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json"
+)
+
+LIFECYCLE_FIXTURES = BASELINES
 
 
 def _baseline() -> dict[str, object]:
@@ -151,11 +156,34 @@ def _command_result_baseline() -> dict[str, object]:
     return deepcopy(COMMAND_RESULT_BASELINE)
 
 
+def _approval_baseline(decision: str) -> dict[str, object]:
+    """Return a minimal envelope-valid operator decision for cross-member binding tests."""
+    instant_value = "2026-08-25T12:01:00.000Z"
+    document = _baseline()
+    document.update(
+        {
+            "source": "urn:aerial-rescue:dashboard-api:dashboard-synthetic-01",
+            "type": f"aerial-rescue.v1.operator.approval.{decision}",
+            "time": instant_value,
+            "dataschema": OPERATOR_APPROVAL_SCHEMA,
+            "data": {
+                "missionId": "m-2026-0001",
+                "decision": decision,
+                "issuedAt": instant_value,
+            },
+        }
+    )
+    return document
+
+
 def _lifecycle_baseline(name: str) -> dict[str, object]:
     """Return a fresh lifecycle source event from its accepted golden fixture."""
+    fixture_name = name.replace("-", "_")
     return cast(
         "dict[str, object]",
-        json.loads((LIFECYCLE_FIXTURES / name / "baseline.json").read_text(encoding="utf-8")),
+        json.loads(
+            (LIFECYCLE_FIXTURES / f"{fixture_name}_baseline.json").read_text(encoding="utf-8")
+        ),
     )
 
 
@@ -671,7 +699,97 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(tuple((binding.family, True) for binding in bindings), facts)
 
 
+class OperatorApprovalTimeBindingTests(unittest.TestCase):
+    def test_approve_and_reject_issued_instants_equal_their_envelope_instants(self) -> None:
+        # Arrange
+        documents = tuple(_approval_baseline(decision) for decision in ("approve", "reject"))
+
+        # Act
+        envelopes = tuple(parse_envelope(document) for document in documents)
+
+        # Assert
+        self.assertEqual(
+            tuple(envelope.time for envelope in envelopes),
+            tuple(envelope.data["issuedAt"] for envelope in envelopes),
+        )
+
+    def test_an_operator_decision_with_a_different_issued_instant_is_refused(self) -> None:
+        # Arrange
+        documents = tuple(_approval_baseline(decision) for decision in ("approve", "reject"))
+        for document in documents:
+            data = cast("dict[str, object]", document["data"])
+            data["issuedAt"] = "2026-08-25T12:00:59.999Z"
+
+        # Act
+        outcomes = tuple(_refusal_of(document) for document in documents)
+
+        # Assert
+        self.assertEqual(
+            (
+                (
+                    "payload member does not equal its bound envelope attribute",
+                    "data.issuedAt",
+                    "2026-08-25T12:00:59.999Z",
+                ),
+                (
+                    "payload member does not equal its bound envelope attribute",
+                    "data.issuedAt",
+                    "2026-08-25T12:00:59.999Z",
+                ),
+            ),
+            tuple((refusal.value, attribute, value) for refusal, attribute, value in outcomes),
+        )
+
+
 class LifecycleBindingTests(unittest.TestCase):
+    def test_source_pattern_builder_preserves_both_identifier_anchors(self) -> None:
+        # Arrange
+        producer_kind = "command-gateway"
+
+        # Act
+        pattern = _lifecycle_source_pattern(producer_kind)
+
+        # Assert
+        self.assertEqual(
+            "^urn:aerial-rescue:command-gateway:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$",
+            pattern,
+        )
+
+    def test_every_producer_bound_source_pattern_uses_the_exact_identifier_grammar(self) -> None:
+        # Arrange
+        identifier = IDENTIFIER_PATTERN.removeprefix("^").removesuffix("$")
+        producers = {
+            "aerial-rescue.v1.drone.event.connectivity-changed": "connectivity-lifecycle",
+            "aerial-rescue.v1.mission.event.lifecycle": "mission-lifecycle",
+            "aerial-rescue.v1.sector.event.lifecycle": "sector-lifecycle",
+            "aerial-rescue.v1.operator.command.assign-sector": "dashboard-api",
+            "aerial-rescue.v1.operator.command.escalate-rescue": "dashboard-api",
+            "aerial-rescue.v1.operator.approval.approve": "dashboard-api",
+            "aerial-rescue.v1.operator.approval.reject": "dashboard-api",
+            GATEWAY_RECORD_TYPE: "command-gateway",
+            "aerial-rescue.v1.agent.proposal.candidate-location": "command-gateway",
+            "aerial-rescue.v1.evidence.decision": "evidence-service",
+            "aerial-rescue.v1.drone.command.escalate-rescue": "command-gateway",
+            "aerial-rescue.v1.audit.proposal-normalization": "command-gateway",
+            "aerial-rescue.v1.audit.evidence-decision": "evidence-service",
+            "aerial-rescue.v1.audit.command-authorization": "command-gateway",
+        }
+
+        # Act
+        actual = {
+            event_type_value: BINDINGS[event_type_value].source_pattern
+            for event_type_value in producers
+        }
+
+        # Assert
+        self.assertEqual(
+            {
+                event_type_value: f"^urn:aerial-rescue:{producer}:{identifier}$"
+                for event_type_value, producer in producers.items()
+            },
+            actual,
+        )
+
     def test_the_three_lifecycle_types_bind_to_their_families_and_payload_schemas(self) -> None:
         # Arrange
         expected = {
@@ -781,20 +899,25 @@ class SalientEventBindingTests(unittest.TestCase):
         )
 
 
-class GatewayResponseBindingTests(unittest.TestCase):
-    """The third bound type: the command gateway's record of an answer it sent (ADR-0068)."""
+class GatewayRecordBindingTests(unittest.TestCase):
+    """The third bound type: the command gateway's record of an answer it sent."""
 
-    def test_binding_for_returns_the_gateway_response_binding(self) -> None:
+    def test_binding_for_returns_the_gateway_record_binding(self) -> None:
         # Arrange
-        expected = Binding(GATEWAY_RESPONSE_TYPE, Family.GATEWAY_RESPONSE, GATEWAY_RESPONSE_SCHEMA)
+        expected = Binding(
+            GATEWAY_RECORD_TYPE,
+            Family.GATEWAY_RECORD,
+            GATEWAY_RESPONSE_SCHEMA,
+            _lifecycle_source_pattern("command-gateway"),
+        )
 
         # Act
-        binding = binding_for(GATEWAY_RESPONSE_TYPE)
+        binding = binding_for(GATEWAY_RECORD_TYPE)
 
         # Assert
         self.assertEqual(expected, binding)
 
-    def test_the_gateway_response_baseline_parses_and_binds_to_the_topic_it_arrives_on(
+    def test_the_gateway_response_baseline_parses_as_a_record_and_binds_to_its_topic(
         self,
     ) -> None:
         # Arrange
@@ -802,11 +925,11 @@ class GatewayResponseBindingTests(unittest.TestCase):
 
         # Act
         envelope = parse_envelope(document)
-        bound = _binds(envelope, GATEWAY_RESPONSE_TOPIC)
+        bound = _binds(envelope, GATEWAY_RECORD_TOPIC)
 
         # Assert
         self.assertEqual(
-            (GATEWAY_RESPONSE_TYPE, GATEWAY_RESPONSE_SCHEMA, "m-2026-0001", True),
+            (GATEWAY_RECORD_TYPE, GATEWAY_RESPONSE_SCHEMA, "m-2026-0001", True),
             (envelope.type, envelope.dataschema, envelope.subject, bound),
         )
 
@@ -817,13 +940,23 @@ class GatewayResponseBindingTests(unittest.TestCase):
         payload["requestId"] = "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"
 
         # Act
-        outcome = _topic_refusal_of(parse_envelope(document), GATEWAY_RESPONSE_TOPIC)
+        outcome = _topic_refusal_of(parse_envelope(document), GATEWAY_RECORD_TOPIC)
 
         # Assert
         self.assertEqual(
             ("requestId", EnvelopeRefusal.TOPIC_BINDING, "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"),
             outcome,
         )
+
+    def test_a_gateway_response_rpc_type_has_no_cloudevent_binding(self) -> None:
+        # Arrange
+        raw_rpc_type = "aerial-rescue.v1.gateway.response"
+
+        # Act
+        binding = BINDINGS.get(raw_rpc_type)
+
+        # Assert
+        self.assertIsNone(binding)
 
 
 class DroneCommandBindingTests(unittest.TestCase):
@@ -866,19 +999,26 @@ class DroneCommandBindingTests(unittest.TestCase):
         # Assert
         self.assertEqual(("droneId", EnvelopeRefusal.TOPIC_BINDING, "drone-thermal-02"), outcome)
 
-    def test_the_rescue_escalation_command_type_is_deliberately_unbound(self) -> None:
-        """ADR-0082 leaves it unbound, so no component can publish one until it is bound."""
+    def test_the_rescue_escalation_command_type_is_bound_to_its_closed_payload(self) -> None:
         # Arrange
-        unbound = ESCALATE_RESCUE_TYPE
+        expected_schema = (
+            "https://aerial-rescue.invalid/schemas/v1/payload/"
+            "drone-command-escalate-rescue.schema.json"
+        )
 
         # Act
-        with pytest.raises(EnvelopeError) as captured:
-            binding_for(unbound)
+        binding = BINDINGS.get(ESCALATE_RESCUE_TYPE)
 
         # Assert
         self.assertEqual(
-            (EnvelopeRefusal.UNKNOWN_TYPE, "type", ESCALATE_RESCUE_TYPE),
-            (captured.value.refusal, captured.value.attribute, captured.value.value),
+            (Family.DRONE_COMMAND, expected_schema, True),
+            (
+                binding.family if binding is not None else None,
+                binding.dataschema if binding is not None else None,
+                binding is not None
+                and binding.source_pattern is not None
+                and ":command-gateway:" in binding.source_pattern,
+            ),
         )
 
 

@@ -182,18 +182,38 @@ class CommandTypeRefusalTests(unittest.TestCase):
         # Assert
         self.assertEqual((IntakeRefusal.UNKNOWN_COMMAND_TYPE, "self-destruct"), (refusal, value))
 
-    def test_a_rescue_escalation_is_refused_because_no_schema_binds_it(self) -> None:
-        """ADR-0082 leaves the type unbound, so a drone cannot execute one (B-case cover)."""
+    def test_a_schema_bound_rescue_escalation_reaches_the_payload_handler(self) -> None:
+        """The closed wire schema is recognized even before this adapter implements its effect."""
         # Arrange
         escalation = f"aerial-rescue/v1/{MISSION}/drone/{DRONE}/command/escalate-rescue"
-
-        # Act
-        refusal, _value = _refusal(
-            _bytes(type="aerial-rescue.v1.drone.command.escalate-rescue"), topic=escalation
+        document = _document(
+            source="urn:aerial-rescue:command-gateway:gateway-synthetic-01",
+            type="aerial-rescue.v1.drone.command.escalate-rescue",
+            dataschema=(
+                "https://aerial-rescue.invalid/schemas/v1/payload/"
+                "drone-command-escalate-rescue.schema.json"
+            ),
+            data={
+                "missionId": MISSION,
+                "droneId": DRONE,
+                "commandId": COMMAND,
+                "approvalId": "approval-0001",
+                "proposalId": "proposal-0001",
+                "proposalDigest": "1" * 64,
+                "proposalVersion": 1,
+                "evidenceDecisionId": "decision-0001",
+                "evidenceDecisionDigest": "2" * 64,
+                "evidenceDecisionVersion": 1,
+                "latitudeMicrodegrees": 45123456,
+                "longitudeMicrodegrees": -75123456,
+            },
         )
 
+        # Act
+        refusal, value = _refusal(canonical.canonical_bytes(document), topic=escalation)
+
         # Assert
-        self.assertEqual(IntakeRefusal.UNBOUND_COMMAND_TYPE, refusal)
+        self.assertEqual((IntakeRefusal.MALFORMED_COMMAND, "sectorId"), (refusal, value))
 
 
 class PayloadRefusalTests(unittest.TestCase):

@@ -1,0 +1,10 @@
+{
+  "agentResponseVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "agentName": "VisionAgent",
+  "invocationId": "invocation-synthetic-0002",
+  "correlationId": "correlation-synthetic-0002",
+  "outcome": "abstained",
+  "reason": "invalid-output",
+  "unexpected": true
+}
