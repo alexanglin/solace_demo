@@ -128,8 +128,11 @@ threshold into a pass ([ADR-0019](adr/0019-fail-closed-quality-gates.md)).
 
 Ruff enforces the cyclomatic, function-size, branch, return, local-variable, parameter, nesting, and
 Boolean-expression budgets over the complete owned Python tree. Complexipy independently enforces
-cognitive complexity. jscpd performs one multi-language strict duplication scan across owned source,
-tests, and scripts. Their values and instruments are in
+cognitive complexity. jscpd performs one multi-language strict duplication scan across authored source,
+tests, and scripts; generated dashboard contract types are outside it, because one module per schema is
+fixed by [ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) and their
+freshness gate rewrites and byte-compares that directory
+([ADR-0110](adr/0110-scope-the-duplication-gate-to-authored-source.md)). Their values and instruments are in
 [operating-parameters.md](operating-parameters.md#code-quality-gates); `scripts/hooks/` contains the
 canonical fail-closed entry points. Static analyzers may parse both Python trees from the root tool
 environment because they do not import or execute the Agent Mesh project.

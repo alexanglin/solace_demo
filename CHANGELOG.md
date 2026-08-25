@@ -1534,6 +1534,31 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The duplication gate now measures authored source, so the committed contract surface can grow
+  without tripping it**
+  ([ADR-0110](docs/adr/0110-scope-the-duplication-gate-to-authored-source.md)).
+  [ADR-0023](docs/adr/0023-executable-deep-quality-gates.md) set jscpd at 3% repository-wide. A2 then
+  committed 19 generated TypeScript modules and a schema-ID index, one module per browser schema as
+  [ADR-0058](docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) requires. Types
+  derived from JSON Schema repeat every nested shape at each use site, because each module is closed
+  over one schema and shares no declarations with its siblings — a 99-line region shared by
+  `dashboard-snapshot.ts` and `replay-bundle.ts`, 54-line, 49-line, and 45-line regions shared by
+  `dashboard-event-frame.ts` with three siblings, and two smaller ones. The scan read 2231 of 66524
+  lines duplicated (3.35%), over the limit, with TypeScript alone at 6.87%.
+
+  No authored change removes those clones: one module per schema is the standing decision, and
+  hand-editing the output is refused by the freshness gate. `duplication-full.sh` now passes
+  `--ignore 'apps/dashboard/src/contracts/generated/**'`; every other scanned path, the 3% limit, the
+  8-line and 50-token clone minimum, and strict mode are unchanged, and the generator itself stays
+  inside the scan.
+
+  **The exemption is bounded by a proof, not by trust.** `dashboard-contracts-check` regenerates that
+  directory from the manifest-owned schemas and refuses any missing, extra, or byte-different entry, so
+  no hand-written file can survive there to escape duplication review. It names one exact path rather
+  than `**/generated/**`, so a future generated directory is scanned until its own record says
+  otherwise. The remaining figure is 2.94% against the 3% limit — 41 duplicated lines of headroom, now
+  dominated by the authored Python tree.
+
 - **A push is now at least as strict as the commit it publishes**
   ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)).
   [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) tiered the hooks by cost but never made

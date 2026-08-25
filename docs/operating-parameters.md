@@ -35,7 +35,7 @@ integer arithmetic; display rounding never changes a verdict.
 | Function locals | At most 12 | Ruff `PLR0914` |
 | Nested blocks | At most 3 | Ruff `PLR1702` |
 | Boolean expressions | At most 4 operands | Ruff `PLR0916` |
-| Duplicated source | At most 3% repository-wide; clone minimum 8 lines and 50 tokens; strict mode | jscpd 5.0.14 |
+| Duplicated source | At most 3% across authored source; clone minimum 8 lines and 50 tokens; strict mode; generated dashboard contract types sit outside the measurement ([ADR-0110](adr/0110-scope-the-duplication-gate-to-authored-source.md)) | jscpd 5.0.14 |
 | Mutation score | At least 90% killed per mutated Tier 1 Python module | `tools/mutation_gate.py` over mutmut 3.7.0 metadata |
 | Mutation concurrency | At most 4 child processes | `mutmut run --max-children 4` |
 | Survivor review lifetime | More than 0 and at most 30 calendar days | `mutation-survivors.toml` validation |
