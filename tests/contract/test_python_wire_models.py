@@ -244,6 +244,81 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertNotIsInstance(captured.value, canonical.CanonicalizationError)
 
+    def test_integer_constants_refuse_boolean_equivalence_at_each_service_boundary(self) -> None:
+        # Arrange
+        cases = (
+            (
+                _wire_module("aerial_rescue_dashboard_api.wire"),
+                f"{SCHEMA_PREFIX}dashboard/start-request.schema.json",
+                "scenarioRevision",
+            ),
+            (
+                _wire_module("aerial_rescue_scenario_service.wire"),
+                f"{SCHEMA_PREFIX}scenario/catalog.schema.json",
+                "catalogVersion",
+            ),
+            (
+                _wire_module("aerial_rescue_scenario_service.wire"),
+                f"{SCHEMA_PREFIX}rpc/scenario-control-start-request.schema.json",
+                "controlVersion",
+            ),
+            (
+                _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+                f"{SCHEMA_PREFIX}rpc/fleet-control-start-request.schema.json",
+                "controlVersion",
+            ),
+        )
+        documents = tuple(
+            (
+                module,
+                schema_id,
+                {
+                    **cast(
+                        "dict[str, object]",
+                        canonical.decode(_fixture_path(schema_id, "baseline").read_bytes()),
+                    ),
+                    field: True,
+                },
+            )
+            for module, schema_id, field in cases
+        )
+
+        # Act
+        refusals: list[ValueError] = []
+        for module, schema_id, value in documents:
+            with pytest.raises(ValueError, match="Input should be the integer 1") as captured:
+                module.parse_wire_document(schema_id, canonical.canonical_bytes(value))
+            refusals.append(captured.value)
+
+        # Assert
+        self.assertEqual(len(cases), len(refusals))
+        self.assertTrue(
+            all(not isinstance(error, canonical.CanonicalizationError) for error in refusals)
+        )
+
+    def test_dashboard_models_do_not_invent_an_unowned_document_byte_limit(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        schema_id = f"{SCHEMA_PREFIX}dashboard/scenario-catalog.schema.json"
+        value = cast(
+            "dict[str, object]",
+            canonical.decode(_fixture_path(schema_id, "baseline").read_bytes()),
+        )
+        scenario = cast("dict[str, object]", cast("list[object]", value["scenarios"])[0])
+        sectors = cast("list[dict[str, object]]", scenario["sectors"])
+        first_vertices = cast("list[object]", sectors[0]["vertices"])
+        expanded_vertices = [first_vertices[0]] * 256
+        expanded_sectors = [{**sector, "vertices": expanded_vertices} for sector in sectors]
+        scenario["sectors"] = expanded_sectors
+        raw = canonical.canonical_bytes(value)
+
+        # Act
+        model = dashboard.parse_wire_document(schema_id, raw)
+
+        # Assert
+        self.assertGreater(len(raw), 256 * 1024)
+        self.assertEqual(value, model.model_dump(mode="python", by_alias=True))
+
     def test_calendar_invalid_dashboard_instants_are_refused_semantically(self) -> None:
         # Arrange
         dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
