@@ -24,8 +24,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   holds that witness outside digest-covered reduced mission state and hashes the exact ordered event
   under `ordered-dashboard-event`, so exact duplicate handling is proved rather than inferred from an
   ordinal. The lifecycle schemas, normalized projection rows, and queue/ACL desired state now exist;
-  the remaining A3/R3 fold and parity work, R6 receiver, R8 publishers and reconciliation, and replay
-  runtime remain unimplemented, and the 64 Playwright cases are unchanged.
+  the browser canonicalizer now covers descriptor-safe canonical bytes, Web Crypto replay-state and
+  ordered-event digests, witness pairing, and fixed-work digest comparison. The shared R3 fold and
+  cross-language parity oracle, R6 receiver, R8 publishers and reconciliation, and replay runtime
+  remain unimplemented, and the 64 Playwright cases are unchanged.
 
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
   its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas

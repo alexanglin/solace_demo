@@ -20,6 +20,9 @@ through 0106.
   the runtime validator nor the freshness hook may fetch a schema.
 - Apply the canonical JSON profile before validating bootstrap input and keep rejected candidates,
   including bearer values, out of typed refusal details.
+- Hash only validated canonical values through platform Web Crypto. Keep the ordered-event witness
+  outside reduced mission state, compare lowercase SHA-256 values without a data-dependent early exit,
+  and do not claim browser/Python parity without the shared R3 oracle.
 - Keep MapLibre geometry, styles, glyphs, fonts, and attribution local. Browser tests must fail on
   any remote request.
 - Do not render approval, command, model, evidence, rescue, or escalation controls in this UI slice.

@@ -47,7 +47,8 @@ The A3/R3 execution branch `feat/dashboard-a3-r3` starts from clean `main` at
   invalid `main` host with a neutral root, loads the real entry module, renders sibling banner and
   main landmarks, acknowledges the fixture revision after render, and keeps the complete unit
   coverage command green. A2 now supplies the production contract boundary; the remaining browser
-  acceptance cases still specify unimplemented A3-A8 behavior.
+  acceptance cases still specify unimplemented A4-A8 behavior plus the R3 parity proof that closes
+  A3.
 - The test harness fakes only serialized boundary inputs
   ([`dashboard-harness.ts`](../apps/dashboard/tests/e2e/support/dashboard-harness.ts)), and the
   start and reset requests are intercepted on the wire by the specifications themselves. A3-A7 can
@@ -78,8 +79,14 @@ The A3/R3 execution branch `feat/dashboard-a3-r3` starts from clean `main` at
   proves that committed output is current without network access. The production Vite-build
   integration check also proves that the test source selector and synthetic bearer sentinel are not
   emitted into browser assets.
-- [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects one event kind,
-  and no reduced-state fold exists in Python;
+- A3 is in progress. The browser canonicalizer now rejects unsafe integer, string, key, array,
+  descriptor, object, and cycle forms without invoking accessors; hashes versioned documents with
+  platform Web Crypto under separated replay-state and ordered-event contexts; validates the
+  ordinal/witness pairing; and compares lowercase SHA-256 values without a data-dependent early exit.
+  The shared Python/TypeScript oracle and ten-run parity evidence remain R3 work, so A3 is not marked
+  complete.
+- [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects telemetry and the
+  three validated lifecycle event kinds, but no reduced-state fold exists in Python;
   [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
   no read path. R1's scenario schemas and golden fixtures are contract evidence, not production
   catalog files: the `scenarios/` directory that
@@ -154,8 +161,8 @@ against the committed fixtures behind the eventual interface and never drafts th
 itself.
 
 **The join.** R1 gated A2, and both are now complete. A2's generated types are what A4 through A7
-consume, so the typed core no longer needs browser-owned wire shapes. A3 is next and not started;
-its cross-language parity proof still joins R3. Fixture-driven implementation and adapter tests
+consume, so the typed core no longer needs browser-owned wire shapes. A3's browser implementation is
+green and its completion remains joined to R3's cross-language parity oracle. Fixture-driven implementation and adapter tests
 through A7 need no running backend. Live wiring — real SSE, real HTTP responses, and real replay
 bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
 
@@ -178,9 +185,13 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   check excludes the test selector and synthetic bearer from emitted assets. The check-only generator
   runs offline at pre-commit when an input changes and unconditionally at pre-push; its quality-gate
   tests pin the trigger inventory, command, and failure propagation.
-- **A3 — canonical digest module.** *Status: not started; next.* The browser twin of the
-  [`CONTRACTS.md`](CONTRACTS.md) canonical serialization and digest, using the platform crypto
-  API; its parity oracle arrives with R3.
+- **A3 — canonical digest module.** *Status: in progress; browser implementation green, parity
+  blocked by R3.* [`canonical.ts`](../apps/dashboard/src/domain/canonical.ts) implements the browser
+  twin of the [`CONTRACTS.md`](CONTRACTS.md) canonical serialization and domain-separated digest
+  with platform Web Crypto, descriptor-safe input refusal, ordered-event witness construction, and
+  fixed-work lowercase SHA-256 comparison. Unit and integration gates are green at the independent
+  frontend coverage threshold. The shared parity oracle and ten-run Python/TypeScript evidence still
+  arrive with R3, so this row is not complete.
 - **A4 — pure reducer and timeline model.** *Status: not started.* The
   [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) ordinal and witness
   discipline — successor accepted, exact duplicate ignored, gap, regression, and digest divergence
@@ -236,9 +247,9 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   R1 supplies contract schemas and shared golden examples only. R2 owns the two production files under
   `scenarios/`, their strict bounded loader, digest/path validation, and lossless 20-simulation
   projection [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
-- **R3 — Python contract twins.** *Status: not started. Owner: `packages/contracts`.* The missing
-  broker-source projections selected by
-  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md), the ordered-event wrapper, the
+- **R3 — Python contract twins.** *Status: in progress. Owner: `packages/contracts`.* The strict
+  broker-source schemas, bindings, and normalized projections selected by
+  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) are green. The ordered-event wrapper, the
   witness-aware reduced-state fold and state document selected by
   [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md), the first real use
   of the replay-state and ordered-dashboard-event digest contexts, and the Python-and-TypeScript

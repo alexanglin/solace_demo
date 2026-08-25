@@ -38,7 +38,7 @@ digraph DashboardBuildIncrements {
     style="rounded";
     a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
     a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
-    a3 [label="A3 — next\nnot started\ncanonical digest module"];
+    a3 [label="A3 — in progress\nbrowser canonical digest green\nR3 parity oracle pending", fillcolor="#E8F1FB", color="#2F6FB7"];
     a4 [label="A4\npure reducer\n+ timeline model"];
     a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
     a6 [label="A6\nmutation client"];
@@ -54,7 +54,7 @@ digraph DashboardBuildIncrements {
     style="rounded,dashed";
     r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
     r2 [label="R2\nscenario catalog + loader\nADR-0100"];
-    r3 [label="R3\nbroker projections + fold\nstate + event digest parity\nADR-0111 / 0112"];
+    r3 [label="R3 — in progress\nlifecycle bindings + projections green\nfold + digest parity pending\nADR-0111 / 0112", fillcolor="#E8F1FB", color="#2F6FB7"];
     r4 [label="R4\nstore timeline + ordinal witness\nUI-slice revision (ADR-0095)"];
     r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101 / 0112"];
     r6 [label="R6\nreceiver + 2 recorder queues\n46 endpoints / 460 MB nominal\nreplay validator\nADR-0094 / 0111"];
