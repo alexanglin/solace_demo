@@ -27,6 +27,7 @@ from aerial_rescue_contracts.envelope import (
     Envelope,
     EnvelopeError,
     EnvelopeRefusal,
+    _lifecycle_source_pattern,
     binding_for,
     check_topic_binding,
     decode_envelope,
@@ -729,6 +730,23 @@ class LifecycleBindingTests(unittest.TestCase):
                 "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
             ),
             tuple(envelope.source for envelope in envelopes),
+        )
+
+    def test_the_lifecycle_source_pattern_wraps_one_identifier_in_the_urn_grammar(self) -> None:
+        """The pattern is built once at import, so its grammar is a compatibility surface."""
+        # Arrange
+        expected = (
+            "^urn:aerial-rescue:mission-lifecycle:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+        )
+
+        # Act
+        pattern = _lifecycle_source_pattern("mission-lifecycle")
+
+        # Assert
+        self.assertEqual(expected, pattern)
+        self.assertEqual(
+            pattern,
+            BINDINGS["aerial-rescue.v1.mission.event.lifecycle"].source_pattern,
         )
 
     def test_each_lifecycle_type_refuses_another_lifecycle_sources_run_identity(self) -> None:
