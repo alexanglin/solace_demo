@@ -6,9 +6,10 @@ These instructions apply to every file under `services/scenario_service/`. Read 
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the planned Tier 2 boundary for discovering and loading versioned synthetic scenarios and
-coordinating their lifecycle. It is not implemented yet. Read the owner of each concern before changing
-it:
+This member is the Tier 2 boundary for discovering and loading versioned synthetic scenarios and
+coordinating their lifecycle. Its strict scenario-file and private-control models plus framework-free
+route expectations are implemented; its catalog loader, HTTP client/server, and lifecycle runtime are
+not. Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -48,6 +49,8 @@ it:
 | Deterministic tick and ordering semantics | [ADR-0078](../../docs/adr/0078-one-tick-is-one-observation-per-drone.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not change the accepted document format, schema dialect, version marker, catalog identity,
@@ -55,39 +58,30 @@ file layout, no-seed rule, private HTTP contract, authentication rule, delivery 
 transaction, persistence scope, or operating parameter in a service-local constant or comment. Put each
 fact in its canonical authority and make the coordinated change required by the root guide.
 
-## 2. Preserve the current scaffold truth
-
-Apart from this guide and its symlink, the member contains only:
+## 2. Preserve the current boundary truth
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, build backend, description, and Tier 2 status |
-| `src/aerial_rescue_scenario_service/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_scenario_service/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn pins selected for later runtime work |
+| `src/aerial_rescue_scenario_service/wire.py` | Owns the two scenario-file models, four scenario-control server models, four distinct fleet-control caller models, and canonical-first strict validation |
+| `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact three-route private request, response, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_scenario_service/__init__.py` | Package-intent docstring |
+| `src/aerial_rescue_scenario_service/py.typed` | Marker for distributed type information |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. The repository now owns scenario-file and private-control schemas, manifest
-entries, and synthetic golden fixtures outside this member under `schemas/` and `fixtures/`. It still has
-no production `scenarios/` directory or catalog files, Pydantic model, loader, lifecycle coordinator,
-internal HTTP server or client, simulator handoff, store adapter, composition root, liveness probe,
-readiness probe, or member-local test. No workspace member declares this package as a dependency or
-imports it.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
+The member is now **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies
+its executable source accordingly, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
+pins that repository fact. Tier 2 statement and branch coverage applies to every owned source module.
+The model layer is closed, frozen, strict, alias-only, and checked against the manifest-owned accepted
+and one-reason-negative fixtures. It delegates canonical JSON to `packages/contracts`, keeps caller and
+server copies process-local, and imports no other service implementation.
 
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
-
-An unreadable or syntactically invalid Python source is also non-scaffold. Any activating input restores
-normal fail-closed coverage behavior: executable Python is measured at the declared Tier 2; a tests-only
-or non-Python activation with no measurable Python fails as `no measurable source`. Never add a dummy
-scenario, placeholder test, empty port, fake catalog, no-op lifecycle operation, or import-only entry point
-to make the member look started. The first behavior lands through red-green-refactor with member-local
-tests.
+The repository still has no production `scenarios/` directory or catalog files, loader, lifecycle
+coordinator, internal HTTP server or client, simulator handoff, store adapter, composition root,
+liveness probe, readiness probe, generated OpenAPI document, listener, or member-local test suite. The
+route registry is inert data for later runtime and OpenAPI parity tests. Never add a dummy scenario,
+placeholder handler, fake catalog, no-op lifecycle operation, or import-only entry point to make an
+absent capability look started; each behavior lands through red-green-refactor.
 
 The `scenario-service` definition in `deploy/compose.yaml` is also a shell. Its command imports this
 package and exits, it publishes no port, and its inherited healthcheck imports the contracts package
@@ -96,9 +90,9 @@ PostgreSQL, trust-store, secret, and dependency wiring, but none of those inheri
 member needs or uses that dependency. ADR-0061 deliberately gives the scenario service no broker username,
 password, role, publish grant, or subscription grant.
 
-None of the current configuration proves an HTTP listener, catalog load, scenario acceptance, start,
+None of the current models or configuration proves an HTTP listener, catalog load, scenario acceptance, start,
 reset, simulator delivery, readiness, cancellation, or shutdown. `AGENTS.md` and its `CLAUDE.md` symlink
-live outside `src/` and do not activate the scaffold.
+remain documentation and do not affect active-member detection.
 
 ## 3. Produce the accepted simulator boundary without a second owner
 
@@ -137,9 +131,10 @@ Keep ownership separated:
 
 ADR-0105 now defines the serializable handoff over authenticated private HTTP: this member sends the
 lossless fleet-control start document to the separate fleet process and validates its typed status or
-refusal. That contract does not authorize a dependency from one service package to another and no client
-or server exists yet. Never import a simulator composition root, duplicate `FleetScenario`, or pass loose
-mappings that create an unowned second representation.
+refusal. The distinct fleet-control caller models now exist locally, but no HTTP client or server exists.
+That contract does not authorize a dependency from one service package to another. Never import a
+simulator composition root, duplicate `FleetScenario`, or pass loose mappings that create an unowned
+second representation.
 
 Do not describe the frozen dataclass as deeply immutable or tamper-proof. Its
 `absent_heartbeats` member is typed as a `Mapping`, and the current constructor neither copies nor freezes
@@ -173,8 +168,8 @@ recorded event become live scenario input.
 ADR-0100 selects canonical JSON, integer version `1`, `scenarios/catalog.v1.json`, and
 `scenarios/v1/wilderness-missing-person.r1.json`. The language-neutral catalog and definition schemas,
 their manifest entries, and synthetic polarity fixtures now exist under `schemas/` and `fixtures/`.
-Those artifacts establish representation only: the two production files, strict Pydantic twins, loader,
-and simulator adaptation remain unimplemented.
+Strict service-local Pydantic twins now validate those file shapes, but the two production files, loader,
+filesystem policy, and simulator adaptation remain unimplemented.
 
 Treat every future production document and catalog entry as untrusted even though it is committed.
 Retain source bytes long enough to refuse duplicate keys and floating-point values before Pydantic can
@@ -248,10 +243,11 @@ Do not claim scenario provenance in recordings or audit until a governing contra
 
 ADR-0105 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
 and distinct bearer checks, bounded calls, stable-run idempotency, uncertain-start status reconciliation,
-and shared cancellation budget. This member must expose the scenario-control routes and call the fleet
-control routes through typed boundaries. It never copies the public dashboard route table, applies the
-browser Origin rule internally, automatically repeats an uncertain start, shares either private bearer,
-or imports another service implementation. None of that private HTTP runtime exists yet.
+and shared cancellation budget. The service-local server/caller models and framework-free scenario-route
+registry now express the typed boundary. This member must eventually expose those scenario-control routes
+and call the fleet-control routes without copying the public dashboard route table, applying the browser
+Origin rule internally, automatically repeating an uncertain start, sharing either private bearer, or
+importing another service implementation. None of that private HTTP runtime exists yet.
 
 The caller supplies stable mission and run identities. The same run and canonical start body returns
 current status; different content is `RUN_CONFLICT`; an uncertain start is reconciled by querying that
@@ -309,7 +305,7 @@ cancellation release files, requests, tasks, and clients without corrupting dura
 
 ## 9. Testing and evidence
 
-For the first behavior in this member:
+For every new behavior in this member:
 
 1. Run the scaffold predicate and every relevant fleet-simulator, contracts, domain, deployment, and root
    test before editing.
@@ -372,13 +368,14 @@ prose.
 - Pass a new untracked guide explicitly to file-based hooks because ordinary Git diff discovery cannot
   see it. Use a no-index comparison before staging and the cached diff after staging.
 
-For a guide-only change, synchronize the locked root environment, prove the member remains a scaffold and
-keeps its no-broker deployment boundary, and pass both new paths explicitly to the hooks:
+For a guide-only change, synchronize the locked root environment, prove the member remains active and
+keeps its no-broker deployment boundary, and pass both guide paths explicitly to the hooks:
 
 ```sh
 uv sync --all-packages --frozen
 uv run --frozen pytest -q \
   tools/quality_gate_tests/coverage/test_member_scaffold.py \
+  tools/quality_gate_tests/contracts/test_pydantic_mypy_policy.py \
   tools/quality_gate_tests/deploy/test_broker_identity_wiring.py
 pre-commit run --files \
   services/scenario_service/AGENTS.md \
@@ -386,11 +383,13 @@ pre-commit run --files \
   --hook-stage pre-commit
 ```
 
-For implementation changes, run the member and directly affected simulator and pure-owner suites from
-the repository root:
+For the current wire-boundary implementation, run the cross-service contract oracles and directly
+affected simulator and pure-owner suites from the repository root:
 
 ```sh
-uv run --frozen pytest -q services/scenario_service/tests
+uv run --frozen pytest -q \
+  tests/contract/test_python_wire_models.py \
+  tests/contract/test_http_contract_expectations.py
 uv run --frozen pytest -q services/fleet_simulator/tests packages/domain/tests packages/contracts/tests
 pre-commit run import-contracts --all-files --hook-stage pre-commit
 pre-commit run test-aaa --all-files --hook-stage pre-commit
@@ -408,7 +407,7 @@ git diff --check
 
 Before staging an untracked guide, inspect it and its whitespace with a no-index diff. After staging only
 human-approved files, inspect the complete cached diff and run `git diff --cached --check`. Confirm the
-literal symlink target, scaffold or active status, Tier 2 declaration, dependencies, file and version
+literal symlink target, active status, Tier 2 declaration, dependencies, file and version
 contract, no-seed rule, simulator boundary, scenario-versus-mission identity, no-broker authority,
 lifecycle and reset claims, mode composition, privacy, tests, deployment, and affected documentation all
 agree. Report every unrun container, HTTP, persistence, replay-isolation, privacy, scale, or performance

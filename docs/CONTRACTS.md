@@ -258,6 +258,16 @@ run returns current status without launching another run; changing the body for 
 automatically repeats start. Cancel reports success only after the run is stopped or already terminal;
 otherwise it returns `CANCELLATION_NOT_ESTABLISHED` and does not claim reset.
 
+The Python trust-boundary twins are now service-local as required by
+[ADR-0106](adr/0106-register-strict-python-wire-models-before-http-runtime.md). The scenario service owns
+the scenario-control server models and separate fleet-control caller models; the fleet simulator owns
+the fleet-control server models; and the dashboard API owns separate scenario-control caller models.
+Each boundary applies the contracts-owned canonical decoder before closed, frozen, strict, alias-only
+Pydantic validation. The independently implemented twins are checked against the same manifest-owned
+accepted and one-reason-negative fixtures. Framework-free three-route registries in each private HTTP
+owner pin the request, response, and default-refusal expectations for later runtime and OpenAPI parity.
+They create no listener, client, generated OpenAPI document, or runtime route.
+
 ## Local HTTP API
 
 The UI-first dashboard API is the closed surface accepted by
@@ -276,8 +286,12 @@ The UI-first dashboard API is the closed surface accepted by
 
 There is no approval route in this slice. Approval, evidence, command, model, rescue, and escalation
 workflows remain follow-on work and gain no placeholder endpoint. The committed schemas under
-`schemas/v1/dashboard/` are normative; strict Pydantic models, generated OpenAPI, generated TypeScript,
-and Ajv consume those same shapes rather than defining parallel ones.
+`schemas/v1/dashboard/` are normative. The dashboard API now owns strict Pydantic twins for its
+seventeen server-facing shapes and a framework-free registry for the exact route table above. The
+`mutation-outcome` and `source-signal` documents remain browser-owned and deliberately have no Python
+model. Generated OpenAPI, generated TypeScript, and Ajv remain future consumers of those same shapes
+rather than parallel authorities. The model and route registry do not create a FastAPI application or
+HTTP listener.
 
 Start is exactly `{mode, scenarioRevision}` with mode `degradedLive` or `replay` and integer revision
 `1`; reset is exactly `{}`. Accepted live responses carry stable mission and run identifiers; replay

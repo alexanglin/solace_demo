@@ -11,12 +11,13 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 ROOT_MANIFEST = REPOSITORY_ROOT / "pyproject.toml"
 AGENT_MESH_MANIFEST = REPOSITORY_ROOT / "agent-mesh" / "pyproject.toml"
 
-# The three keys the two domains legitimately differ on. `python_version` because one table
+# The four keys the two domains legitimately differ on. `python_version` because one table
 # cannot declare two interpreters (ADR-0029); `exclude` because it is meaningful only from
 # the root's working directory; `overrides` because the two trees import different untyped
-# distributions (ADR-0028). Every other key must match, or the two stages check one tree
-# under two configurations -- the defect ADR-0029 was written to close.
-MAY_DIFFER = frozenset({"python_version", "exclude", "overrides"})
+# distributions (ADR-0028); and `plugins` because ADR-0107 deliberately enables Pydantic's
+# plugin only in the root environment. Every other key must match, or the two stages check
+# one tree under two configurations -- the defect ADR-0029 was written to close.
+MAY_DIFFER = frozenset({"python_version", "exclude", "overrides", "plugins"})
 
 # The floor. Without this a deletion from BOTH tables would still satisfy the drift rule.
 REQUIRED_FLAGS = (

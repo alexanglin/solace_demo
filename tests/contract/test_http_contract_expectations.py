@@ -6,7 +6,6 @@ import importlib
 import tomllib
 import unittest
 from pathlib import Path
-from types import ModuleType
 from typing import Literal, Protocol, cast
 
 import pytest
@@ -37,7 +36,7 @@ class HttpContractModule(Protocol):
 
 def _contract_module(module_name: str) -> HttpContractModule:
     """Import one framework-free HTTP expectation registry."""
-    return cast("HttpContractModule", cast(ModuleType, importlib.import_module(module_name)))
+    return cast("HttpContractModule", importlib.import_module(module_name))
 
 
 def _json(*schema_ids: str) -> BodyExpectation:

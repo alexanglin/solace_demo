@@ -11,6 +11,9 @@ dependencies = [
     "aerial-rescue-broker",
     "aerial-rescue-contracts",
     "aerial-rescue-domain",
+    "fastapi==0.141.1",
+    "pydantic==2.13.4",
+    "uvicorn==0.52.3",
 ]
 
 [build-system]

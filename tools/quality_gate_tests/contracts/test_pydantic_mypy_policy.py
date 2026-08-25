@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import cast
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+AGENT_MESH_MANIFEST = REPOSITORY_ROOT / "agent-mesh" / "pyproject.toml"
 
 
 class PydanticMypyPolicyTests(unittest.TestCase):
@@ -30,3 +31,15 @@ class PydanticMypyPolicyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, actual)
+
+    def test_agent_mesh_does_not_load_the_root_pydantic_plugin(self) -> None:
+        # Arrange
+        configuration = tomllib.loads(AGENT_MESH_MANIFEST.read_text(encoding="utf-8"))
+        tool = cast("dict[str, object]", configuration["tool"])
+        mypy = cast("dict[str, object]", tool["mypy"])
+
+        # Act
+        plugins = mypy.get("plugins")
+
+        # Assert
+        self.assertIsNone(plugins)

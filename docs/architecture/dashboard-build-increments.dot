@@ -37,7 +37,7 @@ digraph DashboardBuildIncrements {
     color="#2F6FB7";
     style="rounded";
     a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
-    a2 [label="A2\ncontracts layer\ncodegen + validator registry\n+ freshness gate"];
+    a2 [label="A2 — unblocked\nnot started\ncontracts layer\ncodegen + validator registry\n+ freshness gate"];
     a3 [label="A3\ncanonical digest module"];
     a4 [label="A4\npure reducer\n+ timeline model"];
     a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
@@ -52,7 +52,7 @@ digraph DashboardBuildIncrements {
     labelloc=b;
     color="#8193A6";
     style="rounded,dashed";
-    r1 [label="R1 — in progress\nbrowser + scenario + private RPC\nschemas/fixtures green\nPydantic/OpenAPI still owed", fillcolor="#FFF4CC", color="#B7791F"];
+    r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0106 / 0107", fillcolor="#DFF7EE", color="#008F6B"];
     r2 [label="R2\nscenario catalog + loader\nADR-0100"];
     r3 [label="R3\nPython projections + fold\ndigest-parity fixtures"];
     r4 [label="R4\nstore read path\nUI-slice revision (ADR-0095)"];
@@ -63,7 +63,7 @@ digraph DashboardBuildIncrements {
     r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
   }
 
-  r1 -> a2 [label="gates the typed core", color="#B7791F", penwidth=1.6];
+  r1 -> a2 [label="typed core unblocked", color="#008F6B", penwidth=1.6];
   r3 -> a3 [label="digest parity oracle", style=dashed];
   r3 -> a4 [label="fold parity oracle", style=dashed];
   r2 -> r5 [label="catalog data", style=dashed];

@@ -6,9 +6,10 @@ These instructions apply to every file under `services/dashboard_api/`. Read the
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the planned Tier 2 local HTTP and server-sent-event boundary for scenario control,
-validated replay, health, readiness, and normalized dashboard events. The current UI slice deliberately
-has no approval, command, evidence, model, rescue, or escalation route. It is not implemented yet.
+This member is the Tier 2 local HTTP and server-sent-event boundary for scenario control, validated
+replay, health, readiness, and normalized dashboard events. Its strict service-local wire models and
+framework-free route expectations are implemented; its FastAPI application and runtime are not. The
+current UI slice deliberately has no approval, command, evidence, model, rescue, or escalation route.
 Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
@@ -53,6 +54,8 @@ Read the owner of each concern before changing it:
 | Closed UI-slice public API | [ADR-0097](../../docs/adr/0097-close-the-ui-slice-http-contract.md) |
 | Ordered dashboard SSE frames and cursors | [ADR-0101](../../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
 | Authenticated private scenario client | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,
@@ -60,37 +63,30 @@ idempotency-key syntax, broker grant, SSE frame, snapshot route, readiness predi
 or replay adapter in a service-local constant or comment. Put each fact in its canonical authority and
 make the coordinated change required by the root guide.
 
-## 2. Preserve the current scaffold truth
-
-Apart from this guide and its symlink, the member contains only:
+## 2. Preserve the current boundary truth
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, build backend, description, and Tier 2 status |
-| `src/aerial_rescue_dashboard_api/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_dashboard_api/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn pins selected for later runtime work |
+| `src/aerial_rescue_dashboard_api/wire.py` | Owns the seventeen server-facing dashboard models, four distinct scenario-control caller models, the two browser-only classifications, and canonical-first strict validation |
+| `src/aerial_rescue_dashboard_api/http_contract.py` | Records the exact nine-route public request, response, framing, query, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_dashboard_api/__init__.py` | Package-intent docstring |
+| `src/aerial_rescue_dashboard_api/py.typed` | Marker for distributed type information |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no FastAPI application, HTTP middleware, Pydantic request or response
-model, OpenAPI document, scenario client, proposal lookup, persistence adapter, broker adapter, event
-projector, SSE buffer, state fold, composition root, liveness probe, readiness probe, or member-local
-test. The shared lock currently supplies no web framework or ASGI server for this member, and no
-workspace member declares this package as a dependency or imports it.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
+The member is now **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies
+its executable source accordingly, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
+pins that repository fact. Tier 2 statement and branch coverage applies to every owned source module.
+The model layer is closed, frozen, strict, alias-only, and checked against the manifest-owned accepted
+and one-reason-negative fixtures. It delegates canonical decoding and instant validation to
+`packages/contracts`; it does not import another service implementation or put Pydantic in that package.
 
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
-
-An unreadable or syntactically invalid Python source is also non-scaffold. Any activating input restores
-normal fail-closed coverage behavior: executable Python is measured at the declared Tier 2; a tests-only
-or non-Python activation with no measurable Python fails as `no measurable source`. Never add a dummy
-route, placeholder test, empty application object, no-op dependency, or import-only entry point to make
-the member look started. The first behavior lands through red-green-refactor with member-local tests.
+This activation is not an HTTP-runtime claim. There is still no FastAPI application, middleware,
+generated OpenAPI document, listener, scenario HTTP client, persistence adapter, broker adapter, event
+projector, SSE buffer, state fold, composition root, liveness probe, readiness probe, or member-local
+test suite. The route registry is inert data for later runtime and OpenAPI parity tests. Never add a
+dummy handler, empty application, no-op dependency, or import-only entry point to make one of those
+absent capabilities look started; each behavior lands through red-green-refactor.
 
 The `dashboard-api` definition in `deploy/compose.yaml` is also a shell. It is behind the explicit
 `services` profile, imports this package and exits, and inherits a healthcheck that imports the contracts
@@ -100,7 +96,7 @@ container port is reachable, that the process itself obeys ADR-0024's bind rule,
 readiness, authentication, broker traffic, SSE, cancellation, and shutdown work. Do not describe the
 profile, the dependency-waiver prose, or a green static policy check as runtime API evidence.
 
-`AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and do not activate the scaffold.
+`AGENTS.md` and its `CLAUDE.md` symlink remain documentation and do not affect active-member detection.
 
 ## 3. Keep the public boundary narrow and delegate ownership
 
@@ -119,8 +115,9 @@ The UI-first public surface is exactly the route set ADR-0097 and `docs/CONTRACT
 
 There is no approval route or placeholder in this slice. The committed dashboard schemas define the
 request, response, error, snapshot, ordered-event, overload, and replay documents. Strict service-owned
-Pydantic twins and generated OpenAPI remain absent and still block implementation; do not infer them from
-a UI mockup, use a loose mapping temporarily, or expose an extra route because implementation wants one.
+Pydantic twins and the framework-free route registry now exist; generated OpenAPI and runtime routes do
+not. Do not infer either from a UI mockup, use a loose mapping temporarily, or expose an extra route
+because implementation wants one.
 
 This service coordinates narrower owners; it does not duplicate them:
 
@@ -297,8 +294,8 @@ explicit resynchronization. The schemas and fixtures exist, but this package sti
 implementation. Do not invent another frame or write a service-local fold.
 
 ADR-0058 requires the browser to validate HTTP, snapshot, and SSE input against committed schemas. That
-independent browser boundary does not replace server-side Pydantic models, canonical ingress validation,
-or the API's responsibility to emit its exact schema.
+independent browser boundary does not replace the implemented server-side Pydantic model layer,
+canonical ingress validation, or the future API runtime's responsibility to emit its exact schema.
 
 ## 8. Compose modes, readiness, and lifecycle explicitly
 
@@ -337,7 +334,7 @@ diagnostics.
 
 ## 9. Testing and evidence
 
-For the first behavior in this member:
+For every new behavior in this member:
 
 1. Run the scaffold predicate and every relevant domain, contracts, broker, store, deployment, and root
    test before editing.
@@ -418,25 +415,27 @@ permission.
 
 ## 11. Required verification
 
-For a guide-only change, create the locked root environment, prove the member remains a scaffold, and
-pass both new paths explicitly to the hooks:
+For a guide-only change, synchronize the locked root environment, prove the member remains active, and
+pass both guide paths explicitly to the hooks:
 
 ```sh
 uv sync --all-packages --frozen
 uv run --frozen pytest -q \
   tools/quality_gate_tests/coverage/test_member_scaffold.py \
-  tools/quality_gate_tests/deploy/test_broker_identity_wiring.py
+  tools/quality_gate_tests/contracts/test_pydantic_mypy_policy.py
 pre-commit run --files \
   services/dashboard_api/AGENTS.md \
   services/dashboard_api/CLAUDE.md \
   --hook-stage pre-commit
 ```
 
-For implementation changes, run the member and directly affected package suites from the repository
-root:
+For the current wire-boundary implementation, run the cross-service contract oracles and directly
+affected package suites from the repository root:
 
 ```sh
-uv run --frozen pytest -q services/dashboard_api/tests
+uv run --frozen pytest -q \
+  tests/contract/test_python_wire_models.py \
+  tests/contract/test_http_contract_expectations.py
 uv run --frozen pytest -q packages/domain/tests packages/contracts/tests packages/broker/tests
 pre-commit run import-contracts --all-files --hook-stage pre-commit
 pre-commit run test-aaa --all-files --hook-stage pre-commit
@@ -452,7 +451,7 @@ pre-commit run --all-files --hook-stage pre-push
 git diff --check
 ```
 
-Inspect the complete diff and literal symlink target. Confirm that scaffold or active status, the Tier 2
+Inspect the complete diff and literal symlink target. Confirm that active status, the Tier 2
 manifest, declared dependencies, public routes, security controls, broker authority, durability and SSE
 claims, mode composition, tests, and affected documentation agree. Report every unrun browser, live, or
 external-resource check as an open verification obligation; a static or offline pass is never evidence

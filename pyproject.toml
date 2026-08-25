@@ -152,6 +152,7 @@ convention = "google"
 [tool.mypy]
 python_version = "3.14"
 strict = true
+plugins = ["pydantic.mypy"]
 warn_unused_ignores = true
 warn_unreachable = true
 # None of the four below is implied by `strict`, which in mypy 1.19 expands to fifteen
@@ -188,6 +189,11 @@ enable_error_code = [
 # skips it because Ruff honours .gitignore while mypy does not. Without this, every
 # type check after the first mutation run fails.
 exclude = ["^agent-mesh/", "^\\.venv/", "/mutants/"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 # The Solace PubSub+ client ships no py.typed marker and no stub package exists, so
 # strict mypy reports import-untyped for every import of it. ADR-0011 forbids a blanket

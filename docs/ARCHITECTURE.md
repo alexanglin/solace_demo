@@ -78,19 +78,28 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   only the drone-observable half of that machine: `SEND`, `TIME_OUT`, and `ABANDONED` are the dispatching
   gateway's, and the broker's grant tables make none of the three observable here. The evidence machines
   are not implemented, and the service in `deploy/compose.yaml` is still an import-and-exit shell because
-  a process entry point needs a scenario the scenario service does not yet produce.
+  a process entry point needs a scenario the scenario service does not yet produce. Strict local
+  fleet-control server models and a framework-free route-expectation registry now exist, but no private
+  HTTP listener or generated OpenAPI does.
 - **Command gateway:** Owns deterministic mission-command policy, idempotency, proposal-bound approval checks, durable outbox state, and executable command publication. Agent credentials cannot bypass it.
 - **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable store for mission state, inbox/outbox records, proposals, approvals, idempotency results, evidence provenance, and audit records. Access is through async SQLAlchemy 2.x with `asyncpg`, and schema is managed with Alembic migrations. Broker acknowledgement occurs only after the related durable transaction commits. An append-only audit table with a monotonic ordinal is the ordering authority for the mission timeline. See [ADR-0003](adr/0003-postgres-durable-mission-store.md).
 - **Broker adapter:** Wraps the Solace PubSub+ Messaging API for Python 1.11 (or an explicitly reviewed compatible patch) in the Python 3.14 application environment and isolates connection, publishing, subscription, acknowledgement, retry, and shutdown behavior. Agent Mesh keeps the separate PubSub+ client version resolved by its own lockfile.
 - **Scenario service:** Validates the versioned scenario catalog and definitions, preserves their
   explicit roster, geometry, and heartbeat-loss schedule, losslessly projects only simulated members
   into the fleet input, and exposes lifecycle operations. The input carries no seed or random source.
+  **Wire boundary only today:** strict scenario-file and private-control server/caller models plus a
+  framework-free route-expectation registry are implemented; production catalog files, the loader,
+  lifecycle coordination, HTTP client/server, listener, and generated OpenAPI are not.
 - **Evidence service:** Validates model observations, attaches provenance and hashes, delegates score
   calculation to pure Tier 1 domain logic, and publishes the resulting versioned evidence decision. In a
   live simulation, model failure produces an explicit abstention or manual-review outcome; recorded
   evidence is never substituted.
 - **Recorder/replayer:** Writes sanitized CloudEvents to NDJSON and replays the same events through the dashboard-facing interface.
-- **Dashboard API:** FastAPI service providing scenario control, operator approval, health, readiness, and server-sent events.
+- **Dashboard API:** Owns the UI-slice scenario control, health, readiness, replay, static-shell, and
+  server-sent-event boundary. **Wire boundary only today:** strict server/caller Pydantic models and the
+  framework-free public route-expectation registry are implemented; the FastAPI application, generated
+  OpenAPI, Unix-socket listener, scenario client, persistence, and SSE runtime are not. This slice has no
+  approval, command, evidence, model, rescue, or escalation route.
 
 All Python work runs in an isolated project virtual environment managed by `uv`:
 
@@ -132,19 +141,21 @@ The Agent Mesh `general` and `planning` configurations are selected in Phase 0 r
 
 ## Dashboard
 
-The browser dashboard contains:
+The current UI-first wilderness slice is specified as a map-first command center with:
 
-- A MapLibre map with the search polygon, sectors, trails, candidate locations, and rescue marker.
-- A fleet panel showing agent type, connectivity, battery, assignment, model, and status.
-- A mission timeline containing domain events, commands, retries, approvals, and Agent Mesh responses.
-- An evidence panel showing image provenance, model observations, evidence-score contributors,
-  corroboration, abstention, and rejection reasons.
-- An operator command area for mission creation and approved actions.
-- A prominent human-approval gate for rescue escalation.
-- A live-simulation/degraded-live-simulation/replay badge that cannot be hidden or confused.
-- Health indicators for the broker, the Agent Mesh container, Ollama, and the local services.
+- local MapLibre search geometry, sectors, simulated-drone markers and trails;
+- scenario context and guarded start/reset controls;
+- a fleet rail and semantic table that distinguish twenty simulated members from three declared-only
+  external descriptors;
+- a non-telemetry mission timeline ordered by audit ordinal; and
+- isolated-replay playback controls and an unmistakable degraded-live or replay badge.
 
-The dashboard uses React and TypeScript with Vite. Server-to-browser updates use SSE; operator actions use JSON HTTP requests. The UI must remain usable at the reference MacBook's normal resolution and must not rely on browser developer tools.
+This slice deliberately renders no approval, command, evidence, model, rescue, or escalation control.
+Those broader workflows remain follow-on work, not placeholders in the current route or component tree.
+The dashboard uses React and TypeScript with Vite. Validated server-to-browser updates will use SSE;
+validated operator start/reset actions will use JSON HTTP requests. The UI must remain usable at the
+reference MacBook's normal resolution and must not rely on browser developer tools. Only the A1 shell is
+rendered today; the map, event sources, controls, and production runtime remain build-guide increments.
 
 ## Solace operational surfaces
 
@@ -152,11 +163,13 @@ The project deliberately exercises and exposes both Solace layers:
 
 - **Open-source Agent Mesh Web UI (`localhost:8000` by default):** use the per-request Activity viewer and `Agent Mesh > Agents` registry/topology to inspect tasks, discovered agents, delegation, streamed responses, and artifacts. This is an engineering surface; it is not the authoritative mission dashboard and cannot approve or dispatch an action.
 - **Solace PubSub+ Broker Manager** (`https://localhost:1943` on the container; the browser warns until the per-checkout authority is trusted)**:** show separately named Agent Mesh, gateway, command, simulator, edge-agent, recorder, and dashboard clients; inspect A2A and application topic subscriptions; observe ingress/egress rates; inspect guaranteed queue state; and use Try Me with the scoped A2A namespace during diagnostics.
-- **Aerial Rescue Mesh dashboard:** show normalized mission state, evidence provenance, command lifecycle, human approval, and the cross-system audit identifiers that link a domain event to an A2A task and executable command.
+- **Aerial Rescue Mesh dashboard:** in the current UI-first slice, show normalized wilderness mission,
+  sector, fleet, connectivity, replay, and timeline state. Evidence, command, approval, rescue, and
+  cross-system workflow views remain follow-on work rather than controls in this slice.
 
 The disconnect/reconnect acceptance flow must make Solace's role visible in Broker Manager: an offline drone's durable command queue changes from depth `0` to `1`, then returns to `0` only after reconnect, durable processing, and acknowledgement. Separately, Agent Mesh agent cards and task traffic prove dynamic discovery and A2A delegation over the broker. Screenshots may document these checks only after tenant-specific values and credentials are redacted.
 
-Reserve and document loopback-only development ports to avoid collisions: Agent Mesh initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, project dashboard `5173`, project API `8080`, and Ollama `11434`. The initialization UI is a setup surface, not an operational monitoring surface. Production-like local startup may serve the built dashboard through the API and omit the Vite port. The compose stack publishes, on `127.0.0.1` only, 55443 and 1943 for the broker, 5432 for Postgres, 8000 for the Agent Mesh Web UI, 8080 for the dashboard API, and 8180 for the Event Management Agent; the broker's own 8080 and 8000 are never published, which is how they coexist with the reservations above ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+Reserve and document loopback-only development ports to avoid collisions: Agent Mesh initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, dashboard Vite development server `5173`, Caddy's production dashboard origin `8080`, and Ollama `11434`. The initialization UI is a setup surface, not an operational monitoring surface. In the accepted production-like dashboard layout, Caddy is the sole `127.0.0.1:8080` publisher and relays to the dashboard API's private Unix socket; the API publishes no IP port ([ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md)). The current Compose `services` profile is still an inert shell and has not yet been reconciled to that layout. The existing stack also publishes, on `127.0.0.1` only, 55443 and 1943 for the broker, 5432 for Postgres, 8000 for the Agent Mesh Web UI, and 8180 for the Event Management Agent; the broker's own 8080 and 8000 are never published, which is how they coexist with the reservations above ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
 
 ## Observability and operating modes
 

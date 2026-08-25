@@ -32,9 +32,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   contract reuses one status shape for start, status, and established cancellation, carries explicit
   publication counters, and separates the dashboard-to-scenario and scenario-to-fleet hops under
   [ADR-0105](docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md). These are contract
-  shapes and synthetic golden examples, not production scenario files or a running control plane. R1
-  remains in progress: service-owned Pydantic twins and HTTP/OpenAPI expectations still gate A2, while
-  R2 owns the production catalog files and loader.
+  shapes and synthetic golden examples, not production scenario files or a running control plane.
+
+  R1 is now complete. The dashboard API owns strict Pydantic twins for its seventeen server-facing
+  dashboard documents and four scenario-control caller documents; the scenario service owns its two
+  file models, four scenario-control server documents, and four fleet-control caller documents; and the
+  fleet simulator owns the four fleet-control server documents. The two browser-owned documents remain
+  explicitly browser-only. Canonical decoding precedes strict model validation, and framework-free
+  route registries pin the nine public routes and both three-route private surfaces for later runtime
+  and OpenAPI parity tests. [ADR-0106](docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md)
+  records that ownership and keeps the schemas normative.
+
+  Root strict mypy now uses Pydantic's pinned plugin so generated model constructors remain field-typed
+  without weakening the repository's explicit-`Any` prohibition; a conformance test holds the selected
+  policy ([ADR-0107](docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md)). These
+  model and route-expectation layers unblock A2, but they do not create a FastAPI application, listener,
+  generated OpenAPI document, production catalog, or live control plane. R2 owns the production catalog
+  files and loader, and R5/R8 own the HTTP runtimes.
 
 - **The dashboard has a real shell and frontend verification can no longer pass on incomplete
   evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and

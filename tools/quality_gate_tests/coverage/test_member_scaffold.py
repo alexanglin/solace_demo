@@ -7,10 +7,8 @@ from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCas
 
 SCAFFOLDED_MEMBERS = (
     "packages/observability",
-    "services/dashboard_api",
     "services/evidence_service",
     "services/recorder",
-    "services/scenario_service",
 )
 ACTIVE_MEMBERS = (
     "packages/broker",
@@ -18,7 +16,9 @@ ACTIVE_MEMBERS = (
     "packages/domain",
     "packages/store",
     "services/command_gateway",
+    "services/dashboard_api",
     "services/fleet_simulator",
+    "services/scenario_service",
 )
 
 
@@ -140,7 +140,7 @@ class MemberScaffoldPredicateTests(QualityGateTestCase):
 
 
 class RepositoryScaffoldTests(QualityGateTestCase):
-    def test_the_five_declared_scaffolds_are_scaffolds_and_the_tested_members_are_not(
+    def test_the_three_declared_scaffolds_are_scaffolds_and_the_active_members_are_not(
         self,
     ) -> None:
         # Arrange

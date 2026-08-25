@@ -241,7 +241,11 @@ Narrowing the commit stage is only safe while the push stage stays whole. Select
 Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, strict mypy, Complexipy
 7.0.1, Bandit, pip-audit, and mutmut 3.7.0 with per-module scoring over the Tier 1 core
 ([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md),
-[ADR-0023](adr/0023-executable-deep-quality-gates.md)). Bandit ignores inline suppression comments
+[ADR-0023](adr/0023-executable-deep-quality-gates.md)). Root-workspace strict mypy loads the official
+plugin shipped by the pinned Pydantic dependency so service-owned model constructors remain typed while
+the global explicit-`Any` prohibition stays enabled; a configuration conformance test holds the policy
+selected by [ADR-0107](adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md). The separate
+Agent Mesh environment does not load that plugin. Bandit ignores inline suppression comments
 and blocks medium-or-higher findings at medium-or-higher confidence; dependency auditing operates on
 hashed exports of every active uv lock. A reported advisory is adjudicated against
 `dependency-waivers.toml`, which binds each review to an exact domain, package, version, and

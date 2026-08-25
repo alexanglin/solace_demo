@@ -48,6 +48,8 @@ concern before changing it:
 | Frozen explicit fleet input with no seed | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private run control | [ADR-0105](../../docs/adr/0105-authenticate-private-scenario-and-fleet-run-control.md) |
+| Service-local Python wire ownership and route registries | [ADR-0106](../../docs/adr/0106-register-strict-python-wire-models-before-http-runtime.md) |
+| Typed Pydantic constructors under strict mypy | [ADR-0107](../../docs/adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 Do not settle a state transition, simulation parameter, clock policy, broker grant, delivery claim,
@@ -59,9 +61,11 @@ guide.
 
 | Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | The package shell, the Python range, Tier 2, and the two workspace dependencies |
+| `pyproject.toml` | The package shell, Python 3.14, Tier 2, three workspace dependencies, and the exact FastAPI, Pydantic, and Uvicorn pins selected for later runtime work |
 | `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
+| `src/aerial_rescue_fleet_simulator/control_wire.py` | The four strict fleet-control server models and canonical-first validation owned by this process |
+| `src/aerial_rescue_fleet_simulator/control_http_contract.py` | The framework-free three-route private request, response, and default-refusal expectations |
 | `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
 | `src/aerial_rescue_fleet_simulator/intake.py` | What a drone accepts off its own command queue, and the order it refuses in |
 | `src/aerial_rescue_fleet_simulator/protocol.py` | The drone's half of the dispatch lifecycle, folded through `packages/domain` ([ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md)) |
@@ -76,7 +80,7 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A console script and a runnable Compose command | The production catalog, scenario loader, and private run-control runtime. Their schemas are decided, but `deploy/compose.yaml` still keeps an import-and-exit shell |
+| A console script and a runnable Compose command | The production catalog, scenario loader, and private run-control runtime. Strict control models and route expectations exist, but no FastAPI application, listener, or generated OpenAPI does; `deploy/compose.yaml` still keeps an import-and-exit shell |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
 | Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
 | Exactly-once command effects, backlog recovery, and reconnect reconciliation | The same scaffold. Intake settles after publisher confirmation, and its receipts die with the process, so the claim is at-least-once with duplicates possible across a restart |
@@ -106,7 +110,8 @@ and coordinates typed ports. It does not become a second owner for policy or wir
 - Accept only ADR-0105's validated fleet-control start document at the composition boundary. Its nested
   `FleetScenario` projection is explicit and carries no seed or random source. ADR-0100 leaves catalog
   loading and version validation with the scenario service; ADR-0105 defines the private start, status,
-  cancel, authentication, and reconciliation protocol, but no HTTP runtime implements it yet. Do not
+  cancel, authentication, and reconciliation protocol. The strict server models and framework-free route
+  registry now exist locally, but no HTTP runtime implements them yet. Do not
   import another service's implementation, read a scenario file inside the simulator, or make the absent
   runtime grant this process a second broker role.
 - The evidence service owns model-output validation, provenance and hashes, and publication of a versioned
@@ -290,7 +295,7 @@ a substitute for structural absence.
 
 ## 8. Build evidence at the boundary that owns the claim
 
-For the first behavior in this member:
+For every new behavior in this member:
 
 1. Run the existing scaffold predicate and every relevant domain, contracts, broker, deployment, and root
    test before editing.
@@ -343,12 +348,14 @@ second oracle in this service.
   generated environments.
 - Pass a new untracked guide explicitly to file-based hooks because Git diff discovery does not see it.
 
-For a guide-only change, create the locked environment, prove the member remains a scaffold, and pass the
-files explicitly to the hooks:
+For a guide-only change, synchronize the locked environment, prove the member remains active, and pass
+the files explicitly to the hooks:
 
 ```sh
 uv sync --all-packages --frozen
-uv run --frozen pytest -q tools/quality_gate_tests/coverage/test_member_scaffold.py
+uv run --frozen pytest -q \
+  tools/quality_gate_tests/coverage/test_member_scaffold.py \
+  tools/quality_gate_tests/contracts/test_pydantic_mypy_policy.py
 pre-commit run --files \
   services/fleet_simulator/AGENTS.md \
   services/fleet_simulator/CLAUDE.md \
@@ -358,11 +365,14 @@ pre-commit run --files \
 These non-Python guide paths intentionally widen affected-test selection to the complete deterministic
 root suite. A passing file-scoped command therefore includes that suite rather than skipping tests.
 
-For implementation changes, run the member and directly affected pure-policy suites after the member is
-activated, then every affected broker, persistence, service, deployment, contract, security, replay,
-end-to-end, and performance test:
+For implementation changes, run the cross-service wire oracles, member suite, and directly affected
+pure-policy suites, then every affected broker, persistence, service, deployment, contract, security,
+replay, end-to-end, and performance test:
 
 ```sh
+uv run --frozen pytest -q \
+  tests/contract/test_python_wire_models.py \
+  tests/contract/test_http_contract_expectations.py
 uv run --frozen pytest -q services/fleet_simulator/tests
 uv run --frozen pytest -q packages/domain/tests packages/contracts/tests packages/broker/tests
 pre-commit run import-contracts --all-files --hook-stage pre-commit
@@ -383,7 +393,7 @@ git diff --cached --check
 While the files are untracked, inspect the guide directly and rely on the explicit file-scoped hooks;
 ordinary Git diff discovery cannot see it. After staging only the approved files, inspect the complete
 cached diff and its whitespace check. Confirm the literal symlink target is `AGENTS.md`, then confirm
-scaffold or active status, dependency and tier declarations, domain ownership, scenario version, clock and
+active status, dependency and tier declarations, domain ownership, scenario version, clock and
 no-seed boundary, broker grants, delivery claims, operating parameters, tests, runtime behavior, and
 affected documentation agree. Report offline, container, live broker, persistence, and performance evidence
 separately; one class never proves another.

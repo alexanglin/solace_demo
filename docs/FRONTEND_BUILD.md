@@ -48,18 +48,20 @@ green there on 2026-08-24:
   start and reset requests are intercepted on the wire by the specifications themselves. A1-A7 can
   therefore be implemented and reviewed without a running backend. A8 waits for the production sources
   and packaged runtime blockers named below.
-- The services the live surface will talk to are typed scaffolds with no implementation:
-  [`services/dashboard_api`](../services/dashboard_api/AGENTS.md),
-  [`services/scenario_service`](../services/scenario_service/AGENTS.md), and
-  [`services/recorder`](../services/recorder/AGENTS.md).
-- R1's browser-facing 19-shape schema, manifest, and fixture subincrement is green against the
+- The dashboard API and scenario service are now active only at their strict wire-model and
+  framework-free route-expectation layers; the fleet simulator owns the matching control-server
+  layer. None has a FastAPI application, listener, generated OpenAPI document, or private HTTP client.
+  [`services/recorder`](../services/recorder/AGENTS.md) remains a scaffold.
+- R1 is complete. Its browser-facing 19-shape schema, manifest, and fixture subincrement is green against the
   intended-red inventory begun at `f29d543` and its bounded-input extension in
   [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). The
   scenario catalog/definition schemas and the eight private scenario/fleet control schemas, manifest
   entries, and polarity fixtures are also green from the intended-red inventory in
-  [`test_scenario_control_contracts.py`](../tests/contract/test_scenario_control_contracts.py). R1 still
-  owes strict service-owned Pydantic twins and HTTP/OpenAPI expectation registries before A2 may start.
-  The browser-facing values in
+  [`test_scenario_control_contracts.py`](../tests/contract/test_scenario_control_contracts.py). Strict
+  service-local Python twins and canonical-first parsing are held by
+  [`test_python_wire_models.py`](../tests/contract/test_python_wire_models.py), while
+  [`test_http_contract_expectations.py`](../tests/contract/test_http_contract_expectations.py) pins the
+  framework-free public and private route registries for later runtime/OpenAPI parity. The browser-facing values in
   [`dashboard-fixtures.ts`](../apps/dashboard/tests/e2e/support/dashboard-fixtures.ts) remain a
   test-side reference, not a production contract.
 - [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects one event kind,
@@ -108,6 +110,11 @@ green there on 2026-08-24:
 - [ADR-0105](adr/0105-authenticate-private-scenario-and-fleet-run-control.md) — the two authenticated
   private HTTP hops, their eight shared-schema messages, refusal order, idempotent reconciliation, and
   one cancellation budget.
+- [ADR-0106](adr/0106-register-strict-python-wire-models-before-http-runtime.md) — service-local
+  Pydantic ownership, canonical-first parsing, browser-only classification, and framework-free route
+  expectations before a server exists.
+- [ADR-0107](adr/0107-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) — the pinned root
+  Pydantic mypy plugin keeps model constructors typed without weakening strict `Any` enforcement.
 
 ## 4. Build increments
 
@@ -119,8 +126,8 @@ its entry criteria are met, and when a register row in section 7 is open, the br
 against the committed fixtures behind the eventual interface and never drafts the missing contract
 itself.
 
-**The join.** R1 gates A2, and A2's generated types are what A4 through A7 consume — so R1 gates
-the entire typed core of Lane A, not merely A2. A1 alone precedes R1; its bootstrap-input
+**The join.** R1 gated A2 and is now complete. A2's generated types are what A4 through A7 consume,
+so closing R1 unblocks the entire typed core of Lane A, not merely A2. A1 alone preceded R1; its bootstrap-input
 validation hardens in A2. Fixture-driven implementation and adapter tests through A7 need no running
 backend. Live wiring — real SSE, real HTTP responses, and real replay bundles — waits on R5 and R6;
 production A8 evidence also waits on R8 and R9.
@@ -134,7 +141,7 @@ production A8 evidence also waits on R8 and R9.
   renders sibling banner and `main` landmarks, the explicit mode badge, the dashboard-state live
   region, and post-render fixture revision acknowledgement. Unit and HTML-entry integration tests
   measure the hand-written bootstrap rather than excluding it; the full coverage command is green.
-- **A2 — contracts layer.** *Status: not started. Blocked by R1.* The generation script, the
+- **A2 — contracts layer.** *Status: not started; unblocked by completed R1.* The generation script, the
   offline validator registry compiled from the committed schemas, generated types under
   `apps/dashboard/src/contracts/generated/`, and the freshness gate
   [ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) still owes, with
@@ -169,8 +176,8 @@ production A8 evidence also waits on R8 and R9.
 
 ### Lane B — the vertical unblockers
 
-- **R1 — dashboard wire-shape schemas.** *Status: in progress. Browser and scenario/private-control
-  schema/fixture subincrements are green from intended-red contract commits beginning at `f29d543`.
+- **R1 — dashboard wire-shape schemas.** *Status: complete. Browser, scenario/private-control, and
+  service-local Python-boundary subincrements are green from intended-red contract commits beginning at `f29d543`.
   Owners: `schemas/`, `services/dashboard_api`, `services/scenario_service`, and
   `services/fleet_simulator`.* The browser-facing inventory now has an
   exact 19-shape contract under [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py):
@@ -178,11 +185,21 @@ production A8 evidence also waits on R8 and R9.
   ordered-event timelines, operation-state separation, and replay integrity. The separate inventory in
   [`test_scenario_control_contracts.py`](../tests/contract/test_scenario_control_contracts.py) now pins
   two scenario-file shapes and eight private-control shapes, their closed members, status reuse, fleet
-  projection boundary, manifest ownership, and polarity pairs. R1 remains blocked only on strict
-  service-owned Pydantic models and HTTP/OpenAPI expectation registries. `packages/contracts` remains
+  projection boundary, manifest ownership, and polarity pairs. The strict model inventory and
+  schema-owned baseline/negative parity are executable in
+  [`test_python_wire_models.py`](../tests/contract/test_python_wire_models.py); the exact nine-route
+  public registry and both three-route private registries are executable in
+  [`test_http_contract_expectations.py`](../tests/contract/test_http_contract_expectations.py).
+  Their implementations remain local to the
+  [`dashboard API`](../services/dashboard_api/src/aerial_rescue_dashboard_api/wire.py),
+  [`scenario service`](../services/scenario_service/src/aerial_rescue_scenario_service/wire.py), and
+  [`fleet simulator`](../services/fleet_simulator/src/aerial_rescue_fleet_simulator/control_wire.py),
+  with corresponding framework-free `http_contract.py` or `control_http_contract.py` registries.
+  `packages/contracts` remains
   the owner of the pure Python projections and fold in R3 and does not take a Pydantic dependency.
   ADR-0094/0097/0100/0101/0105 decide the shapes; the e2e fixture is a reference, never the type
-  authority. R1 remains the single prerequisite for A2 and everything after it.
+  authority. No FastAPI application, generated OpenAPI document, or listener is part of R1; those remain
+  R5/R8 work. R1's completion unblocks A2 and everything after it.
 - **R2 — scenario catalog and loader.** *Status: not started. Owner: `services/scenario_service`.*
   R1 supplies contract schemas and shared golden examples only. R2 owns the two production files under
   `scenarios/`, their strict bounded loader, digest/path validation, and lossless 20-simulation
@@ -270,7 +287,7 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 
 | Row | Blocked dashboard work | Missing today | Owner |
 | --- | --- | --- | --- |
-| R1 | A2, and through it the typed core A4-A7 | service-owned Pydantic twins and HTTP/OpenAPI expectations | dashboard/scenario/fleet services |
+| R1 | Complete; A2 and the typed core A4-A7 are unblocked | none; schemas, fixtures, service-local Python twins, and route expectations are green | dashboard/scenario/fleet services |
 | R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
 | R3 | digest and reducer parity proof for A3-A4 | projections, ordered-event wrapper, Python fold, parity fixtures | `packages/contracts` |
 | R4 | snapshot timeline and resume reads | store read path, persistence revision | `packages/store` |

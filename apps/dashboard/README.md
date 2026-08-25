@@ -2,11 +2,12 @@
 
 This package is the browser command center for the wilderness mission slice. A1 is green: the
 production HTML host loads the real entry module, which renders sibling banner and main landmarks,
-explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is in
-progress: the 19 browser-facing schemas plus two scenario-file and eight private-control schemas have
-shared manifest-owned polarity fixtures. Only strict service-owned Pydantic twins and HTTP/OpenAPI
-expectations still gate A2. The remaining Playwright contract stays intentionally red while A2-A8 are
-implemented.
+explicit mode and dashboard-state text, and post-render fixture revision acknowledgement. R1 is also
+green: the 19 browser-facing schemas plus two scenario-file and eight private-control schemas have
+shared manifest-owned polarity fixtures, strict service-local Python twins at every Python trust
+boundary, and framework-free HTTP expectation registries. A2 is unblocked but not started. No
+FastAPI application, generated OpenAPI, or production browser adapter exists yet, and the remaining
+Playwright contract stays intentionally red while A2-A8 are implemented.
 
 ## Contract boundary
 
@@ -14,7 +15,7 @@ Production browser types will be generated from `schemas/v1/dashboard/`; the han
 fixtures are serialized examples, never a type authority. The current schema slice covers bootstrap,
 health and readiness, scenario discovery, the five-field normalized event and its audit wrapper,
 reduced state, snapshot and suffix frames, source state, mutations and errors, and replay integrity.
-A2 will add the committed generated types and offline Ajv registry after all of R1 closes.
+A2 will add the committed generated types and offline Ajv registry now that R1 is closed.
 
 The contract keeps three facts explicit:
 

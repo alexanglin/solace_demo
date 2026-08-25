@@ -116,7 +116,9 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
         scenario = _wire_module("aerial_rescue_scenario_service.wire")
         fleet = _wire_module("aerial_rescue_fleet_simulator.control_wire")
-        expected = (
+        expected: tuple[
+            tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]], ...
+        ] = (
             (
                 DASHBOARD_SERVER_SCHEMA_IDS,
                 SCENARIO_CONTROL_SCHEMA_IDS,
@@ -318,6 +320,48 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertGreater(len(raw), 256 * 1024)
         self.assertEqual(value, model.model_dump(mode="python", by_alias=True))
+
+    def test_each_service_refuses_a_schema_it_does_not_own(self) -> None:
+        # Arrange
+        modules = (
+            _wire_module("aerial_rescue_dashboard_api.wire"),
+            _wire_module("aerial_rescue_scenario_service.wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+        )
+        schema_id = f"{SCHEMA_PREFIX}dashboard/not-owned.schema.json"
+        raw = b"{}"
+
+        # Act
+        refusals: list[ValueError] = []
+        for module in modules:
+            with pytest.raises(ValueError, match="schema is not owned") as captured:
+                module.parse_wire_document(schema_id, raw)
+            refusals.append(captured.value)
+
+        # Assert
+        self.assertEqual(len(modules), len(refusals))
+
+    def test_private_and_file_owners_apply_the_canonical_raw_byte_bound(self) -> None:
+        # Arrange
+        modules = (
+            _wire_module("aerial_rescue_scenario_service.wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+        )
+        schema_ids = (
+            f"{SCHEMA_PREFIX}scenario/catalog.schema.json",
+            f"{SCHEMA_PREFIX}rpc/fleet-control-start-request.schema.json",
+        )
+        oversized = b" " * ((256 * 1024) + 1)
+
+        # Act
+        refusals: list[ValueError] = []
+        for module, schema_id in zip(modules, schema_ids, strict=True):
+            with pytest.raises(ValueError, match="wire document exceeds 262144 bytes") as captured:
+                module.parse_wire_document(schema_id, oversized)
+            refusals.append(captured.value)
+
+        # Assert
+        self.assertEqual(len(modules), len(refusals))
 
     def test_calendar_invalid_dashboard_instants_are_refused_semantically(self) -> None:
         # Arrange
