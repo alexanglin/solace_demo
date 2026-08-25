@@ -132,6 +132,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0112](0112-witness-ordered-dashboard-events-outside-reduced-state.md) | Witness ordered dashboard events outside reduced state and correct v1 anchors | Accepted |
 | [0113](0113-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
 | [0114](0114-define-durable-application-processing.md) | Define durable application processing | Accepted |
+| [0115](0115-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
 
 ## Decisions still open
 
