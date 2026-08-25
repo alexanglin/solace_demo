@@ -3,7 +3,7 @@
 # user. The build context is the repository root; .dockerignore keeps secrets, caches, and
 # the Agent Mesh project out of it. No service has an entrypoint yet, so the compose file
 # gives each one an import probe as its command.
-FROM python:3.14.7-slim-trixie@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
+FROM python:3.14.7-slim-trixie@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS builder
 COPY deploy/application/uv-requirements.txt /tmp/uv-requirements.txt
 RUN pip install --no-cache-dir --require-hashes --requirement /tmp/uv-requirements.txt
 WORKDIR /app
@@ -15,7 +15,7 @@ COPY services ./services
 COPY tools ./tools
 RUN uv sync --frozen --all-packages --no-dev
 
-FROM python:3.14.7-slim-trixie@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
+FROM python:3.14.7-slim-trixie@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83
 RUN groupadd --system --gid 10001 aerial && useradd --system --uid 10001 --gid 10001 --create-home aerial
 COPY --from=builder --chown=10001:10001 /app /app
 WORKDIR /app

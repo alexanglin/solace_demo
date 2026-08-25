@@ -1835,6 +1835,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Security
 
+- **The `postgres` and `python` base images are refreshed to the builds their tags carry now**, the
+  first time the pin gate of
+  [ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) has had something to
+  say. `postgres:18.6-trixie` moves to `sha256:1957b2ff…be8687` and `python:3.14.7-slim-trixie` to
+  `sha256:83ff1d24…01c8e83`. Both tags are unchanged, so neither Postgres 18.6 nor Python 3.14.7
+  moves; upstream rebuilt the Debian layers beneath them. That is exactly the lever ADR-0055 says the
+  project has over a third-party image, and the only one it blocks on — the advisories inside the new
+  images stay informational, and no waiver was added or touched.
+
 - `asteval` is overridden from the `1.0.6` that Agent Mesh 1.28.7 pins to `1.0.9`, closing
   CVE-2026-55244 / GHSA-9w56-46f6-3qhx, a sandbox escape in the default `Interpreter` that Agent
   Mesh feeds math embeds taken from model output. The single-package override is the case ADR-0031's
