@@ -123,6 +123,69 @@ invalid = [
 ]
 
 [[contracts]]
+schema = "schemas/v1/payload/drone-event-connectivity-changed.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/drone-event-connectivity-changed/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/drone-event-connectivity-changed/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/drone-event-connectivity-changed.schema.json"
+valid = [
+  "fixtures/golden/v1/event/drone-event-connectivity-changed/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/drone-event-connectivity-changed/type-not-connectivity.json",
+  "fixtures/golden/v1/event/drone-event-connectivity-changed/dataschema-not-connectivity.json",
+  "fixtures/golden/v1/event/drone-event-connectivity-changed/data-fails-payload.json",
+  "fixtures/golden/v1/event/drone-event-connectivity-changed/source-not-connectivity-lifecycle.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/payload/mission-event-lifecycle.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/mission-event-lifecycle/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/mission-event-lifecycle/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/mission-event-lifecycle.schema.json"
+valid = [
+  "fixtures/golden/v1/event/mission-event-lifecycle/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/mission-event-lifecycle/type-not-lifecycle.json",
+  "fixtures/golden/v1/event/mission-event-lifecycle/dataschema-not-lifecycle.json",
+  "fixtures/golden/v1/event/mission-event-lifecycle/data-fails-payload.json",
+  "fixtures/golden/v1/event/mission-event-lifecycle/source-not-mission-lifecycle.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/payload/sector-event-lifecycle.schema.json"
+valid = [
+  "fixtures/golden/v1/payload/sector-event-lifecycle/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/payload/sector-event-lifecycle/unknown-member.json",
+]
+
+[[contracts]]
+schema = "schemas/v1/event/sector-event-lifecycle.schema.json"
+valid = [
+  "fixtures/golden/v1/event/sector-event-lifecycle/baseline.json",
+]
+invalid = [
+  "fixtures/golden/v1/event/sector-event-lifecycle/type-not-lifecycle.json",
+  "fixtures/golden/v1/event/sector-event-lifecycle/dataschema-not-lifecycle.json",
+  "fixtures/golden/v1/event/sector-event-lifecycle/data-fails-payload.json",
+  "fixtures/golden/v1/event/sector-event-lifecycle/source-not-sector-lifecycle.json",
+]
+
+[[contracts]]
 schema = "schemas/v1/payload/drone-command-assign-sector.schema.json"
 valid = [
   "fixtures/golden/v1/payload/drone-command-assign-sector/baseline.json",

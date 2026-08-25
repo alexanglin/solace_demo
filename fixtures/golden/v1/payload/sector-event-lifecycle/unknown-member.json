@@ -1,0 +1,7 @@
+{
+  "missionId": "mission-01",
+  "sectorId": "sector-01",
+  "state": "ASSIGNED",
+  "assignedMemberId": "drone-01",
+  "progress": 1
+}

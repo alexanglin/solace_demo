@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/sector-event-lifecycle.schema.json",
+  "description": "A fleet-owned sector lifecycle change with explicit assignment state.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "sectorId",
+    "state",
+    "assignedMemberId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "sectorId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "state": {
+      "enum": [
+        "UNASSIGNED",
+        "ASSIGNED",
+        "AT_RISK",
+        "SEARCHED"
+      ]
+    },
+    "assignedMemberId": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        }
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "assignedMemberId": {
+          "type": "null"
+        },
+        "state": {
+          "const": "UNASSIGNED"
+        }
+      }
+    },
+    {
+      "properties": {
+        "assignedMemberId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "state": {
+          "enum": [
+            "ASSIGNED",
+            "AT_RISK",
+            "SEARCHED"
+          ]
+        }
+      }
+    }
+  ]
+}

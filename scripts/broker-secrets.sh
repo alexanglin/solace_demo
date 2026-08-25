@@ -16,8 +16,8 @@
 #   secrets/broker-<role>-password  one per broker authorization role, same form
 #   secrets/.env.roles              the same role credentials as Compose variables
 #
-# The nine role names below are the second home of the Principal enum in packages/domain
-# (docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md). A gate test
+# The ten role names below are the second home of the Principal enum in packages/domain
+# (docs/adr/0061 and docs/adr/0111). A gate test
 # in tools/quality_gate_tests/deploy/ holds the two equal, so neither can drift alone.
 #
 # Every private file is created 0600. Existing material is left alone unless --rotate is
@@ -53,7 +53,7 @@ certs="$deploy_dir/certs"
 secrets="$deploy_dir/secrets"
 validity_days=365
 
-broker_roles="fleet-simulator command-gateway dashboard-api evidence-service recorder
+broker_roles="fleet-simulator command-gateway dashboard-api scenario-service evidence-service recorder
 event-mesh-gateway event-mesh-tool agent-mesh-agent discovery"
 passwords="broker-admin-password postgres-password semp-discovery-password session-secret-key"
 for role in $broker_roles; do
@@ -74,7 +74,7 @@ report() {
 	printf 'compose:    %s/.env.roles\n' "$secrets"
 }
 
-# Compose reads the nine role identities from this file as a second --env-file, so no
+# Compose reads the ten role identities from this file as a second --env-file, so no
 # password is ever hand-copied into .env. It is derived from the password files above and
 # rewritten on every run, which keeps it correct after a rotation or a filled gap. The
 # name begins with .env so .gitignore's `.env.*` rule and the no-env-files hook both cover

@@ -17,12 +17,14 @@ source.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+import re
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Final
+from typing import Final, NoReturn
 
 from aerial_rescue_contracts.envelope import Envelope
+from aerial_rescue_contracts.topics import IDENTIFIER_PATTERN
 
 MAX_BUFFERED_EVENTS: Final = 256
 """Dashboard events held per server-sent-event client; see ``docs/operating-parameters.md``."""
@@ -50,6 +52,7 @@ class ViewRefusal(Enum):
     """Why an envelope does not become a dashboard event."""
 
     UNPROJECTED = "event type has no dashboard projection"
+    MALFORMED_PAYLOAD = "event payload does not match its bound lifecycle contract"
 
 
 class ViewError(ValueError):
@@ -63,16 +66,95 @@ class ViewError(ValueError):
         self.value = value
 
 
+PayloadValidator = Callable[[Mapping[str, object]], None]
+
+
+def _accept_payload(_data: Mapping[str, object]) -> None:
+    """Accept a payload whose projection predates lifecycle-specific validation."""
+
+
+def _malformed(attribute: str, value: object) -> NoReturn:
+    """Refuse one member of a lifecycle payload at the normalized-view boundary."""
+    raise ViewError(ViewRefusal.MALFORMED_PAYLOAD, attribute, value)
+
+
+def _closed_members(data: Mapping[str, object], required: tuple[str, ...]) -> None:
+    """Require exactly the declared lifecycle members in deterministic refusal order."""
+    allowed = frozenset(required)
+    unknown = sorted((name for name in data if name not in allowed), key=lambda name: name.encode())
+    if unknown:
+        name = unknown[0]
+        _malformed(name, data[name])
+    for name in required:
+        if name not in data:
+            _malformed(name, None)
+
+
+def _identifier(data: Mapping[str, object], name: str) -> str:
+    """Return one identifier-form lifecycle member or refuse it."""
+    value = data[name]
+    if not isinstance(value, str) or re.fullmatch(IDENTIFIER_PATTERN, value) is None:
+        _malformed(name, value)
+    return value
+
+
+def _choice(data: Mapping[str, object], name: str, allowed: frozenset[str]) -> str:
+    """Return one closed-vocabulary lifecycle member or refuse it."""
+    value = data[name]
+    if not isinstance(value, str) or value not in allowed:
+        _malformed(name, value)
+    return value
+
+
+def _validate_connectivity(data: Mapping[str, object]) -> None:
+    """Validate the connectivity-change payload owned by ADR-0111."""
+    _closed_members(data, ("missionId", "droneId", "connectivity"))
+    _identifier(data, "missionId")
+    _identifier(data, "droneId")
+    _choice(data, "connectivity", frozenset({"CONNECTED", "DEGRADED", "OFFLINE"}))
+
+
+def _validate_mission_lifecycle(data: Mapping[str, object]) -> None:
+    """Validate the mission-lifecycle payload owned by ADR-0111."""
+    _closed_members(data, ("missionId", "lifecycle"))
+    _identifier(data, "missionId")
+    _choice(data, "lifecycle", frozenset({"PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"}))
+
+
+def _validate_sector_lifecycle(data: Mapping[str, object]) -> None:
+    """Validate the sector lifecycle and its state-dependent assignment."""
+    _closed_members(data, ("missionId", "sectorId", "state", "assignedMemberId"))
+    _identifier(data, "missionId")
+    _identifier(data, "sectorId")
+    state = _choice(data, "state", frozenset({"UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED"}))
+    assigned = data["assignedMemberId"]
+    if state == "UNASSIGNED":
+        if assigned is not None:
+            _malformed("assignedMemberId", assigned)
+    else:
+        _identifier(data, "assignedMemberId")
+
+
 @dataclass(frozen=True)
 class Projection:
     """The dashboard kind and class an application event type projects to."""
 
     kind: str
     event_class: EventClass
+    _validate_payload: PayloadValidator = field(default=_accept_payload, repr=False, compare=False)
 
 
 PROJECTIONS: Final[Mapping[str, Projection]] = {
     "aerial-rescue.v1.drone.telemetry": Projection("droneTelemetry", EventClass.TELEMETRY),
+    "aerial-rescue.v1.drone.event.connectivity-changed": Projection(
+        "connectivityChanged", EventClass.CONNECTIVITY, _validate_connectivity
+    ),
+    "aerial-rescue.v1.mission.event.lifecycle": Projection(
+        "missionLifecycle", EventClass.MISSION, _validate_mission_lifecycle
+    ),
+    "aerial-rescue.v1.sector.event.lifecycle": Projection(
+        "sectorLifecycle", EventClass.MISSION, _validate_sector_lifecycle
+    ),
 }
 """A new row lands together with its state rule, golden fixtures, and manifest entry."""
 
@@ -114,6 +196,9 @@ def project(envelope: Envelope) -> DashboardEvent:
         ViewError: The envelope's type has no projection.
     """
     projection = projection_for(envelope.type)
+    projection._validate_payload(envelope.data)
+    if envelope.data.get(MISSION_KEY) != envelope.subject:
+        _malformed(MISSION_KEY, envelope.data.get(MISSION_KEY))
     data = {key: value for key, value in envelope.data.items() if key != MISSION_KEY}
     return DashboardEvent(
         projection.kind,

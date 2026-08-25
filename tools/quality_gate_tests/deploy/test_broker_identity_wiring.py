@@ -26,7 +26,7 @@ TEMPLATE = REPOSITORY_ROOT / ".env.example"
 COMPOSE = REPOSITORY_ROOT / "deploy" / "compose.yaml"
 USERNAME_KEY = "SOLACE_BROKER_USERNAME"
 CREDENTIAL_KEY = "SOLACE_BROKER_PASSWORD"
-WITHOUT_IDENTITY = "scenario-service"
+SCENARIO_SERVICE = "scenario-service"
 AGENT_MESH_SERVICE = "agent-mesh"
 AGENT_MESH_CONFIGS = REPOSITORY_ROOT / "agent-mesh" / "configs"
 REFERENCE = re.compile(r"\$\{(SOLACE_[A-Z0-9_]+)\}")
@@ -130,15 +130,27 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
         # Assert
         self.assertEqual((), mismatched)
 
-    def test_the_scenario_service_carries_no_broker_identity(self) -> None:
+    def test_the_scenario_service_carries_its_dedicated_role_identity(self) -> None:
         # Arrange
-        environment = _services()[WITHOUT_IDENTITY]
+        declarations = _declarations()
+        environment = _services()[SCENARIO_SERVICE]
+        expected = (
+            "scenario-service",
+            "<required>",
+            "${SOLACE_SCENARIO_SERVICE_USERNAME}",
+            "${SOLACE_SCENARIO_SERVICE_PASSWORD}",
+        )
 
         # Act
-        held = tuple(key for key in (USERNAME_KEY, CREDENTIAL_KEY) if key in environment)
+        held = (
+            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
+            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
+            environment.get(USERNAME_KEY),
+            environment.get(CREDENTIAL_KEY),
+        )
 
         # Assert
-        self.assertEqual((), held)
+        self.assertEqual(expected, held)
 
     def test_no_service_falls_back_to_one_shared_broker_credential(self) -> None:
         # Arrange

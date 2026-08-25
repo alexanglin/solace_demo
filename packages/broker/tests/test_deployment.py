@@ -154,10 +154,10 @@ class ProvisionTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             (
-                "9 acl profiles",
-                "9 client usernames",
-                "47 topic exceptions",
-                "23 durable queues, 22 subscriptions",
+                "10 acl profiles",
+                "10 client usernames",
+                "51 topic exceptions",
+                "25 durable queues, 24 subscriptions",
                 True,
             ),
             (
@@ -245,7 +245,7 @@ class MainTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((0, True), (code, "23 durable queues" in out.getvalue()))
+        self.assertEqual((0, True), (code, "25 durable queues" in out.getvalue()))
 
     def test_a_drone_identifier_the_grammar_refuses_reports_one(self) -> None:
         # Arrange

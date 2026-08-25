@@ -84,6 +84,7 @@ _ENDPOINTS: Final[Mapping[Principal, Endpoint]] = {
     Principal.FLEET_SIMULATOR: Endpoint.PER_DRONE,
     Principal.COMMAND_GATEWAY: Endpoint.FAMILY,
     Principal.DASHBOARD_API: Endpoint.FAMILY,
+    Principal.SCENARIO_SERVICE: Endpoint.NONE,
     Principal.EVIDENCE_SERVICE: Endpoint.FAMILY,
     Principal.RECORDER: Endpoint.FAMILY,
     Principal.EVENT_MESH_GATEWAY: Endpoint.UPSTREAM,

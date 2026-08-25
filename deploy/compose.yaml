@@ -222,11 +222,13 @@ services:
       SOLACE_BROKER_USERNAME: ${SOLACE_COMMAND_GATEWAY_USERNAME}
       SOLACE_BROKER_PASSWORD: ${SOLACE_COMMAND_GATEWAY_PASSWORD}
 
-  # No broker identity by decision: the scenario service has no documented publish or
-  # subscribe role, and docs/adr/0061 extends deny-by-default to issuing identities.
   scenario-service:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_scenario_service"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_SCENARIO_SERVICE_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_SCENARIO_SERVICE_PASSWORD}
 
   evidence-service:
     <<: *application

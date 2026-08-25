@@ -333,13 +333,13 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
 | Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
 | Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
-| Endpoints the reference fleet needs | 46 target after ADR-0111: 22 family queues, 23 per-drone command queues, and the dead-message queue; the implemented provisioner remains at 44 until R6/R8 land | derived from the subscribe grants as extended by ADR-0111; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
+| Endpoints the reference fleet needs | 46: 22 family queues, 23 per-drone command queues, and the dead-message queue; the implemented desired-state provisioner derives all 46, while the R6 recorder receiver and R8 lifecycle publishers remain pending | derived from the subscribe grants as extended by ADR-0111 and asserted by the provisioner tests; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
 
 The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
 in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
 that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
 a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
-and, after ADR-0111's two recorder queues land, 46 queues reserve a nominal 460 MB against the VPN's
+and ADR-0111's 46 desired queues reserve a nominal 460 MB against the VPN's
 measured 1500 MB. **Expiry** follows from the worst
 declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
 case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,

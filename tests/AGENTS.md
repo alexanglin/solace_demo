@@ -60,7 +60,7 @@ The current suites have these deliberately different boundaries:
 | `contract/test_command_vocabulary.py` | Offline agreement between command-result schema words, dispatch states, and the fleet-simulator publishing table |
 | [`phase0/`](phase0/AGENTS.md) | Offline native-client compatibility and explicitly authorized live stack, Agent Mesh, and Event Mesh feasibility probes |
 | [`integration/`](integration/AGENTS.md) | Explicitly authorized live fleet telemetry, guaranteed-delivery, command-dispatch, and backlog-recovery probes |
-| `security/test_broker_authorization.py` | Live positive and negative broker publish/connect authorization controls |
+| `security/test_broker_authorization.py` | Live positive and negative broker publish/connect controls plus one lifecycle subscription denial |
 
 All files here execute in the root Python 3.14 workspace, including the client-side Agent Mesh live
 probe. Tests under `agent-mesh/tests/` execute from `agent-mesh/` with its isolated Python 3.13 project.
@@ -192,9 +192,10 @@ prompt-injection or delegation case; treat it as public and keep secrets, person
 out of it. Synthetic mission identifiers, public project role names, and public topic shapes are not
 credentials, but still keep output to what the assertion needs.
 
-The live broker-authorization tests connect and publish acknowledged persistent messages. Phase 0 probes
-have distinct broker, model, application, temporary-endpoint, and persistent-message side effects; their
-local guide owns the exact boundaries.
+The live broker-authorization tests connect, publish acknowledged persistent messages, and open direct
+receivers for one lifecycle subscription-authorization control. Phase 0 probes have distinct broker,
+model, application, temporary-endpoint, and persistent-message side effects; their local guide owns the
+exact boundaries.
 
 Confirm the exact prerequisite set for the selected file rather than applying one blanket setup:
 
@@ -235,9 +236,10 @@ Keep every report within what the present assertions establish:
   Mesh Gateway and Event Mesh Tool probes; do not infer durability, causation, model quality, or complete
   authorization coverage from their class name.
 - The broker-authorization suite establishes only its current allowed and denied publish/connect cases
-  against the local projection. It does not establish subscription denial, every grant, A2A policy,
-  queues or redelivery, stale-identity deletion, per-process identity separation, TLS-downgrade closure,
-  or Cloud parity.
+  plus scenario-service denial and recorder acceptance for the exact mission-lifecycle subscription
+  against the local projection. It does not establish every subscription grant, queue ownership or
+  redelivery, stale-identity deletion, per-process identity separation, TLS-downgrade closure, or Cloud
+  parity.
 
 ## 8. Required verification
 

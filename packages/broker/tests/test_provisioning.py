@@ -63,12 +63,12 @@ NAMESPACE = "acme/dev"
 CREDENTIAL = "fixture-not-a-real-credential"
 CREDENTIALS = {role: CREDENTIAL for role in Principal}
 
-EXPECTED_PUBLISH_EXCEPTIONS = 16
-EXPECTED_SUBSCRIBE_EXCEPTIONS = 31
+EXPECTED_PUBLISH_EXCEPTIONS = 18
+EXPECTED_SUBSCRIBE_EXCEPTIONS = 33
 
 DRONES = ("drone-vision-01", "drone-thermal-02")
-EXPECTED_QUEUES = 23
-EXPECTED_QUEUE_SUBSCRIPTIONS = 22
+EXPECTED_QUEUES = 25
+EXPECTED_QUEUE_SUBSCRIPTIONS = 24
 
 
 class FakeBroker:
@@ -313,6 +313,60 @@ class DesiredStateTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((frozenset(), len(tuple(Family))), held)
+
+    def test_lifecycle_acl_exceptions_are_projected_offline_for_the_runtime_roles(self) -> None:
+        # Arrange
+        expected = {
+            "SCENARIO_SERVICE": (
+                frozenset({"aerial-rescue/v1/*/mission/event/*"}),
+                frozenset(),
+            ),
+            "FLEET_SIMULATOR": (
+                frozenset(
+                    {
+                        "aerial-rescue/v1/*/drone/*/telemetry",
+                        "aerial-rescue/v1/*/drone/*/event/*",
+                        "aerial-rescue/v1/*/drone/*/command-result/*",
+                        "aerial-rescue/v1/*/sector/*/event/*",
+                    }
+                ),
+                frozenset({"aerial-rescue/v1/*/drone/*/command/*"}),
+            ),
+            "RECORDER": (
+                frozenset(),
+                frozenset(
+                    {
+                        "aerial-rescue/v1/*/operator/command/*",
+                        "aerial-rescue/v1/*/operator/approval/*",
+                        "aerial-rescue/v1/*/drone/*/telemetry",
+                        "aerial-rescue/v1/*/drone/*/event/*",
+                        "aerial-rescue/v1/*/drone/*/command/*",
+                        "aerial-rescue/v1/*/drone/*/command-result/*",
+                        "aerial-rescue/v1/*/gateway/request/*",
+                        "aerial-rescue/v1/*/gateway/response/*",
+                        "aerial-rescue/v1/*/agent/proposal/*/*",
+                        "aerial-rescue/v1/*/agent/response/*",
+                        "aerial-rescue/v1/*/audit/*",
+                        "aerial-rescue/v1/*/mission/event/*",
+                        "aerial-rescue/v1/*/sector/*/event/*",
+                    }
+                ),
+            ),
+        }
+        state = desired_state(VPN, CREDENTIALS, None, DRONES)
+
+        # Act
+        actual = {
+            role.name: (
+                _exceptions_of(state, role, Access.PUBLISH),
+                _exceptions_of(state, role, Access.SUBSCRIBE),
+            )
+            for role in Principal
+            if role.name in expected
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
 
     def test_a_role_with_no_credential_is_refused(self) -> None:
         # Arrange

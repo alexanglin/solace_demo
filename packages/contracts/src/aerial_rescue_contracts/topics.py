@@ -1,6 +1,6 @@
 """Typed builder and parser for the application topic families.
 
-The eleven families are the ones ``docs/CONTRACTS.md`` names under ``aerial-rescue/v1``,
+The thirteen families are the ones ``docs/CONTRACTS.md`` names under ``aerial-rescue/v1``,
 and the grammar of every variable level is the decision in
 ``docs/adr/0036-ascii-topic-grammar-bound-to-event-type.md``. Because every level is
 drawn from an allowlist, a formatted topic can never carry a Solace subscription
@@ -51,11 +51,12 @@ DECISIONS: Final = frozenset({"approve", "reject"})
 WILDCARD_CHARACTERS: Final = frozenset({"*", ">"})
 MISSION_PARAMETER: Final = "missionId"
 DRONE_PARAMETER: Final = "droneId"
+SECTOR_PARAMETER: Final = "sectorId"
 
 _PREFIX_LEVELS: Final = tuple(namespace_prefix().split("/"))
 _TYPE_PREFIX: Final = namespace_prefix().replace("/", ".") + "."
 _IDENTIFIER_PARAMETERS: Final = frozenset(
-    {MISSION_PARAMETER, DRONE_PARAMETER, "commandId", "requestId"}
+    {MISSION_PARAMETER, DRONE_PARAMETER, SECTOR_PARAMETER, "commandId", "requestId"}
 )
 
 
@@ -97,7 +98,7 @@ def _placeholder(level: str) -> str:
 
 
 class Family(Enum):
-    """The eleven topic families, as templates after the mission identifier level."""
+    """The thirteen topic families, as templates after the mission identifier level."""
 
     OPERATOR_COMMAND = "operator/command/{commandType}"
     OPERATOR_APPROVAL = "operator/approval/{decision}"
@@ -110,6 +111,8 @@ class Family(Enum):
     AGENT_PROPOSAL = "agent/proposal/{agentName}/{proposalType}"
     AGENT_RESPONSE = "agent/response/{agentName}"
     AUDIT = "audit/{recordType}"
+    MISSION_EVENT = "mission/event/{eventType}"
+    SECTOR_EVENT = "sector/{sectorId}/event/{eventType}"
 
     @property
     def levels(self) -> tuple[str, ...]:
@@ -162,6 +165,8 @@ _DELIVERY: Final[Mapping[Family, Delivery]] = {
     Family.AGENT_PROPOSAL: Delivery.GUARANTEED,
     Family.AGENT_RESPONSE: Delivery.GUARANTEED,
     Family.AUDIT: Delivery.GUARANTEED,
+    Family.MISSION_EVENT: Delivery.GUARANTEED,
+    Family.SECTOR_EVENT: Delivery.GUARANTEED,
 }
 """Total over the families; a test asserts it.
 
