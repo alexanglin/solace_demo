@@ -76,12 +76,19 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit test, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Everything the commit stage runs, over the pushed range ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)), plus: full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit test, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
 **~2.7 s**. Re-measure when the suite grows; if it approaches the budget, move work to `pre-push` rather
 than letting people start using `--no-verify`.
+
+A push is at least as strict as the commit it publishes: `default_stages` is
+`[pre-commit, pre-push]`, so every hook runs at both blocking stages. Two opt out and run at the commit
+stage only — `no-commit-to-branch`, which would otherwise refuse every push made from `main`, and the
+stock `gitleaks` hook, which can only scan a staged diff and is replaced at push time by
+`gitleaks-history`. That set is asserted by `tools/quality_gate_tests/hooks/test_hook_semantics.py`, so
+a third exception cannot be added quietly.
 
 Since [ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md) the commit stage runs
 the tests your change reaches rather than all of them, so its cost varies with the diff. A one-file

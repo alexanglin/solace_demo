@@ -38,8 +38,11 @@ default_install_hook_types:
   - post-merge
   - pre-merge-commit
 
-# Without this, every hook would run at every installed stage.
-default_stages: [pre-commit]
+# A push must be at least as strict as the commit it publishes, so every hook runs at
+# both blocking stages unless it says otherwise (docs/adr/0104). Naming the two
+# explicitly is still load-bearing: an unset default_stages would also wire every hook
+# into commit-msg, post-checkout, post-merge, and pre-merge-commit.
+default_stages: [pre-commit, pre-push]
 
 fail_fast: false
 
@@ -74,9 +77,12 @@ repos:
       # store into the commit path. gitleaks covers this properly.
       # docs/adr/0001 forbids vendoring Agent Mesh as a submodule.
       - id: forbid-submodules
-      # AGENTS.md §9 (Version control): work in a branch.
+      # AGENTS.md §9 (Version control): work in a branch. Commit stage only -- at
+      # pre-push this would refuse every push made from main, which is the branch this
+      # repository publishes (docs/adr/0104).
       - id: no-commit-to-branch
         args: [--branch, main]
+        stages: [pre-commit]
       - id: check-ast
       - id: debug-statements
 
@@ -85,8 +91,11 @@ repos:
     rev: v8.30.1
     hooks:
       # The stock hook hardcodes `--staged --pre-commit`, so it scans the staged
-      # diff only. Full-history scanning is a separate local hook at pre-push.
+      # diff only. Full-history scanning is a separate local hook at pre-push, and
+      # this one stays off that stage rather than passing over an empty staged diff
+      # and reporting a verdict it never reached (docs/adr/0104).
       - id: gitleaks
+        stages: [pre-commit]
 
   # ----------------------------------------------------------------- python --
   - repo: https://github.com/astral-sh/ruff-pre-commit
