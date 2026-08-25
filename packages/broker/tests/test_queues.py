@@ -18,6 +18,7 @@ import pytest
 from aerial_rescue_broker.queues import (
     DEAD_MESSAGE_QUEUE,
     MAX_QUEUE_NAME_LENGTH,
+    MAX_SPOOL_MEGABYTES,
     Endpoint,
     QueueError,
     QueueRefusal,
@@ -48,6 +49,7 @@ from aerial_rescue_domain.principals import (
 DRONE = "drone-vision-01"
 OTHER_DRONE = "drone-thermal-02"
 DRONES = (DRONE, OTHER_DRONE)
+REFERENCE_DRONES = tuple(f"drone-{ordinal:02d}" for ordinal in range(1, 24))
 
 
 class EndpointTableTests(unittest.TestCase):
@@ -132,7 +134,7 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual(frozenset({Family.DRONE_TELEMETRY}), subscribed - owed)
 
-    def test_the_recorder_is_owed_the_eight_guaranteed_families(self) -> None:
+    def test_the_recorder_is_owed_the_ten_guaranteed_families(self) -> None:
         # Arrange
         expected = frozenset(
             family for family in Family if delivery_for(family) is Delivery.GUARANTEED
@@ -142,7 +144,7 @@ class DerivationTests(unittest.TestCase):
         owed = guaranteed_grants(Principal.RECORDER)
 
         # Assert
-        self.assertEqual((expected, 8), (owed, len(owed)))
+        self.assertEqual((expected, 10), (owed, len(owed)))
 
 
 class FamilyQueueTests(unittest.TestCase):
@@ -322,14 +324,25 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(len(names), len(set(names)))
 
-    def test_the_reference_shape_is_twenty_family_queues_a_drone_each_and_the_dead_letter(
+    def test_the_small_fixture_has_twenty_two_family_queues_a_drone_each_and_the_dead_letter(
         self,
     ) -> None:
         # Arrange
-        expected = 20 + len(DRONES) + 1
+        expected = 22 + len(DRONES) + 1
 
         # Act
         queues = desired_queues(DRONES)
 
         # Assert
         self.assertEqual(expected, len(queues))
+
+    def test_the_reference_fleet_reserves_forty_six_queues_and_460_megabytes(self) -> None:
+        # Arrange
+        expected = (46, 460)
+
+        # Act
+        queues = desired_queues(REFERENCE_DRONES)
+        inventory = (len(queues), len(queues) * MAX_SPOOL_MEGABYTES)
+
+        # Assert
+        self.assertEqual(expected, inventory)

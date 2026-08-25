@@ -305,8 +305,9 @@ over the roles and names every family's publisher set; this section carries only
 The delivery semantics are [CONTRACTS.md](CONTRACTS.md#delivery-and-failure-semantics) and the typed
 facade over the pinned client is [ADR-0028](adr/0028-untyped-solace-client-boundary.md). Which
 guarantee each topic family is owed is a total table in `packages/contracts`
-([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)); routine telemetry is
-direct and supersedable, and the endpoints that carry the guaranteed families are the section below.
+([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md),
+[ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)); routine telemetry is direct and
+supersedable, and the endpoints that carry the guaranteed families are the section below.
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
@@ -332,13 +333,14 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
 | Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
 | Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
-| Endpoints the reference fleet needs | 44: 20 family queues, 23 per-drone command queues, and the dead-message queue | derived from the subscribe grants; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
+| Endpoints the reference fleet needs | 46: 22 family queues, 23 per-drone command queues, and the dead-message queue; the implemented desired-state provisioner derives all 46, while the R6 recorder receiver and R8 lifecycle publishers remain pending | derived from the subscribe grants as extended by ADR-0111 and asserted by the provisioner tests; the message VPN's measured ceilings are 1000 endpoints and 1500 MB of spool, read over SEMP on 2026-08-23 |
 
 The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
 in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
 that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
 a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
-and 44 queues reserve 440 MB against the VPN's measured 1500 MB. **Expiry** follows from the worst
+and ADR-0111's 46 desired queues reserve a nominal 460 MB against the VPN's
+measured 1500 MB. **Expiry** follows from the worst
 declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
 case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,
 so a queue's expiry never stands in for the approval protocol's own two-clock consumption

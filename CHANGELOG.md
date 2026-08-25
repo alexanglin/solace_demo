@@ -10,6 +10,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
+  implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
+  guaranteed, schema-bound mission, connectivity, and sector application events, gives each source an
+  independent run-scoped producer identity and sequence, and routes them through the receiver-only
+  recorder into durable audit order. The family, delivery, and ACL tables and their desired-state
+  provisioner now include the scenario-service role and two recorder lifecycle queues, so the reference
+  inventory is 46 endpoints with 460 MB of nominal reservation. This is an offline desired-state claim;
+  the R6 recorder receiver and R8 lifecycle publishers are still pending.
+
+  [ADR-0112](docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) corrects the v1
+  snapshot and replay anchors with top-level `latestEventDigest`. The immutable reducer checkpoint
+  holds that witness outside digest-covered reduced mission state and hashes the exact ordered event
+  under `ordered-dashboard-event`, so exact duplicate handling is proved rather than inferred from an
+  ordinal. The lifecycle schemas, normalized projection rows, and queue/ACL desired state now exist;
+  the browser canonicalizer now covers descriptor-safe canonical bytes, Web Crypto replay-state and
+  ordered-event digests, witness pairing, and fixed-work digest comparison. The shared R3 fold and
+  cross-language parity oracle, R6 receiver, R8 publishers and reconciliation, and replay runtime
+  remain unimplemented, and the 64 Playwright cases are unchanged.
+
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
   its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas
   plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the repository

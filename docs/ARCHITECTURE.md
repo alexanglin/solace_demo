@@ -69,7 +69,12 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)), the tick fold
   ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and direct telemetry publication run
   live against the broker ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)),
-  driving the mission, sector, and connectivity machines. Command intake runs live too: each tick is
+  driving the mission, sector, and connectivity machines. R8 must publish connectivity and sector
+  transitions through the guaranteed schema-bound sources selected by
+  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md); those publications are not implemented
+  yet. Their event identities and independent producer sequences must be persisted or
+  deterministically reconstructed when an uncertain publication is reconciled, without introducing a
+  generalized outbox. Command intake runs live too: each tick is
   followed by a bounded drain of every drone's own durable queue, and the simulator folds the dispatch
   machine, publishes an acknowledgement and then a resolution, and settles
   ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)). The loop
@@ -87,14 +92,23 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
 - **Scenario service:** Validates the versioned scenario catalog and definitions, preserves their
   explicit roster, geometry, and heartbeat-loss schedule, losslessly projects only simulated members
   into the fleet input, and exposes lifecycle operations. The input carries no seed or random source.
+  It owns the mission-lifecycle publisher role and no other application-event family
+  ([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)); private start, status, and cancel
+  control remains authenticated HTTP. Its event identity and producer sequence carry the same
+  reconciliation obligation as the fleet publishers.
   **Wire boundary only today:** strict scenario-file and private-control server/caller models plus a
   framework-free route-expectation registry are implemented; production catalog files, the loader,
-  lifecycle coordination, HTTP client/server, listener, and generated OpenAPI are not.
+  lifecycle coordination, lifecycle publication, HTTP client/server, listener, and generated OpenAPI
+  are not.
 - **Evidence service:** Validates model observations, attaches provenance and hashes, delegates score
   calculation to pure Tier 1 domain logic, and publishes the resulting versioned evidence decision. In a
   live simulation, model failure produces an explicit abstention or manual-review outcome; recorded
   evidence is never substituted.
-- **Recorder/replayer:** Writes sanitized CloudEvents to NDJSON and replays the same events through the dashboard-facing interface.
+- **Recorder/replayer:** Is the receiver-only path from validated broker lifecycle sources into durable
+  audit order, committing guaranteed input before acknowledgement, and writes sanitized CloudEvents to
+  NDJSON for the isolated replay path
+  ([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)). The service remains a scaffold; those
+  runtime responsibilities are R6 work.
 - **Dashboard API:** Owns the UI-slice scenario control, health, readiness, replay, static-shell, and
   server-sent-event boundary. **Wire boundary only today:** strict server/caller Pydantic models and the
   framework-free public route-expectation registry are implemented; the FastAPI application, generated

@@ -38,7 +38,7 @@ def _material(deploy: Path) -> dict[str, bytes]:
 
 
 ROLE_ENVIRONMENT = "secrets/.env.roles"
-"""The generated file Compose reads for the nine role identities; never tracked."""
+"""The generated file Compose reads for the ten role identities; never tracked."""
 SESSION_VARIABLE = "SESSION_SECRET_KEY"
 """The Web UI's session signing key. The image ships a placeholder and the upstream check is
 presence-only, so an unreplaced value signs real sessions (ADR-0102)."""
@@ -83,7 +83,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_thirteen_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_fourteen_passwords(self) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -94,6 +94,27 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(all((repository / "deploy" / name).is_file() for name in PRIVATE_FILES))
         self.assertTrue((repository / "deploy" / "certs" / "ca.pem").is_file())
+
+    def test_it_generates_the_scenario_service_credential_and_environment_pair(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        credential_name = "secrets/broker-scenario-service-password"
+
+        # Act
+        result = self.generate(repository)
+        declarations = _role_environment(repository / "deploy")
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue((repository / "deploy" / credential_name).is_file())
+        self.assertEqual(
+            "scenario-service",
+            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
+        )
+        self.assertEqual(
+            (repository / "deploy" / credential_name).read_text(encoding="utf-8"),
+            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
+        )
 
     def test_private_files_are_mode_0600_and_the_public_certificate_is_readable(self) -> None:
         # Arrange

@@ -36,6 +36,7 @@ Read the authority for the concern before editing it:
 | Least-privilege roles, grants, and broker projection | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
 | Delivery guarantee per topic family | [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md) |
 | Durable queue set, ownership, and the four written bounds | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| Lifecycle source families, scenario identity, grants, and queue delta | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Fixed Agent Mesh A2A namespace | [ADR-0064](../../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
 
 An Accepted ADR governs if code, tests, comments, or older evidence disagree. A change to a broker
@@ -175,7 +176,7 @@ is enforced.
 Queues are derived, never listed. The set is the subscribe grants intersected with the guaranteed
 families, so a queue exists only where the ACL already permits the subscription and a queue can
 narrow authority but never widen it. How each role's endpoints are realised is a table total over the
-nine roles, and `NONE` is provable rather than asserted: a `NONE` role must hold no guaranteed
+ten roles, and `NONE` is provable rather than asserted: a `NONE` role must hold no guaranteed
 subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly one role carries it
 on ADR-0071's authority.
 

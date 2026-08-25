@@ -1,4 +1,4 @@
-# ADR-0111: Bound Solace recovery and queue retirement
+# ADR-0113: Bound Solace recovery and queue retirement
 
 - **Status:** Accepted
 - **Date:** 2026-08-25

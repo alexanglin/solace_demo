@@ -128,7 +128,9 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0108](0108-register-strict-python-wire-models-before-http-runtime.md) | Register strict Python wire models before the HTTP runtime | Accepted |
 | [0109](0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) | Enable the Pydantic mypy plugin with typed constructors | Accepted |
 | [0110](0110-scope-the-duplication-gate-to-authored-source.md) | Scope the duplication gate to authored source | Accepted |
-| [0111](0111-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
+| [0111](0111-broker-dashboard-lifecycle-sources.md) | Broker dashboard lifecycle sources as schema-bound application events | Accepted |
+| [0112](0112-witness-ordered-dashboard-events-outside-reduced-state.md) | Witness ordered dashboard events outside reduced state and correct v1 anchors | Accepted |
+| [0113](0113-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
 
 ## Decisions still open
 

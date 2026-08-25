@@ -63,6 +63,8 @@ Use the following topic families:
 ```text
 aerial-rescue/v1/{missionId}/operator/command/{commandType}
 aerial-rescue/v1/{missionId}/operator/approval/{decision}
+aerial-rescue/v1/{missionId}/mission/event/{eventType}
+aerial-rescue/v1/{missionId}/sector/{sectorId}/event/{eventType}
 aerial-rescue/v1/{missionId}/drone/{droneId}/telemetry
 aerial-rescue/v1/{missionId}/drone/{droneId}/event/{eventType}
 aerial-rescue/v1/{missionId}/drone/{droneId}/command/{commandType}
@@ -75,20 +77,22 @@ aerial-rescue/v1/{missionId}/audit/{recordType}
 ```
 
 Every variable level obeys one of four rules
-([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md)), and `packages/contracts` (`topics.py`)
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)), and `packages/contracts` (`topics.py`)
 is the only producer and parser of these topics:
 
 | Rule | Levels | Form |
 | --- | --- | --- |
-| IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
+| IDENTIFIER | `missionId`, `sectorId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
 | KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table and `operation` by the gateway-operation table, both in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)); `eventType`, `proposalType`, and `recordType` stay open until the domain modules that define them land |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
 The CloudEvents `type` of an event is derived from its topic: drop the IDENTIFIER and AGENT_NAME levels,
-join the rest with `.`, and prefix `aerial-rescue.v1.`. So `aerial-rescue/v1/m1/drone/d1/event/salient`
-has the type `aerial-rescue.v1.drone.event.salient`, and `aerial-rescue/v1/m1/drone/d1/command-result/c1`
-has `aerial-rescue.v1.drone.command-result`. A topic is recovered from its type together with the
+join the rest with `.`, and prefix `aerial-rescue.v1.`. So
+`aerial-rescue/v1/m1/sector/sector-01/event/lifecycle` has the type
+`aerial-rescue.v1.sector.event.lifecycle`, and
+`aerial-rescue/v1/m1/drone/d1/command-result/c1` has
+`aerial-rescue.v1.drone.command-result`. A topic is recovered from its type together with the
 identifiers a producer holds.
 
 Parsing refuses in a fixed order, which TypeScript reimplements: not a string; longer than the broker
@@ -99,11 +103,49 @@ or a trailing separator. Subscription strings, which do carry wildcards, belong 
 are never produced here. The golden case files under `fixtures/golden/v1/topics/` record accepted and
 refused topics with their refusal names, which are part of the contract.
 
-Which delivery guarantee each family is owed is a total table in `packages/contracts`, not a sentence to be read against the eleven families ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)). Routine telemetry is direct because current position updates supersede stale ones. The gateway request and response are request-reply over a temporary queue a pinned upstream component owns and names, so this project provisions no endpoint for them. Every other family is guaranteed, and its endpoint is one durable queue per consuming role ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+Which delivery guarantee each family is owed is a total table in `packages/contracts`, not a sentence
+to be read against the thirteen families
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)). Routine telemetry is direct because
+current position updates supersede stale ones. The gateway request and response are request-reply over
+a temporary queue a pinned upstream component owns and names, so this project provisions no endpoint
+for them. Every other family, including mission and sector lifecycle, is guaranteed, and its endpoint
+is one durable queue per consuming role
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
 
 Consumers must tolerate duplicates and out-of-order events. State changes reject stale sequence numbers within a producer's own stream, and command handlers return the prior result when they receive a known command ID. Approval consumption is excluded from that replay-as-success rule: a repeat is denied, not replayed.
 
 Agent Mesh owns its standard A2A namespace, including discovery, agent request, gateway status, and gateway response topics. Application code must use the upstream A2A APIs and gateway abstractions rather than publishing framework messages directly. Keep the A2A namespace distinct from `aerial-rescue/v1/...`, while carrying task, correlation, and causation identifiers across the SAR gateway boundary for traceability.
+
+## Dashboard lifecycle event sources
+
+Three guaranteed application events are the only source of the lifecycle projections that change
+reduced dashboard state
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)):
+
+| CloudEvents `type` | Topic | Closed payload | Publisher | Projection |
+| --- | --- | --- | --- | --- |
+| `aerial-rescue.v1.drone.event.connectivity-changed` | `aerial-rescue/v1/{missionId}/drone/{droneId}/event/connectivity-changed` | `{missionId, droneId, connectivity}` | fleet simulator | `connectivityChanged` |
+| `aerial-rescue.v1.mission.event.lifecycle` | `aerial-rescue/v1/{missionId}/mission/event/lifecycle` | `{missionId, lifecycle}` | scenario service | `missionLifecycle` |
+| `aerial-rescue.v1.sector.event.lifecycle` | `aerial-rescue/v1/{missionId}/sector/{sectorId}/event/lifecycle` | `{missionId, sectorId, state, assignedMemberId}` | fleet simulator | `sectorLifecycle` |
+
+The exact envelope sources are `urn:aerial-rescue:connectivity-lifecycle:{runId}`,
+`urn:aerial-rescue:mission-lifecycle:{runId}`, and
+`urn:aerial-rescue:sector-lifecycle:{runId}` respectively. Each source owns an independent producer
+sequence. The source provides uniqueness and sequence scope, not authentication; the publisher's broker
+credential and deny-by-default ACL grant are the authority.
+
+Connectivity, mission lifecycle, and sector lifecycle values remain the closed state sets selected by
+[ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md),
+[ADR-0072](adr/0072-mission-lifecycle-states.md), and
+[ADR-0073](adr/0073-sector-lifecycle-states.md). Topic, envelope, and payload identifiers must agree.
+Projection preserves the source envelope's canonical `time`, removes transport-only envelope members,
+and produces the existing five-field `DashboardEvent` variant.
+
+The scenario role publishes only mission lifecycle. The fleet role publishes sector lifecycle and
+connectivity. The receiver-only recorder is the only subscriber to the two new topic families; it
+validates and commits a guaranteed event with its assigned audit ordinal before acknowledging it.
+Private run control remains HTTP, and no service may bypass this source boundary by manufacturing one
+of these normalized events directly.
 
 ## Command-gateway request and reply
 
@@ -328,7 +370,7 @@ operation. The complete rationale is in
 ## Dashboard event stream
 
 `GET /api/v1/events` streams the snapshot and ordered suffix accepted by
-[ADR-0101](adr/0101-order-dashboard-events-outside-the-five-field-projection.md). Every data frame lies
+[ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md). Every data frame lies
 inside the canonical profile, so one canonicalizer, one decoder, and one shared fixture oracle serve
 Python and TypeScript. The bounds are in
 [operating-parameters.md](operating-parameters.md#dashboard-event-stream).
@@ -348,8 +390,16 @@ Durable order wraps, rather than changes, that projection:
 OrderedDashboardEvent = {auditOrdinal, event}
 ```
 
-The audit ordinal is a positive integer. A fold accepts only the next ordinal, ignores only an exact
-duplicate, and refuses a gap, a regression, or a same-ordinal event with different content.
+The audit ordinal is a positive integer. The immutable reducer checkpoint is
+`{state, latestEventDigest}`. Its witness lies outside reduced mission state and is the
+`ordered-dashboard-event` digest of
+`{canonicalizationVersion: 1, auditOrdinal, event}`. The wire wrapper itself remains
+`{auditOrdinal, event}`.
+
+A fold accepts only the next ordinal, updates both state and witness, and uses that witness to prove
+same-ordinal input. An equal ordered-event digest is an exact duplicate and leaves the checkpoint
+unchanged; an unequal digest is divergent content. A lower ordinal is a regression and a larger
+non-successor is a gap.
 
 The **reduced dashboard state** is the fold of ordered dashboard events by a pure total function. It is
 the replay determinism oracle of
@@ -373,8 +423,11 @@ so state bytes cannot be replayed as proposal bytes.
 
 The API emits only `snapshot`, `dashboard-event`, and terminal `stream-overloaded` data frames;
 keepalives are comments. A snapshot carries the runtime identifier, an opaque run-bound cursor, current
-run, reduced state, replay-state digest, and full non-telemetry timeline. A dashboard-event frame carries
-one ordered event, its suffix cursor, and the server digest after the fold. An unknown, stale, or
+run, reduced state, replay-state digest, top-level `latestEventDigest`, and full non-telemetry timeline.
+A replay bundle carries the same top-level witness for its initial state. The witness is `null` exactly
+when the corresponding latest audit ordinal is `0`; a positive ordinal requires a lowercase SHA-256
+witness. A dashboard-event frame carries one ordered event, its suffix cursor, and the server digest
+after the fold; the receiver computes the successor witness from that event. An unknown, stale, or
 cross-run cursor receives a fresh snapshot.
 
 Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses direct
@@ -426,8 +479,8 @@ lowercase.
 data. The payload carries `canonicalizationVersion` inside the hashed bytes, so a downgrade fails rather
 than passing. The hash input is the byte string `aerial-rescue/canonical/v1`, a newline, the consuming
 context, a newline, and the canonical bytes. The context is one of `proposal-digest`, `replay-state`,
-`evidence`, or `idempotency-body`, which stops bytes valid for one purpose being replayed as another. The
-digest is SHA-256 rendered as lowercase hexadecimal.
+`ordered-dashboard-event`, `evidence`, or `idempotency-body`, which stops bytes valid for one purpose
+being replayed as another. The digest is SHA-256 rendered as lowercase hexadecimal.
 
 ## Schema identity
 

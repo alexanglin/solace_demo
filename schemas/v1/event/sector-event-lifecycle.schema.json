@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/sector-event-lifecycle.schema.json",
+  "description": "A sector lifecycle event with its type, schema, and payload bound together.",
+  "allOf": [
+    {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "source": {
+          "pattern": "^urn:aerial-rescue:sector-lifecycle:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+        },
+        "type": {
+          "const": "aerial-rescue.v1.sector.event.lifecycle"
+        },
+        "dataschema": {
+          "const": "https://aerial-rescue.invalid/schemas/v1/payload/sector-event-lifecycle.schema.json"
+        },
+        "data": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/sector-event-lifecycle.schema.json"
+        }
+      }
+    }
+  ]
+}

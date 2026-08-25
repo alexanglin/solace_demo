@@ -30,6 +30,7 @@ values in this guide:
 | Ordered dashboard events, reduced state, and SSE frames | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Schema-bound dashboard lifecycle sources and composed events | [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 
 An Accepted architecture decision record (ADR) governs whenever a schema, fixture, implementation, or
 document disagrees with it. Never rewrite Accepted ADR prose. Create a new or superseding record before

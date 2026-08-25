@@ -9,7 +9,7 @@ pattern that reaches into a second family hands that family's authority to whoev
 the first.
 
 The load-bearing test is therefore the negative one: every pattern is put to a topic of
-each of the other ten families and must refuse it.
+each of the other twelve families and must refuse it.
 """
 
 from __future__ import annotations
@@ -34,17 +34,19 @@ from aerial_rescue_contracts.topics import (
 )
 
 PATTERNS = {
-    Family.OPERATOR_COMMAND: "aerial-rescue/v1/*/operator/command/*",
-    Family.OPERATOR_APPROVAL: "aerial-rescue/v1/*/operator/approval/*",
-    Family.DRONE_TELEMETRY: "aerial-rescue/v1/*/drone/*/telemetry",
-    Family.DRONE_EVENT: "aerial-rescue/v1/*/drone/*/event/*",
-    Family.DRONE_COMMAND: "aerial-rescue/v1/*/drone/*/command/*",
-    Family.DRONE_COMMAND_RESULT: "aerial-rescue/v1/*/drone/*/command-result/*",
-    Family.GATEWAY_REQUEST: "aerial-rescue/v1/*/gateway/request/*",
-    Family.GATEWAY_RESPONSE: "aerial-rescue/v1/*/gateway/response/*",
-    Family.AGENT_PROPOSAL: "aerial-rescue/v1/*/agent/proposal/*/*",
-    Family.AGENT_RESPONSE: "aerial-rescue/v1/*/agent/response/*",
-    Family.AUDIT: "aerial-rescue/v1/*/audit/*",
+    "OPERATOR_COMMAND": "aerial-rescue/v1/*/operator/command/*",
+    "OPERATOR_APPROVAL": "aerial-rescue/v1/*/operator/approval/*",
+    "DRONE_TELEMETRY": "aerial-rescue/v1/*/drone/*/telemetry",
+    "DRONE_EVENT": "aerial-rescue/v1/*/drone/*/event/*",
+    "DRONE_COMMAND": "aerial-rescue/v1/*/drone/*/command/*",
+    "DRONE_COMMAND_RESULT": "aerial-rescue/v1/*/drone/*/command-result/*",
+    "GATEWAY_REQUEST": "aerial-rescue/v1/*/gateway/request/*",
+    "GATEWAY_RESPONSE": "aerial-rescue/v1/*/gateway/response/*",
+    "AGENT_PROPOSAL": "aerial-rescue/v1/*/agent/proposal/*/*",
+    "AGENT_RESPONSE": "aerial-rescue/v1/*/agent/response/*",
+    "AUDIT": "aerial-rescue/v1/*/audit/*",
+    "MISSION_EVENT": "aerial-rescue/v1/*/mission/event/*",
+    "SECTOR_EVENT": "aerial-rescue/v1/*/sector/*/event/*",
 }
 
 # Every value is legal under its own rule and collides with a literal level of some other
@@ -52,6 +54,7 @@ PATTERNS = {
 COLLIDING = {
     "missionId": "audit",
     "droneId": "telemetry",
+    "sectorId": "sector",
     "commandId": "command",
     "requestId": "response",
     "commandType": "event",
@@ -97,7 +100,7 @@ class SubscriptionForTests(unittest.TestCase):
         families = tuple(Family)
 
         # Act
-        rendered = {family: subscription_for(family) for family in families}
+        rendered = {family.name: subscription_for(family) for family in families}
 
         # Assert
         self.assertEqual(PATTERNS, rendered)

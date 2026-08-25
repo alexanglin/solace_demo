@@ -28,6 +28,7 @@ Read the authority for the concern before editing it:
 | Closed, deny-by-default command authority | [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md) |
 | Approval time-to-live decision | [ADR-0042](../../docs/adr/0042-approval-time-to-live.md) |
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Scenario-service role and lifecycle-family grants | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 | Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Command dispatch states and the send budget that bounds them | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |

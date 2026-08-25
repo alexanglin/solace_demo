@@ -7,9 +7,12 @@ green: the 19 browser-facing schemas plus two scenario-file and eight private-co
 shared manifest-owned polarity fixtures, strict service-local Python twins at every Python trust
 boundary, and framework-free HTTP expectation registries. A2 is green: generated browser types,
 offline runtime validation, canonical bootstrap refusal, production test-boundary isolation, and
-generated-output freshness are now enforced. A3 is next and not started. No FastAPI application,
-generated OpenAPI, or production browser adapter exists yet, and the remaining Playwright contract
-stays intentionally red while A3-A8 are implemented.
+generated-output freshness are now enforced. The browser half of A3 is green: a hand-written
+canonical encoder, domain-separated Web Crypto digests, ordered-event witnesses, and fixed-work
+digest comparison are covered independently at the frontend threshold. A3 remains in progress until
+R3 supplies the shared Python/TypeScript parity oracle. No FastAPI application, generated OpenAPI,
+reducer, or production browser adapter exists yet, and the remaining Playwright contract stays
+intentionally red while A4-A8 are implemented.
 
 ## Contract boundary
 
@@ -19,6 +22,12 @@ module per schema and a schema-ID mapping index live under `src/contracts/genera
 hand-written Ajv 2020-12 registry statically imports those schemas and the canonical vocabulary,
 resolves references without a browser or generator network request, and validates unknown values
 before narrowing them to the generated types. It neither coerces nor mutates rejected candidates.
+
+`src/domain/canonical.ts` accepts only already-decoded canonical values, snapshots own data
+properties without invoking accessors, rejects unsupported arrays and objects, and hashes only with
+the platform Web Crypto API. Replay-state and ordered-event contexts remain separate; the latest
+ordered-event witness stays outside reduced mission state. The browser does not yet claim
+cross-language parity because the shared R3 oracle and Python ordered-state fold are still pending.
 
 Bootstrap parsing applies the canonical JSON profile before Ajv. Malformed JSON, duplicate keys,
 floating-point values, unpaired surrogates, unknown members, and other schema failures become typed,

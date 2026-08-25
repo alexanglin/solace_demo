@@ -20,7 +20,7 @@ Use the canonical source for the fact being changed instead of copying its curre
 | Agent Mesh configuration and execution context | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md), [ADR-0032](../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0062](../docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) |
 | Dynamic Python discovery and dashboard policy | [ADR-0056](../docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md), [ADR-0057](../docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md) |
 | Compose, certificates, and image scanning | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
-| Broker roles and grants | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Broker roles, grants, and lifecycle-source identity | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Terminal-safe execution and job budgets | [ADR-0059](../docs/adr/0059-keep-the-verification-authority-able-to-report.md), [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Test structure, classes, and toolchain | [`TESTING.md`](../docs/TESTING.md) |
 
