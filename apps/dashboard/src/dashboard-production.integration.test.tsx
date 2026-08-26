@@ -91,6 +91,75 @@ class ManualSource implements DashboardEventSource {
   }
 }
 
+function readyProductionInputs(): {
+  bootstrap: DashboardSourceInput;
+  boundaries: readonly DashboardSourceInput[];
+  catalog: DashboardSourceInput;
+  readiness: DashboardSourceInput;
+  snapshot: DashboardSourceInput;
+} {
+  const inputs = fixtureForState("ready").inputs;
+  const bootstrap = inputs.find(({ channel }) => channel === "bootstrap");
+  const readiness = inputs.find(({ name }) => name === "readiness");
+  const catalog = inputs.find(({ name }) => name === "scenario-catalog");
+  const snapshot = inputs.find(({ name }) => name === "snapshot");
+  if (
+    bootstrap === undefined ||
+    readiness === undefined ||
+    catalog === undefined ||
+    snapshot === undefined
+  ) {
+    throw new Error("production ready fixture is incomplete");
+  }
+  return { bootstrap, boundaries: [readiness, catalog], catalog, readiness, snapshot };
+}
+
+function renderFakeProductionDashboard(
+  bootstrap: DashboardSourceInput,
+  boundaries: readonly DashboardSourceInput[],
+): { current: FakeProductionRuntime | undefined } {
+  const runtime: { current: FakeProductionRuntime | undefined } = { current: undefined };
+  render(
+    <DashboardApplication
+      productionBootstrap={bootstrap}
+      productionRuntimeFactory={(options) => {
+        runtime.current = new FakeProductionRuntime(options, boundaries);
+        return runtime.current;
+      }}
+    />,
+  );
+  return runtime;
+}
+
+async function renderLiveProductionDashboard(inputs: {
+  bootstrap: DashboardSourceInput;
+  catalog: DashboardSourceInput;
+  readiness: DashboardSourceInput;
+}): Promise<{ fetcher: ReturnType<typeof vi.fn>; liveSource: ManualSource }> {
+  const liveSource = new ManualSource();
+  const fetcher = vi.fn((url: string) =>
+    Promise.resolve(
+      new Response(url.includes("readiness") ? inputs.readiness.raw : inputs.catalog.raw, {
+        status: 200,
+      }),
+    ),
+  );
+  render(
+    <DashboardApplication
+      productionBootstrap={inputs.bootstrap}
+      productionRuntimeFactory={(options) =>
+        new ProductionDashboardRuntime({
+          ...options,
+          fetcher,
+          liveSourceFactory: () => liveSource,
+        })
+      }
+    />,
+  );
+  await vi.waitUntil(() => liveSource.opened);
+  return { fetcher, liveSource };
+}
+
 async function replayOwnedSnapshot(input: DashboardSourceInput): Promise<DashboardSourceInput> {
   const document = JSON.parse(input.raw) as {
     currentRun: unknown;
@@ -117,17 +186,7 @@ async function replayOwnedSnapshot(input: DashboardSourceInput): Promise<Dashboa
 
 test("starts a fresh production mission from readiness and catalog without fabricating state", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined) throw new Error("production bootstrap fixture is missing");
-  let runtime: FakeProductionRuntime | undefined;
-  const factory = (options: ProductionDashboardRuntimeOptions): ProductionRuntimePort => {
-    runtime = new FakeProductionRuntime(options, boundaries);
-    return runtime;
-  };
+  const { bootstrap, boundaries } = readyProductionInputs();
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
@@ -139,45 +198,29 @@ test("starts a fresh production mission from readiness and catalog without fabri
       ),
     ),
   );
-  render(
-    <DashboardApplication productionBootstrap={bootstrap} productionRuntimeFactory={factory} />,
-  );
+  const runtime = renderFakeProductionDashboard(bootstrap, boundaries);
   const start = await screen.findByRole("button", { name: "Start wilderness mission" });
   await vi.waitUntil(() => !(start as HTMLButtonElement).disabled);
 
   // Act
   fireEvent.click(start);
-  await vi.waitUntil(() => runtime?.accepted.mock.calls.length === 1);
+  await vi.waitUntil(() => runtime.current?.accepted.mock.calls.length === 1);
 
   // Assert
   expect(screen.getByRole("status", { name: "Current mission" }).textContent).toBe(
     "No current mission",
   );
-  expect(runtime?.accepted).toHaveBeenCalledWith(
+  expect(runtime.current?.accepted).toHaveBeenCalledWith(
     expect.objectContaining({ missionId: "mission-production", mode: "degradedLive" }),
   );
 });
 
 test("keeps mutation controls locked without a validated production bootstrap", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined) throw new Error("production bootstrap fixture is missing");
+  const { bootstrap, boundaries } = readyProductionInputs();
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
-  let runtime: FakeProductionRuntime | undefined;
-  render(
-    <DashboardApplication
-      productionBootstrap={{ ...bootstrap, raw: "{}" }}
-      productionRuntimeFactory={(options) => {
-        runtime = new FakeProductionRuntime(options, boundaries);
-        return runtime;
-      }}
-    />,
-  );
+  const runtime = renderFakeProductionDashboard({ ...bootstrap, raw: "{}" }, boundaries);
   await screen.findByText(/23 declared = 20 simulated \+ 3 declared only/i);
   const liveStart = screen.getByRole("button", { name: "Start wilderness mission" });
   const liveReset = screen.getByRole("button", { name: "Reset mission" });
@@ -200,36 +243,19 @@ test("keeps mutation controls locked without a validated production bootstrap", 
   expect(screen.getByRole("button", { name: "Reload dashboard" })).toBeDefined();
   expect(screen.getByRole("alert").textContent).toBe("Contract validation failed · bootstrap");
   expect(fetcher).not.toHaveBeenCalled();
-  expect(runtime?.accepted).not.toHaveBeenCalled();
+  expect(runtime.current?.accepted).not.toHaveBeenCalled();
 });
 
 test("fails closed when the mutation bootstrap disappears after reset is armed", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined || snapshot === undefined) {
-    throw new Error("production mutation-lock fixture is incomplete");
-  }
+  const { bootstrap, boundaries, snapshot } = readyProductionInputs();
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
-  let runtime: FakeProductionRuntime | undefined;
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) => {
-        runtime = new FakeProductionRuntime(options, boundaries);
-        return runtime;
-      }}
-    />,
-  );
+  const runtime = renderFakeProductionDashboard(bootstrap, boundaries);
   await screen.findByText(/23 declared = 20 simulated \+ 3 declared only/i);
-  if (runtime === undefined) throw new Error("production mutation runtime was not created");
+  if (runtime.current === undefined) throw new Error("production mutation runtime was not created");
   const source = new ManualSource();
-  runtime.replaceSource(source, "degradedLive");
+  runtime.current.replaceSource(source, "degradedLive");
   await source.emit(snapshot);
   const liveStart = screen.getByRole("button", { name: "Start wilderness mission" });
   const liveReset = screen.getByRole("button", { name: "Reset mission" });
@@ -238,7 +264,7 @@ test("fails closed when the mutation bootstrap disappears after reset is armed",
   screen.getByRole("button", { name: "Confirm reset" });
 
   // Act
-  await runtime.emitBoundary({ ...bootstrap, raw: "{}" });
+  await runtime.current.emitBoundary({ ...bootstrap, raw: "{}" });
   await vi.waitUntil(() => (liveReset as HTMLButtonElement).disabled);
   fireEvent.click(screen.getByRole("button", { name: "Confirm reset" }));
   await vi.waitUntil(
@@ -256,18 +282,12 @@ test("fails closed when the mutation bootstrap disappears after reset is armed",
   expect(screen.queryByRole("dialog", { name: "Reset current mission" })).toBeNull();
   expect(screen.getByRole("button", { name: "Reload dashboard" })).toBeDefined();
   expect(fetcher).not.toHaveBeenCalled();
-  expect(runtime.accepted).not.toHaveBeenCalled();
+  expect(runtime.current.accepted).not.toHaveBeenCalled();
 });
 
 test("routes synchronous duplicate start activations through the mutation owner", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined) throw new Error("production bootstrap fixture is missing");
-  let runtime: FakeProductionRuntime | undefined;
+  const { bootstrap, boundaries } = readyProductionInputs();
   let release: ((response: Response) => void) | undefined;
   const fetcher = vi.fn(
     () =>
@@ -276,15 +296,7 @@ test("routes synchronous duplicate start activations through the mutation owner"
       }),
   );
   vi.stubGlobal("fetch", fetcher);
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) => {
-        runtime = new FakeProductionRuntime(options, boundaries);
-        return runtime;
-      }}
-    />,
-  );
+  const runtime = renderFakeProductionDashboard(bootstrap, boundaries);
   const start = await screen.findByRole("button", { name: "Start wilderness mission" });
   await vi.waitUntil(() => !(start as HTMLButtonElement).disabled);
 
@@ -303,23 +315,17 @@ test("routes synchronous duplicate start activations through the mutation owner"
       { status: 202 },
     ),
   );
-  await vi.waitUntil(() => runtime?.accepted.mock.calls.length === 1);
+  await vi.waitUntil(() => runtime.current?.accepted.mock.calls.length === 1);
 
   // Assert
   expect(duplicateOutcome).toBe("Duplicate start submission ignored · start already pending");
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(runtime?.accepted).toHaveBeenCalledTimes(1);
+  expect(runtime.current?.accepted).toHaveBeenCalledTimes(1);
 });
 
 test("selects isolated replay and starts it through the authenticated production mutation", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined) throw new Error("production bootstrap fixture is missing");
-  let runtime: FakeProductionRuntime | undefined;
+  const { bootstrap, boundaries } = readyProductionInputs();
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
@@ -331,44 +337,26 @@ test("selects isolated replay and starts it through the authenticated production
       ),
     ),
   );
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) => {
-        runtime = new FakeProductionRuntime(options, boundaries);
-        return runtime;
-      }}
-    />,
-  );
+  const runtime = renderFakeProductionDashboard(bootstrap, boundaries);
   const replayMode = await screen.findByRole("radio", { name: "Isolated replay" });
 
   // Act
   fireEvent.click(replayMode);
   const startReplay = await screen.findByRole("button", { name: "Start replay" });
   fireEvent.click(startReplay);
-  await vi.waitUntil(() => runtime?.accepted.mock.calls.length === 1);
+  await vi.waitUntil(() => runtime.current?.accepted.mock.calls.length === 1);
 
   // Assert
-  expect(runtime?.accepted).toHaveBeenCalledWith(
+  expect(runtime.current?.accepted).toHaveBeenCalledWith(
     expect.objectContaining({ mode: "replay", sessionId: "session-production-0001" }),
   );
 });
 
 test("resumes the replay session owned by the first validated production snapshot", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const liveReadiness = scripted.find(({ name }) => name === "readiness");
-  const catalog = scripted.find(({ name }) => name === "scenario-catalog");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
+  const { bootstrap, catalog, readiness: liveReadiness, snapshot } = readyProductionInputs();
   const replayBundle = replayFixture().inputs.find(({ channel }) => channel === "replay-bundle");
-  if (
-    bootstrap === undefined ||
-    liveReadiness === undefined ||
-    catalog === undefined ||
-    snapshot === undefined ||
-    replayBundle === undefined
-  ) {
+  if (replayBundle === undefined) {
     throw new Error("production replay-resume fixture is incomplete");
   }
   const liveSource = new ManualSource();
@@ -424,19 +412,7 @@ test("resumes the replay session owned by the first validated production snapsho
 
 test("honors an operator who reaffirms live mode before replay resume settles", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const readiness = scripted.find(({ name }) => name === "readiness");
-  const catalog = scripted.find(({ name }) => name === "scenario-catalog");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
-  if (
-    bootstrap === undefined ||
-    readiness === undefined ||
-    catalog === undefined ||
-    snapshot === undefined
-  ) {
-    throw new Error("production live-intent fixture is incomplete");
-  }
+  const { bootstrap, catalog, readiness, snapshot } = readyProductionInputs();
   const liveSource = new ManualSource();
   const replaySource = new ManualSource();
   const fetcher = vi.fn((url: string) =>
@@ -486,15 +462,7 @@ test("honors an operator who reaffirms live mode before replay resume settles", 
 
 test("keeps live start reachable when the shared runtime currently points to replay", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
-  const boundaries = scripted.filter(({ name }) =>
-    ["readiness", "scenario-catalog"].includes(name),
-  );
-  if (bootstrap === undefined || snapshot === undefined) {
-    throw new Error("production mode-integrity fixture is incomplete");
-  }
+  const { bootstrap, boundaries, snapshot } = readyProductionInputs();
   const fetcher = vi.fn(() =>
     Promise.resolve(
       new Response(
@@ -504,22 +472,13 @@ test("keeps live start reachable when the shared runtime currently points to rep
     ),
   );
   vi.stubGlobal("fetch", fetcher);
-  let runtime: FakeProductionRuntime | undefined;
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) => {
-        runtime = new FakeProductionRuntime(options, boundaries);
-        return runtime;
-      }}
-    />,
-  );
+  const runtime = renderFakeProductionDashboard(bootstrap, boundaries);
   await screen.findByRole("button", { name: "Start wilderness mission" });
   const initialSource = new ManualSource();
-  runtime?.replaceSource(initialSource, "degradedLive");
+  runtime.current?.replaceSource(initialSource, "degradedLive");
   await initialSource.emit(snapshot);
   const replacementSource = new ManualSource();
-  runtime?.replaceSource(replacementSource, "degradedLive");
+  runtime.current?.replaceSource(replacementSource, "degradedLive");
   const incompatible = await replayOwnedSnapshot(snapshot);
 
   // Act
@@ -534,7 +493,7 @@ test("keeps live start reachable when the shared runtime currently points to rep
     throw new TypeError("production mission controls are not buttons");
   }
   fireEvent.click(startButton);
-  await vi.waitUntil(() => runtime?.accepted.mock.calls.length === 1);
+  await vi.waitUntil(() => runtime.current?.accepted.mock.calls.length === 1);
 
   // Assert
   expect(screen.getByRole("status", { name: "Dashboard state" }).textContent).toBe(
@@ -547,7 +506,7 @@ test("keeps live start reachable when the shared runtime currently points to rep
   expect(startButton.disabled).toBe(false);
   expect(resetButton.disabled).toBe(true);
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(runtime?.accepted).toHaveBeenCalledWith(
+  expect(runtime.current?.accepted).toHaveBeenCalledWith(
     expect.objectContaining({
       missionId: "mission-live-successor",
       mode: "degradedLive",
@@ -558,38 +517,9 @@ test("keeps live start reachable when the shared runtime currently points to rep
 
 test("locks mutations when the first live snapshot differs from the bootstrap runtime", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const readiness = scripted.find(({ name }) => name === "readiness");
-  const catalog = scripted.find(({ name }) => name === "scenario-catalog");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
-  if (
-    bootstrap === undefined ||
-    readiness === undefined ||
-    catalog === undefined ||
-    snapshot === undefined
-  ) {
-    throw new Error("production runtime-anchor fixture is incomplete");
-  }
-  const liveSource = new ManualSource();
-  const fetcher = vi.fn((url: string) =>
-    Promise.resolve(
-      new Response(url.includes("readiness") ? readiness.raw : catalog.raw, { status: 200 }),
-    ),
-  );
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) =>
-        new ProductionDashboardRuntime({
-          ...options,
-          fetcher,
-          liveSourceFactory: () => liveSource,
-        })
-      }
-    />,
-  );
-  await vi.waitUntil(() => liveSource.opened);
+  const inputs = readyProductionInputs();
+  const { liveSource } = await renderLiveProductionDashboard(inputs);
+  const { snapshot } = inputs;
   const changed = JSON.parse(snapshot.raw) as Record<string, unknown>;
   changed["runtimeId"] = "runtime-restarted-0002";
 
@@ -612,12 +542,7 @@ test("locks mutations when the first live snapshot differs from the bootstrap ru
 
 test("renders a validated typed 503 readiness body from the production runtime", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const catalog = scripted.find(({ name }) => name === "scenario-catalog");
-  if (bootstrap === undefined || catalog === undefined) {
-    throw new Error("production readiness fixture is incomplete");
-  }
+  const { bootstrap, catalog } = readyProductionInputs();
   const unavailable = JSON.stringify({
     mode: "degradedLive",
     readinessVersion: "dashboard-readiness/v1",
@@ -660,38 +585,9 @@ test("renders a validated typed 503 readiness body from the production runtime",
 
 test("renders the validated production runtime anchor for operator and screenshot evidence", async () => {
   // Arrange
-  const scripted = fixtureForState("ready").inputs;
-  const bootstrap = scripted.find(({ channel }) => channel === "bootstrap");
-  const readiness = scripted.find(({ name }) => name === "readiness");
-  const catalog = scripted.find(({ name }) => name === "scenario-catalog");
-  const snapshot = scripted.find(({ name }) => name === "snapshot");
-  if (
-    bootstrap === undefined ||
-    readiness === undefined ||
-    catalog === undefined ||
-    snapshot === undefined
-  ) {
-    throw new Error("production runtime-visibility fixture is incomplete");
-  }
-  const liveSource = new ManualSource();
-  const fetcher = vi.fn((url: string) =>
-    Promise.resolve(
-      new Response(url.includes("readiness") ? readiness.raw : catalog.raw, { status: 200 }),
-    ),
-  );
-  render(
-    <DashboardApplication
-      productionBootstrap={bootstrap}
-      productionRuntimeFactory={(options) =>
-        new ProductionDashboardRuntime({
-          ...options,
-          fetcher,
-          liveSourceFactory: () => liveSource,
-        })
-      }
-    />,
-  );
-  await vi.waitUntil(() => liveSource.opened);
+  const inputs = readyProductionInputs();
+  const { liveSource } = await renderLiveProductionDashboard(inputs);
+  const { snapshot } = inputs;
 
   // Act
   await liveSource.emit(snapshot);

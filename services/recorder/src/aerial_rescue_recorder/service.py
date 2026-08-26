@@ -66,21 +66,30 @@ class CaptureLoop:
         while processed < self.maximum_batch_messages and empty_sources < source_count:
             timeout = self.receive_timeout_milliseconds if may_wait else 0
             may_wait = False
-            if source_index == 0:
-                message = self.direct.receive(timeout)
-                if message is not None:
-                    await self.processor.process_best_effort(message)
-            else:
-                receiver = self.guaranteed[source_index - 1]
-                message = receiver.receive(timeout)
-                if message is not None:
-                    await self.processor.process_guaranteed(receiver, message)
+            message = await self._receive_from_source(source_index, timeout)
             if message is None:
                 empty_sources += 1
             else:
                 processed += 1
                 empty_sources = 0
             source_index = (source_index + 1) % source_count
+
+    async def _receive_from_source(
+        self,
+        source_index: int,
+        timeout_milliseconds: int,
+    ) -> InboundMessage | None:
+        """Receive and process one message from the selected delivery source."""
+        if source_index == 0:
+            message = self.direct.receive(timeout_milliseconds)
+            if message is not None:
+                await self.processor.process_best_effort(message)
+            return message
+        receiver = self.guaranteed[source_index - 1]
+        message = receiver.receive(timeout_milliseconds)
+        if message is not None:
+            await self.processor.process_guaranteed(receiver, message)
+        return message
 
 
 type TransactionFactory = Callable[[], AbstractAsyncContextManager[EventSession]]

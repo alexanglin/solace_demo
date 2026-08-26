@@ -12,6 +12,15 @@ const VALID_BOOTSTRAP: DashboardSourceInput = {
   raw: '{"bearer":"synthetic-memory-only","bootstrapVersion":"dashboard-bootstrap/v1","runtimeId":"runtime-synthetic-0001"}',
 };
 
+function productionSessionDouble() {
+  return {
+    acceptReplayResume: vi.fn(() => false),
+    anchorRuntime: vi.fn(),
+    expectLiveRun: vi.fn(),
+    replaceSource: vi.fn(),
+  };
+}
+
 test("removes a non-script bootstrap candidate and returns empty refusal bytes", () => {
   // Arrange
   document.head.innerHTML = '<meta id="dashboard-bootstrap" content="not-json">';
@@ -31,12 +40,7 @@ test("consumes an empty bootstrap once without opening production transports", a
   );
   const fetcher = vi.fn(() => Promise.resolve(new Response("{}")));
   const liveSourceFactory = vi.fn(() => EMPTY_SOURCE);
-  const session = {
-    acceptReplayResume: vi.fn(() => false),
-    anchorRuntime: vi.fn(),
-    expectLiveRun: vi.fn(),
-    replaceSource: vi.fn(),
-  };
+  const session = productionSessionDouble();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: { channel: "bootstrap", name: "bootstrap", raw: "" },
     consumeBoundary,
@@ -59,12 +63,7 @@ test("consumes an empty bootstrap once without opening production transports", a
 test("makes every production runtime operation inert after idempotent disposal", async () => {
   // Arrange
   const fetcher = vi.fn(() => Promise.resolve(new Response("{}")));
-  const session = {
-    acceptReplayResume: vi.fn(() => false),
-    anchorRuntime: vi.fn(),
-    expectLiveRun: vi.fn(),
-    replaceSource: vi.fn(),
-  };
+  const session = productionSessionDouble();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: { channel: "bootstrap", name: "bootstrap", raw: "sensitive" },
     consumeBoundary: vi.fn(),
@@ -99,12 +98,7 @@ test("refreshes readiness and replaces live transport only when returning to liv
   const fetcher = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(() =>
     Promise.resolve(new Response("{}", { status: 200 })),
   );
-  const session = {
-    acceptReplayResume: vi.fn(() => false),
-    anchorRuntime: vi.fn(),
-    expectLiveRun: vi.fn(),
-    replaceSource: vi.fn(),
-  };
+  const session = productionSessionDouble();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: VALID_BOOTSTRAP,
     consumeBoundary: vi.fn(),
@@ -146,12 +140,7 @@ test("aborts pending document reads and suppresses their late boundary callbacks
     consumeBoundary,
     fetcher,
     liveSourceFactory: () => EMPTY_SOURCE,
-    session: {
-      acceptReplayResume: vi.fn(() => false),
-      anchorRuntime: vi.fn(),
-      expectLiveRun: vi.fn(),
-      replaceSource: vi.fn(),
-    },
+    session: productionSessionDouble(),
   });
   const starting = runtime.start();
   await Promise.resolve();
@@ -180,12 +169,7 @@ test("converts network and HTTP document failures into empty untrusted boundarie
     consumeBoundary,
     fetcher,
     liveSourceFactory: () => EMPTY_SOURCE,
-    session: {
-      acceptReplayResume: vi.fn(() => false),
-      anchorRuntime: vi.fn(),
-      expectLiveRun: vi.fn(),
-      replaceSource: vi.fn(),
-    },
+    session: productionSessionDouble(),
   });
 
   // Act
@@ -220,12 +204,7 @@ test("forwards typed readiness bodies at 200 and 503 while refusing other docume
     consumeBoundary,
     fetcher,
     liveSourceFactory: () => EMPTY_SOURCE,
-    session: {
-      acceptReplayResume: vi.fn(() => false),
-      anchorRuntime: vi.fn(),
-      expectLiveRun: vi.fn(),
-      replaceSource: vi.fn(),
-    },
+    session: productionSessionDouble(),
   });
 
   // Act

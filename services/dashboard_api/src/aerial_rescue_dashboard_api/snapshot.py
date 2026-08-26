@@ -123,16 +123,12 @@ class SnapshotService:
             )
             if not page:
                 raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
-            for stored in page:
-                read_count += 1
-                if read_count > MAXIMUM_RECONSTRUCTION_EVENTS:
-                    raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
-                ordered, document = _ordered_event(stored)
-                checkpoint = _fold(checkpoint, ordered)
-                if ordered.event.event_class is not EventClass.TELEMETRY:
-                    timeline.append(document)
-                    if len(timeline) > EVENT_PAGE_SIZE:
-                        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
+            checkpoint, read_count = _fold_snapshot_page(
+                checkpoint,
+                page,
+                timeline,
+                read_count,
+            )
         return checkpoint, tuple(timeline)
 
     def fold_frame(
@@ -207,6 +203,27 @@ def _current_run_document(run: CurrentRun | None) -> Mapping[str, object] | None
 def _empty_checkpoint() -> ReducerCheckpoint:
     """Return the canonical no-current-run snapshot anchor."""
     return ReducerCheckpoint(DashboardReducedState(None, (), 0, ()), None)
+
+
+def _fold_snapshot_page(
+    checkpoint: ReducerCheckpoint,
+    page: Sequence[StoredEvent],
+    timeline: list[Mapping[str, object]],
+    read_count: int,
+) -> tuple[ReducerCheckpoint, int]:
+    """Fold one bounded store page and append its non-telemetry timeline entries."""
+    for stored in page:
+        read_count += 1
+        if read_count > MAXIMUM_RECONSTRUCTION_EVENTS:
+            raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
+        ordered, document = _ordered_event(stored)
+        checkpoint = _fold(checkpoint, ordered)
+        if ordered.event.event_class is EventClass.TELEMETRY:
+            continue
+        timeline.append(document)
+        if len(timeline) > EVENT_PAGE_SIZE:
+            raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
+    return checkpoint, read_count
 
 
 def _checkpoint_from_bytes(raw: bytes) -> ReducerCheckpoint:

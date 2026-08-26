@@ -37,6 +37,27 @@ class ManualLiveSource implements DashboardEventSource {
   }
 }
 
+function readyDocumentFetcher() {
+  return vi.fn((input: string) =>
+    Promise.resolve(
+      new Response(
+        input.includes("readiness")
+          ? '{"mode":"degradedLive","readinessVersion":"dashboard-readiness/v1","ready":true,"reasons":[]}'
+          : '{"catalogVersion":"scenario-catalog/v1","scenarios":[]}',
+        { status: 200 },
+      ),
+    ),
+  );
+}
+
+function collectManualSources(sources: ManualLiveSource[]): () => ManualLiveSource {
+  return () => {
+    const source = new ManualLiveSource();
+    sources.push(source);
+    return source;
+  };
+}
+
 async function replayOwnedSnapshot(input: DashboardSourceInput): Promise<DashboardSourceInput> {
   const document = JSON.parse(input.raw) as {
     currentRun: unknown;
@@ -237,25 +258,12 @@ test("replaces an overloaded stream with exactly one fresh live source", async (
       runtimeHolder.current?.resnapshot();
     },
   });
-  const fetcher = vi.fn((input: string) =>
-    Promise.resolve(
-      new Response(
-        input.includes("readiness")
-          ? '{"mode":"degradedLive","readinessVersion":"dashboard-readiness/v1","ready":true,"reasons":[]}'
-          : '{"catalogVersion":"scenario-catalog/v1","scenarios":[]}',
-        { status: 200 },
-      ),
-    ),
-  );
+  const fetcher = readyDocumentFetcher();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: VALID_BOOTSTRAP,
     consumeBoundary: vi.fn(),
     fetcher,
-    liveSourceFactory: () => {
-      const source = new ManualLiveSource();
-      sources.push(source);
-      return source;
-    },
+    liveSourceFactory: collectManualSources(sources),
     session,
   });
   runtimeHolder.current = runtime;
@@ -282,30 +290,13 @@ test("replaces the pinned source once after each accepted live, reset, and repla
   const liveSources: ManualLiveSource[] = [];
   const replaySources: ManualLiveSource[] = [];
   const session = new DashboardSourceSession();
-  const fetcher = vi.fn((input: string) =>
-    Promise.resolve(
-      new Response(
-        input.includes("readiness")
-          ? '{"mode":"degradedLive","readinessVersion":"dashboard-readiness/v1","ready":true,"reasons":[]}'
-          : '{"catalogVersion":"scenario-catalog/v1","scenarios":[]}',
-        { status: 200 },
-      ),
-    ),
-  );
+  const fetcher = readyDocumentFetcher();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: VALID_BOOTSTRAP,
     consumeBoundary: vi.fn(),
     fetcher,
-    liveSourceFactory: () => {
-      const source = new ManualLiveSource();
-      liveSources.push(source);
-      return source;
-    },
-    replaySourceFactory: () => {
-      const source = new ManualLiveSource();
-      replaySources.push(source);
-      return source;
-    },
+    liveSourceFactory: collectManualSources(liveSources),
+    replaySourceFactory: collectManualSources(replaySources),
     session,
   });
   await runtime.start();
@@ -351,25 +342,12 @@ test("refuses a replay-owned global snapshot after returning to degraded live mo
   // Arrange
   const liveSources: ManualLiveSource[] = [];
   const session = new DashboardSourceSession();
-  const fetcher = vi.fn((input: string) =>
-    Promise.resolve(
-      new Response(
-        input.includes("readiness")
-          ? '{"mode":"degradedLive","readinessVersion":"dashboard-readiness/v1","ready":true,"reasons":[]}'
-          : '{"catalogVersion":"scenario-catalog/v1","scenarios":[]}',
-        { status: 200 },
-      ),
-    ),
-  );
+  const fetcher = readyDocumentFetcher();
   const runtime = new ProductionDashboardRuntime({
     bootstrap: VALID_BOOTSTRAP,
     consumeBoundary: vi.fn(),
     fetcher,
-    liveSourceFactory: () => {
-      const source = new ManualLiveSource();
-      liveSources.push(source);
-      return source;
-    },
+    liveSourceFactory: collectManualSources(liveSources),
     replaySourceFactory: () => new ManualLiveSource(),
     session,
   });

@@ -1,18 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 import { fixtureForState, syntheticBearerSentinel } from "./support/dashboard-fixtures";
-import { openDashboard } from "./support/dashboard-harness";
+import {
+  captureObservedMutation,
+  openDashboard,
+  type ObservedMutation,
+} from "./support/dashboard-harness";
 
 const lowerUuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-interface ObservedMutation {
-  readonly authorization: string | undefined;
-  readonly body: unknown;
-  readonly contentType: string | undefined;
-  readonly idempotencyKey: string | undefined;
-  readonly method: string;
-  readonly origin: string | undefined;
-}
 
 async function waitUntil(predicate: () => boolean, description: string): Promise<void> {
   const deadline = Date.now() + 3_000;
@@ -37,15 +32,7 @@ test("prevents an immediate double submission while one start request is pending
     releaseResponse = resolve;
   });
   await page.route("**/api/v1/scenarios/wilderness-missing-person/start", async (route) => {
-    const request = route.request();
-    requests.push({
-      authorization: (await request.headerValue("authorization")) ?? undefined,
-      body: request.postDataJSON() as unknown,
-      contentType: (await request.headerValue("content-type")) ?? undefined,
-      idempotencyKey: (await request.headerValue("idempotency-key")) ?? undefined,
-      method: request.method(),
-      origin: (await request.headerValue("origin")) ?? undefined,
-    });
+    requests.push(await captureObservedMutation(route));
     await responseGate;
     await route.fulfill({
       json: {
@@ -109,15 +96,7 @@ test("explains reset consequences before issuing one guarded reset request", asy
     releaseResponse = resolve;
   });
   await page.route("**/api/v1/scenarios/current/reset", async (route) => {
-    const request = route.request();
-    requests.push({
-      authorization: (await request.headerValue("authorization")) ?? undefined,
-      body: request.postDataJSON() as unknown,
-      contentType: (await request.headerValue("content-type")) ?? undefined,
-      idempotencyKey: (await request.headerValue("idempotency-key")) ?? undefined,
-      method: request.method(),
-      origin: (await request.headerValue("origin")) ?? undefined,
-    });
+    requests.push(await captureObservedMutation(route));
     await responseGate;
     await route.fulfill({
       json: {

@@ -1731,6 +1731,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Dashboard snapshot/recorder control flow and repeated test arrangements are factored into focused
+  helpers so the repository-wide cognitive-complexity and duplication authorities pass without changing
+  production behavior, test identities, Acts, or assertions.
+
 - Dashboard and private-control contracts no longer carry values without runtime consumers.
   [ADR-0124](docs/adr/0124-remove-unconsumed-dashboard-wire-values.md) removes `runtimeId` from
   health, removes roster and fleet-progress echoes from scenario run status, deletes the wire-level

@@ -86,29 +86,91 @@ def _mapping(value: object) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
+def _live_current(
+    mission_id: str = "mission-test-0001",
+    run_id: str = "run-test-0001",
+    *,
+    started: bool = False,
+) -> CurrentRun:
+    """Build the canonical live run identity shared by orchestration arrangements."""
+    return CurrentRun(
+        RunMode.DEGRADED_LIVE,
+        "wilderness-missing-person",
+        1,
+        mission_id,
+        run_id,
+        None,
+        started=started,
+    )
+
+
+def _proposal() -> MutationProposal:
+    """Build one explicit mutation proposal from the shared accepted identities."""
+    return MutationProposal(
+        KEY_ONE,
+        MutationKind.START,
+        RunMode.DEGRADED_LIVE,
+        "aa" * 32,
+        "wilderness-missing-person",
+        1,
+        "mission-test-0001",
+        "run-test-0001",
+        None,
+        None,
+    )
+
+
+def _snapshot_service(store: FakeStore) -> SnapshotService:
+    """Bind one fake store to the stable snapshot cursor and runtime."""
+    return SnapshotService(
+        store,
+        CursorCodec("runtime-test-0001", b"c" * 32),
+        "runtime-test-0001",
+    )
+
+
+def _coordinator(
+    store: FakeStore,
+    scenario: FakeScenario,
+    replay: FakeReplay | None = None,
+) -> OperationCoordinator:
+    """Compose the operation coordinator from the fakes each test owns."""
+    return OperationCoordinator(
+        store,
+        scenario,
+        replay or FakeReplay(dashboard_fixture("replay-bundle")),
+        FakeIdentifiers(),
+    )
+
+
+async def _establish_live_run(
+    coordinator: OperationCoordinator,
+    *,
+    key: str = KEY_ONE,
+    digest: str = "aa" * 32,
+) -> None:
+    """Establish the live predecessor used as arrangement by reset tests."""
+    await coordinator.start(
+        "wilderness-missing-person",
+        RunMode.DEGRADED_LIVE,
+        1,
+        key,
+        digest,
+    )
+
+
 class SnapshotTests(unittest.IsolatedAsyncioTestCase):
     async def test_snapshot_captures_basis_then_folds_only_through_its_atomic_watermark(
         self,
     ) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
+        current = _live_current()
         store = FakeStore(
             current=current,
             events=(_event(1, "PLANNED"), _event(2, "SEARCHING"), _event(3, "EXHAUSTED")),
         )
         store.basis = SnapshotBasis(current, live_prepared_state(), 2)
-        service = SnapshotService(
-            store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        service = _snapshot_service(store)
 
         # Act
         capture = await service.capture()
@@ -130,24 +192,13 @@ class SnapshotTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_suffix_frame_uses_identical_opaque_id_and_post_fold_digest(self) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
+        current = _live_current()
         store = FakeStore(
             current=current,
             events=(_event(1, "PLANNED"),),
         )
         store.basis = SnapshotBasis(current, live_prepared_state(), 1)
-        service = SnapshotService(
-            store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        service = _snapshot_service(store)
         capture = await service.capture()
 
         # Act
@@ -164,24 +215,13 @@ class SnapshotTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
+        current = _live_current()
         store = FakeStore(
             current=current,
             events=(_event(1, "PLANNED"),),
         )
         store.basis = SnapshotBasis(current, live_prepared_state(), 1)
-        service = SnapshotService(
-            store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        service = _snapshot_service(store)
         capture = await service.capture()
         prior = capture.checkpoint
         mismatched = replace(_event(2, "SEARCHING"), kind="sectorLifecycle")
@@ -200,28 +240,13 @@ class SnapshotTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_bounds_missing_audit_page_and_gap_suffix_fail_closed(self) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
+        current = _live_current()
         basis = SnapshotBasis(current, live_prepared_state(), 1)
         store = FakeStore(current=current, basis=basis)
-        service = SnapshotService(
-            store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        service = _snapshot_service(store)
         zero_basis = SnapshotBasis(current, live_prepared_state(), 0)
         zero_store = FakeStore(current=current, basis=zero_basis)
-        zero_service = SnapshotService(
-            zero_store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        zero_service = _snapshot_service(zero_store)
         capture = await zero_service.capture()
 
         # Act
@@ -254,29 +279,14 @@ class SnapshotTests(unittest.IsolatedAsyncioTestCase):
             current=replay_run,
             basis=SnapshotBasis(replay_run, live_prepared_state(), 0),
         )
-        replay_service = SnapshotService(
-            replay_store,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
-        live = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
+        replay_service = _snapshot_service(replay_store)
+        live = _live_current()
         pressured = FakeStore(
             current=live,
             basis=SnapshotBasis(live, live_prepared_state(), 257),
             events=tuple(_event(ordinal, "PLANNED") for ordinal in range(1, 258)),
         )
-        pressured_service = SnapshotService(
-            pressured,
-            CursorCodec("runtime-test-0001", b"c" * 32),
-            "runtime-test-0001",
-        )
+        pressured_service = _snapshot_service(pressured)
 
         # Act
         replay_capture = await replay_service.capture()
@@ -320,12 +330,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
         cases = (
             ("scenario-unknown", 1, KEY_ONE, ErrorCode.SCENARIO_NOT_FOUND),
             (
@@ -367,23 +372,10 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_start_refuses_without_replacing_an_existing_current_run(self) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-old",
-            "run-old",
-            None,
-            started=True,
-        )
+        current = _live_current("mission-old", "run-old", started=True)
         store = FakeStore(current=current)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         first = await coordinator.start(
@@ -410,19 +402,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
 
         # Act
         with patch.object(
@@ -441,12 +422,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
         first = await coordinator.start(
             "wilderness-missing-person",
             RunMode.DEGRADED_LIVE,
@@ -475,7 +451,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
         replay = FakeReplay(dashboard_fixture("replay-bundle"))
-        coordinator = OperationCoordinator(store, scenario, replay, FakeIdentifiers())
+        coordinator = _coordinator(store, scenario, replay)
 
         # Act
         with patch.object(scenario, "catalog", side_effect=RuntimeError("unavailable")) as catalog:
@@ -496,18 +472,11 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         # Arrange
-        live = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-terminal",
-            "run-terminal",
-            None,
-        )
+        live = _live_current("mission-terminal", "run-terminal")
         store = FakeStore(current=live)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
         replay = FakeReplay(dashboard_fixture("replay-bundle"))
-        coordinator = OperationCoordinator(store, scenario, replay, FakeIdentifiers())
+        coordinator = _coordinator(store, scenario, replay)
 
         # Act
         answer = await coordinator.start(
@@ -541,12 +510,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         store = FakeStore(current=replay_run)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         answer = await coordinator.start(
@@ -568,19 +532,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
         predecessor = store.current
         if predecessor is None:
             self.fail("start did not establish a predecessor")
@@ -606,12 +559,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
         observed_current: list[CurrentRun | None] = []
 
         async def uncertain_start(
@@ -657,12 +605,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_private_start_refuses_a_mismatched_scenario_identity(self) -> None:
         # Arrange
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            FakeStore(),
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(FakeStore(), scenario)
         mismatched = ScenarioRunStatus(
             scenario_id="different-wilderness-scenario",
             scenario_revision=1,
@@ -689,27 +632,11 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_status_refuses_a_mismatched_scenario_revision(self) -> None:
         # Arrange
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.START,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            None,
-        )
+        proposal = _proposal()
         store = FakeStore()
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
         mismatched = ScenarioRunStatus(
             scenario_id="wilderness-missing-person",
             scenario_revision=2,
@@ -730,28 +657,12 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_recovery_refuses_a_mismatched_run_identity(self) -> None:
         # Arrange
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.START,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            None,
-        )
+        proposal = _proposal()
         store = FakeStore()
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
         scenario.missing_runs.add("run-test-0001")
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
         mismatched = ScenarioRunStatus(
             scenario_id="wilderness-missing-person",
             scenario_revision=1,
@@ -774,19 +685,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
         predecessor = store.current
         mismatched = ScenarioRunStatus(
             scenario_id="wilderness-missing-person",
@@ -813,19 +713,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
         await coordinator.reset(KEY_TWO, "bb" * 32)
         successor = store.current
         key = "ada6dd4f-b742-447c-8479-9778919d993b"
@@ -853,27 +742,11 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         # Arrange
         store = FakeStore()
-        proposal = MutationProposal(
-            idempotency_key=KEY_ONE,
-            kind=MutationKind.START,
-            mode=RunMode.DEGRADED_LIVE,
-            request_digest="aa" * 32,
-            scenario_id="wilderness-missing-person",
-            scenario_revision=1,
-            mission_id="mission-test-0001",
-            run_id="run-test-0001",
-            session_id=None,
-            predecessor_mission_id=None,
-        )
+        proposal = _proposal()
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
         scenario.missing_runs.add("run-test-0001")
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         await coordinator.reconcile_pending()
@@ -890,19 +763,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
         predecessor = store.current
         scenario.cancel_state = "SEARCHING"
 
@@ -925,19 +787,8 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
-        await coordinator.start(
-            "wilderness-missing-person",
-            RunMode.DEGRADED_LIVE,
-            1,
-            KEY_ONE,
-            "aa" * 32,
-        )
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
 
         # Act
         with pytest.raises(ApiError, match="idempotency") as captured:
@@ -958,7 +809,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         store = FakeStore()
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
         replay = FakeReplay(dashboard_fixture("replay-bundle"))
-        coordinator = OperationCoordinator(store, scenario, replay, FakeIdentifiers())
+        coordinator = _coordinator(store, scenario, replay)
 
         # Act
         started = await coordinator.start(
@@ -970,17 +821,14 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         reset = await coordinator.reset(KEY_TWO, "bb" * 32)
         pending_key = "ada6dd4f-b742-447c-8479-9778919d993b"
-        pending = MutationProposal(
-            pending_key,
-            MutationKind.START,
-            RunMode.REPLAY,
-            "cc" * 32,
-            "wilderness-missing-person",
-            1,
-            None,
-            None,
-            "session-test-pending",
-            None,
+        pending = replace(
+            _proposal(),
+            idempotency_key=pending_key,
+            mode=RunMode.REPLAY,
+            request_digest="cc" * 32,
+            mission_id=None,
+            run_id=None,
+            session_id="session-test-pending",
         )
         await store.claim_operation(pending)
         await coordinator.reconcile_pending()
@@ -996,35 +844,16 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         # Arrange
-        current = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-old",
-            "run-old",
-            None,
-        )
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.RESET,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            "mission-old",
+        current = _live_current("mission-old", "run-old")
+        proposal = replace(
+            _proposal(),
+            kind=MutationKind.RESET,
+            predecessor_mission_id="mission-old",
         )
         store = FakeStore(current=current)
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         answer = await coordinator.reset(KEY_ONE, "aa" * 32)
@@ -1041,34 +870,12 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         # Arrange
-        predecessor = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-old",
-            "run-old",
-            None,
-            started=True,
-        )
-        successor = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-        )
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.RESET,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            successor.mission_id,
-            successor.run_id,
-            None,
-            predecessor.mission_id,
+        predecessor = _live_current("mission-old", "run-old", started=True)
+        successor = _live_current()
+        proposal = replace(
+            _proposal(),
+            kind=MutationKind.RESET,
+            predecessor_mission_id=predecessor.mission_id,
         )
         store = FakeStore(
             current=successor,
@@ -1076,12 +883,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         await coordinator.reconcile_pending()
@@ -1098,26 +900,11 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         # Arrange
-        predecessor = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-old",
-            "run-old",
-            None,
-            started=True,
-        )
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.RESET,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            predecessor.mission_id,
+        predecessor = _live_current("mission-old", "run-old", started=True)
+        proposal = replace(
+            _proposal(),
+            kind=MutationKind.RESET,
+            predecessor_mission_id=predecessor.mission_id,
         )
         store = FakeStore(
             current=predecessor,
@@ -1125,12 +912,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         with (
@@ -1156,26 +938,11 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_nonterminal_predecessor_completes_cancellation_refusal(self) -> None:
         # Arrange
-        predecessor = CurrentRun(
-            RunMode.DEGRADED_LIVE,
-            "wilderness-missing-person",
-            1,
-            "mission-old",
-            "run-old",
-            None,
-            started=True,
-        )
-        proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.RESET,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            predecessor.mission_id,
+        predecessor = _live_current("mission-old", "run-old", started=True)
+        proposal = replace(
+            _proposal(),
+            kind=MutationKind.RESET,
+            predecessor_mission_id=predecessor.mission_id,
         )
         store = FakeStore(
             current=predecessor,
@@ -1183,12 +950,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
-        coordinator = OperationCoordinator(
-            store,
-            scenario,
-            FakeReplay(dashboard_fixture("replay-bundle")),
-            FakeIdentifiers(),
-        )
+        coordinator = _coordinator(store, scenario)
 
         # Act
         with patch.object(
@@ -1215,18 +977,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         catalog = dashboard_fixture("scenario-catalog")
         cases: list[tuple[FakeStore, FakeScenario, RunMode]] = []
-        live_proposal = MutationProposal(
-            KEY_ONE,
-            MutationKind.START,
-            RunMode.DEGRADED_LIVE,
-            "aa" * 32,
-            "wilderness-missing-person",
-            1,
-            "mission-test-0001",
-            "run-test-0001",
-            None,
-            None,
-        )
+        live_proposal = _proposal()
         missing_live = FakeStore()
         missing_live.operations[KEY_ONE] = replace(
             ClaimedOperation.from_proposal(live_proposal),
@@ -1272,12 +1023,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Act
         errors = []
         for store, scenario, mode in cases:
-            coordinator = OperationCoordinator(
-                store,
-                scenario,
-                FakeReplay(dashboard_fixture("replay-bundle")),
-                FakeIdentifiers(),
-            )
+            coordinator = _coordinator(store, scenario)
             with pytest.raises(ApiError) as captured:
                 await coordinator.start(
                     "wilderness-missing-person",
@@ -1303,7 +1049,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         scenarios = FakeScenario(dashboard_fixture("scenario-catalog"))
         replay = FakeReplay(dashboard_fixture("replay-bundle"))
-        empty = OperationCoordinator(FakeStore(), scenarios, replay, FakeIdentifiers())
+        empty = _coordinator(FakeStore(), scenarios, replay)
         invalid_store = FakeStore(
             current=CurrentRun(
                 RunMode.DEGRADED_LIVE,
@@ -1314,7 +1060,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
                 None,
             )
         )
-        invalid = OperationCoordinator(invalid_store, scenarios, replay, FakeIdentifiers())
+        invalid = _coordinator(invalid_store, scenarios, replay)
 
         # Act
         with pytest.raises(ApiError) as absent:

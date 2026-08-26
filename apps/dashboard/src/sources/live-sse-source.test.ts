@@ -47,6 +47,22 @@ class FakeEventStream implements LiveEventStream {
   }
 }
 
+function openedLiveSource(url = "/events"): {
+  received: DashboardSourceInput[];
+  source: LiveSseSource;
+  stream: FakeEventStream;
+  subscription: ReturnType<LiveSseSource["open"]>;
+} {
+  const stream = new FakeEventStream();
+  const received: DashboardSourceInput[] = [];
+  const source = new LiveSseSource({ factory: () => stream, url });
+  const subscription = source.open((input) => {
+    received.push(input);
+    return Promise.resolve();
+  });
+  return { received, source, stream, subscription };
+}
+
 test("opens the injected URL and emits only the three named SSE data frames", async () => {
   // Arrange
   const stream = new FakeEventStream();
@@ -96,13 +112,7 @@ test("opens the injected URL and emits only the three named SSE data frames", as
 
 test("forwards the native SSE event identifier with every named data frame", async () => {
   // Arrange
-  const stream = new FakeEventStream();
-  const received: DashboardSourceInput[] = [];
-  const source = new LiveSseSource({ factory: () => stream, url: "/events" });
-  source.open((input) => {
-    received.push(input);
-    return Promise.resolve();
-  });
+  const { received, stream } = openedLiveSource();
   const nativeFrame = new MessageEvent("snapshot", {
     data: '{"snapshotVersion":"dashboard-snapshot/v1"}',
     lastEventId: "opaque-snapshot-cursor",
@@ -123,13 +133,7 @@ test("forwards the native SSE event identifier with every named data frame", asy
 
 test("reports disconnect and recovery as serialized source signals", async () => {
   // Arrange
-  const stream = new FakeEventStream();
-  const received: DashboardSourceInput[] = [];
-  const source = new LiveSseSource({ factory: () => stream, url: "/events" });
-  source.open((input) => {
-    received.push(input);
-    return Promise.resolve();
-  });
+  const { received, stream } = openedLiveSource();
 
   // Act
   stream.dispatch("open");
@@ -146,13 +150,7 @@ test("reports disconnect and recovery as serialized source signals", async () =>
 test("enters offline after one bounded outage and reports recovery when the stream reopens", async () => {
   // Arrange
   vi.useFakeTimers();
-  const stream = new FakeEventStream();
-  const received: DashboardSourceInput[] = [];
-  const source = new LiveSseSource({ factory: () => stream, url: "/events" });
-  source.open((input) => {
-    received.push(input);
-    return Promise.resolve();
-  });
+  const { received, stream } = openedLiveSource();
 
   // Act
   stream.dispatch("error");
@@ -204,13 +202,7 @@ test("reopens a terminally closed browser stream after the bounded outage transi
 test("cancels pending offline transitions on early recovery and source disposal", async () => {
   // Arrange
   vi.useFakeTimers();
-  const stream = new FakeEventStream();
-  const received: DashboardSourceInput[] = [];
-  const source = new LiveSseSource({ factory: () => stream, url: "/events" });
-  const subscription = source.open((input) => {
-    received.push(input);
-    return Promise.resolve();
-  });
+  const { received, stream, subscription } = openedLiveSource();
 
   // Act
   stream.dispatch("error");
@@ -231,13 +223,7 @@ test("cancels pending offline transitions on early recovery and source disposal"
 
 test("turns a non-message named callback into malformed raw input for boundary refusal", async () => {
   // Arrange
-  const stream = new FakeEventStream();
-  const received: DashboardSourceInput[] = [];
-  const source = new LiveSseSource({ factory: () => stream, url: "/events" });
-  source.open((input) => {
-    received.push(input);
-    return Promise.resolve();
-  });
+  const { received, stream } = openedLiveSource();
 
   // Act
   stream.dispatchEvent("snapshot", new Event("snapshot"));
