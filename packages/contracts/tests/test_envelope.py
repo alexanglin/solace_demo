@@ -27,6 +27,7 @@ from aerial_rescue_contracts.envelope import (
     Envelope,
     EnvelopeError,
     EnvelopeRefusal,
+    _lifecycle_source_pattern,
     binding_for,
     check_topic_binding,
     decode_envelope,
@@ -123,7 +124,17 @@ COMMAND_RESULT_TOPIC = Topic(
     {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
 )
 
-LIFECYCLE_FIXTURES = Path(__file__).parents[3] / "fixtures" / "golden" / "v1" / "event"
+LIFECYCLE_BASELINES = {
+    "drone-event-connectivity-changed": "drone_event_connectivity_changed_baseline.json",
+    "mission-event-lifecycle": "mission_event_lifecycle_baseline.json",
+    "sector-event-lifecycle": "sector_event_lifecycle_baseline.json",
+}
+"""Each accepted lifecycle source event, committed beside the other baselines.
+
+Naming the committed copy keeps this suite member-local. Mutation runs each Tier 1 member
+from a copied working directory (``docs/TESTING.md``), so a path resolved relative to the
+repository root does not survive the copy and resolves outside the repository instead.
+"""
 
 
 def _baseline() -> dict[str, object]:
@@ -152,10 +163,10 @@ def _command_result_baseline() -> dict[str, object]:
 
 
 def _lifecycle_baseline(name: str) -> dict[str, object]:
-    """Return a fresh lifecycle source event from its accepted golden fixture."""
+    """Return a fresh lifecycle source event from its committed baseline."""
     return cast(
         "dict[str, object]",
-        json.loads((LIFECYCLE_FIXTURES / name / "baseline.json").read_text(encoding="utf-8")),
+        json.loads((BASELINES / LIFECYCLE_BASELINES[name]).read_text(encoding="utf-8")),
     )
 
 
@@ -719,6 +730,23 @@ class LifecycleBindingTests(unittest.TestCase):
                 "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
             ),
             tuple(envelope.source for envelope in envelopes),
+        )
+
+    def test_the_lifecycle_source_pattern_wraps_one_identifier_in_the_urn_grammar(self) -> None:
+        """The pattern is built once at import, so its grammar is a compatibility surface."""
+        # Arrange
+        expected = (
+            "^urn:aerial-rescue:mission-lifecycle:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+        )
+
+        # Act
+        pattern = _lifecycle_source_pattern("mission-lifecycle")
+
+        # Assert
+        self.assertEqual(expected, pattern)
+        self.assertEqual(
+            pattern,
+            BINDINGS["aerial-rescue.v1.mission.event.lifecycle"].source_pattern,
         )
 
     def test_each_lifecycle_type_refuses_another_lifecycle_sources_run_identity(self) -> None:

@@ -24,7 +24,9 @@ from aerial_rescue_contracts.view import (
     EventClass,
     FoldApplied,
     FoldDuplicate,
+    FoldOutcome,
     FoldRefused,
+    Mission,
     MissionLifecycle,
     OrderedDashboardEvent,
     Participation,
@@ -32,8 +34,12 @@ from aerial_rescue_contracts.view import (
     ReducerCheckpoint,
     ReducerError,
     ReducerRefusal,
+    Sector,
     SectorState,
     SimulatedFleetMember,
+    Telemetry,
+    _ReductionProblemError,
+    _validate_ordered_event_boundary,
     append_meaningful_timeline_event,
     checkpoint_from_replay,
     checkpoint_from_snapshot,
@@ -1256,3 +1262,617 @@ def test_prepared_fleet_members_expose_only_their_participation_variant() -> Non
         Participation.SIMULATED,
         Participation.DECLARED_ONLY,
     )
+
+
+SECTOR_THREE = "sector-03"
+UNPREPARED_DRONE = "drone-sim-09"
+UNPREPARED_SECTOR = "sector-09"
+PREDECESSOR = "mission-synthetic-0000"
+TELEMETRY_RANGES: tuple[tuple[str, int, int], ...] = (
+    ("latitudeMicrodegrees", -90_000_000, 90_000_000),
+    ("longitudeMicrodegrees", -180_000_000, 180_000_000),
+    ("batteryPercent", 0, 100),
+    ("altitudeMetres", -500, 20_000),
+    ("headingDegrees", 0, 359),
+    ("groundSpeedCentimetresPerSecond", 0, 10_000),
+)
+
+
+def _refusal_of(outcome: FoldOutcome) -> tuple[ReducerRefusal, str, object]:
+    """Return the structured refusal triple of a refused fold, failing on any other outcome."""
+    if not isinstance(outcome, FoldRefused):
+        raise TypeError(outcome)
+    return (outcome.refusal, outcome.attribute, outcome.value)
+
+
+def _refused_first_event(event: OrderedDashboardEvent) -> tuple[ReducerRefusal, str, object]:
+    """Return the refusal triple of folding one event onto the prepared checkpoint."""
+    return _refusal_of(fold_ordered_event(prepare_checkpoint(_prepared()), event))
+
+
+def _telemetry_data(**overrides: object) -> dict[str, object]:
+    """Return complete telemetry event data with individual members replaced."""
+    data: dict[str, object] = {
+        "droneId": SIMULATED_ONE,
+        "latitudeMicrodegrees": 44_475_000,
+        "longitudeMicrodegrees": -79_245_000,
+        "batteryPercent": 96,
+        "altitudeMetres": 83,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 950,
+    }
+    data.update(overrides)
+    return data
+
+
+def _telemetry_event_with(data: dict[str, object], ordinal: int = 1) -> OrderedDashboardEvent:
+    """Return one telemetry event carrying exactly the supplied data."""
+    return _event(ordinal, "droneTelemetry", EventClass.TELEMETRY, data)
+
+
+def test_the_reduced_telemetry_reading_carries_every_measured_member_unchanged() -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+    data = _telemetry_data(
+        latitudeMicrodegrees=12_345_678,
+        longitudeMicrodegrees=-98_765_432,
+        batteryPercent=41,
+        altitudeMetres=1_234,
+        headingDegrees=321,
+        groundSpeedCentimetresPerSecond=4_321,
+    )
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _telemetry_event_with(data))
+
+    # Assert
+    assert isinstance(outcome, FoldApplied)
+    member = outcome.checkpoint.state.fleet[0]
+    assert isinstance(member, SimulatedFleetMember)
+    assert member.telemetry == Telemetry(12_345_678, -98_765_432, 41, 1_234, 321, 4_321)
+
+
+@pytest.mark.parametrize(("name", "minimum", "maximum"), TELEMETRY_RANGES)
+def test_each_telemetry_member_accepts_both_ends_of_its_schema_range(
+    name: str,
+    minimum: int,
+    maximum: int,
+) -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+    events = (
+        _telemetry_event_with(_telemetry_data(**{name: minimum}), 1),
+        _telemetry_event_with(_telemetry_data(**{name: maximum}), 1),
+    )
+
+    # Act
+    outcomes = tuple(fold_ordered_event(checkpoint, event) for event in events)
+
+    # Assert
+    assert all(isinstance(outcome, FoldApplied) for outcome in outcomes)
+
+
+@pytest.mark.parametrize(("name", "minimum", "maximum"), TELEMETRY_RANGES)
+def test_each_telemetry_member_refuses_the_value_just_outside_each_end(
+    name: str,
+    minimum: int,
+    maximum: int,
+) -> None:
+    # Arrange
+    below = minimum - 1
+    above = maximum + 1
+
+    # Act
+    refusals = (
+        _refused_first_event(_telemetry_event_with(_telemetry_data(**{name: below}))),
+        _refused_first_event(_telemetry_event_with(_telemetry_data(**{name: above}))),
+    )
+
+    # Assert
+    assert refusals == (
+        (ReducerRefusal.EVENT_DATA, name, below),
+        (ReducerRefusal.EVENT_DATA, name, above),
+    )
+
+
+def test_a_replaced_simulated_member_keeps_every_other_member_in_place() -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _connectivity_event(1, SIMULATED_TWO))
+
+    # Assert
+    assert isinstance(outcome, FoldApplied)
+    fleet = outcome.checkpoint.state.fleet
+    assert tuple(member.identifier for member in fleet) == (
+        SIMULATED_ONE,
+        SIMULATED_TWO,
+        DECLARED_ONLY,
+    )
+    replaced = fleet[1]
+    assert isinstance(replaced, SimulatedFleetMember)
+    assert replaced.connectivity is Connectivity.DEGRADED
+
+
+def test_a_reduced_sector_keeps_every_other_sector_in_place() -> None:
+    # Arrange
+    prepared = _prepared(sectors=(SECTOR_ONE, SECTOR_TWO, SECTOR_THREE))
+    checkpoint = prepare_checkpoint(prepared)
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _sector_event(1, sector_id=SECTOR_TWO))
+
+    # Assert
+    assert isinstance(outcome, FoldApplied)
+    sectors = outcome.checkpoint.state.sectors
+    assert tuple(sector.identifier for sector in sectors) == (
+        SECTOR_ONE,
+        SECTOR_TWO,
+        SECTOR_THREE,
+    )
+    assert sectors[1].state is SectorState.ASSIGNED
+    assert sectors[1].assigned_member_id == SIMULATED_ONE
+
+
+def test_a_prepared_mission_carries_its_predecessor_into_the_planned_checkpoint() -> None:
+    # Arrange
+    prepared = PreparedMission(MISSION, PREDECESSOR, (SIMULATED_ONE,), (), (SECTOR_ONE,))
+
+    # Act
+    checkpoint = prepare_checkpoint(prepared)
+
+    # Assert
+    assert checkpoint.state.current_mission == Mission(
+        MISSION,
+        MissionLifecycle.PLANNED,
+        PREDECESSOR,
+    )
+
+
+def test_the_preparation_failure_message_names_the_refusal_attribute_and_value() -> None:
+    # Arrange
+    prepared = _prepared(simulated=(SIMULATED_ONE, SIMULATED_ONE))
+
+    # Act
+    with pytest.raises(ReducerError) as captured:
+        prepare_checkpoint(prepared)
+
+    # Assert
+    assert str(captured.value) == (
+        f"{ReducerRefusal.DUPLICATE_MEMBER.value}: identifier='{SIMULATED_ONE}'"
+    )
+
+
+def test_an_internal_reduction_problem_carries_the_refusal_text_as_its_message() -> None:
+    # Arrange
+    event = _mission_event(1, "NOT_A_LIFECYCLE")
+
+    # Act
+    with pytest.raises(_ReductionProblemError) as captured:
+        _validate_ordered_event_boundary(event)
+
+    # Assert
+    assert str(captured.value) == ReducerRefusal.EVENT_DATA.value
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        pytest.param(
+            _event(1, "missionLifecycle", EventClass.MISSION, {"lifecycle": "NOPE"}),
+            (ReducerRefusal.EVENT_DATA, "lifecycle", "NOPE"),
+            id="unknown-lifecycle",
+        ),
+        pytest.param(
+            _event(
+                1,
+                "missionLifecycle",
+                EventClass.MISSION,
+                {"lifecycle": "SEARCHING", "extra": 7},
+            ),
+            (ReducerRefusal.EVENT_DATA, "extra", 7),
+            id="unknown-member",
+        ),
+        pytest.param(
+            _event(1, "missionLifecycle", EventClass.MISSION, {}),
+            (ReducerRefusal.EVENT_DATA, "lifecycle", None),
+            id="missing-member",
+        ),
+        pytest.param(
+            _event(
+                1,
+                "connectivityChanged",
+                EventClass.CONNECTIVITY,
+                {"droneId": "Drone-01", "connectivity": "DEGRADED"},
+            ),
+            (ReducerRefusal.EVENT_DATA, "droneId", "Drone-01"),
+            id="malformed-identifier",
+        ),
+        pytest.param(
+            _event(1, "droneTelemetry", EventClass.MISSION, _telemetry_data()),
+            (ReducerRefusal.EVENT_DATA, "eventClass", "MISSION"),
+            id="wrong-event-class",
+        ),
+        pytest.param(
+            _event(1, "unknownKind", EventClass.MISSION, {}),
+            (ReducerRefusal.UNPROJECTED, "kind", "unknownKind"),
+            id="unknown-kind",
+        ),
+        pytest.param(
+            _event(1, cast(str, 7), EventClass.MISSION, {}),
+            (ReducerRefusal.UNPROJECTED, "kind", 7),
+            id="non-string-kind",
+        ),
+        pytest.param(
+            _mission_event(1, mission="Not A Mission"),
+            (ReducerRefusal.EVENT_DATA, "mission", "Not A Mission"),
+            id="malformed-mission",
+        ),
+        pytest.param(
+            _mission_event(1, time="2026-08-24T12:00:01Z"),
+            (ReducerRefusal.EVENT_DATA, "time", "2026-08-24T12:00:01Z"),
+            id="malformed-time",
+        ),
+    ],
+)
+def test_boundary_refusals_name_their_attribute_and_the_offending_value(
+    event: OrderedDashboardEvent,
+    expected: tuple[ReducerRefusal, str, object],
+) -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, event)
+
+    # Assert
+    assert _refusal_of(outcome) == expected
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        pytest.param(
+            _connectivity_event(1, DECLARED_ONLY),
+            (ReducerRefusal.DECLARED_ONLY_MEMBER, "droneId", DECLARED_ONLY),
+            id="declared-only-member",
+        ),
+        pytest.param(
+            _connectivity_event(1, UNPREPARED_DRONE),
+            (ReducerRefusal.UNKNOWN_MEMBER, "droneId", UNPREPARED_DRONE),
+            id="unknown-member",
+        ),
+        pytest.param(
+            _sector_event(1, sector_id=UNPREPARED_SECTOR),
+            (ReducerRefusal.UNKNOWN_SECTOR, "sectorId", UNPREPARED_SECTOR),
+            id="unknown-sector",
+        ),
+        pytest.param(
+            _sector_event(1, assigned_member_id=DECLARED_ONLY),
+            (ReducerRefusal.INVALID_ASSIGNEE, "assignedMemberId", DECLARED_ONLY),
+            id="declared-only-assignee",
+        ),
+        pytest.param(
+            _sector_event(1, state="UNASSIGNED", assigned_member_id=SIMULATED_ONE),
+            (ReducerRefusal.ASSIGNMENT_FORBIDDEN, "assignedMemberId", SIMULATED_ONE),
+            id="assignment-forbidden",
+        ),
+        pytest.param(
+            _sector_event(1, state="ASSIGNED", assigned_member_id=None),
+            (ReducerRefusal.ASSIGNMENT_REQUIRED, "assignedMemberId", None),
+            id="assignment-required",
+        ),
+    ],
+)
+def test_roster_refusals_name_their_attribute_and_the_offending_value(
+    event: OrderedDashboardEvent,
+    expected: tuple[ReducerRefusal, str, object],
+) -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, event)
+
+    # Assert
+    assert _refusal_of(outcome) == expected
+
+
+def test_a_mission_bearing_event_is_refused_against_an_unprepared_checkpoint() -> None:
+    # Arrange
+    checkpoint = EMPTY_CHECKPOINT
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(1))
+
+    # Assert
+    assert _refusal_of(outcome) == (ReducerRefusal.MISSION_UNPREPARED, "mission", None)
+
+
+def test_an_event_for_another_mission_names_the_mission_it_carried() -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(1, mission=OTHER_MISSION))
+
+    # Assert
+    assert _refusal_of(outcome) == (ReducerRefusal.MISSION_MISMATCH, "mission", OTHER_MISSION)
+
+
+@pytest.mark.parametrize(
+    ("ordinal", "expected_refusal"),
+    [
+        pytest.param(1, ReducerRefusal.ORDINAL_REGRESSION, id="regression"),
+        pytest.param(4, ReducerRefusal.ORDINAL_GAP, id="gap"),
+    ],
+)
+def test_ordinal_refusals_name_the_audit_ordinal_they_carried(
+    ordinal: int,
+    expected_refusal: ReducerRefusal,
+) -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1), _connectivity_event(2))
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(ordinal))
+
+    # Assert
+    assert _refusal_of(outcome) == (expected_refusal, "auditOrdinal", ordinal)
+
+
+def test_a_diverging_same_ordinal_event_names_the_audit_ordinal_it_carried() -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1), _connectivity_event(2))
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(2, "ABORTED"))
+
+    # Assert
+    assert _refusal_of(outcome) == (ReducerRefusal.ORDINAL_DIVERGENCE, "auditOrdinal", 2)
+
+
+def test_the_largest_safe_ordinal_passes_the_boundary_and_is_refused_only_as_a_gap() -> None:
+    # Arrange
+    checkpoint = prepare_checkpoint(_prepared())
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(MAX_SAFE_INTEGER))
+
+    # Assert
+    assert _refusal_of(outcome) == (
+        ReducerRefusal.ORDINAL_GAP,
+        "auditOrdinal",
+        MAX_SAFE_INTEGER,
+    )
+
+
+MALFORMED_DIGEST = "NOT-A-DIGEST"
+UNEQUAL_DIGEST = "f" * SHA256_HEX_LENGTH
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+def test_an_accepted_anchor_carries_the_state_and_witness_it_validated(
+    factory: CheckpointFactory,
+) -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1))
+
+    # Act
+    outcome = factory(
+        checkpoint.state,
+        checkpoint.latest_event_digest,
+        expected_state_digest=state_digest(checkpoint.state),
+    )
+
+    # Assert
+    assert isinstance(outcome, CheckpointAccepted)
+    assert outcome.checkpoint == ReducerCheckpoint(
+        checkpoint.state,
+        checkpoint.latest_event_digest,
+    )
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+@pytest.mark.parametrize(
+    ("supplied_digest", "expected_refusal"),
+    [
+        pytest.param(
+            MALFORMED_DIGEST,
+            ReducerRefusal.SERVER_DIGEST_FORM,
+            id="malformed",
+        ),
+        pytest.param(
+            UNEQUAL_DIGEST,
+            ReducerRefusal.SERVER_DIGEST_MISMATCH,
+            id="unequal",
+        ),
+    ],
+)
+def test_an_anchor_server_digest_refusal_names_the_digest_member_and_the_supplied_value(
+    factory: CheckpointFactory,
+    supplied_digest: str,
+    expected_refusal: ReducerRefusal,
+) -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1))
+
+    # Act
+    outcome = factory(
+        checkpoint.state,
+        checkpoint.latest_event_digest,
+        expected_state_digest=supplied_digest,
+    )
+
+    # Assert
+    assert isinstance(outcome, CheckpointRefused)
+    assert (outcome.refusal, outcome.attribute, outcome.value) == (
+        expected_refusal,
+        "digest",
+        supplied_digest,
+    )
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+def test_a_malformed_anchor_witness_refusal_names_the_witness_it_rejected(
+    factory: CheckpointFactory,
+) -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1))
+
+    # Act
+    outcome = factory(checkpoint.state, MALFORMED_DIGEST)
+
+    # Assert
+    assert isinstance(outcome, CheckpointRefused)
+    assert (outcome.refusal, outcome.attribute, outcome.value) == (
+        ReducerRefusal.WITNESS_FORM,
+        "latestEventDigest",
+        MALFORMED_DIGEST,
+    )
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+@pytest.mark.parametrize("witness", [None, UNEQUAL_DIGEST])
+def test_an_ordinal_witness_refusal_names_the_witness_that_disagreed(
+    factory: CheckpointFactory,
+    witness: str | None,
+) -> None:
+    # Arrange
+    applied = _checkpoint_after(_mission_event(1))
+    state = applied.state if witness is None else prepare_checkpoint(_prepared()).state
+
+    # Act
+    outcome = factory(state, witness)
+
+    # Assert
+    assert isinstance(outcome, CheckpointRefused)
+    assert (outcome.refusal, outcome.attribute, outcome.value) == (
+        ReducerRefusal.ORDINAL_WITNESS,
+        "latestEventDigest",
+        witness,
+    )
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+def test_a_noncanonical_anchor_refusal_carries_the_offending_collection(
+    factory: CheckpointFactory,
+) -> None:
+    # Arrange
+    checkpoint = _checkpoint_after(_mission_event(1))
+    unsorted_fleet = tuple(reversed(checkpoint.state.fleet))
+    candidate = replace(checkpoint.state, fleet=unsorted_fleet)
+
+    # Act
+    outcome = factory(candidate, checkpoint.latest_event_digest)
+
+    # Assert
+    assert isinstance(outcome, CheckpointRefused)
+    assert (outcome.refusal, outcome.attribute, outcome.value) == (
+        ReducerRefusal.NONCANONICAL_ANCHOR_STATE,
+        "fleet",
+        unsorted_fleet,
+    )
+
+
+def test_a_fold_onto_a_noncanonical_anchor_carries_the_offending_collection() -> None:
+    # Arrange
+    applied = _checkpoint_after(_mission_event(1))
+    unsorted_fleet = tuple(reversed(applied.state.fleet))
+    checkpoint = replace(applied, state=replace(applied.state, fleet=unsorted_fleet))
+
+    # Act
+    outcome = fold_ordered_event(checkpoint, _mission_event(2))
+
+    # Assert
+    assert _refusal_of(outcome) == (
+        ReducerRefusal.NONCANONICAL_ANCHOR_STATE,
+        "fleet",
+        unsorted_fleet,
+    )
+
+
+@pytest.mark.parametrize("factory", [checkpoint_from_snapshot, checkpoint_from_replay])
+@pytest.mark.parametrize(
+    ("fleet", "sectors", "ordinal"),
+    [
+        pytest.param((SimulatedFleetMember(SIMULATED_ONE),), (), 0, id="fleet-only"),
+        pytest.param((), (Sector(SECTOR_ONE, SectorState.UNASSIGNED, None),), 0, id="sectors-only"),
+        pytest.param((), (), 5, id="ordinal-only"),
+    ],
+)
+def test_an_unprepared_anchor_holding_any_reduced_content_is_refused(
+    factory: CheckpointFactory,
+    fleet: tuple[SimulatedFleetMember, ...],
+    sectors: tuple[Sector, ...],
+    ordinal: int,
+) -> None:
+    # Arrange
+    candidate = DashboardReducedState(None, fleet, ordinal, sectors)
+
+    # Act
+    outcome = factory(candidate, None)
+
+    # Assert
+    assert isinstance(outcome, CheckpointRefused)
+    assert (outcome.refusal, outcome.attribute, outcome.value) == (
+        ReducerRefusal.NONCANONICAL_ANCHOR_STATE,
+        "currentMission",
+        None,
+    )
+
+
+def test_the_canonical_state_document_names_every_member_in_its_wire_spelling() -> None:
+    # Arrange
+    state = DashboardReducedState(
+        Mission(MISSION, MissionLifecycle.SEARCHING, PREDECESSOR),
+        (
+            SimulatedFleetMember(
+                SIMULATED_ONE,
+                connectivity=Connectivity.DEGRADED,
+                telemetry=Telemetry(11, -22, 33, 44, 55, 66),
+            ),
+            DeclaredOnlyFleetMember(DECLARED_ONLY),
+        ),
+        7,
+        (Sector(SECTOR_ONE, SectorState.ASSIGNED, SIMULATED_ONE),),
+    )
+
+    # Act
+    document = state_document(state)
+
+    # Assert
+    assert document == {
+        "canonicalizationVersion": 1,
+        "stateVersion": 1,
+        "currentMission": {
+            "identifier": MISSION,
+            "lifecycle": "SEARCHING",
+            "predecessorIdentifier": PREDECESSOR,
+        },
+        "fleet": [
+            {
+                "identifier": SIMULATED_ONE,
+                "participation": "SIMULATED",
+                "connectivity": "DEGRADED",
+                "telemetry": {
+                    "latitudeMicrodegrees": 11,
+                    "longitudeMicrodegrees": -22,
+                    "batteryPercent": 33,
+                    "altitudeMetres": 44,
+                    "headingDegrees": 55,
+                    "groundSpeedCentimetresPerSecond": 66,
+                },
+            },
+            {"identifier": DECLARED_ONLY, "participation": "DECLARED_ONLY"},
+        ],
+        "latestAuditOrdinal": 7,
+        "sectors": [
+            {
+                "identifier": SECTOR_ONE,
+                "state": "ASSIGNED",
+                "assignedMemberId": SIMULATED_ONE,
+            },
+        ],
+    }

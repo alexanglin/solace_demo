@@ -257,6 +257,87 @@ class ProjectionTests(unittest.TestCase):
         )
 
 
+class ClosedVocabularyProjectionTests(unittest.TestCase):
+    """Every member of every closed lifecycle vocabulary crosses the boundary."""
+
+    def test_every_connectivity_value_projects(self) -> None:
+        # Arrange
+        values = ("CONNECTED", "DEGRADED", "OFFLINE")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                CONNECTIVITY_TYPE,
+                {"missionId": MISSION, "droneId": DRONE, "connectivity": value},
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["connectivity"]) for event in events))
+
+    def test_every_mission_lifecycle_value_projects(self) -> None:
+        # Arrange
+        values = ("PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"missionId": MISSION, "lifecycle": value},
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["lifecycle"]) for event in events))
+
+    def test_every_sector_state_projects_under_its_own_assignment_rule(self) -> None:
+        # Arrange
+        values = ("UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                SECTOR_LIFECYCLE_TYPE,
+                {
+                    "missionId": MISSION,
+                    "sectorId": "sector-01",
+                    "state": value,
+                    "assignedMemberId": None if value == "UNASSIGNED" else DRONE,
+                },
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["state"]) for event in events))
+
+    def test_the_first_unknown_member_refused_is_the_lowest_in_byte_order(self) -> None:
+        # Arrange
+        envelope = _lifecycle_envelope(
+            MISSION_LIFECYCLE_TYPE,
+            {
+                "missionId": MISSION,
+                "lifecycle": "SEARCHING",
+                "zeta": "last-inserted-but-highest",
+                "alpha": "later-inserted-but-lowest",
+            },
+        )
+
+        # Act
+        refusal = _refusal_of(envelope)
+
+        # Assert
+        self.assertEqual(
+            (ViewRefusal.MALFORMED_PAYLOAD, "alpha", "later-inserted-but-lowest"),
+            refusal,
+        )
+
+
 class ProjectionTableTests(unittest.TestCase):
     def test_every_projection_names_an_event_type_with_a_bound_payload_schema(self) -> None:
         # Arrange
