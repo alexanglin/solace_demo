@@ -90,9 +90,15 @@ The twenty-three `drone-backlog-NN` identifiers are written out in full in
 `test_backlog_recovery_live.PROVISIONING`; the ellipsis above stands for the other twenty-one and
 is not a shell form that works.
 
-Keep every drone in that single invocation. The applier converges the desired state and deletes what
-the matrix no longer grants, so naming one drone alone removes the queues the other probes need.
-`test_command_dispatch_live.PROVISIONING` holds the same command in its raw `python -m` form.
+Keep every drone in that single invocation, because a drone the invocation never names is never
+created. The applier adds what the matrix grants and deletes only ACL topic exceptions and queue
+subscriptions; it never deletes a queue, a client username, or an ACL profile
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) records that
+gap, and `packages/broker/tests/test_provisioning.py` asserts it). So a short invocation leaves the
+other probes' queues in place but never creates the ones it omitted, and a guaranteed command
+published for a drone with no queue is discarded rather than refused.
+`test_command_dispatch_live.PROVISIONING` holds a shorter five-drone command in its raw `python -m`
+form; prefer the twenty-eight-drone superset above.
 
 What each file adds to that shared prerequisite:
 

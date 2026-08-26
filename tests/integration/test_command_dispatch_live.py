@@ -21,9 +21,10 @@ test fills is drained afterwards, the two collateral dashboard queues included -
 two queues and a result reaches two more -- so the next run's arithmetic does not depend
 on this one.
 
-**The prerequisite names every probe drone at once**, because the provisioner deletes what the
-matrix no longer grants, and because the fleet simulator now binds a queue for every drone its
-scenario declares. The command is in ``PROVISIONING`` below, and it is the same one
+**The prerequisite names every probe drone at once**, because a drone the invocation never names
+is never created -- the applier deletes only ACL topic exceptions and queue subscriptions, never a
+queue (ADR-0080) -- and because the fleet simulator now binds a queue for every drone its scenario
+declares. The command is in ``PROVISIONING`` below, and it is the same one
 ``test_fleet_simulator_live.py`` needs.
 
 Without it this drone has no queue, and a command published for a drone with no queue is
