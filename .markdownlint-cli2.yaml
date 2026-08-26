@@ -19,3 +19,7 @@ ignores:
   - node_modules/**
   - .venv/**
   - agent-mesh/.venv/**
+  # Gitignored, untracked, and not repository-owned prose: the pnpm content-addressed
+  # store and the local agent worktrees. Both carry vendored Markdown only.
+  - .pnpm-store/**
+  - .claude/worktrees/**
