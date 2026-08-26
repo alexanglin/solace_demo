@@ -27,6 +27,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Final, TextIO
 
+from aerial_rescue_contracts.topics import TopicError
 from aerial_rescue_domain.principals import Principal
 
 from aerial_rescue_broker.provisioning import (
@@ -89,9 +90,18 @@ def _read(path: Path) -> str:
         raise DeploymentError(DeploymentRefusal.MISSING_MATERIAL, str(path)) from error
 
 
+def read_credential(deploy: Path, role: Principal) -> str:
+    """Return one role's generated credential, refusing a path not yet written.
+
+    A process that authenticates as a single role needs only its own credential, and
+    should not have to know how the generator encodes the file.
+    """
+    return _read(credential_path(deploy, role))
+
+
 def read_credentials(deploy: Path) -> dict[Principal, str]:
     """Return one credential per role, refusing the whole set if any is absent."""
-    return {role: _read(credential_path(deploy, role)) for role in Principal}
+    return {role: read_credential(deploy, role) for role in Principal}
 
 
 def endpoint(deploy: Path, host: str, port: int) -> SempEndpoint:
@@ -116,30 +126,47 @@ def session_for(target: SempEndpoint, *, context: ssl.SSLContext | None = None) 
 def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     """Return the summary lines for an applied state, naming what was withheld."""
     exceptions = sum(len(profile.publish) + len(profile.subscribe) for profile in state.profiles)
+    subscriptions = sum(len(queue.subscriptions) for queue in state.queues)
+    fleet = sum(1 for queue in state.queues if queue.owner == Principal.FLEET_SIMULATOR.value)
     a2a = (
         f"A2A namespace {namespace!r} granted to the Agent Mesh roles"
         if namespace is not None
         else "A2A namespace unset: the Agent Mesh roles hold no A2A grant"
     )
+    drones = (
+        f"{fleet} drone command queues"
+        if fleet
+        else "no drone command queues: the run declared no drones"
+    )
     return (
         f"{len(state.profiles)} acl profiles to msgVpns/{state.vpn}",
         f"{len(state.usernames)} client usernames",
         f"{exceptions} topic exceptions",
+        f"{len(state.queues)} durable queues, {subscriptions} subscriptions",
         f"factory client username {FACTORY_CLIENT_USERNAME!r} disabled",
         a2a,
+        drones,
     )
 
 
 def provision(
-    transport: SempTransport, deploy: Path, vpn: str, namespace: object | None
+    transport: SempTransport,
+    deploy: Path,
+    vpn: str,
+    namespace: object | None,
+    drones: Sequence[str],
 ) -> tuple[str, ...]:
-    """Apply the authorization matrix to ``vpn`` and return the summary lines.
+    """Apply the authorization matrix and the queue set to ``vpn``, and return the summary.
 
     Args:
         transport: The SEMP v2 config transport.
         deploy: The deploy directory holding the generated authority and credentials.
         vpn: The message VPN to write to.
         namespace: The A2A namespace, or ``None`` when it is not yet fixed.
+        drones: The drone identifiers the scenario declares. An empty fleet provisions no
+            command queue, and the summary says so rather than leaving it to be inferred:
+            a command published for a drone with no queue is discarded and not refused
+            (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
 
     Returns:
         Summary lines, none of which carries a credential.
@@ -148,9 +175,10 @@ def provision(
         DeploymentError: When the generated material is absent.
         ProvisioningError: When a role has no credential.
         SubscriptionError: When ``namespace`` is set but unusable.
+        TopicError: When a drone identifier is outside the identifier rule.
         SempError: When the broker refuses a call or cannot be reached.
     """
-    state = desired_state(vpn, read_credentials(deploy), namespace)
+    state = desired_state(vpn, read_credentials(deploy), namespace, drones)
     apply(transport, state)
     return _report(state, namespace)
 
@@ -166,6 +194,7 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--vpn", default=DEFAULT_VPN)
     parser.add_argument("--namespace", default=None)
     parser.add_argument("--deploy-directory", default=DEFAULT_DEPLOY_DIRECTORY)
+    parser.add_argument("--drone", action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -191,8 +220,16 @@ def main(
     deploy = Path(arguments.deploy_directory)
     try:
         transport = session(endpoint(deploy, arguments.host, arguments.port))
-        lines = provision(transport, deploy, arguments.vpn, arguments.namespace)
-    except (DeploymentError, ProvisioningError, SubscriptionError, SempError) as failure:
+        lines = provision(
+            transport, deploy, arguments.vpn, arguments.namespace, tuple(arguments.drone)
+        )
+    except (
+        DeploymentError,
+        ProvisioningError,
+        SubscriptionError,
+        TopicError,
+        SempError,
+    ) as failure:
         error.write(f"FAILED: {failure}\n")
         return 1
     for line in lines:

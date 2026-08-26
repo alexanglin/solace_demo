@@ -9,7 +9,7 @@ quality_tree_has_files() {
 }
 
 quality_root_python_source_present() {
-	for root in tools packages services tests migrations; do
+	for root in tools packages services tests; do
 		if quality_tree_has_files "$root" -name '*.py' -o -name '*.pyi'; then
 			return 0
 		fi
@@ -56,9 +56,9 @@ quality_dashboard_active() {
 }
 
 # Fail closed once the dashboard is active. ADR-0019 makes a missing manifest, lockfile, or
-# package manager a failure rather than a skip, and four dashboard gates need the identical
-# preamble -- four copies of it would trip the duplication gate. $1 names the work, so the
-# message says which gate could not run.
+# package manager a failure rather than a skip, and the dashboard gates need the identical
+# preamble -- copying it into every wrapper would trip the duplication gate. $1 names the
+# work, so the message says which gate could not run.
 quality_dashboard_require() {
 	quality_dashboard_active || return 1
 	[ -f apps/dashboard/package.json ] || {

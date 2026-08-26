@@ -1,0 +1,6 @@
+{
+  "controlVersion": 1,
+  "errorCode": "FLEET_UNAVAILABLE",
+  "message": "fleet control did not answer within the bounded request interval",
+  "unexpected": true
+}

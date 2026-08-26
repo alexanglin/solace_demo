@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
+  "description": "One validated, presentation-neutral replay bundle for browser-owned playback.",
+  "type": "object",
+  "required": [
+    "bundleVersion",
+    "sessionId",
+    "scenarioId",
+    "scenarioRevision",
+    "initialState",
+    "latestEventDigest",
+    "events",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "bundleVersion": {
+      "const": "dashboard-replay-bundle/v1"
+    },
+    "sessionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenarioId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenarioRevision": {
+      "const": 1
+    },
+    "initialState": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
+    },
+    "latestEventDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      ]
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json"
+      }
+    },
+    "integrity": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json"
+    }
+  }
+}

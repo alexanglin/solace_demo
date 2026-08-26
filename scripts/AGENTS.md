@@ -20,7 +20,7 @@ Use the canonical source for the fact being changed instead of copying its curre
 | Agent Mesh configuration and execution context | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md), [ADR-0032](../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0062](../docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) |
 | Dynamic Python discovery and dashboard policy | [ADR-0056](../docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md), [ADR-0057](../docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md) |
 | Compose, certificates, and image scanning | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
-| Broker roles and grants | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Broker roles, grants, and lifecycle-source identity | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Terminal-safe execution and job budgets | [ADR-0059](../docs/adr/0059-keep-the-verification-authority-able-to-report.md), [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Test structure, classes, and toolchain | [`TESTING.md`](../docs/TESTING.md) |
 
@@ -34,7 +34,7 @@ executable.
 | --- | --- |
 | `hooks/quality-components.sh` | Side-effect-free, sourced component activation and root Python discovery |
 | `hooks/agent-mesh/` | Agent Mesh configuration and whole-tree type-check wrappers |
-| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, test, and build wrappers |
+| `hooks/dashboard/` | TypeScript policy plus package-owned lint, type-check, coverage adjudication, deterministic integration, Playwright acceptance, and build wrappers |
 | `hooks/deploy/` | Compose-policy and Trivy-configuration wrapper orchestration |
 | `hooks/deps/` | Lock synchronization and consistency plus audit and waiver-gate orchestration |
 | `hooks/docs/` | Documentation facts and links plus recursive diagram freshness |
@@ -95,10 +95,15 @@ superseding decision.
 - Keep the root and `agent-mesh/` Python projects on their separate frozen locks and environments.
   Agent Mesh pytest and mypy wrappers must change into `agent-mesh/` before `uv run --frozen`; selecting
   a project does not change pytest discovery, mypy configuration, or Python import resolution.
-- Dashboard execution wrappers call committed lint, type-check, test, and build scripts through
+- Dashboard execution wrappers call committed lint, type-check, test, integration, and build scripts through
   `pnpm --dir apps/dashboard`. The TypeScript-policy wrapper enumerates inputs and launches its pure
-  Python gate instead. Do not replace a package command with a convenient direct tool invocation that
-  bypasses project references or policy.
+  Python gate instead. The coverage wrapper writes its report to a temporary directory, enumerates
+  tracked or unignored source, and passes both to the pure TypeScript coverage gate; it never trusts the
+  runner's displayed percentage alone. The Playwright wrapper additionally refuses a runtime that differs from the
+  manifest, verifies discovery against the manifest-owned test inventory, requires the package-pinned
+  Chromium revision to be cached before it starts, and scans retained reports for the synthetic bearer
+  sentinel even after a browser failure. It never downloads a browser from a local hook. Do not replace
+  a package command with a convenient direct tool invocation that bypasses project references or policy.
 - Static Compose and Dockerfile hooks must remain Docker-free. Image pin resolution, pulls, builds, and
   scans are explicit CI or operator work and must not be smuggled into a fast configuration hook.
 - Secret generation must retain restrictive creation permissions, atomic role-environment replacement,

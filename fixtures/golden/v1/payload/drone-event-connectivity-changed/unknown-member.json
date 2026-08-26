@@ -1,0 +1,6 @@
+{
+  "missionId": "mission-01",
+  "droneId": "drone-01",
+  "connectivity": "DEGRADED",
+  "inferred": false
+}

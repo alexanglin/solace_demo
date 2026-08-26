@@ -40,6 +40,9 @@ from aerial_rescue_broker.provisioning import SECRET_MEMBERS, Method, Request, d
 SEMP_CONFIG_PATH: Final = "/SEMP/v2/config"
 """The configuration API's root, below which every request path is relative."""
 
+SEMP_MONITOR_PATH: Final = "/SEMP/v2/monitor"
+"""The monitoring API's root. Read-only, and reachable only through :meth:`read_monitor`."""
+
 REQUEST_TIMEOUT_SECONDS: Final = 10.0
 """Bound on one SEMP call; the value's home is docs/operating-parameters.md."""
 
@@ -225,11 +228,37 @@ class SempSession:
             SempError: With ``PAGING`` when the cursor has not run out within
                 ``MAX_PAGES``, and with the same failures :meth:`send` raises.
         """
+        return self._read_paged(path, SEMP_CONFIG_PATH)
+
+    def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return every row of the monitoring collection at ``path``, following the cursor.
+
+        The monitoring API answers questions the configuration API cannot -- how many
+        messages a queue is holding right now, rather than how it was configured. It is a
+        separate method rather than a flag on :meth:`read_all` because it is the only way
+        to reach that root: :meth:`send` performs every write and is bound to the
+        configuration root, so no request built here can mutate through the monitor plane.
+
+        Args:
+            path: The collection's monitor-relative path.
+
+        Returns:
+            Every row, across as many pages as the broker splits the collection into. A
+            queue holding more messages than one page is the case this exists for.
+
+        Raises:
+            SempError: With ``PAGING`` when the cursor has not run out within
+                ``MAX_PAGES``, and with the same failures :meth:`send` raises.
+        """
+        return self._read_paged(path, SEMP_MONITOR_PATH)
+
+    def _read_paged(self, path: str, root: str) -> tuple[Mapping[str, object], ...]:
+        """Walk one collection's cursor to its end, or refuse at the page bound."""
         rows: list[Mapping[str, object]] = []
         query = f"?count={PAGE_SIZE}"
         for _ in range(MAX_PAGES):
             request = Request(Method.GET, path + query, {})
-            document = self._perform(request)
+            document = self._perform(request, root)
             rows.extend(_rows(request, document.get("data")))
             cursor = _cursor(document)
             if cursor is None:
@@ -237,12 +266,12 @@ class SempSession:
             query = f"?count={PAGE_SIZE}&cursor={quote(cursor, safe='')}"
         raise SempError(SempFailure.PAGING, path)
 
-    def _perform(self, request: Request) -> Mapping[str, object]:
-        """Send one request and return the whole SEMP result document."""
+    def _perform(self, request: Request, root: str = SEMP_CONFIG_PATH) -> Mapping[str, object]:
+        """Send one request under ``root`` and return the whole SEMP result document."""
         body = json.dumps(dict(request.body)) if request.body else None
         try:
             self._connection.request(
-                request.method.value, f"{SEMP_CONFIG_PATH}/{request.path}", body, self._headers
+                request.method.value, f"{root}/{request.path}", body, self._headers
             )
             response = self._connection.getresponse()
             payload = response.read()

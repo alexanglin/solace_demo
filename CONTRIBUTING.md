@@ -18,9 +18,30 @@ Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
 (`brew install graphviz`), `shellcheck`, and `trivy` 0.74.0 (`brew install trivy`), which the pre-push
 misconfiguration audit of `deploy/` fails closed without. Running the stack in `deploy/` additionally
 needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
-`apps/dashboard/package.json` exists, install Node 24.19.0 and use Corepack to activate the
+`apps/dashboard/package.json` exists, install Node 26.7.0 and use Corepack to activate the
 `packageManager`-pinned `pnpm`; the dashboard hooks are `language: system`, so the system Node and pnpm do
-matter. Only isolated third-party Node hooks are provisioned by pre-commit itself.
+matter. Only isolated third-party Node hooks are provisioned by pre-commit itself. From the repository
+root, activate the nested manifest's exact package-manager pin, install the frozen dashboard lock, and
+explicitly cache its Chromium before the first pre-push run:
+
+```sh
+corepack enable
+corepack install --global "$(node --print "require('./apps/dashboard/package.json').packageManager")"
+pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+pnpm --dir apps/dashboard exec playwright install chromium
+```
+
+The local Playwright hook never downloads a browser. It first verifies that discovery matches the
+manifest-owned acceptance-test inventory. A missing cache or inventory drift fails before execution;
+continuous integration is the one environment that deliberately installs Chromium and its Linux system
+dependencies before running the same hook.
+
+The dashboard's deterministic integration suite and complete unit/component/integration coverage run
+at pre-push. Coverage is not accepted from Vitest's exit status alone: a project-owned gate recomputes
+the JSON summary against the exact hand-written production-source inventory. Once the mission-control
+closure exists, production-stack browser end-to-end execution will use a separate container-backed
+acceptance command and will never contribute to the package coverage percentage
+([ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ## Branching
 
@@ -62,12 +83,19 @@ Permitted types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `perf`, `bu
 | --- | --- | --- |
 | `pre-commit` | AAA conformance, format, lint, type check, contract artifacts, compose policy over `deploy/`, dashboard TypeScript configuration policy, Agent Mesh configuration semantics once a file exists under `agent-mesh/configs/`, hygiene, secret scan, workflow audit, and the affected tests in all three toolchains | **≤ 60 s** |
 | `commit-msg` | Conventional Commits | instant |
-| `pre-push` | Full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, test and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
+| `pre-push` | Everything the commit stage runs, over the pushed range ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)), plus: full-tree AAA conformance, Python format/lint/type/test/coverage, Agent Mesh compatibility suite and configuration semantics on its own 3.13 interpreter, cognitive complexity, multi-language duplication, Tier 1 mutation, domain layering, Bandit, locked-dependency audit, `deploy/` misconfiguration audit, dashboard type check, lint, format, unit/component/integration coverage with independent adjudication, dedicated integration inventory, Chromium Playwright acceptance and build, pushed-range commit/whitespace validation, full-history secret scan | minutes |
 | `post-checkout`, `post-merge` | Resync dependencies if a lockfile changed | seconds |
 
 Initial baseline `pre-commit` measurement on the reference MacBook, taken with a documentation-only tree:
 **~2.7 s**. Re-measure when the suite grows; if it approaches the budget, move work to `pre-push` rather
 than letting people start using `--no-verify`.
+
+A push is at least as strict as the commit it publishes: `default_stages` is
+`[pre-commit, pre-push]`, so every hook runs at both blocking stages. Two opt out and run at the commit
+stage only — `no-commit-to-branch`, which would otherwise refuse every push made from `main`, and the
+stock `gitleaks` hook, which can only scan a staged diff and is replaced at push time by
+`gitleaks-history`. That set is asserted by `tools/quality_gate_tests/hooks/test_hook_semantics.py`, so
+a third exception cannot be added quietly.
 
 Since [ADR-0066](docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md) the commit stage runs
 the tests your change reaches rather than all of them, so its cost varies with the diff. A one-file
@@ -84,6 +112,8 @@ Run them yourself at any time:
 just check-commit      # the fast tier
 just check-push        # the thorough tier
 just check             # both, exactly as CI runs them
+just check-dashboard   # frontend policy, coverage, integration, type, lint, and format
+just check-dashboard-browser  # the complete Chromium Playwright acceptance gate
 just check-aaa         # the mandatory whole-tree AAA gate and its self-tests
 just check-contracts   # schema inventory and positive/negative golden fixtures
 just check-complexity  # Ruff, cognitive complexity, and multi-language duplication
@@ -187,10 +217,9 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 ([ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)):
 
 ```sh
-cp .env.example .env   # then set SESSION_SECRET_KEY; the role credentials are generated, not copied
+cp .env.example .env   # every credential and the session key are generated, never copied
 just secrets           # certificate authority, broker certificate, passwords, and secrets/.env.roles
-just up                # broker and Postgres, waiting for both to be healthy
-just provision --namespace aerial-rescue-mesh   # identities, ACL profiles, and the A2A grant
+just up                # broker, Postgres, provisioning, the Ollama preflight, then the Agent Mesh
 just ps                # service health
 just logs              # follow the logs
 just down              # stop; volumes are kept
@@ -208,10 +237,12 @@ docker volume rm aerial-rescue-mesh_postgres-data
 
 `just provision` is not optional once you intend to connect anything: it applies
 [ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)'s nine
-least-privilege client usernames and their deny-by-default ACL profiles, and it disables the factory
-`default` client username. Until it runs, any identity may publish any topic, including the
-executable command topics; after it runs, a client presenting `default` or an unknown username
-cannot connect at all. Re-running it changes nothing, so run it again after `just rotate-secrets`.
+least-privilege client usernames and their deny-by-default ACL profiles, applies
+[ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)'s durable queues,
+and disables the factory `default` client username. Until it runs, any identity may publish any
+topic, including the executable command topics; after it runs, a client presenting `default` or an
+unknown username cannot connect at all. Re-running it changes nothing, so run it again after
+`just rotate-secrets`.
 
 You never copy a role password by hand. `just secrets` writes `deploy/secrets/.env.roles`, holding
 each role's username and password under the names `.env.example` declares, and every compose recipe
@@ -222,18 +253,32 @@ lives under the ignored `deploy/secrets/`, its name matches `.gitignore`'s `.env
 stops on the missing file rather than starting a service with a blank identity.
 
 `just provision` needs `--namespace aerial-rescue-mesh` to write the A2A grant; without it the three
-Agent Mesh roles get no A2A exception and the `mesh` profile cannot reach its own topics
+Agent Mesh roles get no A2A exception and the mesh cannot reach its own topics
 ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)).
 
-`just up --profile mesh`, `--profile services`, and `--profile event-portal` add the other services;
-the second is inert until the services gain entrypoints. Editing a file under `agent-mesh/configs/`
-does **not** restart the `mesh` profile: the directory is a bind mount, so `up --wait` reports the
-running container healthy and keeps serving the old configuration. Add `--force-recreate` after a
-configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
+It also takes `--drone <id>`, repeated once per drone, and creates one durable command queue for
+each. A drone with no queue is not an error the broker reports: a guaranteed message matching no
+endpoint is discarded, so its commands go nowhere silently
+([ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)). The summary line
+reads `no drone command queues` when none was declared. The queue set is otherwise derived from the
+grant tables, so nothing else needs naming on the command line:
+
+```sh
+just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone drone-thermal-02
+```
+
+`just up` starts the default profile, which now includes the Agent Mesh
+([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
+order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.
+Add another profile with `COMPOSE_PROFILES=services just up`; that one is inert until the services
+gain entrypoints. Editing a file under `agent-mesh/configs/` does **not** restart the mesh: the
+directory is a bind mount, so `up --wait` reports the running container healthy and keeps serving the
+old configuration. Run `just up --force-recreate` after a configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
 is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
-`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: its first live run is recorded in
-[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). For the
-`mesh`, `services`, and `event-portal` profiles, which remain unstarted, until each is recorded under
+`.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: the broker and Postgres first live run is recorded in
+[`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), and the
+Agent Mesh in [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md).
+For the `services` and `event-portal` profiles, which remain unstarted, until each is recorded under
 `release-evidence/` the healthcheck commands and the image-internal details are design, not evidence.
 
 ## Fail-closed gates
@@ -318,16 +363,17 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   `MODEL_LOCK_REQUIRED` until the lock representation is decided
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
-- `services/command_gateway` contains no mutation-eligible behavior or co-located tests yet, and neither
-  do the Tier 2 members. This no longer turns the pre-push tier red: a member with nothing to measure is
-  reported as `SCAFFOLD` rather than failed
+- The Tier 2 members contain no co-located mutation tests, and the scaffolds contain no
+  mutation-eligible behavior at all. This does not turn the pre-push tier red: a member with nothing to
+  measure is reported as `SCAFFOLD` rather than failed
   ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)), and both
-  the coverage and mutation gates pass on `main` today. `packages/contracts` and `packages/domain` are
-  fully scored. What remains is the AAA checker's three modules, carried as a row in
+  the coverage and mutation gates pass on `main` today. All three Tier 1 members --
+  `packages/contracts`, `packages/domain`, and `services/command_gateway` -- are fully scored. What
+  remains is the AAA checker's three modules, carried as a row in
   [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
-- The `mesh`, `services`, and `event-portal` profiles are defined and held to the policy gate but have
-  never been started, so the Agent Mesh management-server probe and the Event Management Agent's secret
-  mount are still design rather than measurement. The broker image's `curl` and the `openssl` flags
+- The `services` and `event-portal` profiles are defined and held to the policy gate but have never
+  been started, so the Event Management Agent's secret mount is still design rather than measurement.
+  The Agent Mesh management-server probe is measurement: it decides whether the default stack is up. The broker image's `curl` and the `openssl` flags
   under LibreSSL were confirmed by the default profile's first live run and are recorded in
   [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). No hook
   can prove any of them: a policy gate reads the compose file and cannot see inside an image.

@@ -9,7 +9,7 @@ pattern that reaches into a second family hands that family's authority to whoev
 the first.
 
 The load-bearing test is therefore the negative one: every pattern is put to a topic of
-each of the other ten families and must refuse it.
+each of the other twelve families and must refuse it.
 """
 
 from __future__ import annotations
@@ -22,22 +22,31 @@ from aerial_rescue_broker.subscriptions import (
     SubscriptionError,
     SubscriptionRefusal,
     a2a_subscription,
+    reply_subscription,
     subscription_for,
 )
-from aerial_rescue_contracts.topics import MAX_TOPIC_BYTES, Family, Topic, format_topic
+from aerial_rescue_contracts.topics import (
+    MAX_TOPIC_BYTES,
+    RESERVED_REPLY_MISSION,
+    Family,
+    Topic,
+    format_topic,
+)
 
 PATTERNS = {
-    Family.OPERATOR_COMMAND: "aerial-rescue/v1/*/operator/command/*",
-    Family.OPERATOR_APPROVAL: "aerial-rescue/v1/*/operator/approval/*",
-    Family.DRONE_TELEMETRY: "aerial-rescue/v1/*/drone/*/telemetry",
-    Family.DRONE_EVENT: "aerial-rescue/v1/*/drone/*/event/*",
-    Family.DRONE_COMMAND: "aerial-rescue/v1/*/drone/*/command/*",
-    Family.DRONE_COMMAND_RESULT: "aerial-rescue/v1/*/drone/*/command-result/*",
-    Family.GATEWAY_REQUEST: "aerial-rescue/v1/*/gateway/request/*",
-    Family.GATEWAY_RESPONSE: "aerial-rescue/v1/*/gateway/response/*",
-    Family.AGENT_PROPOSAL: "aerial-rescue/v1/*/agent/proposal/*/*",
-    Family.AGENT_RESPONSE: "aerial-rescue/v1/*/agent/response/*",
-    Family.AUDIT: "aerial-rescue/v1/*/audit/*",
+    "OPERATOR_COMMAND": "aerial-rescue/v1/*/operator/command/*",
+    "OPERATOR_APPROVAL": "aerial-rescue/v1/*/operator/approval/*",
+    "DRONE_TELEMETRY": "aerial-rescue/v1/*/drone/*/telemetry",
+    "DRONE_EVENT": "aerial-rescue/v1/*/drone/*/event/*",
+    "DRONE_COMMAND": "aerial-rescue/v1/*/drone/*/command/*",
+    "DRONE_COMMAND_RESULT": "aerial-rescue/v1/*/drone/*/command-result/*",
+    "GATEWAY_REQUEST": "aerial-rescue/v1/*/gateway/request/*",
+    "GATEWAY_RESPONSE": "aerial-rescue/v1/*/gateway/response/*",
+    "AGENT_PROPOSAL": "aerial-rescue/v1/*/agent/proposal/*/*",
+    "AGENT_RESPONSE": "aerial-rescue/v1/*/agent/response/*",
+    "AUDIT": "aerial-rescue/v1/*/audit/*",
+    "MISSION_EVENT": "aerial-rescue/v1/*/mission/event/*",
+    "SECTOR_EVENT": "aerial-rescue/v1/*/sector/*/event/*",
 }
 
 # Every value is legal under its own rule and collides with a literal level of some other
@@ -45,6 +54,7 @@ PATTERNS = {
 COLLIDING = {
     "missionId": "audit",
     "droneId": "telemetry",
+    "sectorId": "sector",
     "commandId": "command",
     "requestId": "response",
     "commandType": "event",
@@ -90,7 +100,7 @@ class SubscriptionForTests(unittest.TestCase):
         families = tuple(Family)
 
         # Act
-        rendered = {family: subscription_for(family) for family in families}
+        rendered = {family.name: subscription_for(family) for family in families}
 
         # Assert
         self.assertEqual(PATTERNS, rendered)
@@ -152,6 +162,58 @@ class SubscriptionForTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), tuple(size for size in sizes if size > MAX_TOPIC_BYTES))
+
+
+class ReplySubscriptionTests(unittest.TestCase):
+    """The one exception outside the family model besides A2A (ADR-0070)."""
+
+    def test_the_reply_subscription_is_the_reserved_channel_and_everything_beneath_it(
+        self,
+    ) -> None:
+        # Arrange
+        expected = "aerial-rescue/v1/reply/gateway/response/>"
+
+        # Act
+        text = reply_subscription()
+
+        # Assert
+        self.assertEqual(expected, text)
+
+    def test_the_reply_subscription_covers_the_topic_the_connector_binds(self) -> None:
+        # Arrange
+        requestor = "a9cfb2dc-ebc9-433b-9b35-45c2ca5c43cd"
+        bound = (
+            f"aerial-rescue/v1/{RESERVED_REPLY_MISSION}/gateway/response/{requestor}",
+            f"aerial-rescue/v1/{RESERVED_REPLY_MISSION}/gateway/response/{requestor}/>",
+        )
+
+        # Act
+        covered = tuple(topic.startswith(reply_subscription()[:-1]) for topic in bound)
+
+        # Assert
+        self.assertEqual((True, True), covered)
+
+    def test_the_reply_subscription_reaches_no_mission_s_gateway_responses(self) -> None:
+        # Arrange
+        published = format_topic(
+            Topic(Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": "r-1"})
+        )
+
+        # Act
+        covered = published.startswith(reply_subscription()[:-1])
+
+        # Assert
+        self.assertFalse(covered)
+
+    def test_the_reply_subscription_is_within_the_broker_topic_bound(self) -> None:
+        # Arrange
+        text = reply_subscription()
+
+        # Act
+        size = len(text.encode())
+
+        # Assert
+        self.assertLessEqual(size, MAX_TOPIC_BYTES)
 
 
 class A2aSubscriptionTests(unittest.TestCase):

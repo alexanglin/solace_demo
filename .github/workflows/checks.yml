@@ -37,8 +37,8 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # ADR-0019 and CONTRIBUTING.md pin Node 24 LTS.
-          node-version: "24.19.0"
+          # ADR-0103 and CONTRIBUTING.md pin the Node runtime.
+          node-version: "26.7.0"
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -49,6 +49,8 @@ jobs:
         run: |
           corepack enable
           if [ -f apps/dashboard/package.json ]; then
+            package_manager="$(node --print "require('./apps/dashboard/package.json').packageManager")"
+            corepack install --global "$package_manager"
             pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
           else
             echo "apps/dashboard/package.json absent; nothing to install yet."
@@ -93,7 +95,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.19.0"
+          node-version: "26.7.0"
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -104,7 +106,10 @@ jobs:
         run: |
           corepack enable
           if [ -f apps/dashboard/package.json ]; then
+            package_manager="$(node --print "require('./apps/dashboard/package.json').packageManager")"
+            corepack install --global "$package_manager"
             pnpm --dir apps/dashboard install --frozen-lockfile --ignore-scripts
+            pnpm --dir apps/dashboard exec playwright install --with-deps chromium
           else
             echo "apps/dashboard/package.json absent; nothing to install yet."
           fi

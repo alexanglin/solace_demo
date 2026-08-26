@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/stream-overloaded.schema.json",
+  "description": "The terminal SSE control frame that requires a fresh snapshot.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "reason"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": "dashboard-stream-overloaded/v1"
+    },
+    "reason": {
+      "const": "NON_DROPPABLE_BUFFER_FULL"
+    }
+  }
+}

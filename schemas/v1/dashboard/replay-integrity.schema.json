@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json",
+  "description": "The checksums the isolated validator establishes before a replay bundle is served.",
+  "type": "object",
+  "required": [
+    "integrityVersion",
+    "algorithm",
+    "checksum",
+    "expectedFinalDigest"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "integrityVersion": {
+      "const": "dashboard-replay-integrity/v1"
+    },
+    "algorithm": {
+      "const": "sha256"
+    },
+    "checksum": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "expectedFinalDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    }
+  }
+}

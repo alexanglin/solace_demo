@@ -58,6 +58,15 @@ SAFE_TOOL_TOPIC_PATTERN = re.compile(
     r"^aerial-rescue/v1/\{\{\s*missionId\s*\}\}/gateway/request/"
     r"\{\{\s*operation\s*\}\}$"
 )
+SAFE_TOOL_REPLY_PREFIX = "aerial-rescue/v1/reply/gateway/response"
+"""The one prefix a tool's replies may arrive on (docs/adr/0070).
+
+Solace AI Connector fixes a requestor's reply topic once per session and appends a UUID,
+so the mission level cannot carry a mission and `reply` is reserved for it. The literal is
+repeated here rather than imported because this validator runs on Python 3.13 and
+`packages/contracts` is a 3.14 workspace member (docs/adr/0029); a gate test in the root
+tree holds the two equal.
+"""
 MODEL_LOCK_FILENAME = "model-lock.toml"
 MODEL_LOCK_FORMAT = 1
 MODEL_LOCK_KEYS = frozenset(("identifier", "digest", "recorded_on", "recorded_by", "reason"))
@@ -1157,6 +1166,29 @@ def _topic_parameter_issues(
     return tuple(issues)
 
 
+def _tool_reply_issues(
+    path: Path,
+    event_mesh_config: Mapping[str, object],
+    location: str,
+) -> tuple[ValidationIssue, ...]:
+    """Refuse a reply channel outside the one reserved prefix (docs/adr/0070).
+
+    The default is `reply`, which sits outside the application namespace entirely and which
+    the `event-mesh-tool` role holds no grant for, so an unset value is refused rather than
+    inherited.
+    """
+    prefix = event_mesh_config.get("response_topic_prefix")
+    if prefix == SAFE_TOOL_REPLY_PREFIX:
+        return ()
+    issue = _issue(
+        path,
+        f"{location}.event_mesh_config.response_topic_prefix",
+        "TOOL_REPLY",
+        "tool replies must arrive on the reserved command-gateway reply channel",
+    )
+    return (issue,)
+
+
 def _event_tool_config_issues(
     path: Path,
     tool_config: Mapping[str, object],
@@ -1217,6 +1249,7 @@ def _event_tool_config_issues(
                 "tool topic must target the command-gateway request family",
             )
         )
+    issues.extend(_tool_reply_issues(path, event_mesh_config, location))
     return tuple(issues)
 
 

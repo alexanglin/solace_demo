@@ -1,0 +1,10 @@
+{
+  "operationVersion": "dashboard-reset-response/v1",
+  "mode": "degradedLive",
+  "missionId": "mission-synthetic-0002",
+  "runId": "run-synthetic-0002",
+  "predecessorMissionId": "mission-synthetic-0001",
+  "declaredCount": 23,
+  "simulatedCount": 20,
+  "declaredOnlyCount": 3
+}

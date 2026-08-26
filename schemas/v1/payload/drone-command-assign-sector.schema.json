@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json",
+  "description": "One executable sector assignment addressed to one drone. The command gateway is the sole publisher (ADR-0005) and the command type is closed by the command-authority table in packages/domain (ADR-0041); the type travels in the CloudEvents type and in the topic level, and is deliberately not repeated here. The command identifier is minted by the gateway, is reused by every retry, and is the level the answering command-result topic carries, which is why it appears in the payload of a topic that does not name it (ADR-0082). No sector geometry appears here: ADR-0073 leaves the geometry outside the sector machine and LIMITATIONS.md bounds the search model.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "commandId",
+    "sectorId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "commandId": {
+      "description": "The identifier every retry of this command reuses, and the last level of the command-result topic that answers it. It is not the envelope id, which is unique per publication.",
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "sectorId": {
+      "description": "The sector this drone is to sweep. A payload member and not a topic level: ADR-0073 rejected adding a sector level to the topic grammar.",
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

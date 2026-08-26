@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/fleet-control-refusal.schema.json",
+  "description": "A redacted typed refusal from the private fleet-control boundary.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "errorCode",
+    "message"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": 1
+    },
+    "errorCode": {
+      "enum": [
+        "HOST_INVALID",
+        "AUTHENTICATION_FAILED",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "BODY_TOO_LARGE",
+        "CANONICAL_JSON_INVALID",
+        "SCHEMA_INVALID",
+        "PATH_BODY_MISMATCH",
+        "RUN_CONFLICT",
+        "RUN_NOT_FOUND",
+        "CANCELLATION_NOT_ESTABLISHED",
+        "CAPACITY_EXCEEDED",
+        "RUN_FAILED",
+        "INTERNAL_FAILURE"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  }
+}

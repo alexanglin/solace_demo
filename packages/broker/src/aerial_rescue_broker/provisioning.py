@@ -25,21 +25,47 @@ here renders a body directly; :func:`describe` is the only rendering path and it
 every secret member. ``AGENTS.md`` forbids logging a credential and this is where the
 opportunity to break that rule exists.
 
-Queues are absent by decision, not by omission: ADR-0061 leaves them until the four queue
-parameters in ``docs/operating-parameters.md`` carry numbers.
+**Queues are written, never inherited.** Five broker defaults are wrong for this system --
+redelivery retries forever, expiry is ignored, the per-queue spool exceeds the whole message
+VPN's, the dead-message target names a queue that does not exist, and both traffic
+directions start disabled -- so every value is in the request body. The queue set itself is
+derived in :mod:`aerial_rescue_broker.queues` from the same grant tables, and this module
+only writes it (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Final, Protocol
 from urllib.parse import quote
 
-from aerial_rescue_domain.principals import Access, Principal, grants, may_use_a2a
+from aerial_rescue_domain.principals import (
+    Access,
+    Principal,
+    grants,
+    may_use_a2a,
+    may_use_reply_channel,
+)
 
-from aerial_rescue_broker.subscriptions import a2a_subscription, subscription_for
+from aerial_rescue_broker.queues import (
+    DEAD_MESSAGE_QUEUE,
+    DISCARD_NOTIFICATION,
+    MAX_BIND_COUNT,
+    MAX_REDELIVERY_COUNT,
+    MAX_SPOOL_MEGABYTES,
+    MAX_TTL_SECONDS,
+    QUEUE_ACCESS_TYPE,
+    QUEUE_PERMISSION,
+    QueueSpec,
+    desired_queues,
+)
+from aerial_rescue_broker.subscriptions import (
+    a2a_subscription,
+    reply_subscription,
+    subscription_for,
+)
 
 FACTORY_CLIENT_USERNAME: Final = "default"
 """The client username the broker image ships enabled, on an allow-everything profile."""
@@ -69,6 +95,19 @@ _SYNTAX_MEMBER: Final[Mapping[Access, str]] = {
     Access.PUBLISH: "publishTopicExceptionSyntax",
     Access.SUBSCRIBE: "subscribeTopicExceptionSyntax",
 }
+
+QUEUE_SUBSCRIPTION_MEMBER: Final = "subscriptionTopic"
+"""The member a queue's subscription row carries; it needs no syntax member."""
+
+DEAD_MESSAGE_REFUSED_MEMBERS: Final = frozenset({"maxRedeliveryCount", "maxTtl"})
+"""The two members the broker refuses on the dead-message queue itself.
+
+Measured against the container on 2026-08-23: writing either returns 400 with
+``max-redelivery cannot be set on #DEAD_MSG_QUEUE`` and ``max-ttl cannot be set on
+#DEAD_MSG_QUEUE``. Neither has a meaning for the endpoint that redelivery and expiry
+*send* messages to, so they are left out rather than left to fail the apply. No offline
+fake could have found this; the first live run did.
+"""
 
 
 class Method(Enum):
@@ -134,6 +173,23 @@ class DesiredState:
     vpn: str
     profiles: tuple[ProfileState, ...]
     usernames: tuple[UsernameState, ...]
+    queues: tuple[QueueSpec, ...]
+
+
+@dataclass(frozen=True)
+class _Collection:
+    """One SEMP sub-collection that has no ``PUT``, so it is reconciled rather than written.
+
+    Topic exceptions and queue subscriptions are the same problem twice: a collection whose
+    rows are added with ``POST`` and removed with ``DELETE``, keyed in the path. They differ
+    only in the member each row carries, whether a syntax member goes with it, and whether
+    the delete key is prefixed by the syntax.
+    """
+
+    path: str
+    member: str
+    extra: Mapping[str, str]
+    key_prefix: str
 
 
 class SempTransport(Protocol):
@@ -148,6 +204,52 @@ class SempTransport(Protocol):
         ...
 
 
+class MonitorTransport(Protocol):
+    """The read-only half of the SEMP transport, for what the broker is doing right now.
+
+    Deliberately narrower than :class:`SempTransport`: a caller that only needs to read a
+    depth cannot reach a write through this port, and no monitor path is writable.
+    """
+
+    def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
+        """Return every row of the monitoring collection at ``path``."""
+        ...
+
+
+def queue_messages_path(vpn: str, queue: str) -> str:
+    """Return the monitor-relative path of one queue's spooled messages.
+
+    The queue name is percent-encoded whole. `#DEAD_MSG_QUEUE` is the case that proves it:
+    an unencoded `#` truncates the path at a fragment, and the request would read the queue
+    collection rather than that queue's messages.
+    """
+    return f"msgVpns/{vpn}/queues/{quote(queue, safe='')}/msgs"
+
+
+def message_count(transport: MonitorTransport, vpn: str, queue: str) -> int:
+    """Return how many messages ``queue`` is holding, by counting them.
+
+    Counting is not a preference. A queue's ``spooledMsgCount`` is cumulative and never
+    falls, so it cannot answer "how deep is this queue now", which is what an acceptance
+    run reads and what
+    ``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md`` names as the
+    dead-message queue's instrument.
+
+    Args:
+        transport: The read-only monitor transport.
+        vpn: The message VPN the queue belongs to.
+        queue: The queue's name, unencoded.
+
+    Returns:
+        The number of messages spooled on the queue across every page of the collection.
+
+    Raises:
+        SempError: With ``PAGING`` when the queue holds more than the page bound can walk,
+            so a depth is never silently truncated into a smaller one.
+    """
+    return len(transport.read_monitor(queue_messages_path(vpn, queue)))
+
+
 def describe(request: Request) -> str:
     """Return a log-safe rendering of ``request`` with every secret member replaced."""
     body = {
@@ -158,10 +260,17 @@ def describe(request: Request) -> str:
 
 
 def _exceptions_for(role: Principal, access: Access, namespace: object | None) -> frozenset[str]:
-    """Return the topic exceptions ``role`` needs in one direction, A2A included when set."""
+    """Return the topic exceptions ``role`` needs in one direction.
+
+    Two of them lie outside the family tables: the A2A namespace, which is withheld until a
+    namespace is supplied, and the command-gateway reply channel, which is not, because it
+    is a fixed topic that no configuration varies (ADR-0070).
+    """
     topics = {subscription_for(family) for family in grants(role, access)}
     if namespace is not None and may_use_a2a(role):
         topics.add(a2a_subscription(namespace))
+    if access is Access.SUBSCRIBE and may_use_reply_channel(role):
+        topics.add(reply_subscription())
     return frozenset(topics)
 
 
@@ -174,7 +283,10 @@ def _credential(credentials: Mapping[Principal, str], role: Principal) -> str:
 
 
 def desired_state(
-    vpn: str, credentials: Mapping[Principal, str], namespace: object | None
+    vpn: str,
+    credentials: Mapping[Principal, str],
+    namespace: object | None,
+    drones: Sequence[str],
 ) -> DesiredState:
     """Return every owned object the authorization matrix implies.
 
@@ -185,9 +297,14 @@ def desired_state(
             ``None`` means it is not yet fixed -- ``.env.example`` still leaves ``NAMESPACE``
             blank -- and the three Agent Mesh roles then hold no A2A grant at all, which
             under-grants rather than over-grants and so fails safe.
+        drones: The drone identifiers the scenario declares, which decide the per-drone
+            command queues. It has no default for the same reason ``namespace`` has none:
+            an empty fleet is a state a caller should say out loud rather than fall into,
+            and it under-provisions rather than over-provisions.
 
     Returns:
-        The profiles and usernames, one of each per role, in role declaration order.
+        The profiles and usernames, one of each per role in role declaration order, and the
+        queues, the dead-message queue first.
 
     Raises:
         ProvisioningError: With ``MISSING_CREDENTIAL`` when a role has no credential or a
@@ -195,6 +312,8 @@ def desired_state(
         SubscriptionError: When ``namespace`` is not a namespace the A2A subscription may
             be built from; it is not re-wrapped, because widening it here would hide which
             value was wrong.
+        TopicError: When a drone identifier is outside the identifier rule, raised by the
+            topic grammar that owns the rule.
     """
     profiles = tuple(
         ProfileState(
@@ -207,7 +326,7 @@ def desired_state(
     usernames = tuple(
         UsernameState(role.value, role.value, _credential(credentials, role)) for role in Principal
     )
-    return DesiredState(vpn, profiles, usernames)
+    return DesiredState(vpn, profiles, usernames, desired_queues(drones))
 
 
 def _profile_request(vpn: str, profile: ProfileState) -> Request:
@@ -251,38 +370,91 @@ def _disable_factory_request(vpn: str) -> Request:
     )
 
 
-def _collection_path(vpn: str, profile: str, access: Access) -> str:
-    """Return the exception sub-collection path for one profile and direction."""
-    return f"msgVpns/{vpn}/aclProfiles/{profile}/{_EXCEPTION_COLLECTION[access]}"
+def _queue_request(vpn: str, queue: QueueSpec) -> Request:
+    """Return the create-or-replace call for one durable queue.
+
+    Every value is written. The broker's defaults would leave both traffic directions
+    disabled, retry redelivery forever, ignore expiry, allow a spool larger than the whole
+    message VPN's, and target a dead-message queue that does not exist.
+
+    The dead-message queue is written from the same body with two members removed, because
+    the broker refuses them on it -- see :data:`DEAD_MESSAGE_REFUSED_MEMBERS`. It also
+    respects no expiry, which the broker does accept: a message that already expired must
+    not expire again once it is there.
+    """
+    dead = queue.name == DEAD_MESSAGE_QUEUE
+    body: Mapping[str, object] = {
+        "queueName": queue.name,
+        "msgVpnName": vpn,
+        "owner": queue.owner,
+        "permission": QUEUE_PERMISSION,
+        "accessType": QUEUE_ACCESS_TYPE,
+        "maxBindCount": MAX_BIND_COUNT,
+        "maxMsgSpoolUsage": MAX_SPOOL_MEGABYTES,
+        "maxRedeliveryCount": MAX_REDELIVERY_COUNT,
+        "maxTtl": MAX_TTL_SECONDS,
+        "respectTtlEnabled": not dead,
+        "deadMsgQueue": DEAD_MESSAGE_QUEUE,
+        "rejectMsgToSenderOnDiscardBehavior": DISCARD_NOTIFICATION,
+        "ingressEnabled": True,
+        "egressEnabled": True,
+    }
+    refused = DEAD_MESSAGE_REFUSED_MEMBERS if dead else frozenset()
+    return Request(
+        Method.PUT,
+        f"msgVpns/{vpn}/queues/{quote(queue.name, safe='')}",
+        {member: value for member, value in body.items() if member not in refused},
+    )
 
 
-def _present(transport: SempTransport, path: str, access: Access) -> frozenset[str]:
-    """Return the topic exceptions the broker already carries in one sub-collection.
+def _exception_collection(vpn: str, profile: str, access: Access) -> _Collection:
+    """Return the reconcilable topic-exception collection for one profile and direction."""
+    return _Collection(
+        path=f"msgVpns/{vpn}/aclProfiles/{profile}/{_EXCEPTION_COLLECTION[access]}",
+        member=_EXCEPTION_MEMBER[access],
+        extra={_SYNTAX_MEMBER[access]: TOPIC_SYNTAX},
+        key_prefix=f"{TOPIC_SYNTAX},",
+    )
+
+
+def _subscription_collection(vpn: str, queue: str) -> _Collection:
+    """Return the reconcilable subscription collection for one queue."""
+    return _Collection(
+        path=f"msgVpns/{vpn}/queues/{quote(queue, safe='')}/subscriptions",
+        member=QUEUE_SUBSCRIPTION_MEMBER,
+        extra={},
+        key_prefix="",
+    )
+
+
+def _present(transport: SempTransport, collection: _Collection) -> frozenset[str]:
+    """Return the topics the broker already carries in one sub-collection.
 
     Read through ``read_all`` rather than one ``GET``: SEMP pages a collection at ten rows
     unless asked for more, and a partial read makes the reconcile look like a first apply
     every time -- the recorder profile's eleventh subscribe exception is what proved it.
     """
-    member = _EXCEPTION_MEMBER[access]
-    rows = transport.read_all(path)
-    return frozenset(str(row[member]) for row in rows if member in row)
+    rows = transport.read_all(collection.path)
+    return frozenset(str(row[collection.member]) for row in rows if collection.member in row)
 
 
-def _reconcile(transport: SempTransport, vpn: str, profile: ProfileState, access: Access) -> None:
-    """Add every granted exception the broker lacks and remove every one it should not hold."""
-    path = _collection_path(vpn, profile.name, access)
-    wanted = profile.publish if access is Access.PUBLISH else profile.subscribe
-    present = _present(transport, path, access)
+def _reconcile(transport: SempTransport, collection: _Collection, wanted: frozenset[str]) -> None:
+    """Add every wanted topic the broker lacks and remove every one it should not hold."""
+    present = _present(transport, collection)
     for topic in sorted(wanted - present):
-        body = {_EXCEPTION_MEMBER[access]: topic, _SYNTAX_MEMBER[access]: TOPIC_SYNTAX}
-        transport.send(Request(Method.POST, path, body))
+        body: dict[str, object] = {collection.member: topic, **collection.extra}
+        transport.send(Request(Method.POST, collection.path, body))
     for topic in sorted(present - wanted):
-        key = f"{TOPIC_SYNTAX},{quote(topic, safe='')}"
-        transport.send(Request(Method.DELETE, f"{path}/{key}", {}))
+        key = collection.key_prefix + quote(topic, safe="")
+        transport.send(Request(Method.DELETE, f"{collection.path}/{key}", {}))
 
 
 def apply(transport: SempTransport, state: DesiredState) -> None:
     """Write ``state`` to the broker, converging rather than assuming an empty one.
+
+    The order is a dependency order rather than a preference. A client username must exist
+    before a queue can name it as an owner, and the dead-message queue must exist before a
+    queue that targets it, which is why :func:`desired_queues` puts it first.
 
     Args:
         transport: The SEMP v2 config transport.
@@ -291,7 +463,11 @@ def apply(transport: SempTransport, state: DesiredState) -> None:
     for profile in state.profiles:
         transport.send(_profile_request(state.vpn, profile))
         for access in Access:
-            _reconcile(transport, state.vpn, profile, access)
+            wanted = profile.publish if access is Access.PUBLISH else profile.subscribe
+            _reconcile(transport, _exception_collection(state.vpn, profile.name, access), wanted)
     for username in state.usernames:
         transport.send(_username_request(state.vpn, username))
+    for queue in state.queues:
+        transport.send(_queue_request(state.vpn, queue))
+        _reconcile(transport, _subscription_collection(state.vpn, queue.name), queue.subscriptions)
     transport.send(_disable_factory_request(state.vpn))

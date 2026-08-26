@@ -13,6 +13,7 @@ about.
 
 from __future__ import annotations
 
+import re
 import unittest
 
 import yaml
@@ -25,7 +26,10 @@ TEMPLATE = REPOSITORY_ROOT / ".env.example"
 COMPOSE = REPOSITORY_ROOT / "deploy" / "compose.yaml"
 USERNAME_KEY = "SOLACE_BROKER_USERNAME"
 CREDENTIAL_KEY = "SOLACE_BROKER_PASSWORD"
-WITHOUT_IDENTITY = "scenario-service"
+SCENARIO_SERVICE = "scenario-service"
+AGENT_MESH_SERVICE = "agent-mesh"
+AGENT_MESH_CONFIGS = REPOSITORY_ROOT / "agent-mesh" / "configs"
+REFERENCE = re.compile(r"\$\{(SOLACE_[A-Z0-9_]+)\}")
 
 
 def _declarations() -> dict[str, str]:
@@ -126,15 +130,27 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
         # Assert
         self.assertEqual((), mismatched)
 
-    def test_the_scenario_service_carries_no_broker_identity(self) -> None:
+    def test_the_scenario_service_carries_its_dedicated_role_identity(self) -> None:
         # Arrange
-        environment = _services()[WITHOUT_IDENTITY]
+        declarations = _declarations()
+        environment = _services()[SCENARIO_SERVICE]
+        expected = (
+            "scenario-service",
+            "<required>",
+            "${SOLACE_SCENARIO_SERVICE_USERNAME}",
+            "${SOLACE_SCENARIO_SERVICE_PASSWORD}",
+        )
 
         # Act
-        held = tuple(key for key in (USERNAME_KEY, CREDENTIAL_KEY) if key in environment)
+        held = (
+            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
+            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
+            environment.get(USERNAME_KEY),
+            environment.get(CREDENTIAL_KEY),
+        )
 
         # Assert
-        self.assertEqual((), held)
+        self.assertEqual(expected, held)
 
     def test_no_service_falls_back_to_one_shared_broker_credential(self) -> None:
         # Arrange
@@ -145,6 +161,47 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual((), tuple(name for name in retired if name in text))
+
+
+class AgentMeshContainerScopeTests(QualityGateTestCase):
+    """Whether every credential the mesh configuration names is actually inside the container.
+
+    The offline configuration validator resolves ``${...}`` against the host-scope
+    ``.env.example`` while the runtime resolves it inside the container, so a name declared in
+    one and absent from the other passes every gate and fails at run time. It fails silently:
+    the reference expands to empty, the broker refuses the client as the shutdown factory
+    ``default``, and the client retries forever with the reason only in the broker's event log.
+    That is how the first ``mesh`` run failed, and it is carried in TECH_DEBT.md section 5.
+    """
+
+    def test_the_container_receives_every_broker_credential_its_configuration_names(self) -> None:
+        # Arrange
+        environment = _services()[AGENT_MESH_SERVICE]
+        named = {
+            name
+            for path in sorted(AGENT_MESH_CONFIGS.glob("*.yaml"))
+            for name in REFERENCE.findall(path.read_text(encoding="utf-8"))
+        }
+
+        # Act
+        absent = tuple(sorted(name for name in named if name not in environment))
+
+        # Assert
+        self.assertEqual((), absent)
+
+    def test_the_mesh_configuration_names_at_least_one_credential_to_check(self) -> None:
+        # Arrange
+        configurations = sorted(AGENT_MESH_CONFIGS.glob("*.yaml"))
+
+        # Act
+        named = {
+            name
+            for path in configurations
+            for name in REFERENCE.findall(path.read_text(encoding="utf-8"))
+        }
+
+        # Assert
+        self.assertNotEqual(frozenset(), named)
 
 
 if __name__ == "__main__":

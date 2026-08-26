@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-result.schema.json",
+  "description": "One drone's report on one command it received. The outcome carries three of the six command-dispatch state names of ADR-0074, the three a drone can cause: accepted and in-flight are the dispatcher's view, and abandoned is the gateway's own verdict on a command it stopped sending, so a drone can never report it. That a command may only fail after it is acknowledged is a rule about a fold of two reports rather than about one document, so the dispatch machine in packages/domain enforces it and no schema can see the earlier message. There is no failure reason: no document names a drone-failure vocabulary, and an open kind set here would put unclosed vocabulary on a safety-adjacent wire (ADR-0082).",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "commandId",
+    "outcome"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "commandId": {
+      "description": "The command this answers, echoed from the command's own payload. It is the last level of the topic this result is published on, so the two must agree.",
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "acknowledged",
+        "succeeded",
+        "failed"
+      ]
+    }
+  }
+}

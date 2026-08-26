@@ -121,7 +121,7 @@ uses.
 ## 4. What the gate modules still owe
 
 The pre-push tier passes on `main`. It did not until 2026-08-20, when two changes closed the gap that
-[ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) had left open by design. Eight workspace members
+[ADR-0019](docs/adr/0019-fail-closed-quality-gates.md) had left open by design. Five workspace members
 are scaffolds — a manifest, a docstring-only module, a `py.typed` marker — and the coverage and
 mutation gates now report them as `SCAFFOLD` rather than failing them, because a member with nothing
 to measure proves nothing either way
@@ -174,10 +174,10 @@ owed, is below.
 
 | Item | Why it is accepted for now | Clears when |
 | --- | --- | --- |
-| The digest is never compared against a running daemon | Ollama is addressable only as `name:tag`, so the offline gate can prove membership and form but not that the bytes are present. A re-pulled tag is caught by no gate today | A readiness check reads `GET /api/tags` and refuses a local-model run whose digest differs from the lock |
+| ~~The digest is never compared against a running daemon~~ **Cleared 2026-08-24:** `scripts/preflight-ollama.sh` reads `GET /api/tags` and refuses to start the Agent Mesh when the daemon is unreachable, when the locked identifier is absent, or when the served manifest digest differs from `agent-mesh/model-lock.toml`. `just up` runs it before the mesh is started ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)) | -- | Cleared |
 | `ollama_chat/qwen3:4b` is a spike input, not a measured choice | It was selected for tool capability at 2.50 GB. The `general` and `planning` roles are still an open question in [docs/adr/README.md](docs/adr/README.md) | The Phase 0 evaluation measures capability per dollar and Phase 4 pins the three models |
 | The A2A namespace refusal rules exist twice | The configuration validator runs on Python 3.13 and `packages/broker` on 3.14 ([ADR-0029](docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), so they cannot share code. Only `packages/broker` enforces them today; the validator does not check `namespace` at all | A committed data file both interpreters read, or a decision that one side alone is authoritative |
-| Configuration environment references are checked in the wrong scope | The validator resolves `${...}` against the host-scope `.env.example`, while the runtime resolves them inside the container. A name declared in one and absent in the other passes the gate and fails at runtime as a silent connection retry -- which is exactly how the first `mesh` run failed | The validator checks references against what `deploy/compose.yaml` actually passes into the container |
+| Configuration environment references are checked in the wrong scope | The validator resolves `${...}` against the host-scope `.env.example`, while the runtime resolves them inside the container. **Half-closed 2026-08-21:** `AgentMeshContainerScopeTests` in `tools/quality_gate_tests/deploy/test_broker_identity_wiring.py` now reads every `${SOLACE_*}` the mounted configuration names and fails unless the compose service passes each one in. It caught the two the Event Mesh Gateway added. What remains is the other direction and the non-broker names: the check lives in the root gate rather than in the validator, and covers only the `SOLACE_` prefix | The validator itself checks every reference against what `deploy/compose.yaml` passes into the container |
 
 ADR-0035's **second** refusal still stands and is unaffected: every `tool_type: python` other than the
 pinned `sam_event_mesh_tool.tools:EventMeshTool`, and every `app_package`, `app_base_path`, or
@@ -185,22 +185,28 @@ alternate loader field, is refused until an owned-plugin registry exists under `
 
 **Clears when:** the readiness digest comparison exists and the model roles are pinned.
 
-## 6. Container stack defined but not yet exercised
+## 6. Container stack partly exercised
 
 [ADR-0044](docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) put every component
 except Ollama under `deploy/compose.yaml`, and the compose policy gate proves the file's text conforms.
 The default profile has now been started and recorded in
 [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), which
-cleared two rows below. What the profiles that remain unstarted leave unproven, each a design choice
-rather than a measurement:
+cleared two rows below, and the Agent Mesh joined it under
+[ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md). What the `services` and
+`event-portal` profiles leave unproven, each a design choice rather than a measurement:
 
 | Item | Why it is accepted for now | Clears when |
 | --- | --- | --- |
-| The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15 | Upstream builds the image; a project-owned image would re-implement upstream's Dockerfile ([ADR-0007](docs/adr/0007-solace-first-implementation-policy.md)) | The plugin-compatibility probe is run inside the built image and recorded |
-| No durable queue exists, so guaranteed delivery has no endpoint | The four queue parameters -- maximum spool, maximum redelivery, message time-to-live, and dead-message-queue target -- are unset, and setting them needs the backlog-recovery measurement ([ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)) | The parameters carry numbers and the provisioner creates the queues |
+| ~~The Agent Mesh container carries Python 3.13.11 while verification runs on 3.13.15~~ **Cleared 2026-08-21:** `scripts/probes/agent-mesh-image-probe.sh` runs the pinned-plugin checks inside the built image on its own CPython 3.13.11 — three pins, the gateway entry point, the tool's module-path import, and seven runtime symbols — with no network ([event-mesh-gateway-first-run.md](release-evidence/phase-0/event-mesh-gateway-first-run.md)) | -- | Cleared |
+| ~~No durable queue exists, so guaranteed delivery has no endpoint~~ **Cleared 2026-08-23:** the four parameters are derived from the declared fault envelope and 22 queues are live on the container, with spooling, acknowledgement, rejection, the redelivery bound, and queue ownership all asserted against the broker ([ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md), [guaranteed-delivery-first-run.md](release-evidence/phase-2/guaranteed-delivery-first-run.md)) | -- | Cleared |
+| A salient event published while the Agent Mesh is down never reaches an agent, and nothing observes the loss | Event Mesh Gateway 1.1.0 names and binds its own temporary data-plane queue in `component.py`; the name, `create_queue_on_start`, and `temporary_queue` are literals absent from `app_schema`, so no configuration changes it, and [ADR-0007](docs/adr/0007-solace-first-implementation-policy.md) forbids forking a supported component without a proving test. Bounded by what does not depend on it: the application topic is the authoritative record, and no command, approval, or audit record runs through the gateway ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)) | Upstream makes the endpoint configurable, or an owned consumer on a durable queue invokes the mesh with a proving test behind it |
 | ~~The three Agent Mesh roles hold no A2A grant~~ **Cleared 2026-08-21:** [ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) fixed the namespace and the provisioner wrote the six withheld exceptions, taking the broker from 41 to 47 | -- | Cleared |
+| ~~Recreating the Agent Mesh container before the provisioner has applied a changed matrix leaves it unhealthy~~ **Cleared 2026-08-24:** `just up` is now one ordered entry point -- broker and Postgres to healthy, then the authorization matrix with its namespace, then the Ollama preflight, then the rest ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). The denial is still visible only in the container's log if the matrix is stale for another reason | -- | Cleared |
+| Command intake settles after publisher confirmation rather than after a durable commit | `packages/store` now has all three repositories [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md)'s atomic set needs, proven together on a database a probe creates and drops -- but **nothing calls them**: no workspace member declares the package as a dependency, nothing applies the schema to the persistent database, and a simulated drone has no durable effect for exactly-once to protect, so `FleetState` is authority for nothing durable. The receipts that recognise a known command identifier are process-local, so a restart between publishing a result and settling its command yields a redelivery the process re-answers. The claim is **at-least-once with duplicates possible across a restart** ([command-dispatch-first-run.md](release-evidence/phase-3/command-dispatch-first-run.md)) | A gateway opens the transaction these repositories are for, and intake settles after it commits |
+| The fleet simulator has no process entry point, so its Compose service is still a shell | A composition root needs a scenario, and [ADR-0077](docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) leaves producing one to the scenario service, which is a scaffold with no broker identity by decision. The root is exercised by its own suite and by [fleet-simulator-first-run.md](release-evidence/phase-3/fleet-simulator-first-run.md) instead | The scenario service produces a validated scenario and the member declares a console script |
+| A denied *direct* subscription is silent to the client | `SolaceReceiver` raises nothing and simply receives nothing, so a test asserting "nothing arrived" can pass for the wrong reason. The guaranteed path raises, which is why `tests/security/` uses an acknowledged publish. A refused *queue* binding is now loud: `SolacePersistentReceiver` turns it into `BIND_REFUSED` naming the queue, proven live against a role that holds the topic grant and is not the owner | The adapter surfaces the transport's subscription error, or every denial assertion binds a queue |
 | The Event Management Agent runs emulated and reaches SEMP in plaintext inside the network | amd64-only image; the plaintext port is never published; the profile never gates | A Java truststore path for the per-checkout authority is proven live |
-| The fleet's connection count against the showcase service is unmeasured | The `mesh` profile's cost is now measured at 2.16 GiB for the whole stack, and four apps were seen to open nine broker connections against a ceiling of 100. The showcase service itself has not been touched | The showcase measurement lands in `docs/operating-parameters.md` |
+| The fleet's connection count against the showcase service is unmeasured | The default profile's cost is now measured at 2.16 GiB for the whole stack, and four apps were seen to open nine broker connections against a ceiling of 100. The showcase service itself has not been touched | The showcase measurement lands in `docs/operating-parameters.md` |
 | The official Agent Mesh image's `/opt/venv` carries `asteval` 1.0.6 | The override in [ADR-0047](docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md) changes the lock, not upstream's image; Trivy reports the finding at MEDIUM, below the blocking threshold, so every daily scan prints it as information | Upstream publishes an image with `asteval` at or above 1.0.9 |
 | Neither Dockerfile declares a `HEALTHCHECK`, so `trivy config` reports `DS-0026` at LOW on both | The compose policy gate requires the healthcheck in `deploy/compose.yaml`, which is where Compose reads it; the finding is informational on every pre-push run | A recorded decision settles where the healthcheck lives |
 
@@ -217,11 +223,18 @@ LibreSSL 3.3.6, and the nine tests that drive it now pass on the Linux runner ag
 they could not do before, because the job they run in had never completed
 ([ADR-0059](docs/adr/0059-keep-the-verification-authority-able-to-report.md)).
 
-**The `mesh` profile was started on 2026-08-21** and is recorded in
+**The Agent Mesh was first started on 2026-08-21** and is recorded in
 [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md), which also
 lists three defects the run found and what it does not settle. One new row belongs here: a
 bind-mounted configuration change does not restart the container, so `up --wait` reports the old
 container healthy and `--force-recreate` is required.
+
+**Twenty-two durable queues were created on 2026-08-23** and are recorded in
+[`release-evidence/phase-2/guaranteed-delivery-first-run.md`](release-evidence/phase-2/guaranteed-delivery-first-run.md).
+That run cleared the queue row above and found three things no offline test could: the dead-message
+queue refuses `maxRedeliveryCount` and `maxTtl`, a queue's `ingressEnabled` and `egressEnabled` both
+default to `false`, and the monitor member `spooledMsgCount` is cumulative rather than a depth. What
+it did not settle is carried in that record's closing section.
 
 **Clears when:** the `services` and `event-portal` profiles are started and recorded under
 `release-evidence/`.

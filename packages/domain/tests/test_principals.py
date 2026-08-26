@@ -1,12 +1,12 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The nine roles and their grants are the decision in
+The ten roles and their grants are the decision in
 ``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``. The threat
 model calls this matrix load-bearing, so the tests here assert it from the family's side as
 well as the role's: the publisher set of every family is named, and every role is put to
 the drone-command topic so that catalogue cases B17, B18, and B19 are checked against all
-nine roles rather than against the three the catalogue happens to name. The key space is
-nine roles by two directions by eleven families, which is small enough to enumerate
+ten roles rather than against the three the catalogue happens to name. The key space is
+ten roles by two directions by thirteen families, which is small enough to enumerate
 exhaustively; nothing here samples.
 """
 
@@ -28,11 +28,12 @@ from aerial_rescue_domain.principals import (
     grants,
     may_use,
     may_use_a2a,
+    may_use_reply_channel,
     principal,
 )
 
 UNLISTED = (
-    "scenario-service",
+    "scenario_service",
     "Command-Gateway",
     "command_gateway",
     "command-gateway ",
@@ -41,18 +42,20 @@ UNLISTED = (
     None,
 )
 
-PUBLISHERS = {
-    Family.OPERATOR_COMMAND: frozenset({Principal.DASHBOARD_API}),
-    Family.OPERATOR_APPROVAL: frozenset({Principal.DASHBOARD_API}),
-    Family.DRONE_TELEMETRY: frozenset({Principal.FLEET_SIMULATOR}),
-    Family.DRONE_EVENT: frozenset({Principal.FLEET_SIMULATOR}),
-    Family.DRONE_COMMAND: frozenset({Principal.COMMAND_GATEWAY}),
-    Family.DRONE_COMMAND_RESULT: frozenset({Principal.FLEET_SIMULATOR}),
-    Family.GATEWAY_REQUEST: frozenset({Principal.EVENT_MESH_TOOL}),
-    Family.GATEWAY_RESPONSE: frozenset({Principal.COMMAND_GATEWAY}),
-    Family.AGENT_PROPOSAL: frozenset({Principal.AGENT_MESH_AGENT}),
-    Family.AGENT_RESPONSE: frozenset({Principal.AGENT_MESH_AGENT, Principal.EVENT_MESH_GATEWAY}),
-    Family.AUDIT: frozenset({Principal.COMMAND_GATEWAY, Principal.EVIDENCE_SERVICE}),
+PUBLISHER_NAMES = {
+    "OPERATOR_COMMAND": frozenset({"DASHBOARD_API"}),
+    "OPERATOR_APPROVAL": frozenset({"DASHBOARD_API"}),
+    "DRONE_TELEMETRY": frozenset({"FLEET_SIMULATOR"}),
+    "DRONE_EVENT": frozenset({"FLEET_SIMULATOR"}),
+    "DRONE_COMMAND": frozenset({"COMMAND_GATEWAY"}),
+    "DRONE_COMMAND_RESULT": frozenset({"FLEET_SIMULATOR"}),
+    "GATEWAY_REQUEST": frozenset({"EVENT_MESH_TOOL"}),
+    "GATEWAY_RESPONSE": frozenset({"COMMAND_GATEWAY"}),
+    "AGENT_PROPOSAL": frozenset({"AGENT_MESH_AGENT"}),
+    "AGENT_RESPONSE": frozenset({"AGENT_MESH_AGENT", "EVENT_MESH_GATEWAY"}),
+    "AUDIT": frozenset({"COMMAND_GATEWAY", "EVIDENCE_SERVICE"}),
+    "MISSION_EVENT": frozenset({"SCENARIO_SERVICE"}),
+    "SECTOR_EVENT": frozenset({"FLEET_SIMULATOR"}),
 }
 
 
@@ -82,12 +85,13 @@ def _publishers_of(family: Family) -> frozenset[Principal]:
 
 
 class PrincipalTests(unittest.TestCase):
-    def test_the_roles_are_the_nine_documented_names(self) -> None:
+    def test_the_roles_are_the_ten_documented_names(self) -> None:
         # Arrange
         expected = {
             "fleet-simulator",
             "command-gateway",
             "dashboard-api",
+            "scenario-service",
             "evidence-service",
             "recorder",
             "event-mesh-gateway",
@@ -141,28 +145,76 @@ class PrincipalTests(unittest.TestCase):
 class GrantTests(unittest.TestCase):
     def test_both_tables_are_total_over_the_roles(self) -> None:
         # Arrange
-        roles = tuple(Principal)
+        expected = {
+            "FLEET_SIMULATOR": (4, 1),
+            "COMMAND_GATEWAY": (3, 5),
+            "DASHBOARD_API": (2, 7),
+            "SCENARIO_SERVICE": (1, 0),
+            "EVIDENCE_SERVICE": (1, 2),
+            "RECORDER": (0, 13),
+            "EVENT_MESH_GATEWAY": (1, 1),
+            "EVENT_MESH_TOOL": (1, 0),
+            "AGENT_MESH_AGENT": (2, 0),
+            "DISCOVERY": (0, 0),
+        }
 
         # Act
-        sizes = tuple(
-            (len(grants(role, Access.PUBLISH)), len(grants(role, Access.SUBSCRIBE)))
-            for role in roles
-        )
+        sizes = {
+            role.name: (
+                len(grants(role, Access.PUBLISH)),
+                len(grants(role, Access.SUBSCRIBE)),
+            )
+            for role in Principal
+        }
 
         # Assert
-        self.assertEqual(
-            ((3, 1), (3, 5), (2, 7), (1, 2), (0, 11), (1, 1), (1, 1), (2, 0), (0, 0)), sizes
-        )
+        self.assertEqual(expected, sizes)
 
     def test_each_family_has_exactly_the_documented_publishers(self) -> None:
         # Arrange
         families = tuple(Family)
 
         # Act
-        publishers = {family: _publishers_of(family) for family in families}
+        publishers = {
+            family.name: frozenset(role.name for role in _publishers_of(family))
+            for family in families
+        }
 
         # Assert
-        self.assertEqual(PUBLISHERS, publishers)
+        self.assertEqual(PUBLISHER_NAMES, publishers)
+
+    def test_lifecycle_publish_and_subscribe_grants_are_exact_for_the_three_runtime_roles(
+        self,
+    ) -> None:
+        # Arrange
+        expected = {
+            "SCENARIO_SERVICE": (frozenset({"MISSION_EVENT"}), frozenset()),
+            "FLEET_SIMULATOR": (
+                frozenset(
+                    {
+                        "DRONE_TELEMETRY",
+                        "DRONE_EVENT",
+                        "DRONE_COMMAND_RESULT",
+                        "SECTOR_EVENT",
+                    }
+                ),
+                frozenset({"DRONE_COMMAND"}),
+            ),
+            "RECORDER": (frozenset(), frozenset(PUBLISHER_NAMES)),
+        }
+
+        # Act
+        actual = {
+            role.name: (
+                frozenset(family.name for family in grants(role, Access.PUBLISH)),
+                frozenset(family.name for family in grants(role, Access.SUBSCRIBE)),
+            )
+            for role in Principal
+            if role.name in expected
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
 
     def test_no_role_both_publishes_and_subscribes_to_one_family(self) -> None:
         # Arrange
@@ -234,6 +286,36 @@ class GrantTests(unittest.TestCase):
         # Assert
         self.assertEqual((frozenset(), frozenset(), False), held)
 
+    def test_the_event_mesh_tool_subscribes_to_no_family_at_all(self) -> None:
+        # Arrange
+        role = Principal.EVENT_MESH_TOOL
+
+        # Act
+        subscribed = grants(role, Access.SUBSCRIBE)
+
+        # Assert
+        self.assertEqual(frozenset(), subscribed)
+
+    def test_the_event_mesh_tool_cannot_read_a_mission_s_gateway_responses(self) -> None:
+        # Arrange
+        role = Principal.EVENT_MESH_TOOL
+
+        # Act
+        reachable = may_use(role, Access.SUBSCRIBE, Family.GATEWAY_RESPONSE)
+
+        # Assert
+        self.assertFalse(reachable)
+
+    def test_only_the_event_mesh_tool_may_use_the_reply_channel(self) -> None:
+        # Arrange
+        roles = tuple(Principal)
+
+        # Act
+        allowed = frozenset(role for role in roles if may_use_reply_channel(role))
+
+        # Assert
+        self.assertEqual(frozenset({Principal.EVENT_MESH_TOOL}), allowed)
+
     def test_only_the_three_agent_mesh_roles_may_use_the_a2a_namespace(self) -> None:
         # Arrange
         roles = tuple(Principal)
@@ -255,6 +337,43 @@ class GrantTests(unittest.TestCase):
 
 
 class AuthorizeTests(unittest.TestCase):
+    def test_lifecycle_families_allow_four_exact_role_directions_and_deny_the_other_36(
+        self,
+    ) -> None:
+        # Arrange
+        family_names = ("MISSION_EVENT", "SECTOR_EVENT")
+        families = tuple(
+            Family.__members__[name] for name in family_names if name in Family.__members__
+        )
+        expected_allowed = {
+            ("SCENARIO_SERVICE", "PUBLISH", "MISSION_EVENT"),
+            ("FLEET_SIMULATOR", "PUBLISH", "SECTOR_EVENT"),
+            ("RECORDER", "SUBSCRIBE", "MISSION_EVENT"),
+            ("RECORDER", "SUBSCRIBE", "SECTOR_EVENT"),
+        }
+
+        # Act
+        allowed = {
+            (role.name, access.name, family.name)
+            for role in Principal
+            for access in Access
+            for family in families
+            if may_use(role, access, family)
+        }
+        denied = tuple(
+            _authorize_refusal_of(role, access, family)
+            for role in Principal
+            for access in Access
+            for family in families
+            if not may_use(role, access, family)
+        )
+
+        # Assert
+        self.assertEqual(
+            (expected_allowed, 36, 2),
+            (allowed, denied.count(PrincipalRefusal.DENIED), len(families)),
+        )
+
     def test_a_granted_publication_returns_the_family(self) -> None:
         # Arrange
         role = Principal.COMMAND_GATEWAY
@@ -308,14 +427,14 @@ class AuthorizeTests(unittest.TestCase):
 class PrincipalErrorTests(unittest.TestCase):
     def test_the_message_names_the_refusal_and_the_value(self) -> None:
         # Arrange
-        error = PrincipalError(PrincipalRefusal.UNKNOWN_PRINCIPAL, "scenario-service")
+        error = PrincipalError(PrincipalRefusal.UNKNOWN_PRINCIPAL, "scenario_service")
 
         # Act
         message = str(error)
 
         # Assert
         self.assertEqual(
-            "role is absent from the broker authorization table: 'scenario-service'", message
+            "role is absent from the broker authorization table: 'scenario_service'", message
         )
 
 

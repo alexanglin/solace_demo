@@ -9,31 +9,37 @@ agent mesh coordinate independently deployed models, with different capabilities
 unreliable connectivity, safely enough that a human still authorizes every consequential
 action?**
 
+The [Solace value guide](docs/SOLACE_VALUE.md) makes the evaluation lens explicit: search and rescue is
+the pressure test; agent coordination, selective event-to-agent bridging, durable delivery,
+broker-enforced authority, and observable proof are the demonstration.
+
 ## Status
 
-**No operational demonstration runs yet.** This is a repository under construction. The Agent
-Mesh runtime now starts and its agents discover and delegate to each other, but no mission,
-no drone, no evidence, and no approval exists: none of the application services has an
-entrypoint, and no application event has ever been published.
+**No end-to-end operational demonstration has run yet.** This is a repository under construction.
+Committed local slices now exercise Agent Mesh discovery and delegation, both official Event Mesh
+plugins, broker authorization and guaranteed delivery, fleet telemetry, and drone-side command
+consumption. The mission dashboard, evidence path, persistent command authorization, complete human
+approval flow, recording and replay, and the cross-system audit trace are not assembled.
 
 | Area | State |
 | --- | --- |
 | Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
-| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: four configurations under `agent-mesh/configs/` |
-| Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the default profile's **first live run is recorded** in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
+| Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: five configurations under `agent-mesh/configs/` |
+| Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the Agent Mesh starts with the default profile ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). The broker and Postgres first live run is recorded in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
 | Broker authorization | Nine least-privilege client usernames on deny-by-default ACL profiles, **applied to the running container**; approval-bypass cases B17, B18, and B19 pass against it ([`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md)) |
-| Live Ollama messaging and the Agent Mesh runtime | **Running.** The `mesh` profile carries the Orchestrator, a specialised agent, a versioned workflow, and the HTTP/SSE Web UI on a digest-locked local model; agent-card discovery, structured workflow invocation, and one model-chosen A2A delegation are asserted against the running broker ([`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md)) |
-| Application events, durable queues, and the command gateway | Not started: no queue exists, no application CloudEvent has been published, and the Event Mesh Gateway and Tool are unconfigured |
+| Live Ollama messaging and the Agent Mesh runtime | **Running, and started by default.** The stack carries the Orchestrator, a specialised agent, a versioned workflow, the HTTP/SSE Web UI, and the Event Mesh Gateway on a digest-locked local model; agent-card discovery, structured workflow invocation, and one A2A delegation from a workflow node to its peer are asserted against the running broker. The model-chosen delegation is a recorded observation, not a repeatable test ([`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md)) |
+| Application events and official Event Mesh plugins | **Live slices recorded.** Fleet telemetry crosses the broker; one salient CloudEvent becomes a structured A2A task; one Event Mesh Tool request receives a validated, non-actuating command-gateway reply ([`fleet-simulator-first-run.md`](release-evidence/phase-3/fleet-simulator-first-run.md), [`event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md), [`event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)) |
+| Guaranteed delivery and drone command consumption | **Live slices recorded.** Durable queues, settlement, bounded redelivery, dead-message handling, backlog drain, and drone-side command consumption are exercised against the local broker; an actual broken-session reconnect and gateway-side persistent dispatch remain unproved ([`guaranteed-delivery-first-run.md`](release-evidence/phase-2/guaranteed-delivery-first-run.md), [`backlog-recovery-first-run.md`](release-evidence/phase-2/backlog-recovery-first-run.md), [`command-dispatch-first-run.md`](release-evidence/phase-3/command-dispatch-first-run.md)) |
+| Durable mission store | **The schema, its migration path, and ADR-0006's three repositories are live.** Four Alembic revisions apply to a PostgreSQL 18.6 database the run creates and drops, one revision at a time in both directions, and six of the eleven declared constraints are provoked and enforced. Above them: a session, a bounded transaction, the append-only audit log, and the approval, idempotency, and outbox repositories. Two consumers of one approval commit once and deny once with the second observed *waiting*; two claimants of one idempotency key execute once and replay once; the outbox refuses the record past its bound; and the three writes [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) requires commit and roll back together ([ADR-0091](docs/adr/0091-consume-an-approval-under-its-own-row-lock.md), [ADR-0092](docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md), [ADR-0093](docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md), [`durable-transaction-first-run.md`](release-evidence/phase-3/durable-transaction-first-run.md)). No service imports the package yet, restart durability is unproven, and the paid-call ledger and the operator's own database remain untouched |
+| Mission dashboard | **A1 and R1 are green; A2 is unblocked but not started.** The production HTML host loads a tested React shell. The 19 browser-facing schemas, two scenario-file schemas, and eight private-control schemas have manifest-owned polarity fixtures, strict service-local Python twins at every Python trust boundary, and framework-free HTTP expectation registries. No FastAPI application, generated OpenAPI, map, source adapter, mutation client, or packaged runtime exists yet. Frontend coverage is independently inventory-adjudicated, while the unchanged 64 Playwright cases remain fixture acceptance rather than production end-to-end evidence ([FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md)) |
 | Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
-| Solace Cloud | A non-gating showcase profile for the Cloud console; no gate depends on it |
-| Everything else | Typed package manifests with no runtime behaviour |
+| Solace Cloud | A non-gating showcase profile for the Cloud console; it has not been exercised, and no gate depends on it |
+| End-to-end mission experience | Not assembled: the dashboard, evidence service, persistent approval-to-command path, recorder/replayer, and complete audit trace remain release work |
 
-One application module contains production code today, and one verification module checks
-Agent Mesh configuration without running it. Every other package under `packages/` and
-`services/` is a manifest and an empty namespace, deliberately: the verification machinery
-was built first so that no behaviour could land untested. Sequenced delivery and exit
-criteria are in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+Sequenced delivery and exit criteria are in
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md); committed live observations are scoped in
+[`release-evidence/`](release-evidence/).
 
 ## The mission scenario
 
@@ -109,6 +115,7 @@ disagree.
 
 | You need | Read |
 | --- | --- |
+| Why the demo centers Solace, and what the audience must see | [`docs/SOLACE_VALUE.md`](docs/SOLACE_VALUE.md) |
 | Why a decision was made, and whether it still stands | [`docs/adr/`](docs/adr/README.md) |
 | Delivery sequence, milestones, release criteria | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
 | Component responsibilities and operating modes | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |

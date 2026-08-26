@@ -3,9 +3,11 @@
 # every commit. Run `just secrets` once, then `just up`.
 #
 # Profiles:
-#   default       broker and postgres, the only services with behaviour today
-#   mesh          Agent Mesh from its official image; inert until agent-mesh/configs/ holds
-#                 the first configuration, which is when it moves to the default profile
+#   default       broker, postgres, and the Agent Mesh from its derived official image. The
+#                 mesh joined the default profile when agent-mesh/configs/ landed, which is
+#                 the condition docs/adr/0044 set and docs/adr/0102 executes. `just up` is
+#                 the supported entry point: it provisions the authorization matrix before
+#                 the mesh connects, and a bare `docker compose up` does not.
 #   services      the application services; each command imports its package and exits,
 #                 because no entrypoint exists yet; documented, not live behaviour
 #   event-portal  the Event Management Agent for Event Portal runtime discovery; an amd64
@@ -97,7 +99,7 @@ services:
       - no-new-privileges:true
 
   postgres:
-    image: postgres:18.6-trixie@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+    image: postgres:18.6-trixie@sha256:1957b2ff3137e4ef7f3bc813e74fff50b1e1ffddc85c8b9d6f14ade972be8687
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -128,7 +130,6 @@ services:
       context: ./agent-mesh
       dockerfile: Dockerfile
     image: aerial-rescue/agent-mesh:1.28.7
-    profiles: ["mesh"]
     environment:
       # The image defaults developer mode on, binds the Web UI to every interface inside
       # the container, and ships a placeholder session secret; each is overridden here.
@@ -137,7 +138,7 @@ services:
       SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
       # The runtime's own identity. The Event Mesh Gateway and Tool are separate roles with
       # separate credentials, named by their own configuration under agent-mesh/configs/
-      # when it lands (docs/adr/0061, docs/adr/0032).
+      # (docs/adr/0061, docs/adr/0032).
       #
       # Both spellings are passed. The generic pair is what the image's own defaults read; the
       # role-named pair is what agent-mesh/configs/ references, because a configuration that
@@ -149,6 +150,18 @@ services:
       SOLACE_BROKER_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       SOLACE_AGENT_MESH_AGENT_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
       SOLACE_AGENT_MESH_AGENT_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      # The Event Mesh Gateway runs in this same connector process but is a separate role,
+      # so it connects on its own identity on both the control plane and the data plane
+      # (agent-mesh/configs/event-mesh-gateway.yaml, docs/adr/0061). A gate test holds this
+      # list to every credential the mounted configuration names, because the validator
+      # checks those references against the host-scope .env.example and cannot see in here.
+      SOLACE_EVENT_MESH_GATEWAY_USERNAME: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
+      SOLACE_EVENT_MESH_GATEWAY_PASSWORD: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
+      # The Event Mesh Tool runs inside the MissionCoordinator app but opens its own
+      # request/reply session on its own identity, which may publish the gateway-request
+      # family and consume only the reserved reply channel (docs/adr/0070).
+      SOLACE_EVENT_MESH_TOOL_USERNAME: ${SOLACE_EVENT_MESH_TOOL_USERNAME}
+      SOLACE_EVENT_MESH_TOOL_PASSWORD: ${SOLACE_EVENT_MESH_TOOL_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       TRUST_STORE: ${TRUST_STORE}
       USE_TEMPORARY_QUEUES: ${USE_TEMPORARY_QUEUES}
@@ -209,11 +222,13 @@ services:
       SOLACE_BROKER_USERNAME: ${SOLACE_COMMAND_GATEWAY_USERNAME}
       SOLACE_BROKER_PASSWORD: ${SOLACE_COMMAND_GATEWAY_PASSWORD}
 
-  # No broker identity by decision: the scenario service has no documented publish or
-  # subscribe role, and docs/adr/0061 extends deny-by-default to issuing identities.
   scenario-service:
     <<: *application
     command: ["/app/.venv/bin/python", "-c", "import aerial_rescue_scenario_service"]
+    environment:
+      <<: *application-environment
+      SOLACE_BROKER_USERNAME: ${SOLACE_SCENARIO_SERVICE_USERNAME}
+      SOLACE_BROKER_PASSWORD: ${SOLACE_SCENARIO_SERVICE_PASSWORD}
 
   evidence-service:
     <<: *application

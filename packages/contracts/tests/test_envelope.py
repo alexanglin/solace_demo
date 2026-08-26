@@ -19,33 +19,155 @@ from aerial_rescue_contracts import canonical, instant
 from aerial_rescue_contracts.envelope import (
     BINDINGS,
     DATASCHEMA_PATTERN,
+    MAX_SEQUENCE,
     REQUIRED_MEMBERS,
+    SEQUENCE_DIGITS,
+    SEQUENCE_PATTERN,
     Binding,
     Envelope,
     EnvelopeError,
     EnvelopeRefusal,
+    _lifecycle_source_pattern,
     binding_for,
     check_topic_binding,
     decode_envelope,
     envelope_document,
     parse_envelope,
+    sequence_text,
 )
-from aerial_rescue_contracts.topics import Family, Topic, parse_event_type
+from aerial_rescue_contracts.topics import (
+    IDENTIFIER_PATTERN,
+    RESERVED_REPLY_MISSION,
+    Family,
+    Topic,
+    parse_event_type,
+)
+
+BASELINES = Path(__file__).parent / "baselines"
+"""Committed wire-contract documents, each byte-identical to its golden fixture.
+
+They sit in their own directory so ``tests/`` stays inside the fan-out bound as more
+contracts are bound (``docs/adr/0033-bound-directory-fan-out.md``).
+"""
 
 TELEMETRY_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
 BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("envelope_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "envelope_baseline.json").read_text(encoding="utf-8")),
 )
 """The same event committed as the golden fixture, so both suites judge one document."""
 
 BASELINE_DATA: dict[str, object] = cast("dict[str, object]", BASELINE["data"])
 TELEMETRY_TOPIC = Topic(Family.DRONE_TELEMETRY, "m-2026-0001", {"droneId": "drone-vision-01"})
 
+SALIENT_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-salient.schema.json"
+SALIENT_TYPE = "aerial-rescue.v1.drone.event.salient"
+SALIENT_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads((BASELINES / "salient_baseline.json").read_text(encoding="utf-8")),
+)
+"""The salient drone event, committed as its golden fixture for the same reason."""
+
+SALIENT_TOPIC = Topic(
+    Family.DRONE_EVENT, "m-2026-0001", {"droneId": "drone-vision-01", "eventType": "salient"}
+)
+
+GATEWAY_RESPONSE_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
+)
+GATEWAY_RESPONSE_TYPE = "aerial-rescue.v1.gateway.response"
+GATEWAY_RESPONSE_REQUEST_ID = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
+GATEWAY_RESPONSE_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads((BASELINES / "gateway_response_baseline.json").read_text(encoding="utf-8")),
+)
+"""The command gateway's own record of an answer, committed as its golden fixture."""
+
+GATEWAY_RESPONSE_TOPIC = Topic(
+    Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": GATEWAY_RESPONSE_REQUEST_ID}
+)
+
+ASSIGN_SECTOR_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json"
+)
+ASSIGN_SECTOR_TYPE = "aerial-rescue.v1.drone.command.assign-sector"
+ESCALATE_RESCUE_TYPE = "aerial-rescue.v1.drone.command.escalate-rescue"
+"""The second command type ADR-0041 closes, deliberately left unbound by ADR-0082."""
+
+ASSIGN_SECTOR_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads(
+        (BASELINES / "drone_command_assign_sector_baseline.json").read_text(encoding="utf-8")
+    ),
+)
+"""One executable sector assignment, committed as its golden fixture for the same reason."""
+
+ASSIGN_SECTOR_TOPIC = Topic(
+    Family.DRONE_COMMAND,
+    "m-2026-0001",
+    {"droneId": "drone-vision-01", "commandType": "assign-sector"},
+)
+
+COMMAND_RESULT_SCHEMA = (
+    "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-result.schema.json"
+)
+COMMAND_RESULT_TYPE = "aerial-rescue.v1.drone.command-result"
+COMMAND_RESULT_BASELINE: dict[str, object] = cast(
+    "dict[str, object]",
+    json.loads((BASELINES / "drone_command_result_baseline.json").read_text(encoding="utf-8")),
+)
+"""One drone's report on one command, committed as its golden fixture for the same reason."""
+
+COMMAND_RESULT_TOPIC = Topic(
+    Family.DRONE_COMMAND_RESULT,
+    "m-2026-0001",
+    {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
+)
+
+LIFECYCLE_BASELINES = {
+    "drone-event-connectivity-changed": "drone_event_connectivity_changed_baseline.json",
+    "mission-event-lifecycle": "mission_event_lifecycle_baseline.json",
+    "sector-event-lifecycle": "sector_event_lifecycle_baseline.json",
+}
+"""Each accepted lifecycle source event, committed beside the other baselines.
+
+Naming the committed copy keeps this suite member-local. Mutation runs each Tier 1 member
+from a copied working directory (``docs/TESTING.md``), so a path resolved relative to the
+repository root does not survive the copy and resolves outside the repository instead.
+"""
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
     return deepcopy(BASELINE)
+
+
+def _salient_baseline() -> dict[str, object]:
+    """Return a fresh copy of the salient drone event document."""
+    return deepcopy(SALIENT_BASELINE)
+
+
+def _gateway_response_baseline() -> dict[str, object]:
+    """Return a fresh copy of the command-gateway response record."""
+    return deepcopy(GATEWAY_RESPONSE_BASELINE)
+
+
+def _assign_sector_baseline() -> dict[str, object]:
+    """Return a fresh copy of the sector-assignment command."""
+    return deepcopy(ASSIGN_SECTOR_BASELINE)
+
+
+def _command_result_baseline() -> dict[str, object]:
+    """Return a fresh copy of the drone's report on one command."""
+    return deepcopy(COMMAND_RESULT_BASELINE)
+
+
+def _lifecycle_baseline(name: str) -> dict[str, object]:
+    """Return a fresh lifecycle source event from its committed baseline."""
+    return cast(
+        "dict[str, object]",
+        json.loads((BASELINES / LIFECYCLE_BASELINES[name]).read_text(encoding="utf-8")),
+    )
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -558,6 +680,374 @@ class BindingTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tuple((binding.family, True) for binding in bindings), facts)
+
+
+class LifecycleBindingTests(unittest.TestCase):
+    def test_the_three_lifecycle_types_bind_to_their_families_and_payload_schemas(self) -> None:
+        # Arrange
+        expected = {
+            "aerial-rescue.v1.drone.event.connectivity-changed": (
+                "DRONE_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/"
+                "drone-event-connectivity-changed.schema.json",
+            ),
+            "aerial-rescue.v1.mission.event.lifecycle": (
+                "MISSION_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/mission-event-lifecycle.schema.json",
+            ),
+            "aerial-rescue.v1.sector.event.lifecycle": (
+                "SECTOR_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/sector-event-lifecycle.schema.json",
+            ),
+        }
+
+        # Act
+        actual = {
+            event_type_value: (binding.family.name, binding.dataschema)
+            for event_type_value in expected
+            if (binding := BINDINGS.get(event_type_value)) is not None
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
+
+    def test_each_accepted_lifecycle_source_parses_with_its_bound_run_identity(self) -> None:
+        # Arrange
+        names = (
+            "drone-event-connectivity-changed",
+            "mission-event-lifecycle",
+            "sector-event-lifecycle",
+        )
+
+        # Act
+        envelopes = tuple(parse_envelope(_lifecycle_baseline(name)) for name in names)
+
+        # Assert
+        self.assertEqual(
+            (
+                "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+                "urn:aerial-rescue:mission-lifecycle:run-synthetic-0001",
+                "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
+            ),
+            tuple(envelope.source for envelope in envelopes),
+        )
+
+    def test_the_lifecycle_source_pattern_wraps_one_identifier_in_the_urn_grammar(self) -> None:
+        """The pattern is built once at import, so its grammar is a compatibility surface."""
+        # Arrange
+        expected = (
+            "^urn:aerial-rescue:mission-lifecycle:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+        )
+
+        # Act
+        pattern = _lifecycle_source_pattern("mission-lifecycle")
+
+        # Assert
+        self.assertEqual(expected, pattern)
+        self.assertEqual(
+            pattern,
+            BINDINGS["aerial-rescue.v1.mission.event.lifecycle"].source_pattern,
+        )
+
+    def test_each_lifecycle_type_refuses_another_lifecycle_sources_run_identity(self) -> None:
+        # Arrange
+        cases = (
+            (
+                "drone-event-connectivity-changed",
+                "urn:aerial-rescue:mission-lifecycle:run-synthetic-0001",
+            ),
+            (
+                "mission-event-lifecycle",
+                "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
+            ),
+            (
+                "sector-event-lifecycle",
+                "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+            ),
+        )
+
+        # Act
+        outcomes = []
+        for name, source in cases:
+            document = _lifecycle_baseline(name)
+            document["source"] = source
+            refusal, attribute, value = _refusal_of(document)
+            outcomes.append((refusal.name, attribute, value))
+
+        # Assert
+        self.assertEqual(
+            [("SOURCE_BINDING", "source", source) for _, source in cases],
+            outcomes,
+        )
+
+
+class SalientEventBindingTests(unittest.TestCase):
+    """The second bound event type, which the Event Mesh Gateway carries into the mesh."""
+
+    def test_binding_for_returns_the_salient_drone_event_binding(self) -> None:
+        # Arrange
+        expected = Binding(SALIENT_TYPE, Family.DRONE_EVENT, SALIENT_SCHEMA)
+
+        # Act
+        binding = binding_for(SALIENT_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_salient_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _salient_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, SALIENT_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (SALIENT_TYPE, SALIENT_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+
+class GatewayResponseBindingTests(unittest.TestCase):
+    """The third bound type: the command gateway's record of an answer it sent (ADR-0068)."""
+
+    def test_binding_for_returns_the_gateway_response_binding(self) -> None:
+        # Arrange
+        expected = Binding(GATEWAY_RESPONSE_TYPE, Family.GATEWAY_RESPONSE, GATEWAY_RESPONSE_SCHEMA)
+
+        # Act
+        binding = binding_for(GATEWAY_RESPONSE_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_gateway_response_baseline_parses_and_binds_to_the_topic_it_arrives_on(
+        self,
+    ) -> None:
+        # Arrange
+        document = _gateway_response_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, GATEWAY_RESPONSE_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (GATEWAY_RESPONSE_TYPE, GATEWAY_RESPONSE_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_record_whose_payload_names_another_request_does_not_bind(self) -> None:
+        # Arrange
+        document = _gateway_response_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["requestId"] = "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), GATEWAY_RESPONSE_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            ("requestId", EnvelopeRefusal.TOPIC_BINDING, "d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80"),
+            outcome,
+        )
+
+
+class DroneCommandBindingTests(unittest.TestCase):
+    """The fourth bound type: one executable sector assignment (ADR-0082)."""
+
+    def test_binding_for_returns_the_assign_sector_command_binding(self) -> None:
+        # Arrange
+        expected = Binding(ASSIGN_SECTOR_TYPE, Family.DRONE_COMMAND, ASSIGN_SECTOR_SCHEMA)
+
+        # Act
+        binding = binding_for(ASSIGN_SECTOR_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_assign_sector_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _assign_sector_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, ASSIGN_SECTOR_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (ASSIGN_SECTOR_TYPE, ASSIGN_SECTOR_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_command_whose_payload_names_another_drone_does_not_bind(self) -> None:
+        """A drone must be able to refuse a command addressed to a different drone."""
+        # Arrange
+        document = _assign_sector_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["droneId"] = "drone-thermal-02"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), ASSIGN_SECTOR_TOPIC)
+
+        # Assert
+        self.assertEqual(("droneId", EnvelopeRefusal.TOPIC_BINDING, "drone-thermal-02"), outcome)
+
+    def test_the_rescue_escalation_command_type_is_deliberately_unbound(self) -> None:
+        """ADR-0082 leaves it unbound, so no component can publish one until it is bound."""
+        # Arrange
+        unbound = ESCALATE_RESCUE_TYPE
+
+        # Act
+        with pytest.raises(EnvelopeError) as captured:
+            binding_for(unbound)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.UNKNOWN_TYPE, "type", ESCALATE_RESCUE_TYPE),
+            (captured.value.refusal, captured.value.attribute, captured.value.value),
+        )
+
+
+class DroneCommandResultBindingTests(unittest.TestCase):
+    """The fifth bound type: one drone's report on one command it received (ADR-0082)."""
+
+    def test_binding_for_returns_the_command_result_binding(self) -> None:
+        # Arrange
+        expected = Binding(COMMAND_RESULT_TYPE, Family.DRONE_COMMAND_RESULT, COMMAND_RESULT_SCHEMA)
+
+        # Act
+        binding = binding_for(COMMAND_RESULT_TYPE)
+
+        # Assert
+        self.assertEqual(expected, binding)
+
+    def test_the_command_result_baseline_parses_and_binds_to_the_topic_it_arrives_on(self) -> None:
+        # Arrange
+        document = _command_result_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+        bound = _binds(envelope, COMMAND_RESULT_TOPIC)
+
+        # Assert
+        self.assertEqual(
+            (COMMAND_RESULT_TYPE, COMMAND_RESULT_SCHEMA, "m-2026-0001", True),
+            (envelope.type, envelope.dataschema, envelope.subject, bound),
+        )
+
+    def test_a_result_naming_another_command_does_not_bind(self) -> None:
+        """The result topic is keyed by the command it answers, so the two must agree."""
+        # Arrange
+        document = _command_result_baseline()
+        payload = cast("dict[str, object]", document["data"])
+        payload["commandId"] = "cmd-2026-0002"
+
+        # Act
+        outcome = _topic_refusal_of(parse_envelope(document), COMMAND_RESULT_TOPIC)
+
+        # Assert
+        self.assertEqual(("commandId", EnvelopeRefusal.TOPIC_BINDING, "cmd-2026-0002"), outcome)
+
+    def test_the_result_carries_the_command_it_answers_as_its_causation(self) -> None:
+        """A retry is a new envelope, so only the causation links a result to its send."""
+        # Arrange
+        document = _command_result_baseline()
+
+        # Act
+        envelope = parse_envelope(document)
+
+        # Assert
+        self.assertEqual(
+            ("0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6e", "c-2026-0001"),
+            (envelope.causation_id, envelope.correlation_id),
+        )
+
+
+class ReservedReplyMissionTests(unittest.TestCase):
+    """No event may claim the identifier the reply channel occupies (ADR-0070)."""
+
+    def test_the_reserved_identifier_is_inside_the_identifier_rule(self) -> None:
+        # Arrange
+        value = RESERVED_REPLY_MISSION
+
+        # Act
+        matched = re.fullmatch(IDENTIFIER_PATTERN, value)
+
+        # Assert
+        self.assertIsNotNone(matched)
+
+    def test_an_envelope_whose_subject_is_the_reserved_identifier_is_refused(self) -> None:
+        # Arrange
+        data = dict(BASELINE_DATA)
+        data["missionId"] = RESERVED_REPLY_MISSION
+        document = _with(subject=RESERVED_REPLY_MISSION, data=data)
+
+        # Act
+        outcome = _refusal_of(document)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.RESERVED_MISSION, "subject", RESERVED_REPLY_MISSION), outcome
+        )
+
+    def test_the_reserved_identifier_is_refused_before_the_payload_is_examined(self) -> None:
+        # Arrange
+        document = _with(subject=RESERVED_REPLY_MISSION, data={"missionId": "m-2026-0001"})
+
+        # Act
+        outcome = _refusal_of(document)
+
+        # Assert
+        self.assertEqual(
+            (EnvelopeRefusal.RESERVED_MISSION, "subject", RESERVED_REPLY_MISSION), outcome
+        )
+
+
+class SequenceTextTests(unittest.TestCase):
+    def test_a_representable_sequence_is_zero_padded_to_the_declared_width(self) -> None:
+        # Arrange
+        values = (0, 42, MAX_SEQUENCE)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual(("000000000000000", "000000000000042", "999999999999999"), rendered)
+
+    def test_a_sequence_the_form_cannot_carry_yields_no_text(self) -> None:
+        # Arrange
+        values = (-1, MAX_SEQUENCE + 1)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual((None, None), rendered)
+
+    def test_every_rendered_sequence_satisfies_the_pattern_the_profile_requires(self) -> None:
+        # Arrange
+        values = (0, 1, MAX_SEQUENCE)
+
+        # Act
+        rendered = tuple(sequence_text(value) for value in values)
+
+        # Assert
+        self.assertEqual(
+            (True,) * len(values),
+            tuple(re.fullmatch(SEQUENCE_PATTERN, text or "") is not None for text in rendered),
+        )
+
+    def test_the_maximum_is_the_largest_value_the_declared_width_holds(self) -> None:
+        # Arrange
+        expected = 10**SEQUENCE_DIGITS - 1
+
+        # Act
+        maximum = MAX_SEQUENCE
+
+        # Assert
+        self.assertEqual(expected, maximum)
 
 
 class DocumentTests(unittest.TestCase):

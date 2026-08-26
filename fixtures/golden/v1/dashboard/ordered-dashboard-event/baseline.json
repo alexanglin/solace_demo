@@ -1,0 +1,12 @@
+{
+  "auditOrdinal": 1,
+  "event": {
+    "kind": "missionLifecycle",
+    "eventClass": "MISSION",
+    "mission": "mission-synthetic-0001",
+    "time": "2026-08-24T12:00:00.000Z",
+    "data": {
+      "lifecycle": "PLANNED"
+    }
+  }
+}

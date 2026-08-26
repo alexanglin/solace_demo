@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-salient.schema.json",
+  "description": "A salient drone event: one observation a drone judged worth an agent's attention, with the position in integer microdegrees where it was made and a bounded free-text detail. Routine telemetry is a separate family and never appears here.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "observation",
+    "latitudeMicrodegrees",
+    "longitudeMicrodegrees",
+    "detail"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "observation": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+    },
+    "latitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+    },
+    "longitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+    },
+    "detail": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/string"
+    }
+  }
+}

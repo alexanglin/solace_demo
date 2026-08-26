@@ -41,6 +41,10 @@
       "type": "string",
       "maxLength": 4096
     },
+    "lowercaseSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "array": {
       "type": "array",
       "items": {

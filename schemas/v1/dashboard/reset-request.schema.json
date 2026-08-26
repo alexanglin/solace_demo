@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-request.schema.json",
+  "description": "The exact empty body accepted by a public scenario-reset mutation.",
+  "type": "object",
+  "required": [],
+  "additionalProperties": false,
+  "properties": {}
+}

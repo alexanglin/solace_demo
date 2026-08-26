@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+  "description": "The transient DOM bootstrap carrying one runtime's in-memory mutation bearer.",
+  "type": "object",
+  "required": [
+    "bootstrapVersion",
+    "bearer",
+    "runtimeId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "bootstrapVersion": {
+      "const": "dashboard-bootstrap/v1"
+    },
+    "bearer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "runtimeId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

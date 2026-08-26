@@ -16,6 +16,8 @@ from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import (
     ALLOWED_MEMBERS,
     BINDINGS,
+    MAX_SEQUENCE,
+    SEQUENCE_DIGITS,
     SOURCE_PATTERN,
     TRACEPARENT_PATTERN,
     TRACESTATE_PATTERN,
@@ -25,25 +27,34 @@ from aerial_rescue_contracts.envelope import (
     decode_envelope,
     envelope_document,
     parse_envelope,
+    sequence_text,
 )
 from aerial_rescue_contracts.instant import format_instant
 from aerial_rescue_contracts.topics import IDENTIFIER_PATTERN
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+BASELINES = Path(__file__).parent / "baselines"
+"""Committed wire-contract documents, each byte-identical to its golden fixture.
+
+They sit in their own directory so ``tests/`` stays inside the fan-out bound as more
+contracts are bound (``docs/adr/0033-bound-directory-fan-out.md``).
+"""
+
 BASELINE: dict[str, object] = cast(
     "dict[str, object]",
-    json.loads(Path(__file__).with_name("envelope_baseline.json").read_text(encoding="utf-8")),
+    json.loads((BASELINES / "envelope_baseline.json").read_text(encoding="utf-8")),
 )
 BASELINE_DATA: dict[str, object] = cast("dict[str, object]", BASELINE["data"])
 TELEMETRY = BINDINGS["aerial-rescue.v1.drone.telemetry"]
 IDENTIFIERS = st.from_regex(IDENTIFIER_PATTERN, fullmatch=True)
-SEQUENCES = st.integers(min_value=0, max_value=10**15 - 1).map(lambda value: f"{value:015d}")
+SEQUENCES = st.integers(min_value=0, max_value=MAX_SEQUENCE).map(
+    lambda value: sequence_text(value) or ""
+)
 INSTANTS = st.datetimes(timezones=st.just(UTC)).map(format_instant)
 SOURCES = st.from_regex(SOURCE_PATTERN, fullmatch=True)
 TRACEPARENTS = st.from_regex(TRACEPARENT_PATTERN, fullmatch=True)
 TRACESTATES = st.from_regex(TRACESTATE_PATTERN, fullmatch=True)
-SEQUENCE_DIGITS = 15
 
 
 @st.composite

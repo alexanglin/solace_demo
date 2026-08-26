@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/scenario-catalog.schema.json",
+  "description": "The browser-facing catalog of validated synthetic wilderness scenarios.",
+  "type": "object",
+  "required": [
+    "catalogVersion",
+    "scenarios"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "catalogVersion": {
+      "const": "scenario-catalog/v1"
+    },
+    "scenarios": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    }
+  },
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "revision",
+        "title",
+        "summary",
+        "declaredCount",
+        "simulatedCount",
+        "declaredOnlyCount",
+        "searchAreaSquareMetres",
+        "lastKnownLocation",
+        "searchPolygon",
+        "sectors",
+        "members"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "revision": {
+          "const": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "declaredCount": {
+          "const": 23
+        },
+        "simulatedCount": {
+          "const": 20
+        },
+        "declaredOnlyCount": {
+          "const": 3
+        },
+        "searchAreaSquareMetres": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "lastKnownLocation": {
+          "$ref": "#/$defs/lastKnownLocation"
+        },
+        "searchPolygon": {
+          "$ref": "#/$defs/polygon"
+        },
+        "sectors": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/sectorPolygon"
+          }
+        },
+        "members": {
+          "type": "array",
+          "minItems": 23,
+          "maxItems": 23,
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/simulatedMember"
+              },
+              {
+                "$ref": "#/$defs/declaredOnlyMember"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "lastKnownLocation": {
+      "type": "object",
+      "required": [
+        "label",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        }
+      }
+    },
+    "vertex": {
+      "type": "object",
+      "required": [
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        }
+      }
+    },
+    "polygon": {
+      "type": "object",
+      "required": [
+        "vertices"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vertices": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/vertex"
+          }
+        }
+      }
+    },
+    "sectorPolygon": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "vertices"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "vertices": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/vertex"
+          }
+        }
+      }
+    },
+    "simulatedMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "SIMULATED"
+        }
+      }
+    },
+    "declaredOnlyMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation",
+        "role",
+        "executionLabel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "DECLARED_ONLY"
+        },
+        "role": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/kind"
+        },
+        "executionLabel": {
+          "const": "DECLARED ONLY — NOT EXECUTED"
+        }
+      }
+    }
+  }
+}

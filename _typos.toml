@@ -12,6 +12,13 @@ extend-exclude = [
   "fixtures/golden/",
 ]
 
+[default]
+# A W3C trace parent is 32 and 16 hexadecimal digits, and typos tokenizes runs of
+# them into words: `00f067aa0ba902b7` yields a `ba` it reports as a typo of "by".
+# Scoped to the trace-parent shape rather than to hexadecimal generally, so a real
+# typo in ordinary prose still fails.
+extend-ignore-re = ["00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}"]
+
 [default.extend-words]
 # Domain and product vocabulary that is not a typo.
 Solace = "Solace"
@@ -30,3 +37,10 @@ nd = "nd"
 # "PNGs" tokenizes to PN + Gs, and typos reports the PN token as a typo of
 # "ON". The key must be the offending token, not the full word.
 PN = "PN"
+
+[default.extend-identifiers]
+# The W3C traceparent example from the specification, used as a test constant. typos splits
+# the span identifier into words and reads its "ba" as a typo of "by" or "be". The key must
+# be the whole identifier rather than the word, so this allows exactly this hexadecimal
+# string and leaves "ba" reportable everywhere else.
+"00f067aa0ba902b7" = "00f067aa0ba902b7"

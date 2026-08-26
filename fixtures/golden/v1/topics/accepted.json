@@ -50,10 +50,42 @@
         "droneId": "d1",
         "eventType": "salient"
       },
-      "type": "aerial-rescue.v1.drone.event.salient"
+    "type": "aerial-rescue.v1.drone.event.salient"
+  },
+  {
+    "topic": "aerial-rescue/v1/mission-01/drone/drone-01/event/connectivity-changed",
+    "verdict": "accept",
+    "family": "DRONE_EVENT",
+    "missionId": "mission-01",
+    "parameters": {
+      "droneId": "drone-01",
+      "eventType": "connectivity-changed"
     },
-    {
-      "topic": "aerial-rescue/v1/m1/drone/d1/command/reassign-sector",
+    "type": "aerial-rescue.v1.drone.event.connectivity-changed"
+  },
+  {
+    "topic": "aerial-rescue/v1/mission-01/mission/event/lifecycle",
+    "verdict": "accept",
+    "family": "MISSION_EVENT",
+    "missionId": "mission-01",
+    "parameters": {
+      "eventType": "lifecycle"
+    },
+    "type": "aerial-rescue.v1.mission.event.lifecycle"
+  },
+  {
+    "topic": "aerial-rescue/v1/mission-01/sector/sector-01/event/lifecycle",
+    "verdict": "accept",
+    "family": "SECTOR_EVENT",
+    "missionId": "mission-01",
+    "parameters": {
+      "sectorId": "sector-01",
+      "eventType": "lifecycle"
+    },
+    "type": "aerial-rescue.v1.sector.event.lifecycle"
+  },
+  {
+    "topic": "aerial-rescue/v1/m1/drone/d1/command/reassign-sector",
       "verdict": "accept",
       "family": "DRONE_COMMAND",
       "missionId": "m1",

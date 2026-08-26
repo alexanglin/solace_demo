@@ -3,7 +3,20 @@ name = "aerial-rescue-store"
 version = "0.0.0"
 description = "Durable mission store, migrations, and repository adapters."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+# The structured refusal base every module here raises, so the command gateway can audit
+# a denied durable attempt through the same handler as a denied domain rule.
+#
+# Async SQLAlchemy 2.x and asyncpg are the driver pair docs/adr/0003 selects. The asyncio
+# extra is what pulls greenlet, which SQLAlchemy's async layer requires. asyncpg is a runtime
+# dependency this package never imports: failures are discriminated on typed sqlalchemy.exc
+# classes, so the untyped-import relaxation docs/adr/0028 had to grant the Solace client is
+# not needed here.
+dependencies = [
+    "aerial-rescue-domain",
+    "alembic==1.19.1",
+    "asyncpg==0.31.0",
+    "sqlalchemy[asyncio]==2.0.52",
+]
 
 [build-system]
 requires = ["hatchling"]

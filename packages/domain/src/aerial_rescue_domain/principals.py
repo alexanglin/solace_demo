@@ -1,7 +1,6 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The nine roles and their grants are the decision in
-``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``. Authority is
+The ten roles and their grants are the decisions in ADR-0061 and ADR-0111. Authority is
 expressed over roles rather than over processes: each deployed process carries its own
 client username for observability and credential rotation, and that username binds to its
 role's ACL profile, so two edge agents have distinct identities and identical authority.
@@ -32,6 +31,7 @@ class Principal(Enum):
     FLEET_SIMULATOR = "fleet-simulator"
     COMMAND_GATEWAY = "command-gateway"
     DASHBOARD_API = "dashboard-api"
+    SCENARIO_SERVICE = "scenario-service"
     EVIDENCE_SERVICE = "evidence-service"
     RECORDER = "recorder"
     EVENT_MESH_GATEWAY = "event-mesh-gateway"
@@ -60,12 +60,18 @@ class PrincipalError(DomainError):
 
 _PUBLISH: Final[Mapping[Principal, frozenset[Family]]] = {
     Principal.FLEET_SIMULATOR: frozenset(
-        {Family.DRONE_TELEMETRY, Family.DRONE_EVENT, Family.DRONE_COMMAND_RESULT}
+        {
+            Family.DRONE_TELEMETRY,
+            Family.DRONE_EVENT,
+            Family.DRONE_COMMAND_RESULT,
+            Family.SECTOR_EVENT,
+        }
     ),
     Principal.COMMAND_GATEWAY: frozenset(
         {Family.DRONE_COMMAND, Family.GATEWAY_RESPONSE, Family.AUDIT}
     ),
     Principal.DASHBOARD_API: frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
+    Principal.SCENARIO_SERVICE: frozenset({Family.MISSION_EVENT}),
     Principal.EVIDENCE_SERVICE: frozenset({Family.AUDIT}),
     Principal.RECORDER: frozenset(),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.AGENT_RESPONSE}),
@@ -103,10 +109,11 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.AUDIT,
         }
     ),
+    Principal.SCENARIO_SERVICE: frozenset(),
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
     Principal.RECORDER: frozenset(Family),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.DRONE_EVENT}),
-    Principal.EVENT_MESH_TOOL: frozenset({Family.GATEWAY_RESPONSE}),
+    Principal.EVENT_MESH_TOOL: frozenset(),
     Principal.AGENT_MESH_AGENT: frozenset(),
     Principal.DISCOVERY: frozenset(),
 }
@@ -115,7 +122,10 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
 ``RECORDER`` reads every family because the replay fixtures it writes must be able to
 reproduce the whole mission; it holds no publish grant, so the breadth costs nothing.
 ``AGENT_MESH_AGENT`` reads nothing here because agents receive work over A2A rather than
-over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``).
+over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``), and
+``EVENT_MESH_TOOL`` reads nothing here because the only thing it consumes is its own
+reply channel, which is narrower than a family and is granted below
+(``docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md``).
 """
 
 _GRANTS: Final[Mapping[Access, Mapping[Principal, frozenset[Family]]]] = {
@@ -127,6 +137,15 @@ _A2A: Final[frozenset[Principal]] = frozenset(
     {Principal.AGENT_MESH_AGENT, Principal.EVENT_MESH_GATEWAY, Principal.EVENT_MESH_TOOL}
 )
 """The roles that may reach the Agent Mesh A2A namespace at all (ADR-0014)."""
+
+_REPLY_CHANNEL: Final[frozenset[Principal]] = frozenset({Principal.EVENT_MESH_TOOL})
+"""The roles that may consume the command-gateway reply channel (ADR-0070).
+
+The channel is one topic beneath a reserved identifier rather than a family, so it cannot
+be expressed in the tables above. It replaces the gateway-response family grant this role
+used to hold, and is strictly less authority: the tool can reach its own replies and no
+mission's answers.
+"""
 
 _BY_NAME: Final[Mapping[str, Principal]] = {member.value: member for member in Principal}
 
@@ -162,6 +181,11 @@ def may_use(role: Principal, access: Access, family: Family) -> bool:
 def may_use_a2a(role: Principal) -> bool:
     """Return whether ``role`` may reach the Agent Mesh A2A namespace at all."""
     return role in _A2A
+
+
+def may_use_reply_channel(role: Principal) -> bool:
+    """Return whether ``role`` may consume the command-gateway reply channel (ADR-0070)."""
+    return role in _REPLY_CHANNEL
 
 
 def authorize(role: Principal, access: Access, family: Family) -> Family:

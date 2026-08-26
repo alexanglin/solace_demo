@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/start-response.schema.json",
+  "description": "A stable accepted identity for either a degraded-live run or an isolated replay session.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/live"
+    },
+    {
+      "$ref": "#/$defs/replay"
+    }
+  ],
+  "$defs": {
+    "live": {
+      "type": "object",
+      "required": [
+        "operationVersion",
+        "mode",
+        "missionId",
+        "runId",
+        "declaredCount",
+        "simulatedCount",
+        "declaredOnlyCount"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "operationVersion": {
+          "const": "dashboard-start-response/v1"
+        },
+        "mode": {
+          "const": "degradedLive"
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "runId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "declaredCount": {
+          "const": 23
+        },
+        "simulatedCount": {
+          "const": 20
+        },
+        "declaredOnlyCount": {
+          "const": 3
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": [
+        "operationVersion",
+        "mode",
+        "sessionId",
+        "declaredCount",
+        "simulatedCount",
+        "declaredOnlyCount"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "operationVersion": {
+          "const": "dashboard-start-response/v1"
+        },
+        "mode": {
+          "const": "replay"
+        },
+        "sessionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "declaredCount": {
+          "const": 23
+        },
+        "simulatedCount": {
+          "const": 20
+        },
+        "declaredOnlyCount": {
+          "const": 3
+        }
+      }
+    }
+  }
+}

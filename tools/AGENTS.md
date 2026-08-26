@@ -29,7 +29,7 @@ preserve both the cross-cutting rules above and the policy that gate makes execu
 
 | Path | Responsibility |
 | --- | --- |
-| Top-level `*_gate.py` modules | Typed policy loading, adjudication, stable diagnostics, and command-line status |
+| Top-level `*_gate.py` modules | Typed policy loading, coverage/report adjudication, stable diagnostics, and command-line status |
 | `image_inventory.py`, `member_scaffold.py` | Shared policy facts consumed by more than one real gate |
 | `executable_resolution.py` | The reviewed absolute-executable boundary for permitted process owners |
 | `aaa_checker/` | Cross-language AAA discovery, syntax analysis, self-tests, and the whole-tree entry point |

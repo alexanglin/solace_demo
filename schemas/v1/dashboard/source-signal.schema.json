@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/source-signal.schema.json",
+  "description": "One event-source transport signal kept outside reduced mission state.",
+  "type": "object",
+  "required": [
+    "signalVersion",
+    "signal"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "signalVersion": {
+      "const": "dashboard-source-signal/v1"
+    },
+    "signal": {
+      "enum": [
+        "connecting",
+        "disconnected",
+        "offline",
+        "recovered",
+        "runtimeChanged"
+      ]
+    }
+  }
+}

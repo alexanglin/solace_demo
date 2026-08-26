@@ -38,6 +38,7 @@ class Context(Enum):
 
     PROPOSAL = "proposal-digest"
     REPLAY_STATE = "replay-state"
+    ORDERED_DASHBOARD_EVENT = "ordered-dashboard-event"
     EVIDENCE = "evidence"
     IDEMPOTENCY_BODY = "idempotency-body"
 

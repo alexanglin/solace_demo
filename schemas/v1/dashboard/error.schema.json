@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
+  "description": "The versioned redacted error response shared by public dashboard routes.",
+  "type": "object",
+  "required": [
+    "errorVersion",
+    "errorCode",
+    "message"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "errorVersion": {
+      "const": "dashboard-error/v1"
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  }
+}

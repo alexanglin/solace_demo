@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-connectivity-changed.schema.json",
+  "description": "A fleet-owned connectivity lifecycle change for one simulated drone.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "connectivity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "connectivity": {
+      "enum": [
+        "CONNECTED",
+        "DEGRADED",
+        "OFFLINE"
+      ]
+    }
+  }
+}

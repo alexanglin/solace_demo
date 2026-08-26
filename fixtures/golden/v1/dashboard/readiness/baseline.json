@@ -1,0 +1,6 @@
+{
+  "readinessVersion": "dashboard-readiness/v1",
+  "mode": "degradedLive",
+  "ready": true,
+  "reasons": []
+}

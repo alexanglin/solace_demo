@@ -28,6 +28,70 @@ apps:
 
         You may only propose. You cannot assign a sector, dispatch a drone, or escalate a
         rescue. Represent the subject anonymously and never infer identity.
+
+        Use ask_command_gateway to find out whether a command type may be published, and
+        say what it answered. Its answer is authoritative and yours is not: the command
+        gateway decides, and asking it never causes anything to happen.
+      # The egress half of the Phase 0 Event Mesh spike: one tool request producing one
+      # validated, non-actuating command-gateway response (docs/IMPLEMENTATION_PLAN.md).
+      #
+      # It runs on its own `event-mesh-tool` identity, which may publish the gateway-request
+      # family and consume only the reserved reply channel (docs/adr/0061, docs/adr/0070).
+      # Nothing here is the safety boundary: ADR-0005 rejected enforcement in this
+      # configuration, because the model can override any parameter it can see. The command
+      # gateway's deny-by-default tables are what refuse an operation or a command type.
+      tools:
+        - tool_type: python
+          component_module: sam_event_mesh_tool.tools
+          class_name: EventMeshTool
+          tool_config:
+            tool_name: ask_command_gateway
+            description: >-
+              Ask the deterministic command gateway which authority a command type falls
+              under. Read-only: it records nothing and publishes no command.
+            topic: aerial-rescue/v1/{{ missionId }}/gateway/request/{{ operation }}
+            wait_for_response: true
+            parameters:
+              - name: missionId
+                type: string
+                required: true
+                description: The mission the question is about.
+                payload_path: missionId
+              - name: operation
+                type: string
+                required: true
+                description: Always command-authority; no other operation exists.
+                default: command-authority
+                payload_path: operation
+              - name: commandType
+                type: string
+                required: true
+                description: The command type to ask about, such as escalate-rescue.
+                payload_path: commandType
+              - name: rpcVersion
+                type: integer
+                required: false
+                default: 1
+                description: The contract version; leave it alone.
+                payload_path: rpcVersion
+            event_mesh_config:
+              payload_encoding: utf-8
+              payload_format: json
+              # Solace AI Connector fixes the reply topic once per session and appends a
+              # UUID, so the mission level cannot carry a mission. `reply` is reserved for
+              # it and no event may claim it (docs/adr/0070). The validator refuses any
+              # other prefix as TOOL_REPLY.
+              response_topic_prefix: aerial-rescue/v1/reply/gateway/response
+              # Two 60 s agent requests can run in series before this tool is reached, and
+              # the command gateway's own answer involves no model at all.
+              request_expiry_ms: 30000
+              broker_config:
+                dev_mode: false
+                broker_url: ${SOLACE_BROKER_URL}
+                broker_username: ${SOLACE_EVENT_MESH_TOOL_USERNAME}
+                broker_password: ${SOLACE_EVENT_MESH_TOOL_PASSWORD}
+                broker_vpn: ${SOLACE_BROKER_VPN}
+                temporary_queue: true
       session_service: {type: memory}
       # Filesystem rather than memory, and one path for all four apps. A memory artifact
       # service is per-app even inside one connector process, so a workflow node that hands
