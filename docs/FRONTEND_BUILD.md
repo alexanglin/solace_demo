@@ -23,16 +23,16 @@ of [`CONTRACTS.md`](CONTRACTS.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), and
 [`operating-parameters.md`](operating-parameters.md). ADR-0102 separately constrains the normal startup
 path that R9 must preserve, while
 [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) fixes the broker lifecycle sources R3 and
-R8 must implement. Until register row R7 in section 7 is worked off, those Accepted records govern
-over the stale passages they supersede.
+R8 implement. The completed R7 propagation keeps the canonical documents aligned with those Accepted
+records.
 
 ## 2. Where the build starts from
 
 The full production-E2E increment began from clean `main` at
-`d3ea5b92c517b00f9577725d13e4f14805a2644e` on 2026-08-25. The current working branch retains A1-A4
-and R1/R3, and adds the implementation under A5-A7 and R2/R4-R6/R8/R9. A8 and R7 remain open, while
-R9 implementation is green but its final acceptance remains coupled to A8. The clean committed
-production evidence, current diagrams, and final gates are still work to collect, not completion claims:
+`d3ea5b92c517b00f9577725d13e4f14805a2644e` on 2026-08-25. Clean committed revision `db2b640` completes
+A1-A8 and R1-R9 for the fixed synthetic wilderness dashboard slice. The result remains bounded to twenty
+simulated members plus three declared-only descriptors; it does not complete the broader initial-release
+mission:
 
 - The browser acceptance contract is committed. The
   Playwright specifications under `apps/dashboard/tests/e2e/` pin the complete operator surface —
@@ -53,14 +53,16 @@ production evidence, current diagrams, and final gates are still work to collect
 - The fixture driver fakes only serialized boundary inputs
   ([`dashboard-harness.ts`](../apps/dashboard/tests/e2e/support/dashboard-harness.ts)), and the
   start and reset requests are intercepted on the wire by the specifications themselves. The separate
-  production driver forbids those interceptions, fixture imports, and test globals. All 64 fixture cases
-  and six inspected/redacted screenshot cases are green. The four operator workflows, four resilience
-  cases, and 61-sample, 31.3-minute soak also passed against a developmental uncommitted production
-  build. A clean committed rerun and release record remain required A8/R9 evidence.
+  production driver forbids those interceptions, fixture imports, and test globals. On clean committed
+  revision `db2b640`, all 64 fixture cases passed in 42.0 seconds, the six masked screenshot cases were
+  inspected, the four operator workflows plus four resilience cases passed in 1.6 minutes, and the
+  61-sample soak passed in 30.3 minutes with its process-growth and shared-identity invariants intact
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 - The recorder is now an active receiver-only service with direct telemetry, one combined guaranteed
   lifecycle queue, transactional audit persistence, bounded normalized recording, isolated replay
   validation, and a cross-container freshness lease. The API, scenario, and fleet production paths are
-  tracked by their rows below; production-stack evidence remains the authority for completion.
+  tracked by their completed rows below. Recorder telemetry receipt remains best-effort and separate from
+  the fleet publication count.
 - R1 is complete. Its browser-facing 18-shape schema, manifest, and fixture subincrement is green against the
   intended-red inventory begun at `f29d543` and its bounded-input extension in
   [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). The
@@ -207,13 +209,13 @@ its entry criteria are met, and when a register row in section 7 is open, the br
 against the committed fixtures behind the eventual interface and never drafts the missing contract
 itself.
 
-**The join.** A1-A7 and R1-R6/R8 are implemented; R9's packaging implementation is also green. The
+**The join.** A1-A8 and R1-R9 are complete for the fixed synthetic dashboard slice. The
 browser uses the same reducer behind fixture, live SSE, and replay sources; the durable API, catalog,
 private control, recorder, replay, and shared-project delivery boundaries exist behind it. All 64 fixture
-cases and six inspected/redacted screenshot cases pass. A developmental uncommitted run also passed all
-eight production cases and the 61-sample, 31.3-minute soak. A8, R7, and final R9 acceptance remain open
-until those production paths rerun from a clean committed revision and their release evidence, diagrams,
-and final gates are green.
+cases and six inspected/redacted screenshot cases pass. Clean committed revision `db2b640` also passed all
+eight production cases, the 61-sample soak, 43 live PostgreSQL cases, and 16 broker-authorization cases.
+The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its digest shown as `Verified`
+([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 ![Dashboard build increments](architecture/dashboard-build-increments.png)
 
@@ -249,30 +251,28 @@ and final gates are green.
   preserves the prior checkpoint on every refusal. [`timeline.ts`](../apps/dashboard/src/domain/timeline.ts)
   replaces the validated snapshot baseline and appends only verified non-telemetry suffix events in
   audit-ordinal order.
-- **A5 — event-source interface and adapters.** *Status: implementation complete and connected to the
-  production endpoints; deterministic gates green.* One validated interface owns the test-only fixture
+- **A5 — event-source interface and adapters.** *Status: complete.* One validated interface owns the test-only fixture
   source, live named-frame SSE source, and replay source. Disposal and stale callbacks cannot mutate
   current state; overload causes exactly one resnapshot. The replacement snapshot applies immediately
   while a presentation-only live-region notice remains observable for the ADR-0135 one-second minimum;
   runtime and run-mode crossings fail closed while retaining the last valid mission.
-- **A6 — mutation client.** *Status: implementation complete; deterministic and developmental
-  production paths green.* The bearer remains in
+- **A6 — mutation client.** *Status: complete.* The bearer remains in
   memory, exact headers/body and lowercase UUIDv4 keys are validated, and a synchronous guard prevents
   double submission before the first asynchronous yield. Accepted mutations update operation state
   only; their stable live mission/run identity is confirmed by the next validated snapshot rather than
   applied as mission state. `401` or runtime replacement locks mutation until a real document reload.
-- **A7 — presentation state, map, and components.** *Status: implementation complete against fixture
-  and production sources.*
+- **A7 — presentation state, map, and components.** *Status: complete against fixture and production
+  sources.*
   The local MapLibre map renders the twenty-sector geometry, twenty simulated markers, and bounded
   trails; map/table selection, camera, filters, detail, timeline, reset, and replay controls are
   synchronized without entering mission state. Fixture checks cover compact layout, 200% zoom, axe,
   reduced motion, replay labeling, and zero remote requests.
-- **A8 — screenshot baselines and final acceptance.** *Status: pending final qualification.* Six
-  screenshot baselines are green, redacted, and visually inspected, and all 64 fixed fixture cases pass.
-  Four operator workflows plus four resilience cases passed against the developmental uncommitted
-  production stack, followed by a green 61-sample, 31.3-minute soak. A8 is not complete until those
-  production paths rerun from a clean committed revision and the release record, refreshed diagrams,
-  and complete final gates land.
+- **A8 — screenshot baselines and final acceptance.** *Status: complete.* Six screenshot baselines are
+  green, masked, and visually inspected. On clean committed revision `db2b640`, all 64 fixed fixture cases
+  passed in 42.0 seconds, eight production cases passed in 1.6 minutes, and the 61-sample soak passed in
+  30.3 minutes with accepted RSS/file-descriptor growth plus stable dashboard API, broker, and PostgreSQL
+  identities. The final replay reached ordinal 48 in `EXHAUSTED` state with its digest shown as `Verified`
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 ### Lane B — the vertical unblockers
 
@@ -300,7 +300,7 @@ and final gates are green.
   ADR-0094/0097/0100/0107/0112 decide the shapes; the e2e fixture is a reference, never the type
   authority. No FastAPI application, generated OpenAPI document, or listener is part of R1; R5/R8 own
   and now implement those runtime boundaries. R1's completion unblocked A2 and everything after it.
-- **R2 — scenario catalog and loader.** *Status: implementation complete. Owner:
+- **R2 — scenario catalog and loader.** *Status: complete. Owner:
   `services/scenario_service`.* The production catalog and wilderness definition are committed. The
   loader confines paths, requires regular files, bounds bytes and depth before construction, applies
   canonical decoding and digest verification, and preserves the explicit roster and geometry. Only the
@@ -315,8 +315,8 @@ and final gates are green.
   refusal rollback, sector assignment authority, declared-only isolation, and meaningful-event
   timeline classification match the browser implementation. The shared fixture oracle checks
   per-step canonical state, digests, witnesses, outcomes, and timeline ordinals across ten runs.
-- **R4 — store read path.** *Status: implementation complete with focused test-created PostgreSQL
-  evidence and retained shared-runtime semantics. Owner: `packages/store`.* Revision 0005 adds the
+- **R4 — store read path.** *Status: complete with focused test-created PostgreSQL evidence and retained
+  shared-runtime semantics. Owner: `packages/store`.* Revision 0005 adds the
   narrow mission/run, current pointer, dashboard operation, broker-deduplication, audit link, and bounded
   read repositories. Start prepares stable state before private HTTP; exact bytes replay idempotently;
   reset retains the predecessor and selects a fresh unstarted successor; pending start recovery reuses
@@ -324,52 +324,52 @@ and final gates are green.
   cancellation, while a missing nonterminal run persists an exact
   `409 CANCELLATION_NOT_ESTABLISHED` without moving the pointer
   ([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)). Every remaining
-  field is exercised by start, reset, recovery, snapshot, or deduplication, and no unused timestamps remain.
-- **R5 — dashboard API.** *Status: implementation complete and developmental production E2E green;
-  clean release evidence pending. Owner:
+  field is exercised by start, reset, recovery, snapshot, or deduplication, and no unused timestamps
+  remain. The clean live PostgreSQL suite passed 43 cases in 14.24 seconds.
+- **R5 — dashboard API.** *Status: complete. Owner:
   `services/dashboard_api`.* The strict FastAPI route graph, OpenAPI projection, dynamic no-store
   bootstrap, immutable assets, scenario client, durable orchestration, snapshot fold, replay serving,
   opaque cursors, bounded SSE, overload handling, and Unix-socket production composition are green in
   deterministic suites. An uncertain start stays pending and reconciles the same run without repeating
   start. Reset recovery either relies on a recorder-owned terminal predecessor or requires private
   cancellation for a nonterminal predecessor; it never starts the selected successor.
-- **R6 — recorder and replay validation.** *Status: implementation and developmental live acceptance
-  green; clean release evidence pending. Owner: `services/recorder`.* The receiver-only runtime consumes
+- **R6 — recorder and replay validation.** *Status: complete. Owner: `services/recorder`.* The
+  receiver-only runtime consumes
   direct telemetry plus one combined
   guaranteed lifecycle queue, commits before acknowledgement, advances mission lifecycle in the same
   transaction, and exposes a focused one-shot exporter for one exact exhausted wilderness mission/run.
   That command reads the durable prepared state and at most 512 audit-ordered normalized events through
   the real store repositories, then atomically creates the fixed recording without overwrite. The
   isolated validator refuses network and credentials, accepts only byte-identical restart output, and
-  never overwrites divergence
+  never overwrites divergence. The final replay reached ordinal 48 in `EXHAUSTED` state with its digest
+  shown as `Verified`; live telemetry receipt remains best-effort and is not a completeness guarantee
   ([ADR-0094](adr/0094-validate-replay-before-browser-playback.md),
   [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
-- **R7 — canonical-document propagation.** *Status: in progress. Owner: each document's
-  maintainer.* The contract route and orchestration semantics, architecture responsibilities,
+- **R7 — canonical-document propagation.** *Status: complete. Owner: each document's maintainer.* The
+  contract route and orchestration semantics, architecture responsibilities,
   implementation milestones, operating instruments, testing classes, root status, changelog, ADR index,
-  and store/API/integration agent guidance now reflect the implemented R2/R4/R5/R8 boundary through
-  ADR-0143. Remaining propagation is limited to the final security/deployment/runbook review, release
-  evidence, and diagram regeneration after A8/R9 acceptance; those artifacts must not promote the
-  developmental run to release evidence before its clean committed rerun.
-- **R8 — scenario and fleet live control.** *Status: implementation and developmental production-stack
-  acceptance green; clean release evidence pending. Owner: `services/scenario_service` and
+  and store/API/integration agent guidance reflect the implemented and accepted R2/R4-R6/R8/R9 boundary
+  through ADR-0143 and the clean production record.
+- **R8 — scenario and fleet live control.** *Status: complete. Owner: `services/scenario_service` and
   `services/fleet_simulator`.* Distinct
   bearer-authenticated private listeners expose bounded start/status/cancel plus scenario catalog and
   lost-run recovery without host ports. The exact twenty-member projection, interruptible pacer, 14
   ticks, 280 successful telemetry publications, connectivity/sector transitions, and mission lifecycle
   publication are covered in deterministic service tests. Mission/drone-scoped telemetry producer
   epochs prevent a recreated fleet from colliding with retained recorder high-water. Stable run identity
-  reconstructs uncertain lifecycle witnesses without a generalized outbox.
-- **R9 — production packaging and exact service selection.** *Status: implementation and developmental
-  live execution green; final clean-revision evidence pending. Owner: `deploy/`,
+  reconstructs uncertain lifecycle witnesses without a generalized outbox. The clean production run
+  exercised the twenty-member lifecycle through exhaustion while keeping declared-only descriptors free
+  of connectivity and telemetry.
+- **R9 — production packaging and exact service selection.** *Status: complete. Owner: `deploy/`,
   `services/dashboard_api`, and `justfile`.* The shared-project recipe requires healthy existing
   broker/PostgreSQL containers, starts seven dashboard extension
   targets with `--no-deps`, post-verifies both base container IDs, and stops only five long-running
   dashboard services. The isolated validator, Caddy/Unix-socket relay, security headers, asset build,
   secrets, networks, and health/dependency policy are present while normal `just up` retains default
-  Agent Mesh behavior. The eight-case production run and 61-sample, 31.3-minute soak passed on an
-  uncommitted developmental revision. R9 is not complete until that browser/restart/shared-base/soak
-  inventory reruns cleanly from the committed revision and its evidence and final gates land.
+  Agent Mesh behavior. On clean committed revision `db2b640`, the eight-case production run passed in 1.6
+  minutes and the 61-sample soak passed in 30.3 minutes with the dashboard API process plus shared broker
+  and PostgreSQL container identities stable
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 ## 5. Browser state architecture
 
@@ -413,8 +413,8 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
   separately proves the dedicated integration inventory is non-empty. Playwright coverage is never
   merged into that package result.
 - The 64 fixture-driven Playwright cases remain unchanged and green; they are browser acceptance, not
-  production-stack end-to-end evidence. R9 provides the separate eight-case production execution after
-  R5, R6, and R8 are green.
+  production-stack end-to-end evidence. R9 separately passed all eight production cases on clean committed
+  revision `db2b640` after R5, R6, and R8 were green.
 - A2 adds an offline, check-only generated-contract stage to both hook paths. Contributors explicitly
   regenerate after a schema change with `pnpm --dir apps/dashboard run contracts:generate`; the
   blocking `contracts:check` comparison never rewrites the reviewed artifacts.
@@ -433,11 +433,11 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 | R2 | Complete at the implementation boundary | none; catalog, bounded loader, digest/path checks, and exact simulated-member projection are green | `services/scenario_service` |
 | R3 | Complete; A3/A4 underpin the implemented A5 sources | none; projections, witness-aware folds, state documents, and cross-language parity are green | `packages/contracts`, `apps/dashboard` |
 | R4 | Complete, including focused test-created PostgreSQL evidence and retained shared-runtime semantics | killed-process recovery remains a separate unproved claim | `packages/store` |
-| R5 | Implementation and developmental production execution complete | clean committed eight-case browser/restart/pressure rerun and release evidence | `services/dashboard_api` |
-| R6 | Implementation and developmental production replay/receipt execution complete | clean committed broker-receipt, exact-byte serving, and replay evidence | `services/recorder`, `services/dashboard_api` |
-| R7 | none directly; removes contradictions readers hit | final security/deployment/runbook review, release evidence, and post-acceptance diagrams | each document's maintainer |
-| R8 | Implementation and developmental production execution complete | clean committed lifecycle and publication evidence | `services/scenario_service`, `services/fleet_simulator` |
-| R9 | Final production-source A8 evidence and shared-runtime delivery | implementation and developmental run are green; clean committed browser run, restart, base-ID comparison, soak, diagrams, and final gates remain | `deploy/`, `services/dashboard_api`, `justfile` |
+| R5 | Complete; API, restart, and pressure paths passed in production | none for the fixed synthetic dashboard slice | `services/dashboard_api` |
+| R6 | Complete; replay and bounded best-effort receipt paths passed | none for the fixed synthetic dashboard slice; receipt remains non-guaranteed | `services/recorder`, `services/dashboard_api` |
+| R7 | Complete; canonical documents and release evidence are current | none | each document's maintainer |
+| R8 | Complete; lifecycle and publication paths passed in production | none for the fixed twenty-simulation projection | `services/scenario_service`, `services/fleet_simulator` |
+| R9 | Complete; production-source A8 and shared-runtime delivery passed | none for the fixed synthetic dashboard slice | `deploy/`, `services/dashboard_api`, `justfile` |
 
 ## 8. Maintaining this document
 

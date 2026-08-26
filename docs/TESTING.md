@@ -173,7 +173,13 @@ and review remain mandatory for those behaviors.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
-- **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent delivery, queues, reconnects, acknowledgement, and ACL denial. Admitting the class to a blocking continuous-integration stage is a verification change that needs its own record.
+- **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml`
+  ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent
+  delivery, queues, reconnects, acknowledgement, and ACL denial. At revision `db2b640`, the selected
+  local authorization suite passed 16 of 16 cases in 0.57 seconds against the shared broker
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  That selector is not complete ACL, queue, TLS-downgrade, or Solace Cloud evidence. Admitting the class
+  to a blocking continuous-integration stage is a verification change that needs its own record.
 - **Durable-store integration tests:** The PostgreSQL container from `deploy/compose.yaml`, against a
   database the run creates and drops
   ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only
@@ -181,8 +187,12 @@ and review remain mandatory for those behaviors.
   pool cancellation, and concurrent races; the store's own member suite never opens a connection and
   establishes none of them. The revision-0005 cases walk the five-revision history in both directions
   and exercise prepared-before-start persistence, exact-byte start/reset replay, same-run pending
-  recovery, predecessor retention, broker deduplication, and snapshot reads. Those cases do not claim a
-  killed-process recovery test. They carry `integration` and `docker`, and never `broker`.
+  recovery, predecessor retention, broker deduplication, and snapshot reads. At revision `db2b640`, the
+  exact selector passed 43 of 43 cases in 14.24 seconds: 41 PostgreSQL cases each created and dropped
+  its own disposable database, while two local cases exercised target-name and refusal behavior
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  Those cases do not claim a killed-process recovery test. They carry `integration` and `docker`, and
+  never `broker`.
 - **Provider integration tests:** Local Ollama, the pinned Agent Mesh runtime, A2A discovery and
   delegation, and both pinned Event Mesh plugins. A test asserting transport, schema, or error handling
   uses a deterministic stub at the model boundary; only a test asserting model capability calls a real
@@ -201,8 +211,10 @@ and review remain mandatory for those behaviors.
 - **End-to-end tests:** Mission start through evidence, connectivity failure, replan, approval, and completion.
 - **User acceptance tests:** The manifest-owned Playwright inventory exercises the selected operator
   slice through serialized fixture inputs, including live/replay labeling and the explicit absence of
-  deferred approval, command, evidence, model, rescue, and escalation controls. Its exactly 64 fixture
-  cases are currently green; the manifest count and discovery command are the inventory authority.
+  deferred approval, command, evidence, model, rescue, and escalation controls. At revision `db2b640`,
+  all 64 fixture cases passed in 42.0 seconds with no failure, skip, or retry
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md));
+  the manifest count and discovery command remain the inventory authority.
 - **Dashboard production end-to-end tests:** The production driver contains eight serial cases: four
   operator/replay workflows and four resilience workflows. Fixture selection, request interception,
   production test globals, and production control routes are forbidden. The resilience cases restart
@@ -218,10 +230,13 @@ and review remain mandatory for those behaviors.
   [ADR-0142](adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md). The live mission case
   observes fleet publication independently from best-effort recorder receipt; a receipt count is not a
   telemetry-completeness guarantee. Replay is the final serial case so isolated mode cannot contaminate
-  an operational workflow. All eight cases passed once against the shared `aerial-rescue-mesh` closure on
-  an uncommitted developmental revision. A clean committed rebuild, rerun, and Phase 3 evidence record
-  remain required before this becomes release evidence. The dedicated continuous-integration job will
-  also run the resourceful
+  an operational workflow. At revision `db2b640`, all eight cases passed against the shared
+  `aerial-rescue-mesh` closure in 1.6 minutes with no failure, skip, or retry
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  The prepared production mission reached 14 ticks and 280 successful fleet publications. A separate
+  post-soak mission readback recorded 280 best-effort telemetry receipts and 328 audit events. Receipt
+  equality is an observation from that run, not a telemetry-completeness guarantee. The dedicated
+  continuous-integration job will also run the resourceful
   broker, store, recorder, replay, HTTP, SSE, and packaging integration class. Once admitted, missing
   runtime evidence will fail rather than falling back to fixture acceptance
   ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
@@ -230,9 +245,16 @@ and review remain mandatory for those behaviors.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
   recovery, and the separate thirty-minute Playwright soak. Its 61 browser/process samples fail on
   transport or readiness loss, process replacement, remote requests, or RSS/file-descriptor growth over
-  the accepted envelope without adding a production probe endpoint. One developmental soak passed on an
-  uncommitted revision; the clean committed rerun and evidence record remain pending. Every value,
-  measured duration, and instrument is in [operating-parameters.md](operating-parameters.md).
+  the accepted envelope without adding a production probe endpoint. At revision `db2b640`, the soak
+  passed its single case and all 61 samples in 30.3 minutes: API container and PID remained stable; RSS
+  growth stayed at most 64 MiB; file-descriptor growth stayed at most 8; and every browser sample remained
+  READY and CONNECTED with the map visible, zero alerts, and zero remote requests. The retained record
+  does not contain the numeric baseline or maximum values; its separate post-soak point sample was
+  114,425,856 bytes RSS and 12 file descriptors, which is neither a baseline nor a maximum
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  The soak measures only the dashboard API process after mission exhaustion, not browser, broker,
+  PostgreSQL, other-service, or whole-stack resources. Every target and instrument is in
+  [operating-parameters.md](operating-parameters.md).
 - **Security tests:** Secret scanning, dependency scanning, container-image and deploy misconfiguration
   scanning, workflow auditing, CodeQL static analysis, authorization-negative cases, schema fuzzing,
   and prompt-injection cases.

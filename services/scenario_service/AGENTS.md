@@ -108,9 +108,13 @@ Agent Mesh grant. Member-local construction does not by itself prove the package
 
 Member tests prove catalog loading, strict private admission, start/status/cancel/recovery orchestration,
 bounded shutdown, and exact lifecycle publication through injected ports. They do not prove container
-networking, broker ACLs, readiness, public reset transactions, or live Compose acceptance. A
-developmental uncommitted eight-case production run has exercised this member in the shared stack, but
-clean committed execution and release evidence remain the acceptance authority.
+networking, broker ACLs, readiness, public reset transactions, or live Compose acceptance. At revision
+`db2b640`, all eight production browser cases passed in 1.6 minutes against the shared stack, crossing
+this member's catalog, private control, fleet handoff, and mission lifecycle through the workflows they
+assert
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That bounded result does not turn the member suite into container or broker evidence for unexercised
+paths.
 
 ## 3. Produce the accepted simulator boundary without a second owner
 
@@ -249,10 +253,13 @@ ADR-0100 fixes the prepared workload at twenty deterministic simulations plus th
 descriptors. The committed production definition and loader prove the strict document and lossless
 twenty-member projection deterministically, but do not by themselves prove a fleet-scale running stack. A
 `FleetScenario` roster contains only the twenty simulated members; it never contains the three
-declared-only descriptors. Keep every simulator roster explicit. The currently recorded live fleet
-evidence uses a smaller literal. A developmental uncommitted shared-stack run has exercised the packaged
-twenty-member workload, but its clean committed rerun and release record remain pending. Never hardcode
-the workload as a service default or generate a roster from a count.
+declared-only descriptors. Keep every simulator roster explicit. The older live fleet evidence uses a
+smaller literal; the committed shared-stack run at revision `db2b640` separately exercised the packaged
+twenty-member workload for 14 ticks and 280 successful fleet publications. Its post-soak readback also
+observed 280 recorder telemetry receipts and 328 audit events, but receipt equality remains a best-effort
+observation rather than a completeness guarantee
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+Never hardcode the workload as a service default or generate a roster from a count.
 
 ## 7. Keep scenario identity, mission identity, and lifecycle distinct
 
@@ -401,10 +408,13 @@ dashboard/store orchestration.
 
 The current committed three-drone live simulator evidence proves the accepted fold and direct telemetry
 path against the broker. It does not prove this service, a catalog, internal HTTP, lifecycle coordination,
-the reference fleet size, reset, or replay. The later developmental uncommitted production run observed
-the twenty-member shared-stack lifecycle path, but it remains remediation evidence until repeated from a
-clean committed revision and recorded under `release-evidence/`. Report those evidence classes separately
-rather than extending one result by prose.
+the reference fleet size, reset, or replay. The separate committed dashboard evidence now proves the
+twenty-member shared-stack lifecycle, retained-history reset, and replay paths exercised by its production
+workflows
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+It does not prove field behavior, executable external agents, model/evidence/approval paths, complete
+broker authorization, or telemetry completeness. Report those evidence classes separately rather than
+extending one result by prose.
 
 ## 10. Workspace hygiene and required verification
 

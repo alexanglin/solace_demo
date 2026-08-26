@@ -316,7 +316,7 @@ contract, and operator-flow evidence.
   of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
   the evidence service's use of them is still owed. The band boundaries are an open row in
   [operating-parameters.md](operating-parameters.md).
-- **Runtime implementation done; clean packaged evidence pending.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
+- **Done for the fixed dashboard workload.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
   composition-boundary value ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)),
   folds one heartbeat-or-miss observation per drone per tick in ascending identifier order
   ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and drives the mission, sector, and
@@ -327,9 +327,10 @@ contract, and operator-flow evidence.
   private start/status/cancel runtime adds interruptible pacing and guaranteed connectivity/sector
   sources; its deterministic service evidence asserts 14 ticks and 280 successful telemetry
   publications for the committed twenty-simulation projection. Scenario control separately owns
-  mission lifecycle and lost-run recovery. A developmental uncommitted shared-project run exercised
-  the twenty-member workload as part of the eight-case production inventory. The clean committed rerun,
-  release record, and final gates remain required before that observation becomes acceptance evidence.
+  mission lifecycle and lost-run recovery. Clean committed revision `db2b640` exercised the twenty-member
+  workload through the eight-case production inventory, which passed in 1.6 minutes; the fixed synthetic
+  dashboard result is recorded in
+  [wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md).
 - **Done: the command dispatch lifecycle, drone side.** The drone-command and command-result
   families are bound to payload and event schemas
   ([ADR-0082](adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)), and the send
@@ -400,28 +401,32 @@ contract, and operator-flow evidence.
   ([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)). The production
   dashboard reuses the shared project's retained PostgreSQL container and never treats its history as
   disposable ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)). Still
-  owed on the store: the paid-call ledger, whose atomic pre-call cap mechanism no record has selected;
-  restart durability and interrupted-process rollback, which need a probe that kills a process; and
-  clean committed release evidence for the documented shared-project migration and retained-history
-  path. The developmental production run applied revision 0005 to the retained database, and
-  [`CONTRIBUTING.md`](../CONTRIBUTING.md) now documents the non-destructive recipe.
+  owed on the store: the paid-call ledger, whose atomic pre-call cap mechanism no record has selected,
+  plus restart durability and interrupted-process rollback, which need a probe that kills a process. The
+  clean live PostgreSQL suite passed 43 cases in 14.24 seconds against revision `db2b640`, including the
+  five-revision path and revision-0005 dashboard cases; the shared production path retained the existing
+  PostgreSQL container and history
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md) documents the non-destructive recipe.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
-- **Done through A7 against fixture and production sources:** the dashboard stack, exact runtime, lockfile,
+- **Done through A8 against fixture and production sources:** the dashboard stack, exact runtime, lockfile,
   strict TypeScript policy, production build, validated sources, secure mutation client, map-first
   command center, and replay presentation are implemented. Coverage
   now has the same fail-closed evidence discipline as the Python workspace: Vitest produces the report,
   while a separate gate matches it to the complete hand-written source inventory and independently
   adjudicates statements, branches, functions, and lines. A non-empty deterministic integration suite
   blocks separately. All 64 fixed Playwright cases and six inspected/redacted screenshot cases are
-  green. Fixture-driven browser acceptance does not substitute for the separate eight-case
-  production-stack end-to-end run
+  green. On clean committed revision `db2b640`, the fixture inventory passed in 42.0 seconds and the
+  separate eight-case production-stack end-to-end inventory passed in 1.6 minutes; neither substitutes for
+  the other
   ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
-  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md),
+  [production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 - **Done:** generated dashboard contract types are freshness-gated, every browser HTTP/SSE boundary
   validates before typing, and Python/TypeScript reducers and digests share manifest-owned parity
   fixtures ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
-- **Implemented; final production qualification pending:** the FastAPI dashboard API, strict catalog, private
+- **Done for the fixed synthetic dashboard slice:** the FastAPI dashboard API, strict catalog, private
   scenario/fleet control, revision-0005 persistence, normalized recorder/replay path, and the first
   operator vertical slice are assembled. Start persists a stable prepared mission/run before scenario
   HTTP and reconciles an uncertain handoff on that same run without repeating start. Reset uses a
@@ -433,9 +438,13 @@ contract, and operator-flow evidence.
   delivered through the no-store shell and stale runtime disables mutation until reload
   ([ADR-0024](adr/0024-local-operator-api-boundary.md),
   [ADR-0113](adr/0113-persist-dashboard-runtime-after-the-current-store-head.md)). Four operator
-  workflows, four resilience cases, and a 61-sample, 31.3-minute soak passed on a developmental
-  uncommitted shared-stack revision. A8/R7/R9 remain open until the same inventory passes from a clean
-  committed revision and the release evidence, diagrams, and final gates land.
+  workflows and four resilience cases passed in 1.6 minutes on clean committed revision `db2b640`. The
+  separate 61-sample soak passed in 30.3 minutes with its RSS/file-descriptor growth and process/container
+  identity invariants intact. The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its
+  digest shown as `Verified`. This closes A8, R7, and R9 for twenty simulated members plus three
+  declared-only descriptors; recorder telemetry receipt remains best-effort, and the evidence, approval,
+  command, executable edge-agent, rescue, and complete cross-system mission remain later phases
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 - The dashboard-internal build increments that satisfy these bullets, and the blocker each one
   waits on, are sequenced in [FRONTEND_BUILD.md](FRONTEND_BUILD.md).
 

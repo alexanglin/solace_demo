@@ -42,8 +42,11 @@ the JSON summary against the exact hand-written production-source inventory, the
 statements and branches independently from each of the five Tier 1 trust-boundary modules
 ([ADR-0130](docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md)). Production-stack browser
 end-to-end and soak execution use separate container-backed commands and never contribute to the package
-coverage percentage. Both have passed on an uncommitted developmental revision; a clean committed
-rebuild, rerun, and Phase 3 evidence record remain required before either supports a release claim
+coverage percentage. Both commands now have committed shared-stack evidence at revision `db2b640`: the
+production inventory passed 8 of 8 in 1.6 minutes, and the soak passed its single case with all 61
+samples in 30.3 minutes
+([wilderness-dashboard-production-first-run.md](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+Neither result contributes to the package coverage percentage
 ([ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ## Branching
@@ -351,10 +354,12 @@ is trusted. `just showcase` runs the same stack against the Solace Cloud service
 `.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: the broker and Postgres first live run is recorded in
 [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), and the
 Agent Mesh in [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md).
-The complete mission-control browser and soak inventories have passed only on an uncommitted
-developmental revision. Until a clean committed rebuild and rerun are recorded under
-`release-evidence/`, those observations are not release evidence. The `event-portal` profile remains
-unstarted.
+The complete fixture, production-browser, soak, selected live-store, and selected broker-authorization
+results from committed revision `db2b640` are recorded in
+[`wilderness-dashboard-production-first-run.md`](release-evidence/phase-3/wilderness-dashboard-production-first-run.md).
+That record is bounded to the current synthetic dashboard slice and shared local project; it does not
+establish Cloud, whole-stack resource, approval/evidence, rescue, or executable edge-agent behavior. The
+`event-portal` profile remains unstarted.
 
 ## Fail-closed gates
 

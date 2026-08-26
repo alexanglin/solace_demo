@@ -9,9 +9,11 @@ rules still apply.
 This member is the PostgreSQL repository and transaction boundary. Its schema history is five
 revisions long. Revision 0005 adds the narrow dashboard mission/run, mutation-operation,
 broker-deduplication, and ordered-read repositories; the dashboard API and recorder are their production
-callers. The existing curated cluster evidence reaches revision 0004; the extended five-revision probe
-must run before revision 0005 is described as proven on PostgreSQL. No paid-call ledger has been built
-yet.
+callers. The earlier curated cluster evidence reaches revision 0004; the current five-revision probe
+passed 43 of 43 cases in 14.24 seconds at revision `db2b640`: 41 PostgreSQL cases each created and
+dropped a disposable database, and two local cases exercised target-name and refusal behavior. That
+run establishes the selected revision-0005 PostgreSQL paths described below. No paid-call ledger has
+been built yet.
 
 Read the authority for each concern before changing it:
 
@@ -102,14 +104,17 @@ The current curated cluster evidence
 proves the four-revision predecessor history. In that run, two consumers of one approval committed once
 and denied once, with the second observed waiting and refused by the protocol's own `ALREADY_CONSUMED`;
 two claimants of one key executed once and replayed once; the outbox bound refused the record past it;
-and ADR-0006's three writes committed or rolled back together. It does not prove revision 0005.
+and ADR-0006's three writes committed or rolled back together. It does not prove revision 0005. The
+separate committed dashboard evidence records the exact five-revision selector passing 43 of 43 cases in
+14.24 seconds at revision `db2b640`, including 41 PostgreSQL cases on individually disposable databases
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 There is still no paid-call ledger and no package-owned readiness or health check. The dashboard API
 declares and calls this package; the recorder uses its broker-to-audit transaction repositories.
 **This member's own suite still opens no connection**, and under
 [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
 will. The expanded `tests/integration/test_durable_store_live.py` owns the revision-0005 PostgreSQL
-claims, but its new result remains unrecorded until an authorized run produces current evidence.
+claims, and the linked committed run is their current disposable-database evidence.
 
 SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are declared and locked. The migration tree
 exists at the home
@@ -128,7 +133,6 @@ Still absent, and each blocked by something named rather than by effort:
 | --- | --- |
 | The paid-call ledger | The atomic pre-call cap mechanism §6 requires, which [ADR-0002](../../docs/adr/0002-paid-orchestration-under-enforced-budget-cap.md) needs and no record has selected. Concurrent callers must not pass one remaining-budget check independently |
 | Restart durability and interrupted-process rollback | A probe that kills a process. Every live case here ends its transaction deliberately; none has ever been interrupted |
-| Applying the history to the operator's own database | A runbook, and the separate authorization section 7 requires |
 | A reader for `RECONCILIATION_NEEDED` | Nothing named. [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) creates the state so an ambiguous publication has somewhere to be recorded; what reconciles it is owed |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
@@ -373,15 +377,15 @@ mission data or replace the selected database with SQLite and call the result eq
 `tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. Its current test
 inventory walks the five-revision path in both directions and exercises revision-0005 start/reset
 recovery, exact-byte retries, predecessor retention, broker deduplication, scenario identity, and
-snapshot reads alongside the established transaction and concurrency cases. The last curated run
-predates those additions and proves only the four-revision predecessor scope. Do not turn the expanded
-test inventory into a current live claim until the exact suite passes against its disposable database and
-the new evidence is recorded.
+snapshot reads alongside the established transaction and concurrency cases. At revision `db2b640`, the
+exact suite passed 43 of 43 cases in 14.24 seconds: 41 PostgreSQL cases used individually disposable
+databases and two local cases exercised target-name and refusal behavior
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
-It still proves **nothing** about restart durability, interrupted-process rollback, pool cancellation
-as a durable outcome, or a killed process. The member's own suite is offline by construction, which is
-what earns its Tier 2 gate, and it can therefore never establish those claims. Report deterministic and
-disposable-PostgreSQL evidence separately; one never stands in for the other.
+That result still proves **nothing** about restart durability, interrupted-process rollback, pool
+cancellation as a durable outcome, or a killed process. The member's own suite is offline by construction,
+which is what earns its Tier 2 gate, and it can therefore never establish those claims. Report
+deterministic and disposable-PostgreSQL evidence separately; one never stands in for the other.
 
 ## 9. Workspace hygiene and required verification
 

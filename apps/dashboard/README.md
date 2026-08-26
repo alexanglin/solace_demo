@@ -1,17 +1,21 @@
 # Aerial Rescue Mesh dashboard
 
-This package is the production browser command center for the wilderness mission slice. The shell,
-generated contracts, canonical digests, reducer, event-source adapters, mutation client, map-first
-presentation, FastAPI boundary, and shared-project runtime integration are implemented on the
-current feature branch. The deterministic fixture inventory is green at exactly 64 Playwright cases.
+This package is the production browser command center for the fixed synthetic wilderness mission
+slice. The shell, generated contracts, canonical digests, reducer, event-source adapters, mutation
+client, map-first presentation, FastAPI boundary, and shared-project runtime integration are
+complete. On clean committed revision `db2b640`, the deterministic fixture inventory passed exactly
+64 Playwright cases in 42.0 seconds.
 
 The separate production inventory contains eight serial cases: four operator/replay workflows and
-four resilience workflows. It has passed against the shared `aerial-rescue-mesh` runtime only on an
-uncommitted developmental revision. The dedicated resource soak has also passed once
-developmentally; its sample count, measured duration, envelope, and instrument are recorded in
-[the operating parameters](../../docs/operating-parameters.md#workload-and-service-level-profile).
-Neither run is release evidence. A clean committed rebuild, rerun, and Phase 3 evidence record
-remain required before A8 can be called complete.
+four resilience workflows. All eight passed against the shared `aerial-rescue-mesh` runtime in 1.6
+minutes. The dedicated resource soak passed its single case and all 61 samples in 30.3 minutes with
+accepted RSS/file-descriptor growth plus stable dashboard API process, broker-container, and
+PostgreSQL-container identities. The final in-app replay reached ordinal 48 in `EXHAUSTED` state
+with its digest shown as `Verified`. This evidence completes A8 for twenty simulated members plus
+three declared-only descriptors; recorder receipt remains best-effort, and broader approval,
+evidence, command, executable edge-agent, and rescue workflows remain outside this slice
+([production evidence](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md),
+[operating parameters](../../docs/operating-parameters.md#workload-and-service-level-profile)).
 
 ## Contract boundary
 
@@ -230,12 +234,13 @@ SSE overload/resnapshot. The live mission case asserts the fleet publication tar
 independently from the recorder's best-effort receipt count; receipt is not a completeness or
 delivery guarantee. The test-runner process may control only dashboard-owned services in the shared
 project; it never runs Compose `down`, removes volumes, or stops the shared broker or PostgreSQL.
-The browser receives no test hook, interception, or production control route. The current
-developmental pass must be repeated from a clean committed build before it can support release
-claims
+The browser receives no test hook, interception, or production control route. Clean committed
+revision `db2b640` passed all eight cases in 1.6 minutes; that bounded result is recorded separately
+from the 64-case fixture inventory and package coverage
 ([ADR-0105](../../docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md),
 [ADR-0125](../../docs/adr/0125-anchor-browser-runtime-and-bound-transport-outages.md),
-[ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
+[ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md),
+[production evidence](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 ```sh
 pnpm --dir apps/dashboard run test:coverage

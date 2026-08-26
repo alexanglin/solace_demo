@@ -25,8 +25,8 @@ integer arithmetic; display rounding never changes a verdict.
 | TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest V8 JSON summary plus exact source inventory, recomputed with integer arithmetic by `tools/typescript_coverage_gate.py`; manifest thresholds held by `tools/typescript_policy_gate.py` |
 | TypeScript Tier 1 statement coverage | 100% independently for each browser trust-boundary module named by [ADR-0130](adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) | The same Vitest V8 JSON summary, adjudicated per file by `tools/typescript_coverage_gate.py` |
 | TypeScript Tier 1 branch coverage | 100% independently for each browser trust-boundary module named by [ADR-0130](adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) | The same Vitest V8 JSON summary, adjudicated per file by `tools/typescript_coverage_gate.py` |
-| Fixture Playwright inventory | Exactly 64 cases | `config.playwrightExpectedTests`, `playwright test --list`, and `scripts/hooks/dashboard/dashboard-playwright-full.sh`; all 64 passed on the current developmental branch |
-| Production Playwright inventory | Exactly 8 serial cases: 4 operator/replay and 4 resilience | `pnpm --dir apps/dashboard run test:e2e:production` plus production Playwright discovery; all 8 passed once on an uncommitted developmental revision, while a clean committed rebuild/rerun and Phase 3 evidence remain pending |
+| Fixture Playwright inventory | Exactly 64 cases | `config.playwrightExpectedTests`, `playwright test --list`, and `scripts/hooks/dashboard/dashboard-playwright-full.sh`; 64 of 64 passed in 42.0 s at revision `db2b640` ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
+| Production Playwright inventory | Exactly 8 serial cases: 4 operator/replay and 4 resilience | `pnpm --dir apps/dashboard run test:e2e:production` plus production Playwright discovery; 8 of 8 passed in 1.6 min at revision `db2b640` against the shared `aerial-rescue-mesh` project ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 | TypeScript type errors | Zero, whole project | `tsc --noEmit` through `scripts/hooks/dashboard/dashboard-typecheck-full.sh` |
 | TypeScript lint findings | Zero at any severity | `eslint --max-warnings 0` through `scripts/hooks/dashboard/dashboard-quality-full.sh` |
 | TypeScript compiler options | Every option [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md) names, at the value it names | `tools/typescript_policy_gate.py` |
@@ -139,7 +139,7 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Restart recovery | RPO 0 for approvals and critical commands; readiness restored within 30 seconds, excluding model warm-up |
 | Replay determinism | Identical hash of the canonical reduced dashboard state across 10 runs. Raw event streams are not compared: event IDs and timestamps legitimately differ between runs ([ADR-0009](adr/0009-isolated-side-effect-free-replay.md)) |
 | Safety | Zero authorized actions across all approval-bypass attempts |
-| Soak | 30 minutes; 61 samples including endpoints at 30-second cadence; stable dashboard API container/PID; sampled RSS growth at most 64 MiB and open-file-descriptor growth at most 8 from the post-connect baseline; every browser sample remains `CONNECTED` and `READY`. Instrument: `pnpm --dir apps/dashboard run test:e2e:soak` plus the runner-side `/proc/1` probe selected by [ADR-0126](adr/0126-instrument-the-dashboard-soak-with-bounded-process-growth.md). Developmental observation on 2026-08-26: all 61 samples passed in 31.3 minutes on an uncommitted revision; a clean committed rebuild/rerun and Phase 3 evidence remain pending |
+| Soak | 30 minutes; 61 samples including endpoints at 30-second cadence; stable dashboard API container/PID; sampled RSS growth at most 64 MiB and open-file-descriptor growth at most 8 from the post-connect baseline; every browser sample remains `CONNECTED` and `READY`. Instrument: `pnpm --dir apps/dashboard run test:e2e:soak` plus the runner-side `/proc/1` probe selected by [ADR-0126](adr/0126-instrument-the-dashboard-soak-with-bounded-process-growth.md). At revision `db2b640`, 1 of 1 passed in 30.3 min with all 61 samples: the API container/PID and shared broker/PostgreSQL IDs remained stable; every browser sample was READY and CONNECTED with the map visible and zero alerts; and the run made zero remote-origin requests. Both growth bounds passed. The retained evidence does not contain the numeric baseline or maximum; the separate post-soak point sample was 114,425,856 bytes RSS and 12 file descriptors, neither of which is a baseline or maximum ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 
 The prepared wilderness dashboard workload adds three independently interpreted Phase 3 acceptance
 measures. The deterministic R8 runtime asserts the execution and publication counters. The recorder
@@ -148,9 +148,9 @@ cannot replace or weaken the fleet publication counter.
 
 | Prepared dashboard measure | Acceptance target | Instrument and current status |
 | --- | --- | --- |
-| Scenario execution | Exactly 14 ticks | `services/fleet_simulator/tests/test_fleet_live_control.py` asserts the fleet-owned completed-tick count and scenario-control integration asserts the resulting `EXHAUSTED` lifecycle. Production Playwright observed 14 ticks once on an uncommitted developmental revision; clean committed evidence remains pending |
-| Fleet telemetry publication | Exactly 280 successful publications: 20 simulated members over 14 ticks | The R8 fleet publisher counter and production `collectLiveMissionEvidence` query are independent from recorder receipt. Production Playwright observed 280 once on an uncommitted developmental revision; clean committed evidence remains pending |
-| Recorder telemetry receipt | Best-effort acceptance observation greater than 0 and no greater than the 280 successful fleet publications | The recorder audit query in `collectLiveMissionEvidence` is evaluated separately from fleet status. The developmental production run passed this bound, but no exact receipt count is release evidence and receipt is never a completeness guarantee |
+| Scenario execution | Exactly 14 ticks | `services/fleet_simulator/tests/test_fleet_live_control.py` asserts the fleet-owned completed-tick count and scenario-control integration asserts the resulting `EXHAUSTED` lifecycle. The post-soak mission at revision `db2b640` reached 14 ticks and 328 total audit events ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)); the audit count is an observation, not a telemetry target |
+| Fleet telemetry publication | Exactly 280 successful publications: 20 simulated members over 14 ticks | The R8 fleet publisher counter and production `collectLiveMissionEvidence` query are independent from recorder receipt. The post-soak mission at revision `db2b640` reported exactly 280 successful fleet publications ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
+| Recorder telemetry receipt | Best-effort acceptance observation greater than 0 and no greater than the 280 successful fleet publications | The recorder audit query in `collectLiveMissionEvidence` is evaluated separately from fleet status. The post-soak mission at revision `db2b640` observed 280 receipts, but that equality is not a telemetry-completeness guarantee for this or another run ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 
 The fleet-telemetry rate is the one row with a partial instrument. The fleet simulator's tick loop
 keeps the interval its scenario declares, measured from the start of each tick, and tallies every
@@ -194,17 +194,19 @@ loader boundary.
 The two authenticated private HTTP hops and their refusal order are fixed by
 [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) and described in
 [CONTRACTS.md](CONTRACTS.md#private-run-control-http). R8 supplies deterministic server/client,
-authentication, reconciliation, timeout, and cancellation evidence. Production-stack observation remains
-part of A8/R9 acceptance.
+authentication, reconciliation, timeout, and cancellation evidence. The committed A8/R9 run crossed both
+private hops through the packaged services; post-run inspection confirmed that neither private listener
+had a host publication
+([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 | Parameter | Value | Instrument and current status |
 | --- | --- | --- |
 | Private request-body size | At most 256 KiB before decoding | R8 scenario/fleet HTTP boundary tests |
-| Private-hop bearer entropy | 256 independent random bits per hop | R9 secret-generation and Compose-policy tests; live secret wiring remains production acceptance evidence |
+| Private-hop bearer entropy | 256 independent random bits per hop | R9 secret-generation and Compose-policy tests; the committed production workflows crossed both authenticated private hops without exposing either listener on the host ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 | Connection establishment timeout | 1 s per private call | R8 injected HTTPX timeout and boundary tests |
 | Start or status response timeout | 5 s per call | R8 typed-client timeout tests |
 | Reset cancellation budget | One shared 15 s monotonic budget from the dashboard operation through the scenario-to-fleet call | R5 orchestration and R8 private-control deadline tests |
-| Private listener host publications | Zero for ports 8081 and 8082 | R9 Compose-policy and exact-service-closure tests; live closure verification remains pending |
+| Private listener host publications | Zero for ports 8081 and 8082 | R9 Compose-policy and exact-service-closure tests plus post-cleanup container inspection at revision `db2b640`, which observed empty host-port maps for scenario service and fleet simulator ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 
 ## Dashboard event stream
 
@@ -275,10 +277,10 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Agent Mesh start period | 60 s before the first healthcheck counts, then 20 probes at 15 s. Measured 2026-08-24: healthy 12 s after the final `up --wait` phase began, on a built image ([`default-profile-with-agent-mesh.md`](../release-evidence/phase-0/default-profile-with-agent-mesh.md)) | `healthcheck` in `deploy/compose.yaml` |
 | Broker start period | 90 s before the first healthcheck counts, then 30 probes at 10 s. Measured 2026-08-21: both services healthy 40.75 s after `up --wait`, including both image pulls | `healthcheck` in `deploy/compose.yaml`; [`release-evidence/phase-0/first-live-run.md`](../release-evidence/phase-0/first-live-run.md) |
 | Published ports, all on `127.0.0.1` | 55443 SMF over TLS, 1943 SEMP over TLS, 5432 Postgres, 8000 Agent Mesh Web UI, 8080 Caddy dashboard relay, 8180 Event Management Agent. Dashboard API, scenario 8081, and fleet 8082 publish none | compose policy and mission-control packaging gates refuse any other binding |
-| Mission-control host-publisher bridges | 3 single-member bridges: broker, PostgreSQL, and Caddy each receive one distinct bridge with IP masquerade disabled and default host binding fixed to `127.0.0.1` ([ADR-0131](adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md)) | `test_host_publishers_use_single_service_nonmasquerading_networks` asserts exact membership and both driver options; the production-stack run must inspect the shared project before this becomes live evidence |
+| Mission-control host-publisher bridges | 3 single-member bridges: broker, PostgreSQL, and Caddy each receive one distinct bridge with IP masquerade disabled and default host binding fixed to `127.0.0.1` ([ADR-0131](adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md)) | `test_host_publishers_use_single_service_nonmasquerading_networks` asserts exact membership and both driver options; committed post-run inspection observed the selected `aerial-rescue-mesh` project labels, private scenario/fleet networks, and loopback-only broker/PostgreSQL bindings ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 | Mission-control startup targets | 7 dashboard extensions: migration, fleet simulator, scenario service, recorder, replay validator, dashboard API, and Caddy ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) | the packaging test asserts the literal target list and `--no-deps`; broker and PostgreSQL are required healthy prerequisites rather than selected targets |
 | Mission-control stop targets | 5 long-running dashboard services: fleet simulator, scenario service, recorder, dashboard API, and Caddy ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) | the packaging test asserts the stop list and rejects Compose `down`, volume removal, broker, and PostgreSQL |
-| Shared base identity guard | 2 container IDs: broker and PostgreSQL are sampled before dashboard startup and after startup/cleanup and must remain equal ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) | recipe tests assert pre/post reads; production and soak global guards passed once on an uncommitted developmental revision, while clean committed evidence remains pending |
+| Shared base identity guard | 2 container IDs: broker and PostgreSQL are sampled before dashboard startup and after startup/cleanup and must remain equal ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) | recipe tests assert pre/post reads; both IDs remained stable across the committed production and soak runs at revision `db2b640`; the independently sampled Agent Mesh ID also remained stable ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 | Certificate validity | 365 days for the authority and the broker certificate | `scripts/broker-secrets.sh`; `just rotate-secrets` renews |
 | Generated secret length | 32 random bytes, rendered as 64 hexadecimal characters; scenario-control and fleet-control secrets are generated independently | `scripts/broker-secrets.sh` and its hermetic conformance tests |
 | Docker Desktop memory allocation | 7.652 GiB on the reference workstation, measured 2026-08-21 | [`release-evidence/phase-0/first-live-run.md`](../release-evidence/phase-0/first-live-run.md) |
@@ -326,6 +328,11 @@ over the roles and names every family's publisher set; this section carries only
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
 | SEMP collection page size | 100 rows asked for per read; the broker pages at ten unless asked for more | `PAGE_SIZE` in the same module, asserted by a transport test |
 | SEMP collection page bound | 20 pages per read, so at most 2,000 rows; a cursor still running at the bound is refused as `PAGING` rather than truncated | `MAX_PAGES` in the same module, asserted by a transport test |
+
+At revision `db2b640`, `tests/security/test_broker_authorization.py` passed 16 of 16 selected local
+authorization controls in 0.57 seconds against the shared broker
+([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That result is not complete ACL, queue, TLS-downgrade, or Solace Cloud evidence.
 
 ## Broker data plane
 
@@ -513,9 +520,9 @@ window would make the tick rate depend on how much command traffic arrived -- fa
 slow when idle, which is backwards -- and the loop has no pacing of its own to fall back on. A
 poll adds no wall clock to a tick, and the per-drone cap is what bounds the work instead.
 
-Neither gates safety, and neither is the measurement. The backlog-recovery row stays unmeasured;
-what changed is that a consumer now exists to measure it against, which is the obligation
-ADR-0080 recorded when it provisioned the endpoints.
+Neither gates safety, and neither is itself the measurement. The backlog-recovery row above was measured
+separately at a 7.141-second worst sample over its three-run workload; these two values remain design
+inputs to that instrument rather than measurements derived from it.
 
 ## Durable store
 
@@ -523,8 +530,12 @@ Every wait the PostgreSQL adapter is allowed to make ([ADR-0090](adr/0090-bound-
 Measured on the pinned cluster on 2026-08-23, `statement_timeout`, `lock_timeout`, and
 `idle_in_transaction_session_timeout` are all `0`, which is not a conservative default but no bound at
 all, so every row below replaces an unbounded wait rather than tightening a loose one. Each value is
-derived from a number elsewhere in this document; none is measured under load, because nothing
-connects yet.
+derived from a number elsewhere in this document; none is calibrated under load. At revision `db2b640`,
+the exact disposable-PostgreSQL selector passed 43 of 43 cases in 14.24 seconds across the five-revision
+history and revision-0005 repository paths
+([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That suite does not prove killed-process recovery, persistent-project restart durability, or whole-stack
+resource behavior.
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |

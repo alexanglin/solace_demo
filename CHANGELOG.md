@@ -10,6 +10,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The fixed synthetic wilderness dashboard slice is production-qualified on a clean committed
+  revision.** Revision `db2b640` passed all 64 fixture cases in 42.0 seconds, all eight serial production
+  cases in 1.6 minutes, and the 61-sample soak in 30.3 minutes with the accepted RSS and file-descriptor
+  growth bounds, dashboard API process identity, and shared broker/PostgreSQL identities intact. The live
+  PostgreSQL suite passed 43 cases in 14.24 seconds and the expanded broker authorization suite passed 16
+  cases in 0.57 seconds. The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its digest
+  shown as `Verified`. This closes A8, R7, and R9 for the twenty-simulated-plus-three-declared-only slice;
+  recorder telemetry receipt remains best-effort, and the broader evidence, approval, command, executable
+  edge-agent, and rescue workflows remain open
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
 - **Related dashboard unit tests now have one scheduler at a time.** The commit hook still selects
   tests with `vitest related`, but pre-commit filename partitions run serially so a large staged change
   cannot launch several competing jsdom pools and turn valid five-second waits into resource-contention
@@ -63,8 +74,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   explicit loopback host bindings. [ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)
   supersedes ADR-0131's startup mechanics: broker and PostgreSQL must already be healthy, accepted
   build/recreation flags apply only to the seven dashboard extensions, and the recipe verifies the two
-  shared container identities before and after startup. Static packaging tests hold the topology and
-  recipe; clean committed live acceptance remains separate evidence.
+  shared container identities before and after startup. Static packaging tests hold the topology, while
+  the clean production and soak runs retained both shared identities
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 - **Frontend coverage now enforces its high-risk modules as strictly as backend Tier 1 coverage.**
   [ADR-0130](docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) keeps one complete Vitest
@@ -78,10 +90,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   recorder loss renders its explicit blocker and recovery returns to `READY`. The restart case now clicks
   the real reload control and proves a fresh bootstrap/snapshot, the validated runtime anchor is visible,
   and replay runs last in the eight-case serial production inventory. A separate 61-sample Playwright
-  soak spans 31.3 minutes and fails on transport/readiness loss, process replacement, remote requests,
+  soak spans the accepted duration and fails on transport/readiness loss, process replacement, remote requests,
   or dashboard API RSS/file-descriptor growth outside the ADR-0126 envelope without adding a production
-  probe route. The complete production inventory and soak have passed on a developmental uncommitted
-  revision; clean committed execution and release evidence remain required.
+  probe route. On clean committed revision `db2b640`, the production inventory passed eight cases in 1.6
+  minutes and the soak passed its single case and all 61 samples in 30.3 minutes with process and shared
+  container identity stable
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 - **Per-checkout secret generation now emits only credentials with active consumers.**
   [ADR-0129](docs/adr/0129-generate-only-consumed-local-secrets.md) removes the unreferenced SEMP
@@ -133,10 +147,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   The strict FastAPI/Unix-socket API, bootstrap, bounded SSE, three validated browser sources, secure
   mutation client, local MapLibre UI, semantic fleet/timeline surfaces, and replay controls are green in
-  their deterministic suites. All 64 fixed fixture cases and six inspected/redacted screenshot cases are
-  green. A developmental uncommitted shared-stack run passed four operator workflows, four resilience
-  cases, and the 61-sample, 31.3-minute soak. A8/R7/R9 acceptance remains open until those paths rerun
-  from a clean committed revision and the evidence, diagrams, and final gates land.
+  their deterministic suites. On clean committed revision `db2b640`, all 64 fixed fixture cases passed in
+  42.0 seconds, the six masked screenshot cases were inspected, the four operator and four resilience
+  production cases passed in 1.6 minutes, and the 61-sample soak passed in 30.3 minutes. The final replay
+  reached ordinal 48 in `EXHAUSTED` state with its digest shown as `Verified`. A8 and R7 are complete for
+  this fixed synthetic slice; recorder telemetry receipt remains a separately observed best-effort value
+  rather than a completeness guarantee
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 - **R9 packages the exact production mission-control closure without changing normal Agent Mesh
   startup.** `just mission-control-up` requires and identity-guards the healthy broker and PostgreSQL
@@ -154,8 +171,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   startup. The artifact contracts keep the output bounded, and supported cleanup preserves that volume,
   broker/PostgreSQL identities, and retained history.
   Static policy, packaging, image-inventory, secret-generation, and exact-recipe tests cover the
-  topology. Developmental production E2E and soak are green, but the clean committed rerun and final
-  evidence remain required.
+  topology. The clean production and soak runs retained the dashboard API process and both shared base
+  container identities, closing R9 for the fixed synthetic dashboard slice
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 - **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
   implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
@@ -258,8 +276,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   The existing 64 Playwright cases remain separate fixture-driven browser acceptance. They do not pad
   the coverage percentage and are not relabeled as production end-to-end evidence. Four existing
   workflow identities were preserved inside the separate eight-case production inventory after the live
-  API, replay, fleet-control, and exact Compose closure became green; that inventory has developmental
-  evidence and still requires the clean committed rerun recorded above.
+  API, replay, fleet-control, and exact Compose closure became green; all eight later passed from clean
+  committed revision `db2b640` without contributing to the fixture or package-coverage evidence
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
 - **The dashboard build has one guide, and it defers to every canonical owner.**
   [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md) sequences the UI-first slice from the committed

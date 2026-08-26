@@ -90,8 +90,11 @@ running container, with the matrix applied and the factory identity disabled
 ([`release-evidence/phase-0/broker-authorization.md`](../../release-evidence/phase-0/broker-authorization.md)).
 **Residual risks:** the roles are coarser than the processes, so three edge agents share one
 authority. The live authorization suite now contains recorder positive and cross-family subscription
-denials, and the global plus mission-control durable projections are asserted offline; both changed
-controls still need their production-stack rerun before they become new live evidence
+denials, and the global plus mission-control durable projections are asserted offline. At revision
+`db2b640`, its selected local controls passed 16 of 16 cases in 0.57 seconds against the shared broker
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That result does not establish complete ACL or queue behavior, TLS-downgrade resistance, Solace Cloud
+parity, or narrower per-edge-agent authority
 ([ADR-0120](../adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
 
 ### T4 — Event spoofing and replay on the data plane
@@ -155,12 +158,27 @@ bounds with a droppable-class allowlist that never includes audit or approval ev
 timeouts everywhere. **Failure must be safe:** loss of the agent runtime or the models degrades to
 abstention and preserves telemetry, operator visibility, replay, and the approval boundary.
 
+The committed post-mission soak passed all 61 samples over 30.3 minutes with a stable dashboard API
+container/PID, both process-growth bounds satisfied, READY and CONNECTED browser state, a visible map,
+zero alerts, and zero remote-origin requests
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+The retained record does not contain numeric baseline or maximum values; its post-soak point sample is
+not either value. The soak measured the dashboard API process after mission exhaustion, not the browser,
+broker, PostgreSQL, other services, an active workload, or whole-stack resources.
+
 ### T9 — Misleading the operator
 
 Presenting replayed or degraded state as live, showing a proposal that differs from the one being
 consumed, or hiding the mode. Mitigations: the mode badge cannot be hidden or confused; the operator is
 shown the exact digest and the server re-checks it on submission; abstention is visually distinct from a
 low evidence score; and the plan forbids claiming that replay or simulated behaviour is operationally live.
+
+At revision `db2b640`, the eight production workflows directly observed explicit degraded-live and replay
+labels, stale-runtime lockout with reload, offline-to-recovered transport behavior, and replay digest
+verification on the shared local stack
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That current-slice evidence contains no proposal, approval, command, model, evidence, rescue, or
+escalation control and therefore does not establish those presentation or authority paths.
 
 ## Out of scope for the initial release
 

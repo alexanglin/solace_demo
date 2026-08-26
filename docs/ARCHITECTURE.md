@@ -58,7 +58,10 @@ SAC YAML, agent cards, prompts, inline Ollama model dictionaries, gateway/tool c
 
 The semantic-configuration gate [ADR-0032](adr/0032-agent-mesh-semantic-configuration-validator.md) requires is repository verification tooling, not a runtime component. It runs inside the isolated Python 3.13 environment and delegates what upstream already defines to the exact pinned wheels: include expansion, parsing, and multi-file merge to Solace AI Connector 3.3.12; agent and workflow `app_config` validation to Agent Mesh 1.28.7's own configuration models; and gateway `app_config` validation to the Event Mesh Gateway 1.1.0 schema. Every imported symbol is bound to its installed distribution record, so a substituted module fails closed. On top of that it enforces the owned rules: includes stay inside the repository; every credential and broker field is an environment reference declared in `.env.example`; broker URLs are `tcps`, or WSS on port 443, with no userinfo; `model_provider` is absent and model identifiers are exact; gateway handlers settle with the policy stated in [CONTRACTS.md](CONTRACTS.md) and route only to declared outputs; and the Event Mesh Tool is the pinned `sam_event_mesh_tool.tools:EventMeshTool`, using request/reply over JSON and publishing only to `aerial-rescue/v1/{{ missionId }}/gateway/request/{{ operation }}` with wildcard-free identifiers. Every selected file must be valid on its own; a multi-file run also merges them with the pinned merge primitive and fails on a conflict such as a duplicated app name. The gate starts no Agent Mesh process, broker client, application, Ollama request, or model call, and runs the upstream imports inside a temporary home directory so their import-time artifacts never touch the working tree. It is inert until an owned configuration exists, then fails closed on a missing prerequisite or an unreadable file. Where it refuses more than ADR-0032 states, [ADR-0035](adr/0035-refuse-unprovable-agent-mesh-configuration.md) records why.
 
-A green result is configuration evidence only. Live PubSub+ and Ollama messaging is the next Phase 0 step: it must prove broker identity and ACL enforcement, A2A discovery and delegation, Event Mesh Gateway transformation, settlement and redelivery, Event Mesh Tool request/reply, and structured model output.
+A green result is configuration evidence only. Live PubSub+ and Ollama messaging is recorded separately
+in the Phase 0 evidence: broker identity and ACL enforcement, A2A discovery and delegation, Event Mesh
+Gateway transformation, settlement and redelivery, Event Mesh Tool request/reply, and structured model
+output are runtime claims that this offline gate does not establish.
 
 ## Local Python components
 
@@ -87,8 +90,11 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   are not implemented. Its authenticated private HTTP listener provides idempotent start, status, and
   interruptible cancel over a bounded in-process run registry. Deterministic service tests assert the
   committed scenario's 14 ticks, 280 successful telemetry publications, and guaranteed lifecycle
-  transitions. A restart regression asserts distinct telemetry sources for successor missions; the
-  required full mission-control live acceptance remains open.
+  transitions. A restart regression asserts distinct telemetry sources for successor missions. The
+  committed shared-stack acceptance now exercises that twenty-member workload through the production
+  dashboard; its fleet publication counter remains distinct from the recorder's best-effort receipt
+  observation
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 - **Command gateway:** Owns deterministic mission-command policy, idempotency, proposal-bound approval checks, durable outbox state, and executable command publication. Agent credentials cannot bypass it.
 - **Durable mission store:** PostgreSQL, run as a Docker Compose service, is the authoritative durable
   store for mission state, inbox/outbox records, proposals, approvals, idempotency results, evidence
@@ -114,7 +120,10 @@ A green result is configuration evidence only. Live PubSub+ and Ollama messaging
   members while projecting only the 20 simulated members to fleet control. Its private server and fleet
   client implement idempotent start/status/cancel and lost-run recovery; the lifecycle coordinator
   publishes `PLANNED`, `SEARCHING`, `EXHAUSTED`, and one reconstructible `ABORTED` witness when recovery
-  finds an unknown run. Full production-stack acceptance remains open.
+  finds an unknown run. The committed shared-stack acceptance crosses this member's catalog, private
+  control, lifecycle, and fleet handoff for the prepared mission; that evidence does not extend to the
+  deferred evidence, approval, rescue, or executable edge-agent workflows
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 - **Evidence service:** Validates model observations, attaches provenance and hashes, delegates score
   calculation to pure Tier 1 domain logic, and publishes the resulting versioned evidence decision. In a
   live simulation, model failure produces an explicit abstention or manual-review outcome; recorded
@@ -170,8 +179,8 @@ Every component except Ollama runs under Docker Compose from `deploy/compose.yam
 Normal `just up` owns the complete runtime and the broker/PostgreSQL lifecycle. Dashboard stop and test
 cleanup target only fleet simulator, scenario service, recorder, dashboard API, and Caddy; they do not
 run Compose `down`, remove networks or volumes, stop a shared stateful service, or delete dashboard
-history. Production browser and soak guards compare the shared base container IDs before startup and
-after cleanup. Broker acceptance asserts the mission-control queues and grants as a required subset of
+history. Production browser and soak guards compare the shared base container IDs at test start and test
+completion. Broker acceptance asserts the mission-control queues and grants as a required subset of
 the shared inventory, never as its exclusive contents.
 
 Verification stays native: `agent-mesh/.venv` on Python 3.13.15 runs the configuration validator and the compatibility probes ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), while the container, which carries upstream's Python 3.13.11, is the runtime. The plugin-compatibility probe is run inside the built image by `scripts/probes/agent-mesh-image-probe.sh`, which is what lets the mesh be called supported; it passed on the image's CPython 3.13.11 on 2026-08-21. Ollama stays on the host; containers reach it as `http://host.docker.internal:11434`. The showcase profile is the same stack pointed at the Solace Cloud service through an ignored `.env.showcase`; no gate, hook, or release criterion depends on it.
@@ -210,8 +219,13 @@ validated operator start/reset actions use JSON HTTP requests. The fixture-drive
 includes the three validated source adapters, guarded mutation client, local MapLibre map, synchronized
 semantic fleet table, timeline, reset dialog, replay controls, compact layout, and reduced-motion path.
 The UI must remain usable at the reference MacBook's normal resolution without browser developer tools.
-Production-stack browser acceptance, restart recovery, and soak remain A8/R9 release evidence rather
-than an implementation claim.
+Committed Phase 3 evidence now covers the fixture inventory, eight production workflows, selected API
+replacement and transport recovery, and the bounded post-mission soak on the shared
+`aerial-rescue-mesh` project
+([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That result is bounded to this dashboard slice and the measured dashboard API process; it is not
+whole-stack resource evidence and does not make the omitted approval, command, evidence, model, rescue,
+escalation, or executable edge-agent surfaces implemented.
 
 ## Solace operational surfaces
 
