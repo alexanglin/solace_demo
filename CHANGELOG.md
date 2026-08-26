@@ -1989,8 +1989,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   a persisted spend ledger and pre-call enforcement. The three edge agents stay on
   local Ollama, and local-only operation remains a supported, tested configuration
   so no release gate depends on a paid API.
+- The ordered dashboard reducer now converts validated wire events into typed state-event variants once
+  at the boundary, then applies the variant directly. This removes runtime-only casts and duplicate
+  interpretation while retaining exact refusal precedence and immutable checkpoint behavior.
 
 ### Fixed
+
+- The telemetry projection boundary test now reads its byte-identical member-local baseline, so Tier 1
+  mutation runs remain independent of the repository-root fixture layout.
 
 - Both gate stages were red on `main`. `typos` splits the W3C traceparent example's span identifier
   `00f067aa0ba902b7` into words and reads one of those words as a misspelling of `by` or `be`, so

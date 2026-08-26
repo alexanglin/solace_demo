@@ -10,8 +10,7 @@ from aerial_rescue_contracts.view import ViewError, ViewRefusal, project
 
 pytestmark = [pytest.mark.unit]
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-TELEMETRY_FIXTURE = REPOSITORY_ROOT / "fixtures/golden/v1/event/drone-telemetry/baseline.json"
+TELEMETRY_FIXTURE = Path(__file__).parent / "baselines/envelope_baseline.json"
 
 
 class TelemetryProjectionBoundaryTests(unittest.TestCase):
