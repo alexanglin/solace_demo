@@ -36,7 +36,11 @@ ROUTE_EXPECTATIONS = (
         "/api/v1/readiness",
         (("mode", True, ("degradedLive", "replay")),),
         None,
-        ((200, _json(_schema("readiness"))), ("default", _ERROR)),
+        (
+            (200, _json(_schema("readiness"))),
+            (503, _json(_schema("readiness"))),
+            ("default", _ERROR),
+        ),
     ),
     (
         "GET",

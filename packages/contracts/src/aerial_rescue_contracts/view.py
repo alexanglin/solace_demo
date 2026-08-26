@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from types import MappingProxyType
-from typing import Final, NoReturn, cast
+from typing import Final, NoReturn, Protocol
 
 from aerial_rescue_contracts.digest import Context, digest, matches
 from aerial_rescue_contracts.envelope import Envelope
@@ -119,6 +119,37 @@ def _validate_connectivity(data: Mapping[str, object]) -> None:
     _choice(data, "connectivity", frozenset({"CONNECTED", "DEGRADED", "OFFLINE"}))
 
 
+def _payload_integer(data: Mapping[str, object], name: str, minimum: int, maximum: int) -> int:
+    """Return one exact integer payload member within its schema range."""
+    value = data[name]
+    if type(value) is not int or not minimum <= value <= maximum:
+        _malformed(name, value)
+    return value
+
+
+def _validate_telemetry(data: Mapping[str, object]) -> None:
+    """Validate routine telemetry before it can enter recorder or dashboard state."""
+    fields = (
+        "missionId",
+        "droneId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "batteryPercent",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond",
+    )
+    _closed_members(data, fields)
+    _identifier(data, "missionId")
+    _identifier(data, "droneId")
+    _payload_integer(data, "latitudeMicrodegrees", -90_000_000, 90_000_000)
+    _payload_integer(data, "longitudeMicrodegrees", -180_000_000, 180_000_000)
+    _payload_integer(data, "batteryPercent", 0, 100)
+    _payload_integer(data, "altitudeMetres", -500, 20_000)
+    _payload_integer(data, "headingDegrees", 0, 359)
+    _payload_integer(data, "groundSpeedCentimetresPerSecond", 0, 10_000)
+
+
 def _validate_mission_lifecycle(data: Mapping[str, object]) -> None:
     """Validate the mission-lifecycle payload owned by ADR-0111."""
     _closed_members(data, ("missionId", "lifecycle"))
@@ -150,7 +181,9 @@ class Projection:
 
 
 PROJECTIONS: Final[Mapping[str, Projection]] = {
-    "aerial-rescue.v1.drone.telemetry": Projection("droneTelemetry", EventClass.TELEMETRY),
+    "aerial-rescue.v1.drone.telemetry": Projection(
+        "droneTelemetry", EventClass.TELEMETRY, _validate_telemetry
+    ),
     "aerial-rescue.v1.drone.event.connectivity-changed": Projection(
         "connectivityChanged", EventClass.CONNECTIVITY, _validate_connectivity
     ),
@@ -398,7 +431,7 @@ class _ReductionProblemError(Exception):
 
 def _byte_key(identifier: str) -> bytes:
     """Return the contract's UTF-8 byte-order key for one identifier."""
-    return identifier.encode("utf-8")
+    return identifier.encode()
 
 
 def _is_lowercase_sha256(value: object) -> bool:
@@ -703,9 +736,9 @@ def _is_identifier(value: object) -> bool:
 def _event_identifier(data: Mapping[str, object], name: str) -> str:
     """Return one exact identifier event member without coercion."""
     value = data[name]
-    if not _is_identifier(value):
-        _problem(ReducerRefusal.EVENT_DATA, name, value)
-    return cast(str, value)
+    if isinstance(value, str) and _is_identifier(value):
+        return value
+    _problem(ReducerRefusal.EVENT_DATA, name, value)
 
 
 def _bounded_integer(
@@ -721,22 +754,113 @@ def _bounded_integer(
     return value
 
 
-def _validate_mission_event(event: DashboardEvent) -> None:
+class _StateEvent(Protocol):
+    """One boundary-validated event variant that can reduce only its owned state."""
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        mission: Mission,
+    ) -> DashboardReducedState:
+        """Apply this validated variant to its owned state."""
+        ...
+
+
+@dataclass(frozen=True)
+class _MissionLifecycleEvent:
+    lifecycle: MissionLifecycle
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        mission: Mission,
+    ) -> DashboardReducedState:
+        """Reduce mission lifecycle without touching fleet or sectors."""
+        return replace(state, current_mission=replace(mission, lifecycle=self.lifecycle))
+
+
+@dataclass(frozen=True)
+class _ConnectivityEvent:
+    identifier: str
+    connectivity: Connectivity
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        _mission: Mission,
+    ) -> DashboardReducedState:
+        """Reduce explicit connectivity for one simulated member."""
+        index, member = _simulated_target(state, self.identifier)
+        return replace(
+            state,
+            fleet=_replace_member(
+                state.fleet,
+                index,
+                replace(member, connectivity=self.connectivity),
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class _TelemetryEvent:
+    identifier: str
+    telemetry: Telemetry
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        _mission: Mission,
+    ) -> DashboardReducedState:
+        """Supersede telemetry without inferring connectivity."""
+        index, member = _simulated_target(state, self.identifier)
+        return replace(
+            state,
+            fleet=_replace_member(
+                state.fleet,
+                index,
+                replace(member, telemetry=self.telemetry),
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class _SectorLifecycleEvent:
+    identifier: str
+    sector_state: SectorState
+    assignee: str | None
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        _mission: Mission,
+    ) -> DashboardReducedState:
+        """Reduce lifecycle and assignment at the sector authority."""
+        index = _sector_index(state, self.identifier)
+        if self.assignee is not None and not _simulated_assignee(state, self.assignee):
+            _problem(ReducerRefusal.INVALID_ASSIGNEE, "assignedMemberId", self.assignee)
+        sector = Sector(self.identifier, self.sector_state, self.assignee)
+        sectors = (*state.sectors[:index], sector, *state.sectors[index + 1 :])
+        return replace(state, sectors=sectors)
+
+
+def _validate_mission_event(event: DashboardEvent) -> _StateEvent:
     """Validate the normalized mission-lifecycle boundary."""
     _require_event_class(event, EventClass.MISSION)
     _closed_event_data(event.data, ("lifecycle",))
-    _enum_member(event.data, "lifecycle", MissionLifecycle)
+    return _MissionLifecycleEvent(_enum_member(event.data, "lifecycle", MissionLifecycle))
 
 
-def _validate_connectivity_event(event: DashboardEvent) -> None:
+def _validate_connectivity_event(event: DashboardEvent) -> _StateEvent:
     """Validate the normalized connectivity boundary."""
     _require_event_class(event, EventClass.CONNECTIVITY)
     _closed_event_data(event.data, ("droneId", "connectivity"))
-    _event_identifier(event.data, "droneId")
-    _enum_member(event.data, "connectivity", Connectivity)
+    return _ConnectivityEvent(
+        _event_identifier(event.data, "droneId"),
+        _enum_member(event.data, "connectivity", Connectivity),
+    )
 
 
-def _validate_telemetry_event(event: DashboardEvent) -> None:
+def _validate_telemetry_event(event: DashboardEvent) -> _StateEvent:
     """Validate the normalized integer telemetry boundary."""
     fields = (
         "droneId",
@@ -749,20 +873,29 @@ def _validate_telemetry_event(event: DashboardEvent) -> None:
     )
     _require_event_class(event, EventClass.TELEMETRY)
     _closed_event_data(event.data, fields)
-    _event_identifier(event.data, "droneId")
-    _bounded_integer(event.data, "latitudeMicrodegrees", -90_000_000, 90_000_000)
-    _bounded_integer(event.data, "longitudeMicrodegrees", -180_000_000, 180_000_000)
-    _bounded_integer(event.data, "batteryPercent", 0, 100)
-    _bounded_integer(event.data, "altitudeMetres", -500, 20_000)
-    _bounded_integer(event.data, "headingDegrees", 0, 359)
-    _bounded_integer(event.data, "groundSpeedCentimetresPerSecond", 0, 10_000)
+    return _TelemetryEvent(
+        _event_identifier(event.data, "droneId"),
+        Telemetry(
+            _bounded_integer(event.data, "latitudeMicrodegrees", -90_000_000, 90_000_000),
+            _bounded_integer(
+                event.data,
+                "longitudeMicrodegrees",
+                -180_000_000,
+                180_000_000,
+            ),
+            _bounded_integer(event.data, "batteryPercent", 0, 100),
+            _bounded_integer(event.data, "altitudeMetres", -500, 20_000),
+            _bounded_integer(event.data, "headingDegrees", 0, 359),
+            _bounded_integer(event.data, "groundSpeedCentimetresPerSecond", 0, 10_000),
+        ),
+    )
 
 
-def _validate_sector_event(event: DashboardEvent) -> None:
+def _validate_sector_event(event: DashboardEvent) -> _StateEvent:
     """Validate the normalized sector variant before roster semantics."""
     _require_event_class(event, EventClass.MISSION)
     _closed_event_data(event.data, ("sectorId", "state", "assignedMemberId"))
-    _event_identifier(event.data, "sectorId")
+    identifier = _event_identifier(event.data, "sectorId")
     sector_state = _enum_member(event.data, "state", SectorState)
     assignee = event.data["assignedMemberId"]
     if sector_state is SectorState.UNASSIGNED:
@@ -771,10 +904,15 @@ def _validate_sector_event(event: DashboardEvent) -> None:
     elif assignee is None:
         _problem(ReducerRefusal.ASSIGNMENT_REQUIRED, "assignedMemberId", None)
     else:
-        _event_identifier(event.data, "assignedMemberId")
+        assignee = _event_identifier(event.data, "assignedMemberId")
+    return _SectorLifecycleEvent(
+        identifier,
+        sector_state,
+        assignee,
+    )
 
 
-type BoundaryValidator = Callable[[DashboardEvent], None]
+type BoundaryValidator = Callable[[DashboardEvent], _StateEvent]
 
 BOUNDARY_VALIDATORS: Final[Mapping[str, BoundaryValidator]] = {
     "missionLifecycle": _validate_mission_event,
@@ -784,7 +922,7 @@ BOUNDARY_VALIDATORS: Final[Mapping[str, BoundaryValidator]] = {
 }
 
 
-def _validate_ordered_event_boundary(ordered_event: OrderedDashboardEvent) -> None:
+def _validate_ordered_event_boundary(ordered_event: OrderedDashboardEvent) -> _StateEvent:
     """Validate the complete normalized event before order, witness, or state semantics."""
     ordinal = ordered_event.audit_ordinal
     if type(ordinal) is not int or not 1 <= ordinal <= MAX_SAFE_INTEGER:
@@ -801,7 +939,7 @@ def _validate_ordered_event_boundary(ordered_event: OrderedDashboardEvent) -> No
         parse_instant(event.time)
     except InstantError:
         _problem(ReducerRefusal.EVENT_DATA, "time", event.time)
-    validator(event)
+    return validator(event)
 
 
 def _replace_member(
@@ -826,51 +964,6 @@ def _simulated_target(
     _problem(ReducerRefusal.UNKNOWN_MEMBER, "droneId", identifier)
 
 
-def _reduce_mission_lifecycle(
-    state: DashboardReducedState,
-    event: DashboardEvent,
-) -> DashboardReducedState:
-    """Reduce the mission lifecycle without touching fleet or sectors."""
-    lifecycle = MissionLifecycle(event.data["lifecycle"])
-    mission = cast(Mission, state.current_mission)
-    return replace(state, current_mission=replace(mission, lifecycle=lifecycle))
-
-
-def _reduce_connectivity(
-    state: DashboardReducedState,
-    event: DashboardEvent,
-) -> DashboardReducedState:
-    """Reduce explicit connectivity for one simulated member."""
-    identifier = cast(str, event.data["droneId"])
-    index, member = _simulated_target(state, identifier)
-    connectivity = Connectivity(event.data["connectivity"])
-    return replace(
-        state,
-        fleet=_replace_member(state.fleet, index, replace(member, connectivity=connectivity)),
-    )
-
-
-def _reduce_telemetry(
-    state: DashboardReducedState,
-    event: DashboardEvent,
-) -> DashboardReducedState:
-    """Supersede one latest telemetry reading without inferring connectivity."""
-    identifier = cast(str, event.data["droneId"])
-    index, member = _simulated_target(state, identifier)
-    telemetry = Telemetry(
-        cast(int, event.data["latitudeMicrodegrees"]),
-        cast(int, event.data["longitudeMicrodegrees"]),
-        cast(int, event.data["batteryPercent"]),
-        cast(int, event.data["altitudeMetres"]),
-        cast(int, event.data["headingDegrees"]),
-        cast(int, event.data["groundSpeedCentimetresPerSecond"]),
-    )
-    return replace(
-        state,
-        fleet=_replace_member(state.fleet, index, replace(member, telemetry=telemetry)),
-    )
-
-
 def _sector_index(state: DashboardReducedState, identifier: str) -> int:
     """Return a prepared sector index or raise its explicit refusal."""
     for index, sector in enumerate(state.sectors):
@@ -885,32 +978,6 @@ def _simulated_assignee(state: DashboardReducedState, identifier: str) -> bool:
         member.identifier == identifier and isinstance(member, SimulatedFleetMember)
         for member in state.fleet
     )
-
-
-def _reduce_sector(
-    state: DashboardReducedState,
-    event: DashboardEvent,
-) -> DashboardReducedState:
-    """Reduce sector lifecycle and assignment at the sole assignment authority."""
-    identifier = cast(str, event.data["sectorId"])
-    index = _sector_index(state, identifier)
-    sector_state = SectorState(event.data["state"])
-    assignee = cast(str | None, event.data["assignedMemberId"])
-    if assignee is not None and not _simulated_assignee(state, assignee):
-        _problem(ReducerRefusal.INVALID_ASSIGNEE, "assignedMemberId", assignee)
-    sector = Sector(identifier, sector_state, assignee)
-    sectors = (*state.sectors[:index], sector, *state.sectors[index + 1 :])
-    return replace(state, sectors=sectors)
-
-
-type StateRule = Callable[[DashboardReducedState, DashboardEvent], DashboardReducedState]
-
-STATE_RULES: Final[Mapping[str, StateRule]] = {
-    "missionLifecycle": _reduce_mission_lifecycle,
-    "connectivityChanged": _reduce_connectivity,
-    "droneTelemetry": _reduce_telemetry,
-    "sectorLifecycle": _reduce_sector,
-}
 
 
 def _refused(
@@ -957,6 +1024,8 @@ def _fold_ordinal_control(
     """Resolve duplicate, regression, and gap outcomes after boundary validation."""
     ordinal = ordered_event.audit_ordinal
     current_ordinal = checkpoint.state.latest_audit_ordinal
+    if ordinal < current_ordinal:
+        return _refused(checkpoint, ReducerRefusal.ORDINAL_REGRESSION, "auditOrdinal", ordinal)
     if ordinal == current_ordinal:
         incoming_digest = ordered_event_digest(ordered_event)
         if checkpoint.latest_event_digest is not None and matches(
@@ -970,8 +1039,6 @@ def _fold_ordinal_control(
             "auditOrdinal",
             ordinal,
         )
-    if ordinal < current_ordinal:
-        return _refused(checkpoint, ReducerRefusal.ORDINAL_REGRESSION, "auditOrdinal", ordinal)
     if ordinal != current_ordinal + 1:
         return _refused(checkpoint, ReducerRefusal.ORDINAL_GAP, "auditOrdinal", ordinal)
     return None
@@ -989,16 +1056,17 @@ def _checkpoint_fold_refusal(checkpoint: ReducerCheckpoint) -> FoldRefused | Non
     return None
 
 
-def _fold_preflight_refusal(
+def _fold_preflight(
     checkpoint: ReducerCheckpoint,
     ordered_event: OrderedDashboardEvent,
-) -> FoldRefused | None:
+) -> _StateEvent | FoldRefused:
     """Validate event boundary first, then checkpoint anchor semantics."""
     try:
-        _validate_ordered_event_boundary(ordered_event)
+        validated_event = _validate_ordered_event_boundary(ordered_event)
     except _ReductionProblemError as problem:
         return _refused(checkpoint, problem.refusal, problem.attribute, problem.value)
-    return _checkpoint_fold_refusal(checkpoint)
+    anchor_refusal = _checkpoint_fold_refusal(checkpoint)
+    return validated_event if anchor_refusal is None else anchor_refusal
 
 
 def fold_ordered_event(
@@ -1008,9 +1076,9 @@ def fold_ordered_event(
     expected_state_digest: str | None = None,
 ) -> FoldOutcome:
     """Apply, deduplicate, or refuse one audit-ordered event as a pure total function."""
-    preflight_refusal = _fold_preflight_refusal(checkpoint, ordered_event)
-    if preflight_refusal is not None:
-        return preflight_refusal
+    preflight = _fold_preflight(checkpoint, ordered_event)
+    if isinstance(preflight, FoldRefused):
+        return preflight
     ordinal_outcome = _fold_ordinal_control(
         checkpoint,
         ordered_event,
@@ -1029,9 +1097,8 @@ def fold_ordered_event(
             "mission",
             event.mission,
         )
-    rule = STATE_RULES[event.kind]
     try:
-        reduced = rule(checkpoint.state, event)
+        reduced = preflight.reduce(checkpoint.state, mission)
     except _ReductionProblemError as problem:
         return _refused(
             checkpoint,

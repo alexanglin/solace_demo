@@ -17,7 +17,12 @@ test("fits the compact reference viewport without page-level horizontal overflow
     scrollHeight: document.documentElement.scrollHeight,
     scrollWidth: document.documentElement.scrollWidth,
   }));
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   expect(dimensions.clientWidth).toBe(1280);

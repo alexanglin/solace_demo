@@ -8,8 +8,8 @@ still apply.
 
 This member is the deterministic adapter between an accepted scenario, the pure domain machines, and the
 application data plane. Its scenario boundary, its tick semantics, and its command intake are
-implemented; its evidence publication and its process entry point are not. Read the authority for each
-concern before changing it:
+implemented, including authenticated private run control and its production module entry point. Evidence
+publication is not implemented. Read the authority for each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -27,6 +27,8 @@ concern before changing it:
 | Durable mission facts, idempotency results, and audit order | [`packages/store/AGENTS.md`](../../packages/store/AGENTS.md) |
 | Shared diagnostic primitives and evidence limits | [`packages/observability/AGENTS.md`](../../packages/observability/AGENTS.md) |
 | Runtime, credentials, healthchecks, and Compose coordination | [`deploy/AGENTS.md`](../../deploy/AGENTS.md) |
+| Mission-control publication-only mode | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
+| Restart-safe live telemetry source scope | [ADR-0140](../../docs/adr/0140-scope-live-telemetry-producers-to-one-mission.md) |
 | Cross-component test ownership and evidence limits | [`tests/AGENTS.md`](../../tests/AGENTS.md) |
 | Durable mission state and audit ordering | [ADR-0003](../../docs/adr/0003-postgres-durable-mission-store.md) |
 | Application and Agent Mesh runtime split | [ADR-0004](../../docs/adr/0004-split-python-runtimes.md) |
@@ -44,7 +46,7 @@ concern before changing it:
 | Command lifecycle and injected send budget | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
 | Evidence lifecycle and explicit abstention | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 | Evidence score, bands, and corroboration floor | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
-| Durable command queues, one per drone | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| Durable command queues, one per simulated drone | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Frozen explicit fleet input with no seed | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private run control | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
@@ -61,11 +63,15 @@ guide.
 
 | Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | The package shell, Python 3.14, Tier 2, three workspace dependencies, and the exact FastAPI, Pydantic, and Uvicorn pins selected for later runtime work |
+| `pyproject.toml` | Python 3.14, Tier 2, three workspace dependencies, and the exact FastAPI, Pydantic, and Uvicorn runtime pins |
 | `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
 | `src/aerial_rescue_fleet_simulator/control_wire.py` | The four strict fleet-control server models and canonical-first validation owned by this process |
 | `src/aerial_rescue_fleet_simulator/control_http_contract.py` | The framework-free three-route private request, response, and default-refusal expectations |
+| `src/aerial_rescue_fleet_simulator/control.py` | The bounded stable-run registry, lossless simulator adaptation, cancellation, and worker composition |
+| `src/aerial_rescue_fleet_simulator/http.py` | The authenticated three-route private FastAPI boundary on the internal listener |
+| `src/aerial_rescue_fleet_simulator/lifecycle.py` | Guaranteed fleet-owned connectivity and sector lifecycle publication |
+| `src/aerial_rescue_fleet_simulator/main.py`, `__main__.py` | Strict file-indirected production configuration, process resources, and `python -m aerial_rescue_fleet_simulator` |
 | `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
 | `src/aerial_rescue_fleet_simulator/intake.py` | What a drone accepts off its own command queue, and the order it refuses in |
 | `src/aerial_rescue_fleet_simulator/protocol.py` | The drone's half of the dispatch lifecycle, folded through `packages/domain` ([ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md)) |
@@ -80,9 +86,8 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A console script and a runnable Compose command | The production catalog, scenario loader, and private run-control runtime. Strict control models and route expectations exist, but no FastAPI application, listener, or generated OpenAPI does; `deploy/compose.yaml` still keeps an import-and-exit shell |
 | Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
-| Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
+| Durable mission facts | The dashboard API and recorder own their revision-0005 store calls. The fleet fold remains a process-local synthetic world and is authority for nothing durable |
 | Exactly-once command effects, backlog recovery, and reconnect reconciliation | The same scaffold. Intake settles after publisher confirmation, and its receipts die with the process, so the claim is at-least-once with duplicates possible across a restart |
 
 Never add a dummy drone, placeholder test, no-op publisher, empty abstraction, or import-only entry point
@@ -110,9 +115,9 @@ and coordinates typed ports. It does not become a second owner for policy or wir
 - Accept only ADR-0107's validated fleet-control start document at the composition boundary. Its nested
   `FleetScenario` projection is explicit and carries no seed or random source. ADR-0100 leaves catalog
   loading and version validation with the scenario service; ADR-0107 defines the private start, status,
-  cancel, authentication, and reconciliation protocol. The strict server models and framework-free route
-  registry now exist locally, but no HTTP runtime implements them yet. Do not
-  import another service's implementation, read a scenario file inside the simulator, or make the absent
+  cancel, authentication, and reconciliation protocol. The strict server models, route registry, and
+  authenticated internal HTTP runtime exist locally. Do not
+  import another service's implementation, read a scenario file inside the simulator, or make the private
   runtime grant this process a second broker role.
 - The evidence service owns model-output validation, provenance and hashes, and publication of a versioned
   evidence decision. The simulator may exercise the pure evidence lifecycle and score with truthful
@@ -152,6 +157,10 @@ part of that input or fold.
   accepted scenario, clock schedule, and injected identifiers.
 - Keep producer sequence scoped to the producer that minted it. It rejects stale updates inside one
   stream and never orders drones against each other or replaces the durable audit ordinal.
+- Production routine telemetry scopes its source to the mission/drone pair under ADR-0140. A successor
+  mission therefore owns a new producer stream and may start at sequence zero after a fleet-process
+  restart without colliding with retained recorder high-water. Command-result counters remain
+  process-local and retain their documented at-least-once restart limitation.
 - Apply one domain observation or event per adapter decision. Compare the domain state before and after
   when a downstream edge depends on that change; do not infer an edge from elapsed wall time or from an
   event that may have been dropped.
@@ -261,14 +270,15 @@ says it did **not** settle before citing it.
 
 The broker package provides both publishers, the direct receiver, and a queue-bound receiver that
 settles explicitly. Routine telemetry is contractually direct, so keep it on the direct publisher and
-do not route it through the persistent one. Command intake is on this drone's own durable queue,
+do not route it through the persistent one. Outside the exact mission-control slice, command intake is on this drone's own durable queue,
 bound by the `fleet-simulator` identity that owns it, and settled only after both of its results are
 on the wire and acknowledged by the broker. For a simulated drone that publisher confirmation **is**
 the owning outcome, because the fold's state is authority for nothing durable and there is no
 committed effect for exactly-once to protect; what it costs is recorded in `TECH_DEBT.md` as
 at-least-once with duplicates possible across a restart, and it is not a licence to claim more. Do
 not hide a second Solace publisher or receiver in the simulator, and do not settle a command on
-receipt to make intake look finished.
+receipt to make intake look finished. Mission control explicitly selects `publication-only`, in which
+the process opens no command receiver; do not create an idle receiver or infer the mode from a profile.
 
 Make process lifecycle ownership explicit:
 

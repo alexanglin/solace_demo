@@ -1,0 +1,610 @@
+:root {
+  color: #e7f2f3;
+  background: #061015;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+body {
+  min-width: 320px;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  min-height: 32px;
+  border: 1px solid #48717b;
+  border-radius: 5px;
+  color: #e7f2f3;
+  background: #12303a;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #1b4653;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+:focus-visible {
+  outline: 3px solid #f3bf59;
+  outline-offset: 2px;
+}
+
+#root > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 64px;
+  padding: 0 18px;
+  border-bottom: 1px solid #36555e;
+  background: #0b1d24;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1 {
+  margin-bottom: 0;
+  color: #f5fbfb;
+  font-size: clamp(1rem, 2vw, 1.55rem);
+}
+h2 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+h3 {
+  margin-bottom: 6px;
+  font-size: 0.94rem;
+}
+.header-statuses {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-size: 0.76rem;
+}
+.header-statuses p {
+  margin: 0;
+  white-space: nowrap;
+}
+.mode-badge {
+  padding: 5px 8px;
+  border: 1px solid #4d8b7e;
+  border-radius: 999px;
+  color: #a7f5e2;
+  background: #102d2a;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+#root > header[data-mode="replay"] {
+  border-bottom-color: #9a73d9;
+  background: linear-gradient(90deg, #211231, #101824 58%, #211231);
+  box-shadow: inset 0 -3px #8e68d0;
+}
+#root > header[data-mode="replay"] .mode-badge {
+  border-color: #b58aef;
+  color: #eadcff;
+  background: #3b1f59;
+  box-shadow: 0 0 0 2px #8e68d033;
+}
+
+#root > main {
+  display: grid;
+  grid-template-columns: 315px minmax(0, 1fr) 350px;
+  gap: 8px;
+  width: 100%;
+  height: calc(100% - 64px);
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+}
+#root > main.fleet-collapsed {
+  grid-template-columns: 315px minmax(0, 1fr) 40px;
+}
+.scenario-rail,
+.fleet-rail,
+.map-panel {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #294750;
+  border-radius: 7px;
+  background: #0b1a20;
+}
+.scenario-rail,
+.fleet-rail {
+  padding: 12px;
+  overflow: auto;
+  scrollbar-color: #47636b transparent;
+  scrollbar-width: thin;
+}
+.scenario-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+.scenario-rail p {
+  margin-bottom: 5px;
+}
+.readiness-blockers {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #d79b45;
+  border-radius: 5px;
+  background: #2a1b0c;
+}
+.readiness-blockers p {
+  color: #ffd38a;
+  font-weight: 700;
+}
+.readiness-blockers ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.scenario-metadata {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #294750;
+  border-radius: 5px;
+  background: #071319;
+}
+.scenario-metadata div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 7px;
+}
+.scenario-metadata dt {
+  color: #80c9b8;
+  font-weight: 700;
+}
+.scenario-metadata dd {
+  margin: 0;
+}
+.eyebrow {
+  margin-bottom: 4px;
+  color: #80c9b8;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #36555e;
+}
+fieldset label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.mission-status-stack {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border-radius: 5px;
+  background: #071319;
+}
+.mission-status-stack p,
+.mission-status-stack span {
+  margin: 0;
+}
+.digest {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[role="alert"] {
+  padding: 9px;
+  border-left: 4px solid #ff776c;
+  color: #ffd5d1;
+  background: #36191b;
+}
+.mission-actions,
+.replay-buttons,
+.speed-controls,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.mission-actions button {
+  flex: 1 1 120px;
+}
+.replay-controls {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #7e6133;
+  background: #211c12;
+}
+.replay-controls.replay-accent {
+  border-color: #9f75dc;
+  background: #251638;
+  box-shadow: inset 0 3px #966cdc;
+}
+#root > main[data-mode="replay"] .scenario-rail,
+#root > main[data-mode="replay"] .fleet-rail,
+#root > main[data-mode="replay"] .map-panel {
+  border-color: #5b4777;
+}
+#root > main[data-mode="replay"] .map-toolbar {
+  border-bottom-color: #5b4777;
+  background: #21162d;
+}
+.replay-controls input[type="range"] {
+  width: 100%;
+}
+.map-stack {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.map-stack > .map-panel {
+  width: 100%;
+  height: 100%;
+}
+.replay-controls.map-footer {
+  grid-template-columns: auto minmax(120px, 1fr) auto minmax(120px, 0.75fr);
+  align-items: center;
+  min-width: 0;
+  padding: 7px;
+}
+.map-footer .replay-buttons,
+.map-footer .speed-controls {
+  flex-wrap: nowrap;
+}
+.map-footer button {
+  min-height: 27px;
+  padding: 2px 6px;
+  font-size: 0.67rem;
+}
+.replay-verification {
+  display: grid;
+  min-width: 0;
+}
+.replay-verification p {
+  margin: 0;
+}
+.timeline {
+  min-height: 120px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #294750;
+}
+.timeline ol {
+  display: grid;
+  gap: 5px;
+  max-height: 215px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.timeline li {
+  padding: 5px 6px;
+  border-left: 2px solid #457984;
+  background: #08151b;
+}
+.timeline time {
+  display: block;
+  color: #80989d;
+  font-size: 0.62rem;
+}
+
+.map-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.map-placeholder {
+  display: grid;
+  place-items: center;
+}
+.map-toolbar {
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #294750;
+  background: #0e2229;
+  font-size: 0.76rem;
+}
+.map-toolbar label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.map-canvas,
+.maplibregl-map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.maplibregl-canvas {
+  outline: none;
+}
+.drone-marker {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #061015;
+  border-radius: 50%;
+  background: #f4b956;
+  box-shadow: 0 0 0 2px #f4b95655;
+  cursor: pointer;
+  transition: transform 900ms linear;
+}
+.drone-marker[data-connectivity="CONNECTED"] {
+  border-radius: 50%;
+  background: #77e7cb;
+}
+.drone-marker[data-connectivity="DEGRADED"] {
+  border-radius: 1px;
+  background: #f4b956;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.drone-marker[data-connectivity="OFFLINE"] {
+  border-radius: 1px;
+  background: #ff776c;
+}
+.drone-marker.selected {
+  width: 18px;
+  height: 18px;
+  background: #77e7cb;
+  box-shadow: 0 0 0 4px #77e7cb55;
+}
+.map-overlay {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 4;
+  max-width: 230px;
+  padding: 8px;
+  border: 1px solid #40606a;
+  border-radius: 5px;
+  color: #d9e9eb;
+  background: #08151be8;
+  font-size: 0.66rem;
+}
+.map-overlay ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  margin: 0 0 5px;
+  padding: 0;
+  list-style: none;
+}
+.map-overlay p,
+.map-overlay small {
+  margin: 0;
+}
+
+.fleet-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 10px;
+}
+.rail-toggle {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 3;
+  width: 28px;
+  padding: 0;
+}
+.fleet-heading {
+  padding-right: 30px;
+}
+.fleet-heading strong {
+  font-size: 0.67rem;
+}
+.fleet-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fleet-filters button {
+  min-height: 27px;
+  padding: 2px 6px;
+  font-size: 0.67rem;
+}
+.fleet-filters button[aria-pressed="true"] {
+  border-color: #73d9c2;
+  color: #9bfae5;
+}
+.fleet-table-scroll {
+  min-height: 190px;
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.68rem;
+}
+th,
+td {
+  padding: 4px;
+  border-bottom: 1px solid #203b43;
+  text-align: left;
+  vertical-align: top;
+}
+th[scope="row"] button {
+  min-height: 25px;
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  white-space: nowrap;
+}
+tr[aria-selected="true"] {
+  background: #193943;
+}
+.drone-detail {
+  min-height: 86px;
+  padding: 9px;
+  border: 1px solid #294750;
+  border-radius: 5px;
+  background: #071319;
+  font-size: 0.75rem;
+}
+.drone-detail p {
+  margin-bottom: 4px;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #000a;
+}
+.reset-dialog {
+  width: min(460px, 100%);
+  padding: 22px;
+  border: 1px solid #7a9ca4;
+  border-radius: 8px;
+  background: #10252c;
+  box-shadow: 0 20px 80px #000b;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 1300px) {
+  #root > main {
+    grid-template-columns: 290px minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 800px) {
+  #root > header {
+    gap: 8px;
+    padding: 0 7px;
+  }
+  .header-statuses {
+    gap: 5px;
+    font-size: 0.54rem;
+  }
+  #root > main,
+  #root > main.fleet-collapsed {
+    grid-template-columns: 145px minmax(0, 1fr) 185px;
+    gap: 3px;
+    padding: 3px;
+  }
+  .scenario-rail,
+  .fleet-rail {
+    padding: 5px;
+    font-size: 0.62rem;
+  }
+  .scenario-rail p,
+  .scenario-metadata,
+  .mission-status-stack p,
+  fieldset label,
+  .timeline,
+  .drone-detail,
+  .fleet-heading strong {
+    font-size: 0.54rem;
+  }
+  .map-toolbar {
+    gap: 3px;
+    padding: 3px;
+    font-size: 0.54rem;
+  }
+  .map-toolbar button,
+  .map-toolbar input,
+  .mission-actions button,
+  .rail-toggle {
+    min-height: 24px;
+    font-size: 0.55rem;
+  }
+  .fleet-filters button {
+    min-height: 22px;
+    font-size: 0.52rem;
+  }
+  table {
+    font-size: 0.5rem;
+  }
+  th,
+  td {
+    padding: 2px;
+  }
+  th[scope="row"] button {
+    min-height: 20px;
+    font-size: 0.5rem;
+  }
+  .map-overlay {
+    right: 3px;
+    bottom: 3px;
+    padding: 3px;
+    font-size: 0.48rem;
+  }
+  .scenario-metadata {
+    padding: 4px;
+  }
+  .scenario-metadata div {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 3px;
+  }
+  .replay-controls.map-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .map-footer .replay-buttons,
+  .map-footer .speed-controls {
+    flex-wrap: wrap;
+  }
+}

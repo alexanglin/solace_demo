@@ -39,6 +39,7 @@ from aerial_rescue_domain.principals import Access, Principal, authorize, grants
 
 from aerial_rescue_broker.subscriptions import (
     LEVEL_SEPARATOR,
+    connectivity_subscription,
     drone_command_subscription,
     subscription_for,
 )
@@ -48,6 +49,9 @@ QUEUE_NAME_ROOT: Final = "aerial-rescue/v1"
 
 DEAD_MESSAGE_QUEUE: Final = "#DEAD_MSG_QUEUE"
 """The dead-message target, which is also the broker's own default for every queue."""
+
+RECORDER_LIFECYCLE_QUEUE: Final = "aerial-rescue/v1/recorder/dashboard.lifecycle"
+"""One exclusive queue preserving broker arrival order across all lifecycle producers."""
 
 MAX_QUEUE_NAME_LENGTH: Final = 200
 """The Solace bound on a queue name; a proof test shows the longest rendering is inside it."""
@@ -75,6 +79,7 @@ class Endpoint(Enum):
     """How a role's guaranteed consumption is endpointed (ADR-0080)."""
 
     FAMILY = "one queue per guaranteed family the role may subscribe to"
+    COMBINED_LIFECYCLE = "one queue for all dashboard lifecycle families"
     PER_DRONE = "one command queue per simulated drone"
     UPSTREAM = "a pinned component names and binds its own endpoint"
     NONE = "the role consumes no guaranteed application family"
@@ -86,7 +91,7 @@ _ENDPOINTS: Final[Mapping[Principal, Endpoint]] = {
     Principal.DASHBOARD_API: Endpoint.FAMILY,
     Principal.SCENARIO_SERVICE: Endpoint.NONE,
     Principal.EVIDENCE_SERVICE: Endpoint.FAMILY,
-    Principal.RECORDER: Endpoint.FAMILY,
+    Principal.RECORDER: Endpoint.COMBINED_LIFECYCLE,
     Principal.EVENT_MESH_GATEWAY: Endpoint.UPSTREAM,
     Principal.EVENT_MESH_TOOL: Endpoint.NONE,
     Principal.AGENT_MESH_AGENT: Endpoint.NONE,
@@ -106,6 +111,13 @@ class QueueRefusal(Enum):
 
     UNGUARANTEED_FAMILY = "family is not owed a durable queue"
     NOT_A_FAMILY_CONSUMER = "role's endpoints are not one queue per family"
+
+
+class QueueProjection(Enum):
+    """Which active consumers receive endpoints in one provisioning run."""
+
+    GLOBAL = "global"
+    MISSION_CONTROL = "mission-control"
 
 
 class QueueError(ValueError):
@@ -224,6 +236,20 @@ def _drone_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     )
 
 
+def _recorder_lifecycle_queue() -> QueueSpec:
+    """Return the recorder's one queue over all guaranteed dashboard lifecycle sources."""
+    families = guaranteed_grants(Principal.RECORDER)
+    subscriptions = {
+        connectivity_subscription() if family is Family.DRONE_EVENT else subscription_for(family)
+        for family in families
+    }
+    return QueueSpec(
+        RECORDER_LIFECYCLE_QUEUE,
+        Principal.RECORDER.value,
+        frozenset(subscriptions),
+    )
+
+
 def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     """Return every durable queue ``role`` owns.
 
@@ -241,16 +267,22 @@ def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     endpoint = endpoint_for(role)
     if endpoint is Endpoint.FAMILY:
         return _family_queues(role)
+    if endpoint is Endpoint.COMBINED_LIFECYCLE:
+        return (_recorder_lifecycle_queue(),)
     if endpoint is Endpoint.PER_DRONE:
         return _drone_queues(drones)
     return ()
 
 
-def desired_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
+def desired_queues(
+    drones: Sequence[str],
+    projection: QueueProjection = QueueProjection.GLOBAL,
+) -> tuple[QueueSpec, ...]:
     """Return every owned queue, the dead-message queue first.
 
     Args:
         drones: The drone identifiers the scenario declares.
+        projection: The explicit global or mission-control endpoint inventory.
 
     Returns:
         The dead-message queue, then each role's queues in role declaration order. It comes
@@ -258,5 +290,7 @@ def desired_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
         before one of them can be written.
     """
     dead = QueueSpec(DEAD_MESSAGE_QUEUE, UNOWNED, frozenset())
+    if projection is QueueProjection.MISSION_CONTROL:
+        return (dead, _recorder_lifecycle_queue())
     owned = tuple(queue for role in Principal for queue in queues_for(role, drones))
     return (dead, *owned)

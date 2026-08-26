@@ -269,9 +269,27 @@ class _DashboardSnapshot(_WireModel):
 
 class _DashboardError(_WireModel):
     error_version: Literal["dashboard-error/v1"] = Field(alias="errorVersion")
-    error_code: Annotated[
-        str,
-        StringConstraints(pattern=r"^[A-Z][A-Z0-9_]{0,63}$", max_length=64),
+    error_code: Literal[
+        "ASSET_NOT_FOUND",
+        "AUTHENTICATION_FAILED",
+        "BODY_TOO_LARGE",
+        "CANCELLATION_NOT_ESTABLISHED",
+        "CANONICAL_JSON_INVALID",
+        "DEPENDENCY_UNAVAILABLE",
+        "HOST_INVALID",
+        "IDEMPOTENCY_CONFLICT",
+        "IDEMPOTENCY_KEY_INVALID",
+        "INTERNAL_FAILURE",
+        "METHOD_NOT_ALLOWED",
+        "OPERATION_CONFLICT",
+        "ORIGIN_INVALID",
+        "REPLAY_SESSION_NOT_FOUND",
+        "RUN_CONFLICT",
+        "SCENARIO_NOT_FOUND",
+        "SCENARIO_REVISION_MISMATCH",
+        "SCHEMA_INVALID",
+        "SSE_CAPACITY_EXCEEDED",
+        "UNSUPPORTED_MEDIA_TYPE",
     ] = Field(alias="errorCode")
     message: _NonEmptyString
 
@@ -279,7 +297,6 @@ class _DashboardError(_WireModel):
 class _Health(_WireModel):
     health_version: Literal["dashboard-health/v1"] = Field(alias="healthVersion")
     status: Literal["alive"]
-    runtime_id: _Identifier = Field(alias="runtimeId")
 
 
 class _Readiness(_WireModel):
@@ -298,7 +315,6 @@ class _ReplayIntegrity(_WireModel):
 
 class _ReplayBundle(_WireModel):
     bundle_version: Literal["dashboard-replay-bundle/v1"] = Field(alias="bundleVersion")
-    session_id: _Identifier = Field(alias="sessionId")
     scenario_id: _Identifier = Field(alias="scenarioId")
     scenario_revision: _StrictOne = Field(alias="scenarioRevision")
     initial_state: _DashboardReducedState = Field(alias="initialState")
@@ -456,15 +472,18 @@ class _ScenarioControlRunStatus(_WireModel):
     mission_id: _Identifier = Field(alias="missionId")
     run_id: _Identifier = Field(alias="runId")
     state: _MissionLifecycle
-    declared_count: Literal[23] = Field(alias="declaredCount")
-    simulated_count: Literal[20] = Field(alias="simulatedCount")
-    declared_only_count: Literal[3] = Field(alias="declaredOnlyCount")
-    completed_tick_count: _SafeNonNegativeInteger = Field(alias="completedTickCount")
-    telemetry_publication_count: _SafeNonNegativeInteger = Field(alias="telemetryPublicationCount")
 
 
 class _ScenarioControlCancelRequest(_WireModel):
     control_version: _StrictOne = Field(alias="controlVersion")
+    mission_id: _Identifier = Field(alias="missionId")
+    run_id: _Identifier = Field(alias="runId")
+
+
+class _ScenarioControlRecoveryRequest(_WireModel):
+    control_version: _StrictOne = Field(alias="controlVersion")
+    scenario_id: _Identifier = Field(alias="scenarioId")
+    scenario_revision: _StrictOne = Field(alias="scenarioRevision")
     mission_id: _Identifier = Field(alias="missionId")
     run_id: _Identifier = Field(alias="runId")
 
@@ -522,6 +541,7 @@ SERVER_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
 CLIENT_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
     {
         _rpc_schema("scenario-control-cancel-request"): _ScenarioControlCancelRequest,
+        _rpc_schema("scenario-control-recovery-request"): _ScenarioControlRecoveryRequest,
         _rpc_schema("scenario-control-refusal"): _ScenarioControlRefusal,
         _rpc_schema("scenario-control-run-status"): _ScenarioControlRunStatus,
         _rpc_schema("scenario-control-start-request"): _ScenarioControlStartRequest,
@@ -530,7 +550,6 @@ CLIENT_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
 FILE_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType({})
 BROWSER_ONLY_SCHEMA_IDS = frozenset(
     {
-        _dashboard_schema("mutation-outcome"),
         _dashboard_schema("source-signal"),
     }
 )

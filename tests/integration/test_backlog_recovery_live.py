@@ -135,12 +135,10 @@ DRONE_QUEUES: Final = tuple(drone_queue_name(drone) for drone in DRONE_IDS)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
     (
         Principal.DASHBOARD_API,
         family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND_RESULT),
     ),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND_RESULT)),
 )
 FILLED_QUEUES: Final = (
     *((Principal.FLEET_SIMULATOR, queue) for queue in DRONE_QUEUES),

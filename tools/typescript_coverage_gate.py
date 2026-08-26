@@ -1,9 +1,9 @@
-"""Fail-closed dashboard coverage adjudication fixed by ADR-0105.
+"""Fail-closed dashboard coverage adjudication fixed by ADR-0105 and ADR-0130.
 
 Vitest produces evidence; it does not own the verdict.  This module validates the
 coverage summary and the enumerated hand-written source inventory without invoking a
 process, then applies ADR-0019's integer coverage comparison independently to every
-TypeScript dimension.
+TypeScript dimension and ADR-0130's per-file Tier 1 statement and branch rule.
 """
 
 from __future__ import annotations
@@ -30,6 +30,15 @@ DECLARATION_SUFFIXES: Final = (".d.ts", ".d.mts", ".d.cts")
 JAVASCRIPT_SUFFIXES: Final = frozenset({".js", ".jsx", ".mjs", ".cjs"})
 TYPESCRIPT_SUFFIXES: Final = frozenset({".ts", ".tsx"})
 V8_TOTAL_METADATA_FIELD: Final = "branchesTrue"
+TIER_ONE_COVERAGE_DIMENSIONS: Final = ("statements", "branches")
+TIER_ONE_COVERAGE_PERCENT: Final = 100
+TIER_ONE_SOURCE_PATHS: Final = (
+    "src/api/mutation-client.ts",
+    "src/contracts/bootstrap.ts",
+    "src/contracts/schema-registry.ts",
+    "src/domain/canonical.ts",
+    "src/domain/reducer.ts",
+)
 IGNORE_DIRECTIVE: Final = re.compile(
     r"\b(?:c8|v8|istanbul)\s+ignore\b|"
     r"\bnode:coverage\s+(?:ignore|disable|enable)\b",
@@ -496,10 +505,42 @@ def _coverage_issues(
             )
 
 
+def _tier_one_issues(
+    production: set[Path],
+    entries: Mapping[Path, _Summary],
+    dashboard_root: Path,
+    issues: set[str],
+) -> None:
+    for relative_label in TIER_ONE_SOURCE_PATHS:
+        path = _absolute(dashboard_root / relative_label)
+        if path not in production:
+            issues.add(
+                f"{relative_label}: Tier 1 source is missing from the validated "
+                "production inventory"
+            )
+            continue
+        summary = entries.get(path)
+        if summary is None:
+            issues.add(f"{relative_label}: Tier 1 source is missing from the coverage report")
+            continue
+        for metric in TIER_ONE_COVERAGE_DIMENSIONS:
+            measurement = summary[metric]
+            if metric == "statements" and measurement.total == 0:
+                issues.add(f"{relative_label}: Tier 1 statements have no measurable coverage")
+            elif measurement.covered != measurement.total:
+                issues.add(
+                    f"{relative_label}: Tier 1 {metric} coverage "
+                    f"{measurement.covered}/{measurement.total} is below "
+                    f"{TIER_ONE_COVERAGE_PERCENT} percent"
+                )
+
+
 def evaluate_coverage(
     report_path: Path,
     dashboard_root: Path,
     sources: Sequence[Path],
+    *,
+    enforce_tier_one: bool = False,
 ) -> list[str]:
     """Return deterministic findings for one dashboard coverage report and inventory."""
     issues: set[str] = set()
@@ -512,6 +553,8 @@ def evaluate_coverage(
     _inventory_issues(production, entries, root, issues)
     _total_issues(declared_total, entries, issues)
     _coverage_issues(production, entries, issues)
+    if enforce_tier_one:
+        _tier_one_issues(production, entries, root, issues)
     return sorted(issues)
 
 
@@ -522,6 +565,7 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--dashboard-root", required=True, type=Path)
+    parser.add_argument("--enforce-dashboard-tier-one", action="store_true")
     parser.add_argument("--source", action="append", default=[], type=Path)
     parser.add_argument("--source-inventory", type=Path)
     return parser.parse_args(argv)
@@ -533,13 +577,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = cast("Path", arguments.report)
     dashboard_root = cast("Path", arguments.dashboard_root)
     sources = cast("list[Path]", arguments.source)
+    enforce_tier_one = cast("bool", arguments.enforce_dashboard_tier_one)
     inventory = cast("Path | None", arguments.source_inventory)
     inventory_issues: set[str] = set()
     if inventory is not None:
         sources.extend(
             _load_source_inventory(inventory, _absolute(dashboard_root), inventory_issues)
         )
-    findings = sorted(inventory_issues | set(evaluate_coverage(report, dashboard_root, sources)))
+    findings = sorted(
+        inventory_issues
+        | set(
+            evaluate_coverage(
+                report,
+                dashboard_root,
+                sources,
+                enforce_tier_one=enforce_tier_one,
+            )
+        )
+    )
     for finding in findings:
         print(f"{DIAGNOSTIC_PREFIX}{finding}", file=sys.stderr)
     return 1 if findings else 0

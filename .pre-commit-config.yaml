@@ -380,6 +380,7 @@ repos:
         entry: pre-commit hazmat cd apps/dashboard pnpm exec vitest related --run --
         language: system
         files: ^apps/dashboard/.*\.(ts|tsx)$
+        require_serial: true
 
       # The affected unit tests ADR-0012 asks for at this stage, selected from the import
       # graph tools/affected_tests builds (docs/adr/0066). A staged Python file narrows to

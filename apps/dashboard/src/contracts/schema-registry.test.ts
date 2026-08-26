@@ -8,21 +8,13 @@ import { DASHBOARD_SCHEMA_IDS, createDashboardSchemaRegistry } from "./schema-re
 const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/mutation-outcome.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/scenario-catalog.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/source-signal.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/start-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/start-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/stream-overloaded.schema.json",
 ] as const;
@@ -52,7 +44,7 @@ async function readGoldenFixture(
   return JSON.parse(raw) as unknown;
 }
 
-test("registers exactly the manifest-owned dashboard schema identifiers", () => {
+test("registers exactly the schemas that validate raw browser input", () => {
   // Arrange
   const expectedIds = [...expectedDashboardSchemaIds];
 
@@ -80,9 +72,29 @@ test("builds the dashboard schema registry and resolves every reference without 
   );
 
   // Assert
-  expect(results).toHaveLength(19);
+  expect(results).toHaveLength(11);
   expect(results.every((result) => result.ok)).toBe(true);
   expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test("validates under the production CSP without dynamic JavaScript compilation", async () => {
+  // Arrange
+  const acceptedDocument = await readGoldenFixture("bootstrap", "baseline");
+  const dynamicCode = vi.spyOn(globalThis, "Function").mockImplementation(() => {
+    throw new EvalError("dynamic JavaScript compilation is forbidden by the production CSP");
+  });
+
+  // Act
+  const validate = () =>
+    createDashboardSchemaRegistry().validate(
+      "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+      acceptedDocument,
+    );
+
+  // Assert
+  expect(validate).not.toThrow();
+  expect(validate()).toMatchObject({ ok: true, value: acceptedDocument });
+  expect(dynamicCode).not.toHaveBeenCalled();
 });
 
 test.each(dashboardFixtureCases)(

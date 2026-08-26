@@ -11,6 +11,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstr
 
 SCHEMA_PREFIX: Final = "https://aerial-rescue.invalid/schemas/v1/"
 MAX_WIRE_DOCUMENT_BYTES: Final = 256 * 1024
+MAX_SCENARIO_CATALOG_BYTES: Final = 512 * 1024
 MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 
 Identifier = Annotated[
@@ -27,6 +28,10 @@ DefinitionPath = Annotated[
 ]
 LowercaseSha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonemptyText = Annotated[str, StringConstraints(min_length=1, max_length=4096)]
+Kind = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", max_length=32),
+]
 SafePositiveInteger = Annotated[int, Field(ge=1, le=MAX_SAFE_INTEGER)]
 SafeNonnegativeInteger = Annotated[int, Field(ge=0, le=MAX_SAFE_INTEGER)]
 LatitudeMicrodegrees = Annotated[int, Field(ge=-90_000_000, le=90_000_000)]
@@ -180,6 +185,52 @@ class ScenarioDefinition(_WireModel):
     )
 
 
+class ScenarioCatalogSimulatedMember(_WireModel):
+    """One simulated participant in the browser-facing catalog projection."""
+
+    identifier: Identifier
+    participation: Literal["SIMULATED"]
+
+
+class ScenarioCatalogDeclaredOnlyMember(_WireModel):
+    """One non-executed participant in the browser-facing catalog projection."""
+
+    identifier: Identifier
+    participation: Literal["DECLARED_ONLY"]
+    role: Kind
+    execution_label: Literal["DECLARED ONLY — NOT EXECUTED"] = Field(alias="executionLabel")
+
+
+ScenarioCatalogMember = Annotated[
+    ScenarioCatalogSimulatedMember | ScenarioCatalogDeclaredOnlyMember,
+    Field(discriminator="participation"),
+]
+
+
+class ScenarioCatalogScenario(_WireModel):
+    """One validated prepared scenario exposed through private catalog discovery."""
+
+    identifier: Identifier
+    revision: StrictOne
+    title: NonemptyText
+    summary: NonemptyText
+    declared_count: Literal[23] = Field(alias="declaredCount")
+    simulated_count: Literal[20] = Field(alias="simulatedCount")
+    declared_only_count: Literal[3] = Field(alias="declaredOnlyCount")
+    search_area_square_metres: SafePositiveInteger = Field(alias="searchAreaSquareMetres")
+    last_known_location: LastKnownLocation = Field(alias="lastKnownLocation")
+    search_polygon: Polygon = Field(alias="searchPolygon")
+    sectors: Annotated[list[ScenarioSector], Field(min_length=20, max_length=20)]
+    members: Annotated[list[ScenarioCatalogMember], Field(min_length=23, max_length=23)]
+
+
+class ScenarioCatalogResponse(_WireModel):
+    """The existing dashboard scenario-catalog/v1 document served privately."""
+
+    catalog_version: Literal["scenario-catalog/v1"] = Field(alias="catalogVersion")
+    scenarios: Annotated[list[ScenarioCatalogScenario], Field(max_length=20)]
+
+
 class ScenarioControlStartRequest(_WireModel):
     """A stable private scenario-run start request."""
 
@@ -198,6 +249,16 @@ class ScenarioControlCancelRequest(_WireModel):
     run_id: Identifier = Field(alias="runId")
 
 
+class ScenarioControlRecoveryRequest(_WireModel):
+    """A request to reconcile one durable mission whose fleet run may be lost."""
+
+    control_version: StrictOne = Field(alias="controlVersion")
+    scenario_id: Identifier = Field(alias="scenarioId")
+    scenario_revision: StrictOne = Field(alias="scenarioRevision")
+    mission_id: Identifier = Field(alias="missionId")
+    run_id: Identifier = Field(alias="runId")
+
+
 class ScenarioControlRunStatus(_WireModel):
     """The scenario service's mission-facing run status."""
 
@@ -207,11 +268,6 @@ class ScenarioControlRunStatus(_WireModel):
     mission_id: Identifier = Field(alias="missionId")
     run_id: Identifier = Field(alias="runId")
     state: Literal["PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"]
-    declared_count: Literal[23] = Field(alias="declaredCount")
-    simulated_count: Literal[20] = Field(alias="simulatedCount")
-    declared_only_count: Literal[3] = Field(alias="declaredOnlyCount")
-    completed_tick_count: SafeNonnegativeInteger = Field(alias="completedTickCount")
-    telemetry_publication_count: SafeNonnegativeInteger = Field(alias="telemetryPublicationCount")
 
 
 class ScenarioControlRefusal(_WireModel):
@@ -321,13 +377,19 @@ def _scenario_schema(name: str) -> str:
     return f"{SCHEMA_PREFIX}scenario/{name}.schema.json"
 
 
+def _dashboard_schema(name: str) -> str:
+    return f"{SCHEMA_PREFIX}dashboard/{name}.schema.json"
+
+
 def _rpc_schema(name: str) -> str:
     return f"{SCHEMA_PREFIX}rpc/{name}.schema.json"
 
 
 SERVER_MODEL_BY_SCHEMA_ID: Mapping[str, type[BaseModel]] = MappingProxyType(
     {
+        _dashboard_schema("scenario-catalog"): ScenarioCatalogResponse,
         _rpc_schema("scenario-control-cancel-request"): ScenarioControlCancelRequest,
+        _rpc_schema("scenario-control-recovery-request"): ScenarioControlRecoveryRequest,
         _rpc_schema("scenario-control-refusal"): ScenarioControlRefusal,
         _rpc_schema("scenario-control-run-status"): ScenarioControlRunStatus,
         _rpc_schema("scenario-control-start-request"): ScenarioControlStartRequest,
@@ -367,7 +429,12 @@ def parse_wire_document(schema_id: str, raw: str | bytes) -> BaseModel:
         raise ValueError(message) from error
 
     encoded = raw.encode("utf-8") if isinstance(raw, str) else raw
-    if len(encoded) > MAX_WIRE_DOCUMENT_BYTES:
-        message = f"wire document exceeds {MAX_WIRE_DOCUMENT_BYTES} bytes"
+    maximum_bytes = (
+        MAX_SCENARIO_CATALOG_BYTES
+        if schema_id == _dashboard_schema("scenario-catalog")
+        else MAX_WIRE_DOCUMENT_BYTES
+    )
+    if len(encoded) > maximum_bytes:
+        message = f"wire document exceeds {maximum_bytes} bytes"
         raise ValueError(message)
     return model.model_validate(canonical.decode(encoded))

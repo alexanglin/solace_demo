@@ -6,11 +6,14 @@ These instructions apply to every file under `packages/store/`. Read the reposit
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the PostgreSQL repository and transaction boundary. Its schema history is four
-revisions long and has been applied to a real cluster one revision at a time, and above it sit a
-session, a transaction boundary, and four repositories: the audit log, the approval record, the
-idempotency claim, and the command outbox. No paid-call ledger has been built yet, and no service
-calls any of them.
+This member is the PostgreSQL repository and transaction boundary. Its schema history is five
+revisions long. Revision 0005 adds the narrow dashboard mission/run, mutation-operation,
+broker-deduplication, and ordered-read repositories; the dashboard API and recorder are their production
+callers. The earlier curated cluster evidence reaches revision 0004; the current five-revision probe
+passed 43 of 43 cases in 14.24 seconds at revision `db2b640`: 41 PostgreSQL cases each created and
+dropped a disposable database, and two local cases exercised target-name and refusal behavior. That
+run establishes the selected revision-0005 PostgreSQL paths described below. No paid-call ledger has
+been built yet.
 
 Read the authority for each concern before changing it:
 
@@ -44,6 +47,9 @@ Read the authority for each concern before changing it:
 | Migration-tree home, and how a revision earns its coverage | [ADR-0087](../../docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) |
 | The audit ordinal, and the two tables that issue and hold it | [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) |
 | Every wait an engine may make, and the relations between them | [ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) |
+| Dashboard runtime persistence and live scenario identity | [ADR-0113](../../docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md), [ADR-0127](../../docs/adr/0127-bind-live-runs-to-their-mission-scenario.md) |
+| Recorder lifecycle transition and audit atomicity | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
+| Shared production database and mission-control lifecycle | [ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
 | The mechanism that consumes an approval exactly once | [ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) |
 | The idempotency claim, and what fails comparison rather than repeating | [ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md) |
 | Outbox states, the central bound, and what an overflow does | [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) |
@@ -68,6 +74,9 @@ method.
 | `src/aerial_rescue_store/approvals.py` | The durable approval record, and the one guarded path by which it becomes executed ([ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md)) |
 | `src/aerial_rescue_store/idempotency.py` | The idempotency claim, and what a repeat means, asked of `packages/domain` rather than branched on here ([ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md)) |
 | `src/aerial_rescue_store/outbox.py` | Staging under the counted bound, and moving a record along one edge ([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)) |
+| `src/aerial_rescue_store/dashboard_runs.py` | History-preserving missions/runs, scenario-bound live identity, prepared state, lifecycle guards, the singleton current pointer, and one exact live-run/mission selection for normalized recording export ([ADR-0113](../../docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md), [ADR-0127](../../docs/adr/0127-bind-live-runs-to-their-mission-scenario.md)) |
+| `src/aerial_rescue_store/dashboard_operations.py` | One pending start/reset recovery slot and exact response replay, separate from command idempotency ([ADR-0113](../../docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md)) |
+| `src/aerial_rescue_store/dashboard_events.py` | Broker identity/content deduplication, audit links, snapshot watermarks, and bounded ordered reads ([ADR-0113](../../docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md)) |
 | `src/aerial_rescue_store/migration.py` | Where the schema history is, how a rendering run and a live run are each configured, and how it renders without a database. It still opens nothing: a live run's connection is supplied by the caller |
 | `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
@@ -77,28 +86,35 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**The schema is real, it has a path, and ADR-0006's three repositories sit above it.** Four
-revisions apply to a PostgreSQL 18.6 cluster one at a time, each stamping itself and adding exactly
-its own tables, and each step back leaves the revision below it intact. Above them, `session.py`
+**The schema is real, it has a path, and its purpose-specific repositories sit above it.** All five
+revisions render offline and the disposable-PostgreSQL probe is written to apply them one at a time in
+both directions. Above them, `session.py`
 opens sessions and bounds one transaction; `audit.py` appends at an ordinal issued inside it;
 `approvals.py` consumes an approval under its own row lock; `idempotency.py` claims a key with one
-conflicting insert; and `outbox.py` stages a command under a counted bound.
+conflicting insert; `outbox.py` stages a command under a counted bound; and the dashboard repositories
+persist prepared runs before HTTP, exact operation results, predecessor history, broker deduplication,
+and bounded snapshot reads. Revision 0005 defines a composite live mission/scenario foreign key, keeps
+replay sessions missionless, and lets a recorder-accepted mission lifecycle event lock and advance the
+mission row under the domain transition policy in the same transaction as broker identity and audit
+append. The deterministic suite covers those repository and refusal paths; only the disposable live
+probe can prove PostgreSQL actually enforces their DDL and concurrency semantics.
 
-All of it is proven on a cluster
-([durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md)).
-Two consumers of one approval commit once and deny once, with the second observed waiting and
-refused by the protocol's own `ALREADY_CONSUMED`. Two claimants of one
-key execute once and replay once. The bound refuses the record past it and writes nothing. And the
-three writes ADR-0006 requires to move together do: one transaction commits all three, and a
-transaction abandoned after all three leaves none of them, with the approval consumable again
-afterwards.
+The current curated cluster evidence
+([durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md))
+proves the four-revision predecessor history. In that run, two consumers of one approval committed once
+and denied once, with the second observed waiting and refused by the protocol's own `ALREADY_CONSUMED`;
+two claimants of one key executed once and replayed once; the outbox bound refused the record past it;
+and ADR-0006's three writes committed or rolled back together. It does not prove revision 0005. The
+separate committed dashboard evidence records the exact five-revision selector passing 43 of 43 cases in
+14.24 seconds at revision `db2b640`, including 41 PostgreSQL cases on individually disposable databases
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
-There is still no paid-call ledger, no package-owned readiness or health check, and **no workspace
-member declares this package as a dependency**, so nothing calls any of it. **This member's own suite
-still opens no connection**, and under
+There is still no paid-call ledger and no package-owned readiness or health check. The dashboard API
+declares and calls this package; the recorder uses its broker-to-audit transaction repositories.
+**This member's own suite still opens no connection**, and under
 [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
-will; every live claim above lives in `tests/integration/test_durable_store_live.py`, and what one
-authorized run of it observed is recorded in [durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md).
+will. The expanded `tests/integration/test_durable_store_live.py` owns the revision-0005 PostgreSQL
+claims, and the linked committed run is their current disposable-database evidence.
 
 SQLAlchemy 2.0.52, `asyncpg` 0.31.0, and Alembic 1.19.1 are declared and locked. The migration tree
 exists at the home
@@ -116,20 +132,21 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | The paid-call ledger | The atomic pre-call cap mechanism §6 requires, which [ADR-0002](../../docs/adr/0002-paid-orchestration-under-enforced-budget-cap.md) needs and no record has selected. Concurrent callers must not pass one remaining-budget check independently |
-| A caller | The command gateway's half of the dispatch lifecycle. Every repository here is exercised only by its own suite and by the live probe |
 | Restart durability and interrupted-process rollback | A probe that kills a process. Every live case here ends its transaction deliberately; none has ever been interrupted |
-| Applying the history to the operator's own database | A runbook, and the separate authorization section 7 requires |
 | A reader for `RECONCILIATION_NEEDED` | Nothing named. [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) creates the state so an ambiguous publication has somewhere to be recorded; what reconciles it is owed |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
 connection just to make an absent capability look started. Each lands through red-green-refactor with
 its member-local tests and affected integration evidence.
 
-The PostgreSQL container in `deploy/compose.yaml` is runnable and **the operator's `POSTGRES_DB` still
-has no project schema**: the live probe migrates a database it creates and drops, and never that one.
-Applying the history to the persistent database is a separate operation, separately authorized, that no
-runbook yet describes. Static Compose and image tests prove configuration policy, not authentication,
-transaction, restart, or durability behavior.
+Normal `just up` owns the shared PostgreSQL container in the `aerial-rescue-mesh` project but does not
+apply the application history. The supported mission-control extension requires that existing container
+to be healthy and applies the expected head to its configured database through the one-shot migration
+service before recorder and dashboard API startup. It verifies the PostgreSQL container ID is unchanged
+and retains dashboard history during stop and test cleanup. The separate disposable live probe still
+creates and drops only its own integration-test database. Static Compose and image tests prove
+configuration policy, not a successful migration, authentication, transaction, restart, or durability
+result.
 
 ## 3. Keep policy, representation, orchestration, and persistence separate
 
@@ -288,10 +305,12 @@ blocking suite and no coverage `omit` exists; and `versions/` is sharded by rele
 fan-out cap would refuse an exemption for a directory that can be decomposed. Never let ORM metadata
 create production tables implicitly.
 
-The SQL delete scope for `POST /api/v1/scenarios/current/reset` is not decided. Do not implement reset as
-an unbounded `TRUNCATE`, database drop, schema recreation, or volume deletion. Define the exact mission,
-audit, idempotency, outbox, ledger, and provenance behavior through its governing contract and decision,
-then prove it with positive and negative tests.
+ADR-0113 decides the current UI slice's reset scope without deleting history: retain predecessor and
+audit rows, abort only a nonterminal live predecessor through the scenario lifecycle path, create a fresh
+`PLANNED` successor, and move the singleton current pointer only after cancellation is established. Replay
+reset creates a fresh missionless session. Command idempotency, approvals, outbox, ledger, and unrelated
+missions are outside this operation. Never broaden it into `TRUNCATE`, database drop, schema recreation,
+volume deletion, or a generic reset repository.
 
 Once a schema exists, a PostgreSQL major-version or mount-layout change is a data migration with recovery
 and rollback evidence. ADR-0060's one-time scaffold reset is not precedent. Never remove or reset the
@@ -322,9 +341,9 @@ persistent mission data.
 
 ## 8. Build evidence at the boundary that owns the claim
 
-For the first behavior in this member:
+For every new behavior in this member:
 
-1. Run the scaffold predicate and every relevant domain, contracts, deployment, and root test before
+1. Run the active-member predicate and every relevant domain, contracts, deployment, and root test before
    editing.
 2. Add the smallest member-local test under `packages/store/tests/` with the mandatory AAA structure.
 3. Run the AAA gate and focused test; observe the intended red result before production code.
@@ -355,18 +374,18 @@ cancellation, or concurrent races. Use PostgreSQL with the per-run database or t
 strategy selected by the governing decision for those integration claims; never point tests at persistent
 mission data or replace the selected database with SQLite and call the result equivalent.
 
-`tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. It proves the schema
-claims -- acceptance, the stamp, repeat application, constraint enforcement, the downgrade, and now a
-four-revision path walked one step at a time in both directions -- and the unit of work above them: the
-server-side bounds and isolation level read back from a session, commit visibility, an abandoned
-transaction leaving no gap, two appenders ordered by the row lock, the approval race that yields one
-commit and one hard denial, the claim race that yields one execution and one replay, the outbox bound
-refusing the record past it, and ADR-0006's three writes committing and rolling back together.
+`tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. Its current test
+inventory walks the five-revision path in both directions and exercises revision-0005 start/reset
+recovery, exact-byte retries, predecessor retention, broker deduplication, scenario identity, and
+snapshot reads alongside the established transaction and concurrency cases. At revision `db2b640`, the
+exact suite passed 43 of 43 cases in 14.24 seconds: 41 PostgreSQL cases used individually disposable
+databases and two local cases exercised target-name and refusal behavior
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
 
-It still proves **nothing** about restart durability, interrupted-process rollback, pool cancellation
-as a durable outcome, or any behaviour of a caller, because there is no caller. The member's own suite
-is offline by construction, which is what earns its Tier 2 gate, and it can therefore never establish
-any of those either. Report the two classes separately; one never stands in for the other.
+That result still proves **nothing** about restart durability, interrupted-process rollback, pool
+cancellation as a durable outcome, or a killed process. The member's own suite is offline by construction,
+which is what earns its Tier 2 gate, and it can therefore never establish those claims. Report
+deterministic and disposable-PostgreSQL evidence separately; one never stands in for the other.
 
 ## 9. Workspace hygiene and required verification
 
@@ -379,7 +398,7 @@ any of those either. Report the two classes separately; one never stands in for 
   coverage data, build output, or generated environments.
 - Pass a new untracked guide explicitly to file-based hooks because diff discovery does not see it.
 
-For a guide-only change, create the locked environment, prove the member remains a scaffold, and pass the
+For a guide-only change, create the locked environment, prove the member remains active, and pass the
 files explicitly to the hooks:
 
 ```sh

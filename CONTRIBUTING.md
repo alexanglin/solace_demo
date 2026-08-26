@@ -38,9 +38,15 @@ dependencies before running the same hook.
 
 The dashboard's deterministic integration suite and complete unit/component/integration coverage run
 at pre-push. Coverage is not accepted from Vitest's exit status alone: a project-owned gate recomputes
-the JSON summary against the exact hand-written production-source inventory. Once the mission-control
-closure exists, production-stack browser end-to-end execution will use a separate container-backed
-acceptance command and will never contribute to the package coverage percentage
+the JSON summary against the exact hand-written production-source inventory, then requires 100%
+statements and branches independently from each of the five Tier 1 trust-boundary modules
+([ADR-0130](docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md)). Production-stack browser
+end-to-end and soak execution use separate container-backed commands and never contribute to the package
+coverage percentage. Both commands now have committed shared-stack evidence at revision `db2b640`: the
+production inventory passed 8 of 8 in 1.6 minutes, and the soak passed its single case with all 61
+samples in 30.3 minutes
+([wilderness-dashboard-production-first-run.md](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+Neither result contributes to the package coverage percentage
 ([ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ## Branching
@@ -104,7 +110,9 @@ change under `packages/domain/src/` selects 94 of 988 tests and runs in ~5 s whe
 runs the whole suite, which is what every change did before. The worst case is a commit that widens both
 Python trees at once; it stays inside the budget, but not by much, so re-measure before adding to this
 stage. `pre-push` still runs every unit test in all three toolchains, and that is what makes narrowing
-here safe.
+here safe. The dashboard's related Vitest hook keeps the same filename selection but runs pre-commit's
+filename partitions serially, leaving concurrency to Vitest itself
+([ADR-0144](docs/adr/0144-serialize-the-related-dashboard-test-hook.md)).
 
 Run them yourself at any time:
 
@@ -225,18 +233,85 @@ just logs              # follow the logs
 just down              # stop; volumes are kept
 ```
 
-If you started the stack before 2026-08-21 you hold a PostgreSQL 17 cluster, and the 18.6 image
-refuses to start on it — a hard failure with a clear message, not silent data loss. There is no data
-to keep yet, so discard it once
-([ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)):
+The production-like dashboard is an extension of the existing `aerial-rescue-mesh` Compose project.
+Run `just up` first: `mission-control-up` refuses to proceed unless that project's broker and PostgreSQL
+containers already exist and are healthy. It records their container IDs, starts the seven dashboard
+extension targets without dependencies, and refuses success if either shared container identity changes.
+Private scenario/fleet listeners publish no host ports:
 
 ```sh
-docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml down
-docker volume rm aerial-rescue-mesh_postgres-data
+just up                                            # shared broker, PostgreSQL, and Agent Mesh
+just mission-control-up --build --force-recreate  # rebuild only the 7 dashboard extensions
+just mission-control-ps                           # includes the 2 one-shot jobs
+pnpm --dir apps/dashboard run test:e2e:production # 8 production browser cases
+pnpm --dir apps/dashboard run test:e2e:soak       # dedicated resource soak
+just mission-control-logs                         # logs for the 7 dashboard extensions
+just mission-control-down                         # stop only 5 long-running dashboard services
 ```
 
+The recipe applies migration `0005` to the shared PostgreSQL database and the bounded mission-control
+projection to the shared broker. That projection reconciles the fleet, scenario, and recorder authority
+needed by the dashboard; verification treats the required queues and grants as a subset because the
+shared broker may also carry endpoints for the rest of the runtime. Additional Compose `up` flags affect
+only the seven extension targets: `--no-deps` prevents them from creating, starting, or updating broker
+or PostgreSQL, and the post-start identity check detects replacement. The browser entry point remains
+fixed at `http://127.0.0.1:8080`. Broker, PostgreSQL, and Caddy each publish through a separate
+single-member bridge with IP masquerade disabled; no application service may use those host-facing
+bridges as a lateral or outbound path
+([ADR-0131](docs/adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md),
+[ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
+
+After one synthetic run reaches `EXHAUSTED`, export that exact durable mission/run into an empty
+temporary directory. Use the two identifiers from its accepted Start response. The command opens only
+the store boundary, emits no identifiers or payloads, reads at most 512 ordered events, and refuses any
+existing target instead of replacing it:
+
+```sh
+AERIAL_RESCUE_EXPORT_DIR="$(mktemp -d)"
+AERIAL_RESCUE_EXPORT_MISSION_ID="mission-id-from-start-response"
+AERIAL_RESCUE_EXPORT_RUN_ID="run-id-from-start-response"
+docker compose \
+  --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml \
+  --profile mission-control run --rm --no-deps \
+  --volume "${AERIAL_RESCUE_EXPORT_DIR}:/output" \
+  recorder /app/.venv/bin/python -m aerial_rescue_recorder.exporter \
+  --mission-id "${AERIAL_RESCUE_EXPORT_MISSION_ID}" \
+  --run-id "${AERIAL_RESCUE_EXPORT_RUN_ID}" \
+  --output-directory /output
+```
+
+Success prints only `normalized recording ready`; inspect
+`$AERIAL_RESCUE_EXPORT_DIR/wilderness-missing-person.r1.ndjson` before deliberately replacing any
+committed fixture in a separate reviewed change.
+
+Do not replace the recipe with a bare `--profile mission-control`: profile-free default services would
+also be selected. Caddy alone publishes `http://127.0.0.1:8080`; it relays to the dashboard API over a
+shared Unix socket. Migration and replay validation are one-shot jobs, and the validator receives no
+network or secret, reads the committed recording read-only, and writes only to the bounded replay
+volume. The three declared-only roster descriptors receive no command queue, telemetry, or connectivity
+projection. The mission-control recipe starts fleet in publication-only mode and requires the combined
+recorder lifecycle queue plus dead-message queue; it does not interpret unrelated shared-broker endpoints
+as a failure ([ADR-0117](docs/adr/0117-select-the-exact-mission-control-service-closure.md),
+[ADR-0120](docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md),
+[ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
+The production mission workflow verifies the fleet publication target in
+[the operating parameters](docs/operating-parameters.md#workload-and-service-level-profile) separately
+from recorder receipt. Recorder telemetry receipt is best effort and is evaluated against its own row
+in that table; the workflow never treats receipt as a completeness guarantee.
+
+`mission-control-down` issues `stop` only for fleet simulator, scenario service, recorder, dashboard API,
+and Caddy. It never runs Compose `down`, stops broker or PostgreSQL, removes project networks or volumes,
+or deletes retained dashboard history. Production and soak runners capture the shared broker and
+PostgreSQL container IDs at test start and test completion and require equality.
+
+If a pre-2026-08-21 workstation still has a PostgreSQL 17 cluster, the 18.6 image refuses to start it
+with a clear error rather than risking silent data loss
+([ADR-0060](docs/adr/0060-postgresql-18-and-its-data-directory-layout.md)). Stop at that error and use a
+separately reviewed backup/migration procedure. The dashboard workflow never authorizes Compose `down`,
+volume deletion, or loss of the shared database and retained mission history.
+
 `just provision` is not optional once you intend to connect anything: it applies
-[ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)'s nine
+[ADR-0061](docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md)'s ten
 least-privilege client usernames and their deny-by-default ACL profiles, applies
 [ADR-0080](docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)'s durable queues,
 and disables the factory `default` client username. Until it runs, any identity may publish any
@@ -270,16 +345,21 @@ just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone dr
 `just up` starts the default profile, which now includes the Agent Mesh
 ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
 order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.
-Add another profile with `COMPOSE_PROFILES=services just up`; that one is inert until the services
-gain entrypoints. Editing a file under `agent-mesh/configs/` does **not** restart the mesh: the
+Add another profile with `COMPOSE_PROFILES=services just up`; command and evidence remain import probes,
+while the production mission services are selected through the guarded shared-project extension above. Editing a file
+under `agent-mesh/configs/` does **not** restart the mesh: the
 directory is a bind mount, so `up --wait` reports the running container healthy and keeps serving the
 old configuration. Run `just up --force-recreate` after a configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
 is trusted. `just showcase` runs the same stack against the Solace Cloud service through an ignored
 `.env.showcase` ([ADR-0043](docs/adr/0043-docker-broker-with-solace-cloud-showcase.md)). **The default profile has been started**: the broker and Postgres first live run is recorded in
 [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md), and the
 Agent Mesh in [`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md).
-For the `services` and `event-portal` profiles, which remain unstarted, until each is recorded under
-`release-evidence/` the healthcheck commands and the image-internal details are design, not evidence.
+The complete fixture, production-browser, soak, selected live-store, and selected broker-authorization
+results from committed revision `db2b640` are recorded in
+[`wilderness-dashboard-production-first-run.md`](release-evidence/phase-3/wilderness-dashboard-production-first-run.md).
+That record is bounded to the current synthetic dashboard slice and shared local project; it does not
+establish Cloud, whole-stack resource, approval/evidence, rescue, or executable edge-agent behavior. The
+`event-portal` profile remains unstarted.
 
 ## Fail-closed gates
 

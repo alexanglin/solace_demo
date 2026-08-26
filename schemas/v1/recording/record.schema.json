@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/recording/record.schema.json",
+  "description": "One canonical normalized event line in a synthetic dashboard recording.",
+  "type": "object",
+  "required": [
+    "recordVersion",
+    "orderedEvent"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "recordVersion": {
+      "const": "dashboard-record/v1"
+    },
+    "orderedEvent": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json"
+    }
+  }
+}

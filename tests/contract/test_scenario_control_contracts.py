@@ -25,6 +25,7 @@ CONTROL_SCHEMA_NAMES = (
     "fleet-control-start-request",
     "scenario-control-cancel-request",
     "scenario-control-refusal",
+    "scenario-control-recovery-request",
     "scenario-control-run-status",
     "scenario-control-start-request",
 )
@@ -170,6 +171,15 @@ class ScenarioFileShapeTests(unittest.TestCase):
                 {"controlVersion", "missionId", "runId", "scenarioId", "scenarioRevision"}
             ),
             "scenario-control-cancel-request": frozenset({"controlVersion", "missionId", "runId"}),
+            "scenario-control-recovery-request": frozenset(
+                {
+                    "controlVersion",
+                    "missionId",
+                    "runId",
+                    "scenarioId",
+                    "scenarioRevision",
+                }
+            ),
             "scenario-control-refusal": frozenset({"controlVersion", "errorCode", "message"}),
             "fleet-control-cancel-request": frozenset({"controlVersion", "missionId", "runId"}),
             "fleet-control-refusal": frozenset({"controlVersion", "errorCode", "message"}),
@@ -182,9 +192,9 @@ class ScenarioFileShapeTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, actual)
 
-    def test_statuses_carry_stable_identity_and_separate_publication_instruments(self) -> None:
+    def test_only_fleet_status_carries_publication_instruments(self) -> None:
         # Arrange
-        expected_common = {
+        fleet_status = {
             "completedTickCount",
             "controlVersion",
             "missionId",
@@ -193,15 +203,15 @@ class ScenarioFileShapeTests(unittest.TestCase):
             "telemetryPublicationCount",
         }
         expected = {
-            "fleet-control-run-status": frozenset(expected_common),
+            "fleet-control-run-status": frozenset(fleet_status),
             "scenario-control-run-status": frozenset(
-                expected_common
-                | {
-                    "declaredCount",
-                    "declaredOnlyCount",
+                {
+                    "controlVersion",
+                    "missionId",
+                    "runId",
                     "scenarioId",
                     "scenarioRevision",
-                    "simulatedCount",
+                    "state",
                 }
             ),
         }

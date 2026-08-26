@@ -19,7 +19,7 @@ Use the canonical source for the fact being changed instead of copying its curre
 | Diagram generation and integrity | [ADR-0022](../docs/adr/0022-recursive-diagram-integrity.md) |
 | Agent Mesh configuration and execution context | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md), [ADR-0032](../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0062](../docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) |
 | Dynamic Python discovery and dashboard policy | [ADR-0056](../docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md), [ADR-0057](../docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md) |
-| Compose, certificates, and image scanning | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
+| Compose, certificates, consumed secret inventory, and image scanning | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0129](../docs/adr/0129-generate-only-consumed-local-secrets.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
 | Broker roles, grants, and lifecycle-source identity | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Terminal-safe execution and job budgets | [ADR-0059](../docs/adr/0059-keep-the-verification-authority-able-to-report.md), [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Test structure, classes, and toolchain | [`TESTING.md`](../docs/TESTING.md) |
@@ -99,7 +99,8 @@ superseding decision.
   `pnpm --dir apps/dashboard`. The TypeScript-policy wrapper enumerates inputs and launches its pure
   Python gate instead. The coverage wrapper writes its report to a temporary directory, enumerates
   tracked or unignored source, and passes both to the pure TypeScript coverage gate; it never trusts the
-  runner's displayed percentage alone. The Playwright wrapper additionally refuses a runtime that differs from the
+  runner's displayed percentage alone. The same invocation must enable ADR-0130's fixed per-file Tier 1
+  statement and branch policy; a second focused report is not equivalent evidence. The Playwright wrapper additionally refuses a runtime that differs from the
   manifest, verifies discovery against the manifest-owned test inventory, requires the package-pinned
   Chromium revision to be cached before it starts, and scans retained reports for the synthetic bearer
   sentinel even after a browser failure. It never downloads a browser from a local hook. Do not replace

@@ -73,7 +73,6 @@ function replayChecksumMaterial(bundle: DashboardReplayBundle): object {
     latestEventDigest: bundle.latestEventDigest,
     scenarioId: bundle.scenarioId,
     scenarioRevision: bundle.scenarioRevision,
-    sessionId: bundle.sessionId,
   };
 }
 

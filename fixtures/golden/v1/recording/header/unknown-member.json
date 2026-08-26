@@ -1,0 +1,19 @@
+{
+  "recordingVersion": "dashboard-recording/v1",
+  "scenarioId": "wilderness-missing-person",
+  "scenarioRevision": 1,
+  "initialState": {
+    "canonicalizationVersion": 1,
+    "stateVersion": 1,
+    "currentMission": null,
+    "fleet": [],
+    "latestAuditOrdinal": 0,
+    "sectors": []
+  },
+  "latestEventDigest": null,
+  "expectedFinalDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "eventCount": 1,
+  "checksumAlgorithm": "sha256",
+  "checksum": "0000000000000000000000000000000000000000000000000000000000000000",
+  "unexpected": true
+}

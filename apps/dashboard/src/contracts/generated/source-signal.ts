@@ -8,5 +8,5 @@
  */
 export interface DashboardSourceSignal {
   signalVersion: "dashboard-source-signal/v1";
-  signal: "connecting" | "disconnected" | "offline" | "recovered" | "runtimeChanged";
+  signal: "connecting" | "disconnected" | "offline" | "recovered";
 }

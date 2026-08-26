@@ -15,7 +15,28 @@
     },
     "errorCode": {
       "type": "string",
-      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+      "enum": [
+        "ASSET_NOT_FOUND",
+        "AUTHENTICATION_FAILED",
+        "BODY_TOO_LARGE",
+        "CANCELLATION_NOT_ESTABLISHED",
+        "CANONICAL_JSON_INVALID",
+        "DEPENDENCY_UNAVAILABLE",
+        "HOST_INVALID",
+        "IDEMPOTENCY_CONFLICT",
+        "IDEMPOTENCY_KEY_INVALID",
+        "INTERNAL_FAILURE",
+        "METHOD_NOT_ALLOWED",
+        "OPERATION_CONFLICT",
+        "ORIGIN_INVALID",
+        "REPLAY_SESSION_NOT_FOUND",
+        "RUN_CONFLICT",
+        "SCENARIO_NOT_FOUND",
+        "SCENARIO_REVISION_MISMATCH",
+        "SCHEMA_INVALID",
+        "SSE_CAPACITY_EXCEEDED",
+        "UNSUPPORTED_MEDIA_TYPE"
+      ]
     },
     "message": {
       "type": "string",

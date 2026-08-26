@@ -4,10 +4,5 @@
   "scenarioRevision": 1,
   "missionId": "mission-synthetic-0001",
   "runId": "run-synthetic-0001",
-  "state": "SEARCHING",
-  "declaredCount": 23,
-  "simulatedCount": 20,
-  "declaredOnlyCount": 3,
-  "completedTickCount": 1,
-  "telemetryPublicationCount": 20
+  "state": "SEARCHING"
 }

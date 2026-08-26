@@ -56,6 +56,16 @@ def _services() -> dict[str, dict[str, str]]:
     }
 
 
+def _secret_files() -> dict[str, str]:
+    """Return every file-backed Compose secret declaration."""
+    document = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    return {
+        name: declaration["file"]
+        for name, declaration in document["secrets"].items()
+        if "file" in declaration
+    }
+
+
 class BrokerIdentityWiringTests(QualityGateTestCase):
     def test_the_template_fixes_an_a2a_namespace_the_subscription_builder_accepts(self) -> None:
         # Arrange
@@ -137,16 +147,16 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
         expected = (
             "scenario-service",
             "<required>",
-            "${SOLACE_SCENARIO_SERVICE_USERNAME}",
-            "${SOLACE_SCENARIO_SERVICE_PASSWORD}",
+            "/run/secrets/scenario-broker-password",
+            "./secrets/broker-scenario-service-password",
         )
 
         # Act
         held = (
             declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
             declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
-            environment.get(USERNAME_KEY),
-            environment.get(CREDENTIAL_KEY),
+            environment.get("SOLACE_BROKER_PASSWORD_FILE"),
+            _secret_files().get("scenario-broker-password"),
         )
 
         # Assert

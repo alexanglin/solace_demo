@@ -1,8 +1,8 @@
 # Dashboard Agent Instructions
 
 The repository-root `AGENTS.md` applies here. Before changing this package, also read
-`apps/dashboard/README.md`, ADR-0057, ADR-0058, and the accepted UI-slice and verification ADRs 0094
-through 0112.
+`apps/dashboard/README.md`, ADR-0057, ADR-0058, the accepted UI-slice and verification ADRs 0094
+through 0112, and ADR-0124's raw-input registry boundary.
 
 ## Boundaries
 
@@ -10,6 +10,9 @@ through 0112.
 - Feed live SSE, validated replay bundles, and deterministic test fixtures through one
   reducer-facing event-source interface. Never add fixture selection to a production URL, storage
   key, or bootstrap value.
+- Anchor the source session from the validated transient bootstrap before opening production SSE.
+  Derive runtime replacement only from a mismatched validated snapshot; transport signals never
+  assert runtime identity.
 - Validate every HTTP, bootstrap, SSE, and replay input before it becomes typed state. A refusal
   keeps the last validated mission state visible.
 - Generate production wire types only from the manifest-owned dashboard schemas. Playwright fixture
@@ -34,6 +37,16 @@ through 0112.
 
 - Keep Playwright specifications under `tests/e2e/` and import `test` and `expect` explicitly from
   `@playwright/test`.
+- Keep production-stack specifications under `tests/production/`. Any Docker fault control stays in
+  the Playwright runner process and may target only dashboard-owned services in the shared
+  `aerial-rescue-mesh` project; never add a browser hook or production route for it. Capture the
+  shared broker and PostgreSQL container IDs before startup and after cleanup, and fail if either
+  changes.
+- Keep the thirty-minute resource instrument under `tests/soak/` and its configuration separate from
+  normal production workflows. Sample the dashboard API process through the runner, never an
+  application endpoint, and do not make its accepted duration, cadence, RSS, or descriptor bounds
+  overridable. Its cleanup may stop dashboard services only and must preserve the shared broker,
+  PostgreSQL, networks, volumes, and retained mission history.
 - Keep fixture-source globals and synthetic bearer sentinels behind the test build boundary. The
   production-build integration test must prove those tokens are absent from emitted assets.
 - Keep deterministic integration specifications under `src/` with the `*.integration.test.{ts,tsx}`
@@ -41,6 +54,11 @@ through 0112.
 - Do not use V8, c8, Istanbul, or Node coverage-ignore directives in hand-written production source.
   The coverage wrapper must account for every such source through the independent report gate
   selected by ADR-0105; Playwright coverage never contributes to that result.
+- Keep the exact ADR-0130 Tier 1 inventory at 100% statements and branches per file in the one
+  complete Vitest coverage pass: `api/mutation-client.ts`, `contracts/bootstrap.ts`,
+  `contracts/schema-registry.ts`, `domain/canonical.ts`, and `domain/reducer.ts`. A missing file or
+  report entry fails. Do not silently add transport, source-session, component, or presentation
+  files to that tier.
 - Every executable test callback uses one direct `// Arrange`, `// Act`, and `// Assert` sequence.
 - Feed Playwright through serialized boundary inputs, never a reduced presentation fixture.
   Increment the test-source revision for every input batch and acknowledge it only after the render

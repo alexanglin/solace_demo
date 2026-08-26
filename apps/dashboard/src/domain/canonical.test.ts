@@ -248,6 +248,40 @@ test("emits NFC-normalized, minimally escaped UTF-8 bytes in canonical key order
   expect(new TextDecoder().decode(encoded)).toBe(expectedText);
 });
 
+test("keeps the canonical key comparator reflexive while sorting distinct members", () => {
+  // Arrange
+  const nativeSort = Array.prototype.sort;
+  const sortDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "sort");
+  if (sortDescriptor === undefined) throw new Error("Array.sort descriptor is unavailable");
+  const reflexiveResults: number[] = [];
+  const probingSort = function (
+    this: unknown[],
+    compareFunction?: (left: unknown, right: unknown) => number,
+  ): unknown[] {
+    const first = this[0];
+    if (compareFunction !== undefined && first !== undefined) {
+      reflexiveResults.push(compareFunction(first, first));
+    }
+    return nativeSort.call(this, compareFunction) as unknown[];
+  };
+  let encoded: Uint8Array | undefined;
+
+  // Act
+  Object.defineProperty(Array.prototype, "sort", {
+    ...sortDescriptor,
+    value: probingSort,
+  });
+  try {
+    encoded = canonicalBytes({ bravo: 2, alpha: 1 });
+  } finally {
+    Object.defineProperty(Array.prototype, "sort", sortDescriptor);
+  }
+
+  // Assert
+  expect(reflexiveResults).toContain(0);
+  expect(new TextDecoder().decode(encoded)).toBe('{"alpha":1,"bravo":2}');
+});
+
 test("emits exact lowercase canonical bytes for both booleans", () => {
   // Arrange
   const value = [true, false];

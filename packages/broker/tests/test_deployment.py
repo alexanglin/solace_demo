@@ -24,6 +24,7 @@ from aerial_rescue_broker.deployment import (
     CERTIFICATE_AUTHORITY,
     DeploymentError,
     DeploymentRefusal,
+    QueueSelection,
     credential_path,
     endpoint,
     main,
@@ -32,6 +33,7 @@ from aerial_rescue_broker.deployment import (
     session_for,
 )
 from aerial_rescue_broker.provisioning import Method, Request
+from aerial_rescue_broker.queues import QueueProjection
 from aerial_rescue_broker.semp import SempError, SempFailure, SempSession
 from aerial_rescue_domain.principals import Principal
 
@@ -149,15 +151,21 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            QueueSelection(DRONES),
+        )
 
         # Assert
         self.assertEqual(
             (
                 "10 acl profiles",
                 "10 client usernames",
-                "51 topic exceptions",
-                "25 durable queues, 24 subscriptions",
+                "42 topic exceptions",
+                "16 durable queues, 17 subscriptions",
                 True,
             ),
             (
@@ -175,7 +183,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", ())
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            QueueSelection(()),
+        )
 
         # Assert
         self.assertTrue(any("no drone command queues" in part for part in lines), lines)
@@ -186,7 +200,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", None, DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            None,
+            QueueSelection(DRONES),
+        )
 
         # Assert
         self.assertTrue(any("no A2A grant" in part for part in lines), lines)
@@ -197,7 +217,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            QueueSelection(DRONES),
+        )
 
         # Assert
         self.assertEqual((), tuple(part for part in lines if CREDENTIAL in part))
@@ -245,7 +271,33 @@ class MainTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((0, True), (code, "25 durable queues" in out.getvalue()))
+        self.assertEqual((0, True), (code, "16 durable queues" in out.getvalue()))
+
+    def test_mission_control_cli_projects_no_inert_command_or_absent_service_queue(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        transport = RecordingTransport()
+        out = io.StringIO()
+
+        # Act
+        code = main(
+            (
+                "--deploy-directory",
+                str(deploy),
+                "--namespace",
+                "acme/dev",
+                "--queue-projection",
+                QueueProjection.MISSION_CONTROL.value,
+            ),
+            session=lambda _: transport,
+            out=out,
+            error=io.StringIO(),
+        )
+
+        # Assert
+        self.assertEqual(0, code)
+        self.assertIn("2 durable queues, 3 subscriptions", out.getvalue())
+        self.assertIn("no drone command queues", out.getvalue())
 
     def test_a_drone_identifier_the_grammar_refuses_reports_one(self) -> None:
         # Arrange

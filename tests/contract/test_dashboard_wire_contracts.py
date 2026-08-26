@@ -43,7 +43,6 @@ PUBLIC_SCHEMA_NAMES = (
     "dashboard-snapshot",
     "error",
     "health",
-    "mutation-outcome",
     "ordered-dashboard-event",
     "readiness",
     "replay-bundle",
@@ -260,6 +259,17 @@ class DashboardStateAuthorityTests(unittest.TestCase):
         # Assert
         self.assertTrue(all("latestEventDigest" in members for members in anchor_members))
         self.assertTrue(all("latestEventDigest" not in members for members in forbidden_members))
+
+    def test_source_signals_contain_only_transport_observations(self) -> None:
+        # Arrange
+        source_signal = _load(_schema_path("source-signal"))
+        signal = cast("dict[str, object]", _properties(source_signal)["signal"])
+
+        # Act
+        values = signal["enum"]
+
+        # Assert
+        self.assertEqual(["connecting", "disconnected", "offline", "recovered"], values)
 
 
 class DashboardEventContractTests(unittest.TestCase):
@@ -518,6 +528,26 @@ class DashboardCollectionBoundTests(unittest.TestCase):
         # Assert
         self.assertEqual((True, True, True, True, True, True), populated)
 
+    def test_in_memory_mutation_outcomes_have_no_wire_contract_artifacts(self) -> None:
+        # Arrange
+        schema_path = _schema_path("mutation-outcome")
+        fixture_directory = FIXTURE_ROOT / "mutation-outcome"
+        manifest = tomllib.loads(
+            (REPO_ROOT / "schemas/contract-manifest.toml").read_text(encoding="utf-8")
+        )
+
+        # Act
+        registered = tuple(
+            entry
+            for entry in cast("list[dict[str, object]]", manifest["contracts"])
+            if entry["schema"] == "schemas/v1/dashboard/mutation-outcome.schema.json"
+        )
+
+        # Assert
+        self.assertFalse(schema_path.exists())
+        self.assertEqual((), tuple(fixture_directory.glob("*.json")))
+        self.assertEqual((), registered)
+
 
 class DashboardMutationContractTests(unittest.TestCase):
     def test_scenario_revision_is_integer_one_in_catalog_and_start_request(self) -> None:
@@ -535,15 +565,17 @@ class DashboardMutationContractTests(unittest.TestCase):
         # Assert
         self.assertEqual((1, 1), revisions)
 
-    def test_mutation_outcomes_carry_no_reducer_owned_current_mission(self) -> None:
+    def test_health_carries_only_real_process_liveness(self) -> None:
         # Arrange
-        outcome = _load(_schema_path("mutation-outcome"))
+        health = _load(_schema_path("health"))
 
         # Act
-        members = _all_property_names(outcome)
+        members = frozenset(_properties(health))
+        required = frozenset(cast("list[str]", health["required"]))
 
         # Assert
-        self.assertNotIn("currentMission", members)
+        self.assertEqual(frozenset({"healthVersion", "status"}), members)
+        self.assertEqual(members, required)
 
     def test_reset_request_is_exactly_an_empty_object(self) -> None:
         # Arrange

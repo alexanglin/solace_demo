@@ -1,6 +1,5 @@
 {
   "healthVersion": "dashboard-health/v1",
   "status": "alive",
-  "runtimeId": "runtime-synthetic-0001",
   "unexpected": true
 }

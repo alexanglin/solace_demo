@@ -78,6 +78,13 @@ CONNECTIVITY_LIFECYCLE = format_topic(
         {"droneId": "d-1", "eventType": "connectivity-changed"},
     )
 )
+SALIENT_DRONE_EVENT = format_topic(
+    Topic(
+        Family.DRONE_EVENT,
+        MISSION,
+        {"droneId": "d-1", "eventType": "salient"},
+    )
+)
 MISSION_LIFECYCLE = _lifecycle_topic("MISSION_EVENT", {"eventType": "lifecycle"})
 SECTOR_LIFECYCLE = _lifecycle_topic(
     "SECTOR_EVENT", {"sectorId": "sector-01", "eventType": "lifecycle"}
@@ -335,6 +342,19 @@ class SubscriptionAuthorizationTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((Outcome.SUBSCRIBE_DENIED, Outcome.SUBSCRIBED), (denied, allowed))
+
+    def test_recorder_subscription_is_limited_to_dashboard_state_sources(self) -> None:
+        # Arrange
+        allowed_topic = MISSION_LIFECYCLE
+        denied_topics = (SALIENT_DRONE_EVENT, DRONE_COMMAND, GATEWAY_REQUEST, A2A_REQUEST)
+
+        # Act
+        allowed = _subscribe_as(Principal.RECORDER, allowed_topic)
+        denied = tuple(_subscribe_as(Principal.RECORDER, topic) for topic in denied_topics)
+
+        # Assert
+        self.assertIs(Outcome.SUBSCRIBED, allowed)
+        self.assertEqual(tuple(Outcome.SUBSCRIBE_DENIED for _ in denied_topics), denied)
 
 
 class FactoryIdentityTests(unittest.TestCase):
