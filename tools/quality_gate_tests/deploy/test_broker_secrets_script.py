@@ -17,9 +17,12 @@ PASSWORD_HEX_LENGTH = 64
 STACK_PASSWORDS = (
     "secrets/broker-admin-password",
     "secrets/postgres-password",
-    "secrets/semp-discovery-password",
     "secrets/session-secret-key",
+    "secrets/scenario-control-secret",
+    "secrets/fleet-control-secret",
 )
+UNUSED_SEMP_DISCOVERY_PATH = "secrets/semp-discovery-password"
+"""The optional external SEMP consumer has no repository-provisioned identity."""
 ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in Principal)
 """One per broker authorization role (ADR-0061); the script's own list is held equal below."""
 PRIVATE_FILES = (
@@ -83,7 +86,9 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_fourteen_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_fifteen_used_passwords(
+        self,
+    ) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -92,8 +97,30 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(15, len((*STACK_PASSWORDS, *ROLE_PASSWORDS)))
         self.assertTrue(all((repository / "deploy" / name).is_file() for name in PRIVATE_FILES))
         self.assertTrue((repository / "deploy" / "certs" / "ca.pem").is_file())
+        self.assertFalse((repository / "deploy" / UNUSED_SEMP_DISCOVERY_PATH).exists())
+        self.assertNotIn("semp-discovery", result.stdout)
+
+    def test_private_control_hops_receive_distinct_256_bit_secrets(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+        values = {
+            name: (repository / "deploy" / name).read_text(encoding="ascii").strip()
+            for name in (
+                "secrets/scenario-control-secret",
+                "secrets/fleet-control-secret",
+            )
+        }
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({PASSWORD_HEX_LENGTH}, {len(value) for value in values.values()})
+        self.assertEqual(2, len(set(values.values())))
 
     def test_it_generates_the_scenario_service_credential_and_environment_pair(self) -> None:
         # Arrange

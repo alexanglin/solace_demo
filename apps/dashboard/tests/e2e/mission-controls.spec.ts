@@ -229,7 +229,7 @@ test("does not silently retry a start mutation after an unauthorized response", 
     requestCount += 1;
     await route.fulfill({
       json: {
-        errorCode: "STALE_RUNTIME",
+        errorCode: "AUTHENTICATION_FAILED",
         errorVersion: "dashboard-error/v1",
         message: "runtime bearer is no longer valid",
       },

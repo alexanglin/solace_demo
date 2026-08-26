@@ -161,6 +161,18 @@ class DashboardTypeCheckStageTests(QualityGateTestCase):
                 self.assertIn("always_run: true", block)
                 self.assertIn("pass_filenames: false", block)
 
+    def test_the_related_unit_test_stage_serializes_pre_commit_filename_batches(self) -> None:
+        # Arrange
+        block = self._hook_block("vitest-related")
+
+        # Act
+        entry_is_related = "pnpm exec vitest related --run --" in block
+        batches_are_serial = "require_serial: true" in block
+
+        # Assert
+        self.assertTrue(entry_is_related)
+        self.assertTrue(batches_are_serial)
+
 
 if __name__ == "__main__":
     unittest.main()

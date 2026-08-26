@@ -69,7 +69,11 @@ def _public_expectations() -> tuple[RouteExpectation, ...]:
             "/api/v1/readiness",
             (("mode", True, ("degradedLive", "replay")),),
             None,
-            ((200, _json(_dashboard_schema("readiness"))), ("default", error)),
+            (
+                (200, _json(_dashboard_schema("readiness"))),
+                (503, _json(_dashboard_schema("readiness"))),
+                ("default", error),
+            ),
         ),
         (
             "GET",
@@ -149,7 +153,8 @@ def _public_expectations() -> tuple[RouteExpectation, ...]:
     )
 
 
-def _private_expectations(prefix: str) -> tuple[RouteExpectation, ...]:
+def _fleet_expectations() -> tuple[RouteExpectation, ...]:
+    prefix = "fleet-control"
     refusal = _json(_rpc_schema(f"{prefix}-refusal"))
     status = _json(_rpc_schema(f"{prefix}-run-status"))
     return (
@@ -177,6 +182,49 @@ def _private_expectations(prefix: str) -> tuple[RouteExpectation, ...]:
     )
 
 
+def _scenario_expectations() -> tuple[RouteExpectation, ...]:
+    prefix = "scenario-control"
+    refusal = _json(_rpc_schema(f"{prefix}-refusal"))
+    status = _json(_rpc_schema(f"{prefix}-run-status"))
+    return (
+        (
+            "GET",
+            "/internal/v1/scenarios",
+            (),
+            None,
+            ((200, _json(_dashboard_schema("scenario-catalog"))), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs",
+            (),
+            _json(_rpc_schema(f"{prefix}-start-request")),
+            ((202, status), ("default", refusal)),
+        ),
+        (
+            "GET",
+            "/internal/v1/runs/{runId}",
+            (),
+            None,
+            ((200, status), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs/{runId}/cancel",
+            (),
+            _json(_rpc_schema(f"{prefix}-cancel-request")),
+            ((200, status), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs/{runId}/recover",
+            (),
+            _json(_rpc_schema(f"{prefix}-recovery-request")),
+            ((200, status), ("default", refusal)),
+        ),
+    )
+
+
 def _schema_ids(routes: tuple[RouteExpectation, ...]) -> frozenset[str]:
     """Collect every normative schema identity referenced by route bodies."""
     identities: set[str] = set()
@@ -196,8 +244,8 @@ class HttpContractExpectationTests(unittest.TestCase):
         fleet = _contract_module("aerial_rescue_fleet_simulator.control_http_contract")
         expected = (
             _public_expectations(),
-            _private_expectations("scenario-control"),
-            _private_expectations("fleet-control"),
+            _scenario_expectations(),
+            _fleet_expectations(),
         )
 
         # Act
@@ -209,7 +257,7 @@ class HttpContractExpectationTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, actual)
-        self.assertEqual(15, sum(len(routes) for routes in actual))
+        self.assertEqual(17, sum(len(routes) for routes in actual))
 
     def test_every_route_schema_is_manifest_owned(self) -> None:
         # Arrange

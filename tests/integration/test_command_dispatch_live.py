@@ -17,8 +17,8 @@ project's intention.
 
 Depths are read as deltas by counting a queue's own message collection, for the reason the
 delivery probe records: ``spooledMsgCount`` is cumulative and never falls. Every queue this
-test fills is drained afterwards, the four collateral ones included -- a command reaches
-three queues and a result reaches three more -- so the next run's arithmetic does not depend
+test fills is drained afterwards, the two collateral dashboard queues included -- a command reaches
+two queues and a result reaches two more -- so the next run's arithmetic does not depend
 on this one.
 
 **The prerequisite names every probe drone at once**, because the provisioner deletes what the
@@ -115,12 +115,10 @@ PROBE_QUEUE: Final = drone_queue_name(PROBE_DRONE)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
     (
         Principal.DASHBOARD_API,
         family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND_RESULT),
     ),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND_RESULT)),
 )
 FILLED_QUEUES: Final = (
     (Principal.FLEET_SIMULATOR, PROBE_QUEUE),

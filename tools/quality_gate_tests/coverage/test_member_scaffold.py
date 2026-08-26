@@ -5,19 +5,17 @@ from pathlib import Path
 from tools import member_scaffold
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
-SCAFFOLDED_MEMBERS = (
-    "packages/observability",
-    "services/evidence_service",
-    "services/recorder",
-)
+SCAFFOLDED_MEMBERS = ("services/evidence_service",)
 ACTIVE_MEMBERS = (
     "packages/broker",
     "packages/contracts",
     "packages/domain",
+    "packages/observability",
     "packages/store",
     "services/command_gateway",
     "services/dashboard_api",
     "services/fleet_simulator",
+    "services/recorder",
     "services/scenario_service",
 )
 

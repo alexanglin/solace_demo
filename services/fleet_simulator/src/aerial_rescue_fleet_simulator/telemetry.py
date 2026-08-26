@@ -71,7 +71,11 @@ def _payload(mission_id: str, reading: Reading) -> dict[str, object]:
 
 
 def telemetry_record(
-    mission_id: str, reading: Reading, stamp: TelemetryStamp
+    mission_id: str,
+    reading: Reading,
+    stamp: TelemetryStamp,
+    *,
+    producer_source: str | None = None,
 ) -> tuple[str, dict[str, object]]:
     """Return the topic and envelope document one reading is published as.
 
@@ -80,6 +84,8 @@ def telemetry_record(
         reading: What one drone reported for one tick.
         stamp: The identifier, instant, sequence, correlation, and trace parent to send it
             under.
+        producer_source: A validated composition-root source for a run-scoped producer,
+            or ``None`` for the stable source used by the pure record contract and fixtures.
 
     Returns:
         The topic text and the envelope document, in that order.
@@ -97,7 +103,7 @@ def telemetry_record(
     document = envelope_document(
         Envelope(
             id=stamp.event_id,
-            source=event_source(reading.drone_id),
+            source=producer_source or event_source(reading.drone_id),
             type=declared,
             subject=mission_id,
             time=stamp.occurred_at,

@@ -5,8 +5,8 @@ description = "Deterministic fleet physics and adapters around domain state mach
 requires-python = ">=3.14,<3.15"
 # The typed Solace facade, the wire contracts, and the deny-by-default machines. The
 # untyped client itself is reached only through aerial-rescue-broker (docs/adr/0028).
-# There is no console script: a process entry point needs a scenario, and ADR-0077
-# leaves producing one to the scenario service.
+# The production module entry point receives validated scenarios only through the
+# scenario service's authenticated private-control hop.
 dependencies = [
     "aerial-rescue-broker",
     "aerial-rescue-contracts",

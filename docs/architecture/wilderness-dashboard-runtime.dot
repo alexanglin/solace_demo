@@ -1,0 +1,145 @@
+digraph WildernessDashboardRuntime {
+  graph [
+    rankdir=TB,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.42",
+    ranksep="0.66",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=19,
+    label="Wilderness mission dashboard — map-first browser on the shared production runtime",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F7F9FC",
+    fontname="Helvetica",
+    fontsize=10,
+    margin="0.16,0.11"
+  ];
+
+  edge [
+    color="#52657A",
+    fontcolor="#314158",
+    fontname="Helvetica",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  browser [
+    label="Operator browser :8080\nMapLibre map • semantic fleet table\nordered timeline • guarded start/reset\nDEGRADED LIVE SIMULATION / ISOLATED REPLAY",
+    fillcolor="#E8F7F1",
+    color="#008F6B"
+  ];
+
+  subgraph cluster_runtime {
+    label="Shared aerial-rescue-mesh Compose project";
+    color="#2F6FB7";
+    style="rounded";
+
+    subgraph cluster_shared_base {
+      label="Existing healthy base — lifecycle owned by just up";
+      color="#008F6B";
+      style="rounded,dashed";
+
+      postgres [label="Shared PostgreSQL\nmissions • runs • operations\naudit ordinal + broker dedup", shape=cylinder, fillcolor="#EEF2F6"];
+      postgres_loopback [
+        label="postgres-loopback\nsingle-member bridge\nmasquerade off",
+        shape=hexagon,
+        fillcolor="#FFF7E6",
+        color="#B58900"
+      ];
+      broker [label="Shared PubSub+ broker\ndirect telemetry\nrequired lifecycle + dead-message subset", shape=cylinder, fillcolor="#DFF7EE", color="#008F6B"];
+      broker_loopback [
+        label="broker-loopback\nsingle-member bridge\nmasquerade off",
+        shape=hexagon,
+        fillcolor="#FFF7E6",
+        color="#B58900"
+      ];
+    }
+
+    subgraph cluster_extension {
+      label="Seven dashboard extension targets selected by just mission-control-up";
+      color="#6B86A5";
+      style="rounded";
+
+      caddy [label="Caddy\nsole loopback publisher\nsecurity headers + unbuffered SSE", fillcolor="#E8F7F1"];
+      caddy_loopback [
+        label="caddy-loopback\nsingle-member bridge\nmasquerade off",
+        shape=hexagon,
+        fillcolor="#FFF7E6",
+        color="#B58900"
+      ];
+      api [label="Dashboard API\nprivate Unix socket\nbootstrap • mutations • snapshots • SSE"];
+      migration [label="Migration\none-shot 0005 upgrade", fillcolor="#FFF7E6", color="#B58900"];
+      scenario [label="Scenario service :8081\nstrict catalog • start/status/cancel\nmission lifecycle publisher"];
+      fleet [label="Fleet simulator :8082\n20 simulations • 14 ticks\npublication-only • interruptible cancel"];
+      recorder [label="Recorder\ndirect telemetry + ordered lifecycle receiver\nvalidate • deduplicate • append audit"];
+      validator [label="Replay validator\none-shot • network none\nread-only root/input • exact idempotent output", fillcolor="#F0E9FF", color="#7050A0"];
+
+      socket [label="1 MiB tmpfs\ndashboard API socket", shape=folder, fillcolor="#EEF2F6"];
+      readiness [label="64 KiB tmpfs\nactive recorder freshness lease", shape=folder, fillcolor="#EEF2F6"];
+      replay_volume [label="shared-project named volume\nvalidated replay bundle", shape=folder, fillcolor="#F0E9FF", color="#7050A0"];
+    }
+
+    base_guard [
+      label="Shared-base guard\nhealthy before start\ncontainer IDs equal after start and cleanup",
+      shape=note,
+      fillcolor="#FFF7E6",
+      color="#B58900"
+    ];
+    cleanup [
+      label="Dashboard cleanup\nstop 5 long-running extensions only\nno down • no volume/history deletion",
+      shape=note,
+      fillcolor="#FFF7E6",
+      color="#B58900"
+    ];
+
+    caddy -> socket [label="HTTP over UDS", dir=both];
+    socket -> api [label="private UDS", dir=both];
+    api -> postgres [label="bounded transactions", dir=both];
+    api -> scenario [label="authenticated private HTTP", dir=both];
+    scenario -> fleet [label="distinct bearer\nprivate HTTP", dir=both];
+    scenario -> broker [label="guaranteed mission lifecycle"];
+    fleet -> broker [label="280 direct telemetry +\nguaranteed connectivity/sector lifecycle"];
+    broker -> recorder [label="direct + one ordered queue"];
+    recorder -> postgres [label="audit append + broker dedup\ncommit before lifecycle ACK"];
+    recorder -> readiness [label="activate / refresh / withdraw"];
+    readiness -> api [label="degraded-live readiness", style=dashed];
+    migration -> postgres [label="upgrade then exit"];
+    validator -> replay_volume [label="canonical validated bytes"];
+    replay_volume -> api [label="read-only exact bytes"];
+    base_guard -> broker [label="identity guard", style=dashed, color="#B58900"];
+    base_guard -> postgres [label="identity guard", style=dashed, color="#B58900"];
+    cleanup -> caddy [label="bounded stop", style=dashed, color="#B58900"];
+  }
+
+  recording [label="Committed synthetic NDJSON\n1 MiB / 512-event bounds", shape=note, fillcolor="#F0E9FF", color="#7050A0"];
+  host_tools [
+    label="Local host tools\nSEMP provisioner • diagnostics",
+    fillcolor="#FFF7E6",
+    color="#B58900"
+  ];
+  declared [
+    label="3 external edge-agent descriptors\nDECLARED ONLY — NOT EXECUTED\ncatalog and presentation data only",
+    style="rounded,dashed,filled",
+    fillcolor="#F1F3F5",
+    color="#7A8793"
+  ];
+
+  browser -> caddy_loopback [label="127.0.0.1:8080", dir=both, color="#008F6B", penwidth=1.5];
+  caddy_loopback -> caddy [label="host ingress only", color="#B58900"];
+  host_tools -> broker_loopback [label="127.0.0.1\nSMF / SEMP", dir=both, color="#B58900"];
+  broker_loopback -> broker [label="host ingress only", color="#B58900"];
+  host_tools -> postgres_loopback [label="127.0.0.1\nPostgreSQL", dir=both, color="#B58900"];
+  postgres_loopback -> postgres [label="host ingress only", color="#B58900"];
+  recording -> validator [label="read-only input", color="#7050A0"];
+  declared -> scenario [label="catalog metadata", style=dashed];
+  declared -> browser [label="explicit labels only\nno telemetry or connectivity", style=dashed];
+}

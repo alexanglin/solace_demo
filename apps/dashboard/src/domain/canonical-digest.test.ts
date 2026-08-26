@@ -15,10 +15,10 @@ import {
   validateOrdinalWitness,
 } from "./canonical";
 
-const REDUCED_STATE_SCHEMA_ID =
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json";
-const ORDERED_EVENT_SCHEMA_ID =
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json";
+const EVENT_FRAME_SCHEMA_ID =
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json";
+const SNAPSHOT_SCHEMA_ID =
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json";
 const FIXTURE_ROOT = resolve(process.cwd(), "../../fixtures/golden/v1/dashboard");
 const BASELINE_REPLAY_STATE_DIGEST =
   "6dc970704498d43445023241c0dac7efdcf97cdaa3d28adae2d861cdd0764b34";
@@ -209,21 +209,26 @@ async function readFixture(directory: string): Promise<unknown> {
 }
 
 async function readBaselineReducedState(): Promise<DashboardReducedState> {
-  const candidate = await readFixture("dashboard-reduced-state");
-  const result = createDashboardSchemaRegistry().validate(REDUCED_STATE_SCHEMA_ID, candidate);
+  const candidate = await readFixture("dashboard-snapshot");
+  const result = createDashboardSchemaRegistry().validate(SNAPSHOT_SCHEMA_ID, candidate);
   if (!result.ok) {
-    throw new Error("dashboard reduced-state baseline failed its schema");
+    throw new Error("dashboard snapshot baseline failed its schema");
   }
-  return result.value;
+  return result.value.state;
 }
 
 async function readBaselineOrderedEvent(): Promise<OrderedDashboardEvent> {
   const candidate = await readFixture("ordered-dashboard-event");
-  const result = createDashboardSchemaRegistry().validate(ORDERED_EVENT_SCHEMA_ID, candidate);
+  const result = createDashboardSchemaRegistry().validate(EVENT_FRAME_SCHEMA_ID, {
+    cursor: "mission-cursor-canonical-event",
+    digest: "0".repeat(64),
+    event: candidate,
+    frameVersion: "ordered-dashboard-event-frame/v1",
+  });
   if (!result.ok) {
-    throw new Error("ordered dashboard-event baseline failed its schema");
+    throw new Error("dashboard event-frame baseline failed its schema");
   }
-  return result.value;
+  return result.value.event;
 }
 
 async function digestRefusalOf(value: unknown): Promise<string> {

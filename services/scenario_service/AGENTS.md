@@ -7,9 +7,9 @@ These instructions apply to every file under `services/scenario_service/`. Read 
 rules still apply.
 
 This member is the Tier 2 boundary for discovering and loading versioned synthetic scenarios and
-coordinating their lifecycle. Its strict scenario-file and private-control models plus framework-free
-route expectations are implemented; its catalog loader, HTTP client/server, and lifecycle runtime are
-not. Read the owner of each concern before changing it:
+coordinating their lifecycle. Its strict catalog loader, private-control models and HTTP client/server,
+guaranteed mission-lifecycle publisher, bounded run coordinator, and production module entry point are
+implemented. Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -42,15 +42,21 @@ not. Read the owner of each concern before changing it:
 | Injected connectivity thresholds | [ADR-0039](../../docs/adr/0039-drone-connectivity-states-and-recovery.md) |
 | Docker Compose runtime and explicit profiles | [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
 | Honest scaffold classification | [ADR-0053](../../docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md) |
-| No scenario-service broker identity | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Scenario-service mission-lifecycle-only broker grant | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Mission lifecycle and reset semantics | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 | Sector ownership and connectivity edges | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Frozen simulator scenario boundary | [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) |
 | Deterministic tick and ordering semantics | [ADR-0078](../../docs/adr/0078-one-tick-is-one-observation-per-drone.md) |
 | Strict catalog and wilderness definition | [ADR-0100](../../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private run control | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Private catalog discovery and lost-run recovery | [ADR-0114](../../docs/adr/0114-extend-private-scenario-control-with-catalog-and-recovery.md) |
 | Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
 | Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
+| Minimal scenario status without repeated counters or roster counts | [ADR-0124](../../docs/adr/0124-remove-unconsumed-dashboard-wire-values.md) |
+| Recovery identity without an unread constant reason | [ADR-0137](../../docs/adr/0137-remove-unconsumed-recovery-and-recorder-results.md) |
+| Shared retained dashboard runtime | [ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
+| Mission-scoped telemetry producer identity | [ADR-0140](../../docs/adr/0140-scope-live-telemetry-producers-to-one-mission.md) |
+| Durable terminal reset recovery | [ADR-0143](../../docs/adr/0143-let-durable-terminal-state-establish-reset-cancellation.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not change the accepted document format, schema dialect, version marker, catalog identity,
@@ -62,11 +68,18 @@ fact in its canonical authority and make the coordinated change required by the 
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn pins selected for later runtime work |
-| `src/aerial_rescue_scenario_service/wire.py` | Owns the two scenario-file models, four scenario-control server models, four distinct fleet-control caller models, and canonical-first strict validation |
-| `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact three-route private request, response, and default-refusal expectations without constructing a server |
+| `pyproject.toml` | Declares Python 3.14, Tier 2, broker/contracts/domain dependencies, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn pins |
+| `src/aerial_rescue_scenario_service/wire.py` | Owns the file models, recovery and scenario-control server models, private catalog response, fleet-control caller models, and canonical-first strict validation |
+| `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact five-route private request, response, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_scenario_service/catalog.py` | Owns confined bounded reads, catalog lookup, definition integrity and cross-field checks, and catalog/fleet wire projections |
+| `src/aerial_rescue_scenario_service/control.py` | Owns the bounded stable-run registry, sole mission lifecycle, cancellation, monitoring, and lost-run recovery |
+| `src/aerial_rescue_scenario_service/fleet_client.py` | Owns bounded HTTPX calls to the separate fleet service, with no automatic mutation retry |
+| `src/aerial_rescue_scenario_service/http.py` | Owns the authenticated five-route private FastAPI boundary on the internal listener |
+| `src/aerial_rescue_scenario_service/lifecycle.py` | Owns exact-byte guaranteed PLANNED, SEARCHING, EXHAUSTED, and ABORTED publication |
+| `src/aerial_rescue_scenario_service/main.py`, `__main__.py` | Owns strict file-indirected production configuration, process resources, and `python -m aerial_rescue_scenario_service` |
 | `src/aerial_rescue_scenario_service/__init__.py` | Package-intent docstring |
 | `src/aerial_rescue_scenario_service/py.typed` | Marker for distributed type information |
+| `tests/` | Member-local loader, production-scenario, wire, refusal, and route-registry evidence |
 
 The member is now **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies
 its executable source accordingly, and
@@ -76,27 +89,32 @@ The model layer is closed, frozen, strict, alias-only, and checked against the m
 and one-reason-negative fixtures. It delegates canonical JSON to `packages/contracts`, keeps caller and
 server copies process-local, and imports no other service implementation.
 
-The repository still has no production `scenarios/` directory or catalog files, loader, lifecycle
-coordinator, internal HTTP server or client, simulator handoff, store adapter, composition root,
-liveness probe, readiness probe, generated OpenAPI document, listener, or member-local test suite. The
-route registry is inert data for later runtime and OpenAPI parity tests. Never add a dummy scenario,
-placeholder handler, fake catalog, no-op lifecycle operation, or import-only entry point to make an
-absent capability look started; each behavior lands through red-green-refactor.
+The committed `scenarios/` pair and strict loader now exist. The loader confines bounded regular-file
+reads to an injected root, preserves exact bytes through digest verification, validates through the
+current Pydantic twins after canonical decoding, checks geometry and roster relationships, and projects
+only the twenty simulated members into ADR-0107's fleet-control scenario. It also projects the validated
+definition into the existing dashboard catalog, without performing a network or lifecycle effect.
 
-The `scenario-service` definition in `deploy/compose.yaml` is also a shell. Its command imports this
-package and exits, it publishes no port, and its inherited healthcheck imports the contracts package
-instead of probing this service. The generic application anchor supplies broker endpoint, Ollama,
-PostgreSQL, trust-store, secret, and dependency wiring, but none of those inherited values proves this
-member needs or uses that dependency. ADR-0061 deliberately gives the scenario service no broker username,
-password, role, publish grant, or subscription grant.
+The repository now has the injected lifecycle coordinator, authenticated internal HTTP server and bounded
+fleet client, simulator process handoff, and explicit composition root. A store adapter, liveness probe,
+readiness probe, and generated private OpenAPI document remain outside this member. Never add a placeholder
+handler or no-op lifecycle operation to make an absent capability look started; each behavior lands through
+red-green-refactor.
 
-None of the current models or configuration proves an HTTP listener, catalog load, scenario acceptance, start,
-reset, simulator delivery, readiness, cancellation, or shutdown. `AGENTS.md` and its `CLAUDE.md` symlink
-remain documentation and do not affect active-member detection.
+`deploy/compose.yaml` owns container command, secret mounts, internal networking, healthchecks, and startup
+ordering. This member's composition root requires only the scenario mission-lifecycle broker identity and
+guaranteed publisher; it creates no receiver and has no telemetry, command, proposal, approval, audit, or
+Agent Mesh grant. Member-local construction does not by itself prove the packaged service graph.
+
+Member tests prove catalog loading, strict private admission, start/status/cancel/recovery orchestration,
+bounded shutdown, and exact lifecycle publication through injected ports. They do not prove container
+networking, broker ACLs, readiness, public reset transactions, or live Compose acceptance. A
+developmental uncommitted eight-case production run has exercised this member in the shared stack, but
+clean committed execution and release evidence remain the acceptance authority.
 
 ## 3. Produce the accepted simulator boundary without a second owner
 
-ADR-0077 fixes the semantic output this member must eventually make available: one simulator run receives
+ADR-0077 fixes the semantic output this member makes available: one simulator run receives
 one validated, frozen `FleetScenario` at its composition boundary. The value currently lives in
 `aerial_rescue_fleet_simulator.scenario` and carries exactly:
 
@@ -111,7 +129,7 @@ Each `DroneStart` explicitly carries its drone and sector identifiers, starting 
 altitude, heading, ground speed, battery, per-tick integer displacement, and per-tick battery drain. The
 value is the simulator's accepted composition input, not a catalog record, file model, wire response,
 persistence row, or mutable lifecycle object. It carries no scenario identifier, version, title,
-description, asset record, search polygon, weather summary, time-since-contact value, or run mode.
+description, asset record, search polygon, or run mode.
 
 Keep ownership separated:
 
@@ -131,10 +149,9 @@ Keep ownership separated:
 
 ADR-0107 now defines the serializable handoff over authenticated private HTTP: this member sends the
 lossless fleet-control start document to the separate fleet process and validates its typed status or
-refusal. The distinct fleet-control caller models now exist locally, but no HTTP client or server exists.
-That contract does not authorize a dependency from one service package to another. Never import a
-simulator composition root, duplicate `FleetScenario`, or pass loose mappings that create an unowned
-second representation.
+refusal. The production bounded HTTP client and authenticated server implement that contract without a
+dependency from one service package to another. Never import a simulator composition root, duplicate
+`FleetScenario`, or pass loose mappings that create an unowned second representation.
 
 Do not describe the frozen dataclass as deeply immutable or tamper-proof. Its
 `absent_heartbeats` member is typed as a `Mapping`, and the current constructor neither copies nor freezes
@@ -163,13 +180,14 @@ replay consumes a committed versioned event stream through a structurally isolat
 fixed scenario replay, compare raw event identifiers or timestamps as its determinism oracle, or let a
 recorded event become live scenario input.
 
-## 5. Implement the decided document and catalog without claiming runtime
+## 5. Preserve the implemented document and catalog without coupling them to runtime effects
 
 ADR-0100 selects canonical JSON, integer version `1`, `scenarios/catalog.v1.json`, and
 `scenarios/v1/wilderness-missing-person.r1.json`. The language-neutral catalog and definition schemas,
 their manifest entries, and synthetic polarity fixtures now exist under `schemas/` and `fixtures/`.
-Strict service-local Pydantic twins now validate those file shapes, but the two production files, loader,
-filesystem policy, and simulator adaptation remain unimplemented.
+Strict service-local Pydantic twins validate those file shapes. The production pair, confined source,
+catalog lookup, integrity and cross-field checks, and lossless fleet-control projection are implemented
+and covered by the member suite.
 
 Treat every future production document and catalog entry as untrusted even though it is committed.
 Retain source bytes long enough to refuse duplicate keys and floating-point values before Pydantic can
@@ -186,11 +204,12 @@ order choose a definition.
 
 The byte, nesting, catalog, roster, and heartbeat-schedule bounds are now owned by
 `docs/operating-parameters.md`. Enforce them at the raw file and model boundaries; a green schema fixture
-is not evidence that the absent loader applies them.
+is not evidence that the production loader applies them. The loader's focused boundary tests are the
+deterministic evidence; the packaged process and full workload require their separate live run.
 
 ## 6. Map simulator-bound values losslessly and preserve refusals
 
-After the file contract exists, adapt every simulator-bound member to the simulator value without adding,
+Adapt every simulator-bound member to the simulator value without adding,
 dropping, deriving, or silently defaulting a fact. Catalog metadata, provenance, and other non-simulator
 members remain with their decided owners instead of being forced into `FleetScenario` or discarded.
 Construct the owning types and preserve their typed refusals rather than duplicating their cross-field
@@ -223,31 +242,42 @@ Preserve the current model's deliberately narrow semantics:
 - position changes by declared integer displacement, altitude is constant, and heading and speed are not
   checked against displacement direction beyond moving versus stationary;
 - a position can fail at a coordinate boundary during a later tick even if construction succeeded; and
-- weather summary and time since last contact are audit metadata that currently affect no decision.
+- the current contract accepts no weather or time-since-contact input because neither has an implemented
+  consumer.
 
 ADR-0100 fixes the prepared workload at twenty deterministic simulations plus three declared-only edge
-descriptors, but the committed schemas and golden fixtures are not the production catalog or fleet-scale
-runtime evidence. A `FleetScenario` roster contains only the twenty simulated members; it never contains
-the three declared-only descriptors. Keep every simulator roster explicit and verify the complete
-workload after the production definition and loader land. The current live fleet evidence uses a smaller
-literal and explicitly is not fleet-scale evidence. Never hardcode the workload as a service default or
-generate a roster from a count.
+descriptors. The committed production definition and loader prove the strict document and lossless
+twenty-member projection deterministically, but do not by themselves prove a fleet-scale running stack. A
+`FleetScenario` roster contains only the twenty simulated members; it never contains the three
+declared-only descriptors. Keep every simulator roster explicit. The currently recorded live fleet
+evidence uses a smaller literal. A developmental uncommitted shared-stack run has exercised the packaged
+twenty-member workload, but its clean committed rerun and release record remain pending. Never hardcode
+the workload as a service default or generate a roster from a count.
 
 ## 7. Keep scenario identity, mission identity, and lifecycle distinct
 
 The public API's `scenarioId` selects a reusable catalog definition. `FleetScenario.mission_id` identifies
 one run's application events. They are different concepts: do not derive one from the other, use a filename
 as both, or reuse a mission identifier because the same scenario was selected again. `FleetScenario`
-currently carries no scenario identity, and no topic or event records which catalog entry produced a run.
-Do not claim scenario provenance in recordings or audit until a governing contract adds it.
+currently carries no scenario identity, and no topic or normalized event independently records which
+catalog entry produced a run. Revision 0005 binds a live run and mission to the selected scenario, and the
+focused exporter uses that authoritative relation to write scenario identity into the normalized
+recording header. Do not infer provenance from an event alone or copy it from caller input after that
+binding has been established.
 
 ADR-0107 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
 and distinct bearer checks, bounded calls, stable-run idempotency, uncertain-start status reconciliation,
 and shared cancellation budget. The service-local server/caller models and framework-free scenario-route
-registry now express the typed boundary. This member must eventually expose those scenario-control routes
-and call the fleet-control routes without copying the public dashboard route table, applying the browser
+registry and runtime express that typed boundary. This member exposes those scenario-control routes and
+calls the fleet-control routes without copying the public dashboard route table, applying the browser
 Origin rule internally, automatically repeating an uncertain start, sharing either private bearer, or
-importing another service implementation. None of that private HTTP runtime exists yet.
+importing another service implementation.
+
+ADR-0114 extends only scenario control with read-only catalog discovery and lost-run recovery, so its
+route registry and authenticated listener have five ordered routes while fleet control remains at three.
+Recovery queries the exact fleet run and publishes one guaranteed ABORTED event when that fleet run is
+unknown; the dashboard API never manufactures the lifecycle fact. ADR-0137 narrows the recovery request
+to stable scenario, mission, and run identities because the former constant reason selected no behavior.
 
 The caller supplies stable mission and run identities. The same run and canonical start body returns
 current status; different content is `RUN_CONFLICT`; an uncertain start is reconciled by querying that
@@ -257,9 +287,14 @@ memory or let the private endpoint independently repeat the dashboard mutation.
 
 Reset is not a mission transition. It terminates the current mission and creates a new mission with a new
 identifier; it never rewinds a terminal mission, reuses identity, or edits append-only history. The SQL
-deletion and preservation scope remains undecided. Never implement reset with `TRUNCATE`, schema or database
-drop, volume deletion, broad file removal, or an implicit catalog reload. Durable reset behavior belongs
-to the store and lifecycle authorities and requires exact positive and negative tests.
+scope is history-preserving under ADR-0113: successful live reset retains predecessor and audit rows,
+creates a fresh `PLANNED` successor, and moves the current pointer only after cancellation is established.
+ADR-0143 refines recovery: recorder-persisted `EXHAUSTED` or `ABORTED` state already establishes
+cancellation, while a missing nonterminal private run produces exact
+`409 CANCELLATION_NOT_ESTABLISHED` bytes and leaves predecessor, pointer, prepared state, and history
+unchanged. Never implement reset with `TRUNCATE`, schema or database drop, volume deletion, broad file
+removal, or an implicit catalog reload. Durable reset behavior belongs to the store and dashboard
+orchestration authorities and requires exact positive and negative tests.
 
 ## 8. Preserve mode, privacy, and deployment boundaries
 
@@ -273,8 +308,9 @@ composition:
   no outbound connection. A scenario loader must not turn a replay fixture into a live run.
 - Run mode is composition state, not a scenario-file field that can override the selected graph and not a
   mission lifecycle state.
-- The scenario service has no broker role or A2A authority in any mode. It does not publish telemetry,
-  events, commands, proposals, approvals, audit, or Agent Mesh traffic.
+- Catalog loading and projection construct no broker adapter or other effect. ADR-0114 assigns the
+  recovery runtime only a guaranteed mission-lifecycle publisher; it never grants a subscription,
+  telemetry, command, proposal, approval, audit, or Agent Mesh authority.
 
 Scenario operational data must remain anonymous and synthetic, and every asset must be safe for a public
 repository. Imagery may use an approved public-domain wilderness background or policy-compliant synthetic
@@ -290,12 +326,18 @@ uniform-sweep inputs; it does not make wind, weather effects, probability of det
 behavior, airspace deconfliction, operational flight, or a real rescue integration exist. Do not label a
 catalog entry operational, field-validated, or decision-calibrated.
 
-For a real entry point, coordinate this member's process command, internal port, health and readiness
+The production entry point owns strict secret-file configuration, the internal port, bounded HTTP client,
+guaranteed publisher, coordinator, listener, and cleanup. Coordinate its health and readiness
 probes, environment, filesystem mounts, secrets, dependencies, image contents, cancellation, shutdown,
 runbook, and architecture status with `deploy/compose.yaml`. Liveness means the process can respond;
 readiness must include the exact catalog and mode prerequisites the later contract assigns. A package
 import, generic contracts healthcheck, open TCP socket, inherited Postgres dependency, or valid one-file
 fixture proves none of those.
+
+Mission control runs this member as an extension of the shared `aerial-rescue-mesh` Compose project. It
+reuses the existing broker and PostgreSQL containers and retained volumes; supported stop and test
+cleanup stop only dashboard-owned long-running services and never run Compose `down` or delete shared
+history ([ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
 
 Keep package imports side-effect free. Configuration reads, catalog scans, file opens, Pydantic model
 construction, identifier generation, clocks, database clients, HTTP clients or servers, threads, tasks,
@@ -338,8 +380,9 @@ operating-system isolation boundary. Cover these classes as their contracts land
   protocol ADR-0107 defines;
 - same-key, different-key, concurrent, restart, and partial-failure start/reset behavior after idempotency
   ownership and transaction semantics are decided;
-- live, degraded, and replay composition with no mode crossing, no recorded substitution, and no broker,
-  A2A, model, or unauthorized store effect from this member; and
+- live, degraded, and replay composition with no mode crossing or recorded substitution; only the
+  mission-lifecycle publisher may exist in live modes, while replay creates no broker, A2A, model, or
+  unauthorized store effect from this member; and
 - prepared-asset provenance, prohibited-person imagery, secret and tenant-value redaction, synthetic
   coordinates, and the complete committed acceptance workload.
 
@@ -351,10 +394,17 @@ simulator process handoff, operating-system path race, full-workload resource bo
 isolation. Use the real owning boundary for each of those claims and keep positive controls beside negative
 security tests.
 
-The current three-drone live simulator evidence proves the accepted fold and direct telemetry path against
-the broker. It does not prove this service, a catalog, internal HTTP, lifecycle coordination, the reference
-fleet size, reset, or replay. Report those evidence classes separately rather than extending one result by
-prose.
+The member suite proves the committed 20-plus-3 workload, exact-byte digest, lossless twenty-member wire
+projection, private HTTP admission and handoff through injected transports, lifecycle construction, and
+bounded process resource ownership. It does not prove container networking, live broker publication, or
+dashboard/store orchestration.
+
+The current committed three-drone live simulator evidence proves the accepted fold and direct telemetry
+path against the broker. It does not prove this service, a catalog, internal HTTP, lifecycle coordination,
+the reference fleet size, reset, or replay. The later developmental uncommitted production run observed
+the twenty-member shared-stack lifecycle path, but it remains remediation evidence until repeated from a
+clean committed revision and recorded under `release-evidence/`. Report those evidence classes separately
+rather than extending one result by prose.
 
 ## 10. Workspace hygiene and required verification
 
@@ -369,7 +419,7 @@ prose.
   see it. Use a no-index comparison before staging and the cached diff after staging.
 
 For a guide-only change, synchronize the locked root environment, prove the member remains active and
-keeps its no-broker deployment boundary, and pass both guide paths explicitly to the hooks:
+keeps its mission-lifecycle-only broker boundary, and pass both guide paths explicitly to the hooks:
 
 ```sh
 uv sync --all-packages --frozen
@@ -408,7 +458,8 @@ git diff --check
 Before staging an untracked guide, inspect it and its whitespace with a no-index diff. After staging only
 human-approved files, inspect the complete cached diff and run `git diff --cached --check`. Confirm the
 literal symlink target, active status, Tier 2 declaration, dependencies, file and version
-contract, no-seed rule, simulator boundary, scenario-versus-mission identity, no-broker authority,
+contract, no-seed rule, simulator boundary, scenario-versus-mission identity, mission-lifecycle-only
+broker authority,
 lifecycle and reset claims, mode composition, privacy, tests, deployment, and affected documentation all
 agree. Report every unrun container, HTTP, persistence, replay-isolation, privacy, scale, or performance
 check as an open verification obligation; a static or offline pass is never live scenario-service

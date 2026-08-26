@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Generate the per-checkout certificate authority, the broker's server certificate, and the
-# stack's passwords (docs/adr/0046-generated-local-certificate-authority.md).
+# stack's consumed passwords (docs/adr/0046 and docs/adr/0129).
 #
 # Outputs, relative to the deploy directory (default deploy/, override with
 # AERIAL_RESCUE_DEPLOY_DIR so tests can redirect it):
@@ -11,8 +11,9 @@
 #   secrets/broker-server.pem       key then certificate, what tls_servercertificate_filepath names
 #   secrets/broker-admin-password   32 random bytes, hexadecimal
 #   secrets/postgres-password       32 random bytes, hexadecimal
-#   secrets/semp-discovery-password 32 random bytes, hexadecimal
 #   secrets/session-secret-key      32 random bytes, hexadecimal -- the Web UI session key
+#   secrets/scenario-control-secret 32 random bytes, hexadecimal -- dashboard-to-scenario bearer
+#   secrets/fleet-control-secret    32 random bytes, hexadecimal -- scenario-to-fleet bearer
 #   secrets/broker-<role>-password  one per broker authorization role, same form
 #   secrets/.env.roles              the same role credentials as Compose variables
 #
@@ -55,7 +56,8 @@ validity_days=365
 
 broker_roles="fleet-simulator command-gateway dashboard-api scenario-service evidence-service recorder
 event-mesh-gateway event-mesh-tool agent-mesh-agent discovery"
-passwords="broker-admin-password postgres-password semp-discovery-password session-secret-key"
+passwords="broker-admin-password postgres-password session-secret-key
+scenario-control-secret fleet-control-secret"
 for role in $broker_roles; do
 	passwords="$passwords broker-$role-password"
 done
@@ -67,8 +69,9 @@ report() {
 	openssl x509 -noout -fingerprint -sha256 -in "$secrets/broker-server.crt"
 	openssl x509 -noout -text -in "$secrets/broker-server.crt" |
 		grep -A1 'Subject Alternative Name' | tail -n 1 | sed 's/^[[:space:]]*//'
-	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery}-password\n' "$secrets"
+	printf 'passwords:  %s/{broker-admin,postgres}-password\n' "$secrets"
 	printf 'session:    %s/session-secret-key\n' "$secrets"
+	printf 'control:    %s/{scenario-control,fleet-control}-secret\n' "$secrets"
 	printf 'roles:      %s/broker-{%s}-password\n' "$secrets" \
 		"$(printf '%s' "$broker_roles" | tr '\n ' ',,')"
 	printf 'compose:    %s/.env.roles\n' "$secrets"

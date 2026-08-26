@@ -9,6 +9,8 @@ export default tseslint.config(
       "dist/**",
       "node_modules/**",
       "playwright-report/**",
+      // Ajv owns these freshness-checked bytes; lint the generator and hand-written registry.
+      "src/contracts/generated/runtime/validators.mjs",
       "test-results/**",
     ],
   },

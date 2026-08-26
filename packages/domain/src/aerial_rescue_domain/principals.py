@@ -111,7 +111,14 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
     ),
     Principal.SCENARIO_SERVICE: frozenset(),
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
-    Principal.RECORDER: frozenset(Family),
+    Principal.RECORDER: frozenset(
+        {
+            Family.DRONE_TELEMETRY,
+            Family.DRONE_EVENT,
+            Family.MISSION_EVENT,
+            Family.SECTOR_EVENT,
+        }
+    ),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.DRONE_EVENT}),
     Principal.EVENT_MESH_TOOL: frozenset(),
     Principal.AGENT_MESH_AGENT: frozenset(),
@@ -119,8 +126,12 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
 }
 """Total over the roles; a test asserts it.
 
-``RECORDER`` reads every family because the replay fixtures it writes must be able to
-reproduce the whole mission; it holds no publish grant, so the breadth costs nothing.
+``RECORDER`` names only the four schema-bound source families that project into dashboard state.
+Its direct telemetry subscription stays separate from the three guaranteed lifecycle families.
+Because ``DRONE_EVENT`` also carries salient detections, ADR-0120 requires the broker adapter to
+narrow that one family grant to the exact ``connectivity-changed`` event type. The resulting
+deployed authority cannot reach command, approval, evidence, audit, salient-detection, or Agent Mesh
+traffic it never records.
 ``AGENT_MESH_AGENT`` reads nothing here because agents receive work over A2A rather than
 over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``), and
 ``EVENT_MESH_TOOL`` reads nothing here because the only thing it consumes is its own

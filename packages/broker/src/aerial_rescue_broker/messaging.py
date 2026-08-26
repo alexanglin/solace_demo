@@ -52,8 +52,10 @@ __all__ = [
     "BrokerEndpoint",
     "BrokerSession",
     "ConsumingSession",
+    "DirectConsumingSession",
     "DirectPublisher",
     "FleetSession",
+    "GuaranteedPublishingSession",
     "InboundMessage",
     "MessagePublisher",
     "MessageReceiver",
@@ -67,9 +69,13 @@ __all__ = [
     "SolaceReceiver",
     "build_service",
     "connection_properties",
+    "direct_consuming_session",
     "fleet_session",
+    "guaranteed_publishing_session",
     "open_consuming_session",
+    "open_direct_consuming_session",
     "open_fleet_session",
+    "open_guaranteed_publishing_session",
     "open_publishing_session",
     "open_session",
 ]
@@ -458,6 +464,51 @@ class PublishingSession:
         self._service.disconnect()
 
 
+@dataclass(frozen=True)
+class GuaranteedPublishingSession:
+    """A connected acknowledged publisher with no receiver authority."""
+
+    publisher: SolacePublisher
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the publisher before disconnecting its service."""
+        self.publisher.close()
+        self._service.disconnect()
+
+
+def guaranteed_publishing_session(service: MessagingService) -> GuaranteedPublishingSession:
+    """Compose one acknowledged publisher without constructing any receiver."""
+    return GuaranteedPublishingSession(
+        publisher=SolacePublisher(service),
+        _service=service,
+    )
+
+
+@dataclass(frozen=True)
+class DirectConsumingSession:
+    """A connected direct receiver with no publisher construction or authority."""
+
+    receiver: SolaceReceiver
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the receiver before disconnecting its service."""
+        self.receiver.close()
+        self._service.disconnect()
+
+
+def direct_consuming_session(
+    service: MessagingService,
+    subscriptions: Sequence[str],
+) -> DirectConsumingSession:
+    """Compose a direct receiver without constructing either publisher type."""
+    return DirectConsumingSession(
+        receiver=SolaceReceiver(service, subscriptions),
+        _service=service,
+    )
+
+
 def open_publishing_session(
     endpoint: BrokerEndpoint, role: Principal, credential: str
 ) -> PublishingSession:
@@ -474,6 +525,35 @@ def open_publishing_session(
     service = build_service(endpoint, role, credential)
     service.connect()
     return PublishingSession(publisher=SolaceDirectPublisher(service), _service=service)
+
+
+def open_guaranteed_publishing_session(
+    endpoint: BrokerEndpoint, role: Principal, credential: str
+) -> GuaranteedPublishingSession:
+    """Connect one role as an acknowledged publisher that consumes nothing."""
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    try:
+        return guaranteed_publishing_session(service)
+    except Exception:
+        service.disconnect()
+        raise
+
+
+def open_direct_consuming_session(
+    endpoint: BrokerEndpoint,
+    role: Principal,
+    credential: str,
+    subscriptions: Sequence[str],
+) -> DirectConsumingSession:
+    """Connect one role as a direct receiver without constructing a publisher."""
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    try:
+        return direct_consuming_session(service, subscriptions)
+    except Exception:
+        service.disconnect()
+        raise
 
 
 def open_session(
@@ -550,8 +630,9 @@ class FleetSession:
     One connection rather than one per queue. ``MAX_BIND_COUNT`` and the exclusive access
     type of ``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md`` bound
     the flows on a queue, not the services in a process, so every receiver here can share a
-    service and each queue still has exactly one flow. The reference fleet is 23 drones, and
-    a session per drone would spend 25 connections against a message VPN that permits 100.
+    service and each queue still has exactly one flow. ADR-0118 projects only the twenty
+    executable simulations into this session; the three declared-only members receive no queue,
+    receiver, or connection.
 
     The two publishers stay distinct types rather than one: routine telemetry is direct and
     supersedable while a command result is guaranteed, and a caller that held one port for

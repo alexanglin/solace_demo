@@ -43,7 +43,6 @@ DASHBOARD_SERVER_SCHEMA_IDS = frozenset(
 )
 DASHBOARD_BROWSER_ONLY_SCHEMA_IDS = frozenset(
     {
-        f"{SCHEMA_PREFIX}dashboard/mutation-outcome.schema.json",
         f"{SCHEMA_PREFIX}dashboard/source-signal.schema.json",
     }
 )
@@ -56,8 +55,17 @@ SCENARIO_FILE_SCHEMA_IDS = frozenset(
 SCENARIO_CONTROL_SCHEMA_IDS = frozenset(
     {
         f"{SCHEMA_PREFIX}rpc/scenario-control-{suffix}.schema.json"
-        for suffix in ("cancel-request", "refusal", "run-status", "start-request")
+        for suffix in (
+            "cancel-request",
+            "recovery-request",
+            "refusal",
+            "run-status",
+            "start-request",
+        )
     }
+)
+SCENARIO_SERVER_SCHEMA_IDS = SCENARIO_CONTROL_SCHEMA_IDS | frozenset(
+    {f"{SCHEMA_PREFIX}dashboard/scenario-catalog.schema.json"}
 )
 FLEET_CONTROL_SCHEMA_IDS = frozenset(
     {
@@ -126,7 +134,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
                 DASHBOARD_BROWSER_ONLY_SCHEMA_IDS,
             ),
             (
-                SCENARIO_CONTROL_SCHEMA_IDS,
+                SCENARIO_SERVER_SCHEMA_IDS,
                 FLEET_CONTROL_SCHEMA_IDS,
                 SCENARIO_FILE_SCHEMA_IDS,
                 frozenset(),
@@ -148,7 +156,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, actual)
         self.assertEqual(
-            19,
+            18,
             len(DASHBOARD_SERVER_SCHEMA_IDS | DASHBOARD_BROWSER_ONLY_SCHEMA_IDS),
         )
 
@@ -212,11 +220,8 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Arrange
         dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
         schema_id = f"{SCHEMA_PREFIX}dashboard/health.schema.json"
-        duplicate = (
-            b'{"healthVersion":"dashboard-health/v1","status":"ok",'
-            b'"runtimeId":"runtime-01","status":"ok"}'
-        )
-        floating = b'{"healthVersion":"dashboard-health/v1","status":"ok","runtimeId":1.5}'
+        duplicate = b'{"healthVersion":"dashboard-health/v1","status":"alive","status":"alive"}'
+        floating = b'{"healthVersion":"dashboard-health/v1","status":"alive","unexpected":1.5}'
 
         # Act
         with pytest.raises(canonical.CanonicalizationError) as duplicate_error:

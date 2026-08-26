@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { OrderedDashboardEvent } from "../contracts/generated";
 import { replayStateDigest } from "./canonical";
@@ -157,6 +157,41 @@ describe("reducer checkpoint anchors", () => {
     expect(outcome.checkpoint.state.sectors.map(({ identifier }) => identifier)).toEqual([
       lowerUtf8Identifier,
       higherUtf8Identifier,
+    ]);
+  });
+
+  test("orders defensive array-like encoder results without undefined byte arithmetic", () => {
+    // Arrange
+    const nativeEncoder = new TextEncoder();
+    const nativeEncode = nativeEncoder.encode.bind(nativeEncoder);
+    const encode = vi.spyOn(TextEncoder.prototype, "encode").mockImplementation((value = "") => {
+      if (value === "drone-hole") {
+        return { length: 1 } as unknown as Uint8Array<ArrayBuffer>;
+      }
+      if (value === "drone-one") return Uint8Array.of(1);
+      return nativeEncode(value);
+    });
+    let outcome: ReturnType<typeof initializePreparedReducerCheckpoint>;
+
+    // Act
+    try {
+      outcome = initializePreparedReducerCheckpoint({
+        declaredOnlyMemberIds: [],
+        identifier: MISSION_ID,
+        predecessorIdentifier: null,
+        sectorIds: [],
+        simulatedMemberIds: ["drone-hole", "drone-one"],
+      });
+    } finally {
+      encode.mockRestore();
+    }
+
+    // Assert
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error("defensive byte-order input was refused");
+    expect(outcome.checkpoint.state.fleet.map(({ identifier }) => identifier)).toEqual([
+      "drone-hole",
+      "drone-one",
     ]);
   });
 
@@ -884,6 +919,63 @@ describe("event semantic refusals", () => {
     const malformed = {
       ...telemetryEvent(1),
       event: { ...telemetryEvent(1).event, data: { droneId: SIMULATED_MEMBER_ID } },
+    } as unknown as OrderedDashboardEvent;
+
+    // Act
+    const result = await foldOrderedDashboardEvent(initialCheckpoint(), malformed);
+
+    // Assert
+    expect(refusalOf(result)).toEqual({
+      attribute: "data",
+      code: "EVENT_DATA",
+      value: malformed.event.data,
+    });
+  });
+
+  test("refuses a known event kind with an inexact common envelope", async () => {
+    // Arrange
+    const baseline = missionEvent(1);
+    const malformed = {
+      ...baseline,
+      event: { ...baseline.event, unexpected: true },
+    } as unknown as OrderedDashboardEvent;
+
+    // Act
+    const result = await foldOrderedDashboardEvent(initialCheckpoint(), malformed);
+
+    // Assert
+    expect(refusalOf(result)).toEqual({
+      attribute: "event",
+      code: "EVENT_DATA",
+      value: malformed.event,
+    });
+  });
+
+  test("refuses a sector event with inexact lifecycle data", async () => {
+    // Arrange
+    const baseline = sectorEvent(1);
+    const malformed = {
+      ...baseline,
+      event: { ...baseline.event, data: { ...baseline.event.data, unexpected: true } },
+    } as unknown as OrderedDashboardEvent;
+
+    // Act
+    const result = await foldOrderedDashboardEvent(initialCheckpoint(), malformed);
+
+    // Assert
+    expect(refusalOf(result)).toEqual({
+      attribute: "data",
+      code: "EVENT_DATA",
+      value: malformed.event.data,
+    });
+  });
+
+  test("refuses a sector event whose event class is not mission-owned", async () => {
+    // Arrange
+    const baseline = sectorEvent(1);
+    const malformed = {
+      ...baseline,
+      event: { ...baseline.event, eventClass: "CONNECTIVITY" },
     } as unknown as OrderedDashboardEvent;
 
     // Act

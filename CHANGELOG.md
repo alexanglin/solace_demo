@@ -10,14 +10,161 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Related dashboard unit tests now have one scheduler at a time.** The commit hook still selects
+  tests with `vitest related`, but pre-commit filename partitions run serially so a large staged change
+  cannot launch several competing jsdom pools and turn valid five-second waits into resource-contention
+  failures. The complete coverage and integration suites remain unconditional pre-push gates
+  ([ADR-0144](docs/adr/0144-serialize-the-related-dashboard-test-hook.md)).
+
+- **Live fleet telemetry now survives a fleet-process restart without erasing retained history.**
+  [ADR-0140](docs/adr/0140-scope-live-telemetry-producers-to-one-mission.md) gives each simulated
+  drone/mission pair a deterministic bounded producer epoch. A restarted fleet may begin at sequence
+  zero without colliding with a predecessor source's durable recorder high-water, while publication and
+  best-effort recorder receipt remain independently measured.
+
+- **Pending resets now recover from recorder-owned terminal mission state.** Dashboard API startup skips
+  obsolete private cancellation for a durably `EXHAUSTED` or `ABORTED` predecessor, prepares the stored
+  successor identity, and retains the predecessor audit. A missing nonterminal run instead completes the
+  exact typed cancellation refusal without moving the pointer or crash-looping startup
+  ([ADR-0143](docs/adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+
+- **SSE pressure now stalls the downstream relay while the API remains live.**
+  [ADR-0138](docs/adr/0138-stall-the-publisher-not-the-api-for-sse-pressure.md) replaces the
+  producer-stopping API pause with a paused Caddy connection. The measured reference socket requires
+  [ADR-0141](docs/adr/0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md)'s two separately
+  acknowledged 512-event producers. Integration coverage separately proves that an active body drains
+  328 exact ordinals and that a started but stalled body emits one terminal overload after 257
+  non-droppable successors. [ADR-0142](docs/adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md)
+  retains those synthetic pressure rows in the shared PostgreSQL database instead of inventing a
+  destructive disposable-project cleanup path.
+
+- **Recovery and recorder internals now expose only values with consumers.**
+  [ADR-0137](docs/adr/0137-remove-unconsumed-recovery-and-recorder-results.md) removes the constant
+  `LOST_FLEET_RUN` recovery member and the discarded capture disposition, poll-count, and readiness
+  refresh returns. Stable identities still bind recovery, while durable store effects, guaranteed
+  receiver settlement, bounded reads, and the freshness file remain the tested operational evidence.
+
+- **Stream overload recovery is observable without holding authoritative state.** The browser applies
+  an immediate validated replacement snapshot while retaining a presentation-only live-region notice
+  for the one-second minimum selected by
+  [ADR-0135](docs/adr/0135-keep-overload-recovery-observable-without-delaying-state.md). Integration
+  coverage proves that the mission has already converged while the notice is visible and that its normal
+  lifecycle label returns after the bound.
+
+- **Accepted live operations now have a semantic snapshot consumer.** The production source session
+  selected by [ADR-0136](docs/adr/0136-bind-live-snapshots-to-accepted-run-identities.md) requires a
+  live snapshot's mission to match reduced state and requires the next post-mutation snapshot to match
+  both stable response identifiers. A crossed run retains the previous checkpoint instead of letting a
+  valid JSON shape confirm the wrong operation.
+
+- **Loopback publication is now a single-service ingress edge rather than a shared egress path.**
+  [ADR-0131](docs/adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md) gives broker,
+  PostgreSQL, and Caddy separate single-member bridges with IP masquerade disabled while retaining
+  explicit loopback host bindings. [ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)
+  supersedes ADR-0131's startup mechanics: broker and PostgreSQL must already be healthy, accepted
+  build/recreation flags apply only to the seven dashboard extensions, and the recipe verifies the two
+  shared container identities before and after startup. Static packaging tests hold the topology and
+  recipe; clean committed live acceptance remains separate evidence.
+
+- **Frontend coverage now enforces its high-risk modules as strictly as backend Tier 1 coverage.**
+  [ADR-0130](docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) keeps one complete Vitest
+  pass but requires 100% statements and branches independently for bootstrap decoding, the Ajv schema
+  registry, canonical digesting, ordered reduction, and mutation security. The typed report gate fails
+  on a missing named module or report entry, while every hand-written production file remains covered by
+  the global 95% statements, branches, functions, and lines gate.
+
+- **Production readiness and soak evidence now have active browser instruments.** The production runtime
+  validates both `200` and typed `503` readiness documents while keeping catalog responses `200`-only;
+  recorder loss renders its explicit blocker and recovery returns to `READY`. The restart case now clicks
+  the real reload control and proves a fresh bootstrap/snapshot, the validated runtime anchor is visible,
+  and replay runs last in the eight-case serial production inventory. A separate 61-sample Playwright
+  soak spans 31.3 minutes and fails on transport/readiness loss, process replacement, remote requests,
+  or dashboard API RSS/file-descriptor growth outside the ADR-0126 envelope without adding a production
+  probe route. The complete production inventory and soak have passed on a developmental uncommitted
+  revision; clean committed execution and release evidence remain required.
+
+- **Per-checkout secret generation now emits only credentials with active consumers.**
+  [ADR-0129](docs/adr/0129-generate-only-consumed-local-secrets.md) removes the unreferenced SEMP
+  discovery password from generation, rotation, reporting, and inventory tests. The optional Event
+  Management Agent keeps its real environment boundary, but the repository now states plainly that it
+  neither provisions that read-only SEMP user nor generates its password.
+
+- **Production transport recovery is now a real browser path rather than a fixture-only state.** The
+  validated bootstrap runtime is anchored before live SSE starts, so an API restart before the first
+  snapshot locks mutations and requires a full reload. EventSource loss becomes offline after one
+  bounded six-second outage and reports recovery on the same API runtime. The browser-local source
+  schema no longer pretends transport can assert `runtimeChanged`; fake-clock, integration, and two
+  additional production Playwright cases cover the real behavior without adding a production test
+  route or changing the fixed 64-case fixture inventory.
+
+- **The normalized recording exporter now has one real, bounded production entrypoint.**
+  `python -m aerial_rescue_recorder.exporter` requires an exact synthetic mission and run, accepts only
+  the exhausted wilderness scenario at revision one, and uses the revision-0005 store repositories to
+  read its canonical prepared state plus at most 512 audit-ordered normalized events. It opens no broker
+  session, leaves capture as the default recorder process, and atomically creates one fixed NDJSON file
+  in an existing directory. Unknown, active, mismatched, malformed, incomplete, symlinked, nonregular,
+  raced, or pre-existing selections/targets refuse without leaking identifiers, overwriting bytes, or
+  leaving a partial file.
+
+- **The production dashboard build now has an active script-and-style byte gate.** One owner measures
+  every minified JavaScript chunk and CSS asset in Vite's `generateBundle` phase, fails an incomplete or
+  over-budget bundle before write, and derives Vite's chunk-warning value from the same bound. The
+  deterministic integration suite builds the actual production artifact and proves the refusal path;
+  [ADR-0122](docs/adr/0122-bound-production-dashboard-script-and-style-bytes.md) records the measured
+  decision and [`operating-parameters.md`](docs/operating-parameters.md#code-quality-gates) owns the
+  limit and instrument.
+
+- **R2/R4-R6/R8 and the A5-A7 dashboard are implemented without inert workflow
+  state.** The strict wilderness catalog preserves twenty-three declared members while projecting only
+  twenty simulations to authenticated private fleet control. The fleet and scenario runtimes provide
+  bounded idempotent start/status/cancel and lost-run recovery, and deterministic tests assert fourteen
+  ticks, 280 successful telemetry publications, and the guaranteed connectivity, sector, and mission
+  lifecycle paths.
+
+  Revision `0005_dashboard_runtime` persists the stable mission, run, and prepared state before scenario
+  HTTP. An uncertain start remains pending and reconciles that same run without repeating start. Reset
+  recovery skips obsolete private cancellation for a durably terminal predecessor, retains history, and
+  selects a fresh unstarted `PLANNED` successor; a missing nonterminal private run instead stores the
+  exact typed refusal without moving the pointer. A later Start activates the successor's stable
+  identity. Exact operation state/response bytes and audit ordinal are authority, so unused
+  mission/run/claim/completion timestamps and the application clock seam were removed. Focused
+  test-created PostgreSQL runs walk the five-revision history and prove start/reset/recovery, exact-byte
+  idempotency, predecessor retention, deduplication, and snapshot reads.
+
+  The strict FastAPI/Unix-socket API, bootstrap, bounded SSE, three validated browser sources, secure
+  mutation client, local MapLibre UI, semantic fleet/timeline surfaces, and replay controls are green in
+  their deterministic suites. All 64 fixed fixture cases and six inspected/redacted screenshot cases are
+  green. A developmental uncommitted shared-stack run passed four operator workflows, four resilience
+  cases, and the 61-sample, 31.3-minute soak. A8/R7/R9 acceptance remains open until those paths rerun
+  from a clean committed revision and the evidence, diagrams, and final gates land.
+
+- **R9 packages the exact production mission-control closure without changing normal Agent Mesh
+  startup.** `just mission-control-up` requires and identity-guards the healthy broker and PostgreSQL
+  containers already owned by the shared `aerial-rescue-mesh` project, then starts migration, fleet,
+  scenario, recorder, isolated replay validation, dashboard API, and Caddy as seven extension targets.
+  Matching stop, status, and log recipes never stop or replace the two shared stateful services. Caddy
+  alone publishes loopback port 8080 and relays unbuffered traffic to Uvicorn's UID/GID-10001 Unix socket
+  with same-origin security headers. Fleet and scenario control stay on dedicated internal networks
+  with distinct generated 256-bit secrets and no host ports.
+
+  The application image builds the dashboard through digest-pinned Node 26.7.0 and pnpm 11.23.0 with a
+  frozen lock, then copies only production Vite output into the non-root Python runtime. Migration and
+  replay validation are the two enumerated completion jobs; the validator has no network or secret,
+  reads the recording read-only, and writes to the shared project's named handoff volume before dashboard
+  startup. The artifact contracts keep the output bounded, and supported cleanup preserves that volume,
+  broker/PostgreSQL identities, and retained history.
+  Static policy, packaging, image-inventory, secret-generation, and exact-recipe tests cover the
+  topology. Developmental production E2E and soak are green, but the clean committed rerun and final
+  evidence remain required.
+
 - **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
   implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
   guaranteed, schema-bound mission, connectivity, and sector application events, gives each source an
   independent run-scoped producer identity and sequence, and routes them through the receiver-only
   recorder into durable audit order. The family, delivery, and ACL tables and their desired-state
-  provisioner now include the scenario-service role and two recorder lifecycle queues, so the reference
-  inventory is 46 endpoints with 460 MB of nominal reservation. This is an offline desired-state claim;
-  the R6 recorder receiver and R8 lifecycle publishers are still pending.
+  provisioner include the scenario-service role. ADR-0120 subsequently narrows the recorder grant and
+  consolidates its lifecycle subscriptions; the current projection and measured boundaries are recorded
+  above.
 
   [ADR-0112](docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) corrects the v1
   snapshot and replay anchors with top-level `latestEventDigest`. The immutable reducer checkpoint
@@ -34,15 +181,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   gain telemetry or connectivity. Presentation timelines replace their validated snapshot baseline
   and append only verified non-telemetry suffix events. The shared oracle compares canonical state
   bytes, replay-state digests, ordered-event witnesses, fold outcomes, and timeline ordinals across ten
-  independent Python and TypeScript runs. A3, R3, and A4 are complete; A5 is next. The R6 receiver, R8
-  publishers and reconciliation, replay runtime, and the UI required to make the unchanged 64
-  Playwright cases green remain unimplemented.
+  independent Python and TypeScript runs. A3, R3, and A4 are complete; the later A5-A7 and R6/R8 work is
+  recorded above without rewriting this increment's reducer evidence.
 
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
-  its Playwright examples.** A2 commits one TypeScript module for each of the 19 dashboard schemas
-  plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the repository
-  schemas, resolves their references offline, refuses unknown fields without coercing or mutating the
-  candidate, and returns a generated type only after validation.
+  its Playwright examples.** A2 commits one TypeScript module for each of the 18 dashboard schemas
+  plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the 11 schemas
+  that accept raw browser input, resolves their references offline, refuses unknown fields without
+  coercing or mutating the candidate, and returns a generated type only after validation.
 
   Bootstrap input first crosses the canonical JSON profile, so malformed JSON, duplicate keys,
   floating-point values, unpaired surrogates, and schema violations produce typed, redacted refusals
@@ -52,12 +198,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   committed modules, while offline pre-commit and pre-push checks reject missing, changed, or extra
   output without rewriting it. Generated types keep their separate byte-freshness proof; the
   hand-written validator and bootstrap boundary remain in strict frontend coverage and deterministic
-  integration. The 64 Playwright cases remain unchanged, and A3 is next.
+  integration. The 64-case Playwright inventory remained intact. This increment made A3 next; A3-A7
+  are now implemented as recorded above.
 
 - **The dashboard browser boundary now has a normative contract instead of test-only TypeScript
-  shapes.** Nineteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
+  shapes.** Eighteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
   discovery, normalized and ordered events, reduced state, SSE frames and source signals, start and
-  reset, typed errors and mutation outcomes, and checksummed replay bundles. Every schema has one
+  reset requests and responses, typed errors, and checksummed replay bundles. Every schema has one
   manifest-owned accepted fixture and one one-reason negative, and the contract tests pin integer
   scenario revision `1`, sector-only assignment authority, declared-only members without fabricated
   connectivity or telemetry, normalized-event timelines, and mutation state outside the reducer.
@@ -70,13 +217,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   snapshot-owned mission semantics. All browser collections are explicitly bounded, and snapshot
   timelines reject telemetry at the schema boundary.
 
-  R1 now also has two strict scenario-file schemas and eight authenticated private-control RPC schemas,
+  R1 now also has two strict scenario-file schemas and nine authenticated private-control RPC schemas,
   each with one manifest-owned baseline and one one-reason negative. The scenario contract keeps catalog
   identity and geometry outside the lossless 20-simulation `FleetScenario` projection; the private
   contract reuses one status shape for start, status, and established cancellation, carries explicit
   publication counters, and separates the dashboard-to-scenario and scenario-to-fleet hops under
-  [ADR-0107](docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md). These are contract
-  shapes and synthetic golden examples, not production scenario files or a running control plane.
+  [ADR-0107](docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md). In this R1
+  increment they were contract shapes and synthetic golden examples rather than a production catalog or
+  running control plane; the later R2/R5/R8 implementation is recorded above.
 
   R1 is now complete. The dashboard API owns strict Pydantic twins for its seventeen server-facing
   dashboard documents and four scenario-control caller documents; the scenario service owns its two
@@ -90,9 +238,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   Root strict mypy now uses Pydantic's pinned plugin so generated model constructors remain field-typed
   without weakening the repository's explicit-`Any` prohibition; a conformance test holds the selected
   policy ([ADR-0109](docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md)). These
-  model and route-expectation layers unblock A2, but they do not create a FastAPI application, listener,
-  generated OpenAPI document, production catalog, or live control plane. R2 owns the production catalog
-  files and loader, and R5/R8 own the HTTP runtimes.
+  model and route-expectation layers unblocked A2 without themselves creating a FastAPI application,
+  listener, generated OpenAPI document, production catalog, or live control plane. R2 owns the now
+  implemented production catalog files and loader, and R5/R8 own the now implemented HTTP runtimes.
 
 - **The dashboard has a real shell and frontend verification can no longer pass on incomplete
   evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and
@@ -109,8 +257,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   The existing 64 Playwright cases remain separate fixture-driven browser acceptance. They do not pad
   the coverage percentage and are not relabeled as production end-to-end evidence. Four existing
-  behaviors will run again against the packaged mission-control origin only after the live API, replay,
-  fleet-control, and exact Compose closure blockers are green.
+  workflow identities were preserved inside the separate eight-case production inventory after the live
+  API, replay, fleet-control, and exact Compose closure became green; that inventory has developmental
+  evidence and still requires the clean committed rerun recorded above.
 
 - **The dashboard build has one guide, and it defers to every canonical owner.**
   [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md) sequences the UI-first slice from the committed
@@ -255,8 +404,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   here to over-read: nothing about transaction visibility, isolation, restart durability, pool
   cancellation, or concurrent races; nothing about a repository or session, because neither exists;
   and no migration *path*, because a history of length one has none. It also leaves the operator's
-  own database untouched and unmigrated -- applying the history there is a separate, separately
-  authorized operation no runbook yet describes.
+  own database untouched and unmigrated. At the time of this probe, applying the history there was a
+  separate operation with no runbook; the later dashboard increment now documents and exercises the
+  non-destructive shared-project migration path as described above.
 
   This is also the first `async` code in the repository.
 
@@ -1562,6 +1712,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Dashboard and private-control contracts no longer carry values without runtime consumers.
+  [ADR-0124](docs/adr/0124-remove-unconsumed-dashboard-wire-values.md) removes `runtimeId` from
+  health, removes roster and fleet-progress echoes from scenario run status, deletes the wire-level
+  mutation-outcome shape, narrows the production Ajv registry to raw browser inputs, and keeps replay
+  preparation to validated exact bytes while durable storage owns session identity.
+
+- Extend the shared `aerial-rescue-mesh` Compose project for mission control instead of creating a
+  second broker, PostgreSQL container, or durable-history boundary. The supported recipe identity-guards
+  the existing healthy stateful containers and stops only dashboard-owned long-running services
+  ([ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
+
+- Recorder and mission-control provisioning now create only endpoints with active consumers.
+  [ADR-0120](docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) narrows the
+  recorder to direct telemetry, exact `connectivity-changed` drone events, and mission/sector lifecycle
+  inputs. Salient drone events are denied rather than admitted by the broader `DRONE_EVENT` wildcard.
+  Lifecycle traffic is consolidated onto one exclusive broker-ordered queue, and the selected
+  mission-control projection has two endpoints/20 MB. The global projection is now 34 endpoints/340
+  MB. Mission control starts fleet command intake in publication-only mode, reads the recorder broker
+  credential from a mounted secret, and gates Compose plus degraded-live dashboard readiness on the
+  same strict 2-second/10-second freshness lease. Recorder polling has one total bounded wait and a
+  64-message drain ceiling; accepted mission lifecycle events update the authoritative mission row in
+  the audit transaction. Replay validation is restart-idempotent only for an existing byte-identical
+  regular artifact and never overwrites divergence.
+
+- Mission-control production and pressure acceptance now retain shared broker/PostgreSQL identities,
+  volumes, mission history, and the bounded 1,024-row synthetic pressure suffix. Caddy remains fixed at
+  `127.0.0.1:8080`; supported cleanup never runs Compose `down`, deletes rows, or removes shared volumes
+  ([ADR-0142](docs/adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md)).
+
 - **The duplication gate now measures authored source, so the committed contract surface can grow
   without tripping it**
   ([ADR-0110](docs/adr/0110-scope-the-duplication-gate-to-authored-source.md)).
@@ -1640,10 +1819,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   Waiting for the four open queue parameters would buy nothing — the plugin would still bind a
   temporary queue afterwards. So the claim moves instead: it covers the application data plane and
-  excludes the A2A ingress hop. What carries the weight is stated with it — the application topic is
-  the authoritative record, the recorder and evidence service read it on their own identities, and no
-  command, approval, or audit record runs through the gateway. The gap it leaves is real and now
-  visible: a restart silently drops any salient event published during it.
+  excludes the A2A ingress hop. The evidence service reads salient events through its own durable
+  identity and queue, and no command, approval, or audit record runs through the gateway. ADR-0120
+  later narrows the dashboard recorder to connectivity events within that family, so it no longer
+  duplicates salient-event consumption. The gateway gap remains real and visible: a restart silently
+  drops any salient event from the Agent Mesh ingress path.
 
 - The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
   `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets

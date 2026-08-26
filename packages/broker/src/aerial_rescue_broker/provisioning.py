@@ -41,6 +41,7 @@ from enum import Enum
 from typing import Final, Protocol
 from urllib.parse import quote
 
+from aerial_rescue_contracts.topics import Family
 from aerial_rescue_domain.principals import (
     Access,
     Principal,
@@ -58,11 +59,13 @@ from aerial_rescue_broker.queues import (
     MAX_TTL_SECONDS,
     QUEUE_ACCESS_TYPE,
     QUEUE_PERMISSION,
+    QueueProjection,
     QueueSpec,
     desired_queues,
 )
 from aerial_rescue_broker.subscriptions import (
     a2a_subscription,
+    connectivity_subscription,
     reply_subscription,
     subscription_for,
 )
@@ -264,9 +267,13 @@ def _exceptions_for(role: Principal, access: Access, namespace: object | None) -
 
     Two of them lie outside the family tables: the A2A namespace, which is withheld until a
     namespace is supplied, and the command-gateway reply channel, which is not, because it
-    is a fixed topic that no configuration varies (ADR-0070).
+    is a fixed topic that no configuration varies (ADR-0070). ADR-0120 also narrows the
+    recorder's otherwise-family-wide drone-event grant to connectivity alone.
     """
     topics = {subscription_for(family) for family in grants(role, access)}
+    if role is Principal.RECORDER and access is Access.SUBSCRIBE:
+        topics.remove(subscription_for(Family.DRONE_EVENT))
+        topics.add(connectivity_subscription())
     if namespace is not None and may_use_a2a(role):
         topics.add(a2a_subscription(namespace))
     if access is Access.SUBSCRIBE and may_use_reply_channel(role):
@@ -282,11 +289,23 @@ def _credential(credentials: Mapping[Principal, str], role: Principal) -> str:
     return password
 
 
+def principals_for_projection(queue_projection: QueueProjection) -> tuple[Principal, ...]:
+    """Return only the broker identities whose processes run in the selected projection."""
+    if queue_projection is QueueProjection.MISSION_CONTROL:
+        return (
+            Principal.FLEET_SIMULATOR,
+            Principal.SCENARIO_SERVICE,
+            Principal.RECORDER,
+        )
+    return tuple(Principal)
+
+
 def desired_state(
     vpn: str,
     credentials: Mapping[Principal, str],
     namespace: object | None,
     drones: Sequence[str],
+    queue_projection: QueueProjection = QueueProjection.GLOBAL,
 ) -> DesiredState:
     """Return every owned object the authorization matrix implies.
 
@@ -301,6 +320,7 @@ def desired_state(
             command queues. It has no default for the same reason ``namespace`` has none:
             an empty fleet is a state a caller should say out loud rather than fall into,
             and it under-provisions rather than over-provisions.
+        queue_projection: The explicit global or mission-control endpoint inventory.
 
     Returns:
         The profiles and usernames, one of each per role in role declaration order, and the
@@ -315,18 +335,19 @@ def desired_state(
         TopicError: When a drone identifier is outside the identifier rule, raised by the
             topic grammar that owns the rule.
     """
+    principals = principals_for_projection(queue_projection)
     profiles = tuple(
         ProfileState(
             role.value,
             _exceptions_for(role, Access.PUBLISH, namespace),
             _exceptions_for(role, Access.SUBSCRIBE, namespace),
         )
-        for role in Principal
+        for role in principals
     )
     usernames = tuple(
-        UsernameState(role.value, role.value, _credential(credentials, role)) for role in Principal
+        UsernameState(role.value, role.value, _credential(credentials, role)) for role in principals
     )
-    return DesiredState(vpn, profiles, usernames, desired_queues(drones))
+    return DesiredState(vpn, profiles, usernames, desired_queues(drones, queue_projection))
 
 
 def _profile_request(vpn: str, profile: ProfileState) -> Request:
@@ -432,7 +453,7 @@ def _present(transport: SempTransport, collection: _Collection) -> frozenset[str
 
     Read through ``read_all`` rather than one ``GET``: SEMP pages a collection at ten rows
     unless asked for more, and a partial read makes the reconcile look like a first apply
-    every time -- the recorder profile's eleventh subscribe exception is what proved it.
+    every time -- the recorder profile's exact narrowed subscribe set is what proves it.
     """
     rows = transport.read_all(collection.path)
     return frozenset(str(row[collection.member]) for row in rows if collection.member in row)

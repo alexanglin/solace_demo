@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/recording/header.schema.json",
+  "description": "The first canonical line of a normalized synthetic dashboard recording.",
+  "type": "object",
+  "required": [
+    "recordingVersion",
+    "scenarioId",
+    "scenarioRevision",
+    "initialState",
+    "latestEventDigest",
+    "expectedFinalDigest",
+    "eventCount",
+    "checksumAlgorithm",
+    "checksum"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "recordingVersion": {
+      "const": "dashboard-recording/v1"
+    },
+    "scenarioId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenarioRevision": {
+      "const": 1
+    },
+    "initialState": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
+    },
+    "latestEventDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      ]
+    },
+    "expectedFinalDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "eventCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 512
+    },
+    "checksumAlgorithm": {
+      "const": "sha256"
+    },
+    "checksum": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    }
+  }
+}

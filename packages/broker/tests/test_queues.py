@@ -19,8 +19,10 @@ from aerial_rescue_broker.queues import (
     DEAD_MESSAGE_QUEUE,
     MAX_QUEUE_NAME_LENGTH,
     MAX_SPOOL_MEGABYTES,
+    RECORDER_LIFECYCLE_QUEUE,
     Endpoint,
     QueueError,
+    QueueProjection,
     QueueRefusal,
     desired_queues,
     drone_queue_name,
@@ -29,7 +31,11 @@ from aerial_rescue_broker.queues import (
     guaranteed_grants,
     queues_for,
 )
-from aerial_rescue_broker.subscriptions import drone_command_subscription, subscription_for
+from aerial_rescue_broker.subscriptions import (
+    connectivity_subscription,
+    drone_command_subscription,
+    subscription_for,
+)
 from aerial_rescue_contracts.topics import (
     MAX_IDENTIFIER_LENGTH,
     Delivery,
@@ -49,7 +55,7 @@ from aerial_rescue_domain.principals import (
 DRONE = "drone-vision-01"
 OTHER_DRONE = "drone-thermal-02"
 DRONES = (DRONE, OTHER_DRONE)
-REFERENCE_DRONES = tuple(f"drone-{ordinal:02d}" for ordinal in range(1, 24))
+REFERENCE_DRONES = tuple(f"drone-sim-{ordinal:02d}" for ordinal in range(1, 21))
 
 
 class EndpointTableTests(unittest.TestCase):
@@ -134,17 +140,39 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual(frozenset({Family.DRONE_TELEMETRY}), subscribed - owed)
 
-    def test_the_recorder_is_owed_the_ten_guaranteed_families(self) -> None:
+    def test_the_recorder_is_owed_only_the_three_guaranteed_lifecycle_families(self) -> None:
         # Arrange
-        expected = frozenset(
-            family for family in Family if delivery_for(family) is Delivery.GUARANTEED
-        )
+        expected = frozenset({Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT})
 
         # Act
         owed = guaranteed_grants(Principal.RECORDER)
 
         # Assert
-        self.assertEqual((expected, 10), (owed, len(owed)))
+        self.assertEqual((expected, 3), (owed, len(owed)))
+
+    def test_the_recorder_combines_lifecycle_families_in_one_causally_ordered_queue(self) -> None:
+        # Arrange
+        role = Principal.RECORDER
+
+        # Act
+        queues = queues_for(role, ())
+
+        # Assert
+        self.assertEqual(
+            (
+                RECORDER_LIFECYCLE_QUEUE,
+                role.value,
+                frozenset(
+                    {
+                        connectivity_subscription(),
+                        subscription_for(Family.MISSION_EVENT),
+                        subscription_for(Family.SECTOR_EVENT),
+                    }
+                ),
+            ),
+            (queues[0].name, queues[0].owner, queues[0].subscriptions),
+        )
+        self.assertEqual(1, len(queues))
 
 
 class FamilyQueueTests(unittest.TestCase):
@@ -324,11 +352,11 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(len(names), len(set(names)))
 
-    def test_the_small_fixture_has_twenty_two_family_queues_a_drone_each_and_the_dead_letter(
+    def test_the_global_projection_has_thirteen_family_endpoints_a_drone_each_and_dead_letter(
         self,
     ) -> None:
         # Arrange
-        expected = 22 + len(DRONES) + 1
+        expected = 13 + len(DRONES) + 1
 
         # Act
         queues = desired_queues(DRONES)
@@ -336,9 +364,11 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, len(queues))
 
-    def test_the_reference_fleet_reserves_forty_six_queues_and_460_megabytes(self) -> None:
+    def test_the_global_reference_projection_reserves_thirty_four_queues_and_340_megabytes(
+        self,
+    ) -> None:
         # Arrange
-        expected = (46, 460)
+        expected = (34, 340)
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)
@@ -346,3 +376,17 @@ class DesiredSetTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, inventory)
+
+    def test_mission_control_projects_only_lifecycle_capture_and_dead_letter_endpoints(
+        self,
+    ) -> None:
+        # Arrange
+        expected = (DEAD_MESSAGE_QUEUE, RECORDER_LIFECYCLE_QUEUE)
+
+        # Act
+        queues = desired_queues(REFERENCE_DRONES, QueueProjection.MISSION_CONTROL)
+
+        # Assert
+        self.assertEqual(expected, tuple(queue.name for queue in queues))
+        self.assertEqual(20, len(queues) * MAX_SPOOL_MEGABYTES)
+        self.assertNotIn(Principal.FLEET_SIMULATOR.value, {queue.owner for queue in queues})

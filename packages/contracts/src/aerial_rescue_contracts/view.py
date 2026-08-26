@@ -119,6 +119,37 @@ def _validate_connectivity(data: Mapping[str, object]) -> None:
     _choice(data, "connectivity", frozenset({"CONNECTED", "DEGRADED", "OFFLINE"}))
 
 
+def _payload_integer(data: Mapping[str, object], name: str, minimum: int, maximum: int) -> int:
+    """Return one exact integer payload member within its schema range."""
+    value = data[name]
+    if type(value) is not int or not minimum <= value <= maximum:
+        _malformed(name, value)
+    return value
+
+
+def _validate_telemetry(data: Mapping[str, object]) -> None:
+    """Validate routine telemetry before it can enter recorder or dashboard state."""
+    fields = (
+        "missionId",
+        "droneId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "batteryPercent",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond",
+    )
+    _closed_members(data, fields)
+    _identifier(data, "missionId")
+    _identifier(data, "droneId")
+    _payload_integer(data, "latitudeMicrodegrees", -90_000_000, 90_000_000)
+    _payload_integer(data, "longitudeMicrodegrees", -180_000_000, 180_000_000)
+    _payload_integer(data, "batteryPercent", 0, 100)
+    _payload_integer(data, "altitudeMetres", -500, 20_000)
+    _payload_integer(data, "headingDegrees", 0, 359)
+    _payload_integer(data, "groundSpeedCentimetresPerSecond", 0, 10_000)
+
+
 def _validate_mission_lifecycle(data: Mapping[str, object]) -> None:
     """Validate the mission-lifecycle payload owned by ADR-0111."""
     _closed_members(data, ("missionId", "lifecycle"))
@@ -150,7 +181,9 @@ class Projection:
 
 
 PROJECTIONS: Final[Mapping[str, Projection]] = {
-    "aerial-rescue.v1.drone.telemetry": Projection("droneTelemetry", EventClass.TELEMETRY),
+    "aerial-rescue.v1.drone.telemetry": Projection(
+        "droneTelemetry", EventClass.TELEMETRY, _validate_telemetry
+    ),
     "aerial-rescue.v1.drone.event.connectivity-changed": Projection(
         "connectivityChanged", EventClass.CONNECTIVITY, _validate_connectivity
     ),

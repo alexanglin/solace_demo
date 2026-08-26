@@ -6,10 +6,10 @@ as a :class:`Runtime`. There is no environment read and no filesystem read anywh
 member: ``docs/adr/0077`` puts the scenario at the composition boundary, and the endpoint
 and the credential are there for the same reason.
 
-The member declares no console script and ``deploy/compose.yaml`` keeps its import-and-exit
-command, because a process entry point would need a scenario and producing one is the
-scenario service's job. This root is exercised by tests and by the live run until that
-service exists; that obligation is recorded in ``TECH_DEBT.md``.
+The production module entry point receives each validated scenario through the scenario
+service's authenticated private-control hop. The loop itself stays independent of HTTP,
+environment, and filesystem access because the process composition root supplies the
+resulting frozen value as part of :class:`Runtime`.
 
 Telemetry is published direct, because ``docs/CONTRACTS.md`` puts routine telemetry on
 direct delivery, and a refused publication is counted rather than fatal: telemetry is
@@ -30,15 +30,18 @@ which returns the message for the redelivery the queue bounds; a condition that 
 Nothing is settled on receipt, and nothing is settled before its results are on the wire and
 acknowledged by the broker.
 
-**What this does not claim.** The receipts are process-local. A restart between publishing a
-result and settling its command yields a redelivery this process no longer recognises, so it
-re-answers. The claim is at-least-once with duplicates possible across a restart -- never
-exactly-once, zero loss, backlog recovery, or reconnect reconciliation, each of which waits
-on ``packages/store``.
+**What this does not claim.** The command receipts and result-source counters are
+process-local. A restart between publishing a result and settling its command yields a
+redelivery this process no longer recognises, so it re-answers. Live routine telemetry
+instead uses ADR-0140's mission-scoped producer epoch, so a successor mission does not
+collide with retained recorder high-water. The command claim is at-least-once with
+duplicates possible across a restart -- never exactly-once, zero loss, backlog recovery,
+or reconnect reconciliation.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -70,9 +73,10 @@ from aerial_rescue_domain.idempotency import receive as receive_sequence
 from aerial_rescue_domain.mission import is_terminal as mission_is_terminal
 from aerial_rescue_domain.principals import Principal
 
-from aerial_rescue_fleet_simulator import FleetSimulatorError
+from aerial_rescue_fleet_simulator import FleetSimulatorError, run_event_source
 from aerial_rescue_fleet_simulator.fleet import FleetState, Reading, advance_tick, initial_fleet
 from aerial_rescue_fleet_simulator.intake import IncomingCommand, IntakeError, accept
+from aerial_rescue_fleet_simulator.lifecycle import FleetLifecyclePort
 from aerial_rescue_fleet_simulator.protocol import ProtocolError, apply, received
 from aerial_rescue_fleet_simulator.results import ResultError, ResultStamp, result_record
 from aerial_rescue_fleet_simulator.scenario import FleetScenario, ordered_drones, sectors
@@ -230,19 +234,21 @@ class CountingStamps:
     """Producer-scoped stamps over an injected clock and identifier source.
 
     The sequence is keyed by drone, because ``docs/CONTRACTS.md`` scopes it to its producer
-    and each simulated drone is its own producer. The correlation identifier is the run's,
-    supplied once, so every event of one run is correlatable without a request to bind to.
+    and each simulated drone is its own producer. Multiple run-bound instances may share
+    the injected counter map and lock so a successor run cannot reuse a stable source's
+    process-lifetime sequence. The correlation identifier is the run's, supplied once, so
+    every event of one run is correlatable without a request to bind to.
     """
 
     clock: Callable[[], datetime]
     identifiers: Callable[[], str]
     correlation_id: str
     sequences: dict[str, int] = field(default_factory=dict)
+    sequence_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def next_stamp(self, producer: str) -> TelemetryStamp:
         """Return the next stamp for one producer and advance only that producer's stream."""
-        sequence = self.sequences.get(producer, _FIRST_SEQUENCE)
-        self.sequences[producer] = sequence + 1
+        sequence = self._next_sequence(producer)
         return TelemetryStamp(
             event_id=self.identifiers(),
             occurred_at=format_instant(self.clock()),
@@ -260,8 +266,7 @@ class CountingStamps:
         own trail holds across the answer, and the causation is the command's event, which
         is the only member that links a result to the send it answers.
         """
-        sequence = self.sequences.get(producer, _FIRST_SEQUENCE)
-        self.sequences[producer] = sequence + 1
+        sequence = self._next_sequence(producer)
         return ResultStamp(
             event_id=self.identifiers(),
             occurred_at=format_instant(self.clock()),
@@ -270,6 +275,13 @@ class CountingStamps:
             causation_id=causation_id,
             traceparent=self._traceparent(),
         )
+
+    def _next_sequence(self, producer: str) -> int:
+        """Atomically reserve the next value when counters span concurrent runs."""
+        with self.sequence_lock:
+            sequence = self.sequences.get(producer, _FIRST_SEQUENCE)
+            self.sequences[producer] = sequence + 1
+            return sequence
 
     def _traceparent(self) -> str:
         """Return a freshly minted trace parent, never one copied from untrusted context."""
@@ -319,6 +331,8 @@ class Runtime:
     send_budget: SendBudget
     intake: IntakeBounds
     pacer: Pacer
+    lifecycle: FleetLifecyclePort | None = None
+    command_intake_enabled: bool = True
 
     @override
     def __repr__(self) -> str:
@@ -331,7 +345,12 @@ def _publish(
 ) -> PublishOutcome:
     """Send one reading, converting both expected failures into a counted outcome."""
     try:
-        topic, document = telemetry_record(mission_id, reading, stamps.next_stamp(reading.drone_id))
+        topic, document = telemetry_record(
+            mission_id,
+            reading,
+            stamps.next_stamp(reading.drone_id),
+            producer_source=run_event_source(reading.drone_id, mission_id),
+        )
     except TelemetryError:
         return PublishOutcome.UNRECORDABLE
     try:
@@ -495,6 +514,35 @@ def _pace(pacer: Pacer, interval_milliseconds: int, started: int) -> PaceOutcome
     return PaceOutcome.ON_TIME
 
 
+def _publish_lifecycle(
+    lifecycle: FleetLifecyclePort | None,
+    scenario: FleetScenario,
+    before: FleetState,
+    after: FleetState,
+) -> None:
+    """Publish only fleet-owned connectivity and sector state changes."""
+    if lifecycle is None:
+        return
+    for drone in ordered_drones(scenario):
+        connectivity_previous = before.drones[drone.drone_id].connectivity.state
+        connectivity_reached = after.drones[drone.drone_id].connectivity.state
+        if connectivity_reached is not connectivity_previous:
+            lifecycle.connectivity_changed(
+                scenario.mission_id, drone.drone_id, connectivity_reached
+            )
+    holder_by_sector = {drone.sector_id: drone.drone_id for drone in scenario.drones}
+    for sector_id in sorted(after.sectors):
+        sector_previous = before.sectors[sector_id].state
+        sector_reached = after.sectors[sector_id].state
+        if sector_reached is not sector_previous:
+            lifecycle.sector_changed(
+                scenario.mission_id,
+                sector_id,
+                holder_by_sector[sector_id],
+                sector_reached,
+            )
+
+
 def _drain_fleet(
     session: FleetSessionPort,
     runtime: Runtime,
@@ -524,16 +572,23 @@ def serve(
     state = initial_fleet(scenario)
     counted: dict[PublishOutcome, int] = {}
     taken: dict[IntakeOutcome, int] = {}
-    inboxes = {drone.drone_id: DroneInbox() for drone in ordered_drones(scenario)}
+    inboxes = (
+        {drone.drone_id: DroneInbox() for drone in ordered_drones(scenario)}
+        if runtime.command_intake_enabled
+        else {}
+    )
     paced: dict[PaceOutcome, int] = {}
     while runtime.running() and not mission_is_terminal(state.mission):
         started = runtime.pacer.now_milliseconds()
+        before = state
         tick = advance_tick(scenario, state)
         state = tick.state
         for reading in tick.readings:
             outcome = _publish(session.telemetry, scenario.mission_id, reading, runtime.stamps)
             counted[outcome] = counted.get(outcome, 0) + 1
-        _drain_fleet(session, runtime, inboxes, taken)
+        _publish_lifecycle(runtime.lifecycle, scenario, before, state)
+        if runtime.command_intake_enabled:
+            _drain_fleet(session, runtime, inboxes, taken)
         kept = _pace(runtime.pacer, scenario.tick_interval_milliseconds, started)
         paced[kept] = paced.get(kept, 0) + 1
     return ServeReport(state, counted, taken, paced)

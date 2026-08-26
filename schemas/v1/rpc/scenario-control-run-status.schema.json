@@ -9,12 +9,7 @@
     "scenarioRevision",
     "missionId",
     "runId",
-    "state",
-    "declaredCount",
-    "simulatedCount",
-    "declaredOnlyCount",
-    "completedTickCount",
-    "telemetryPublicationCount"
+    "state"
   ],
   "additionalProperties": false,
   "properties": {
@@ -40,25 +35,6 @@
         "EXHAUSTED",
         "ABORTED"
       ]
-    },
-    "declaredCount": {
-      "const": 23
-    },
-    "simulatedCount": {
-      "const": 20
-    },
-    "declaredOnlyCount": {
-      "const": 3
-    },
-    "completedTickCount": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "telemetryPublicationCount": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
     }
   }
 }

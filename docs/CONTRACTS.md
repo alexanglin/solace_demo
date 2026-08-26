@@ -114,6 +114,15 @@ is one durable queue per consuming role
 
 Consumers must tolerate duplicates and out-of-order events. State changes reject stale sequence numbers within a producer's own stream, and command handlers return the prior result when they receive a known command ID. Approval consumption is excluded from that replay-as-success rule: a repeat is denied, not replayed.
 
+Production fleet telemetry scopes one producer stream to one simulated drone in one operational mission
+([ADR-0140](adr/0140-scope-live-telemetry-producers-to-one-mission.md)). Its source is
+`urn:aerial-rescue:drone-run:{producerId}`, where `producerId` is the lowercase SHA-256 of the ASCII
+context `aerial-rescue:drone-run:v1`, a NUL separator, `missionId`, a NUL separator, and `droneId`.
+This makes sequence zero valid after a fleet-process restart because a successor mission has a new
+source; it does not make the source an authentication credential. The topic and payload remain the
+readable authority for mission and drone identity, and the broker identity plus ACL remains the
+publisher authority.
+
 Agent Mesh owns its standard A2A namespace, including discovery, agent request, gateway status, and gateway response topics. Application code must use the upstream A2A APIs and gateway abstractions rather than publishing framework messages directly. Keep the A2A namespace distinct from `aerial-rescue/v1/...`, while carrying task, correlation, and causation identifiers across the SAR gateway boundary for traceability.
 
 ## Dashboard lifecycle event sources
@@ -142,8 +151,13 @@ Projection preserves the source envelope's canonical `time`, removes transport-o
 and produces the existing five-field `DashboardEvent` variant.
 
 The scenario role publishes only mission lifecycle. The fleet role publishes sector lifecycle and
-connectivity. The receiver-only recorder is the only subscriber to the two new topic families; it
-validates and commits a guaranteed event with its assigned audit ordinal before acknowledging it.
+connectivity. The receiver-only recorder subscribes only to direct telemetry plus guaranteed
+connectivity, mission-lifecycle, and sector-lifecycle input. All three guaranteed subscriptions bind to
+the recorder's one exclusive `aerial-rescue/v1/recorder/dashboard.lifecycle` queue, so the broker's
+cross-family arrival order is preserved before audit ordinals are assigned; telemetry remains direct
+and supersedable. The recorder locks and advances the durable mission lifecycle in the same transaction
+that appends a validated mission event and stores its broker identity, and acknowledges guaranteed input
+only after that transaction commits ([ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
 Private run control remains HTTP, and no service may bypass this source boundary by manufacturing one
 of these normalized events directly.
 
@@ -254,25 +268,29 @@ created outside the scenario file.
 ## Private run-control HTTP
 
 [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
-private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use the
-same route grammar under distinct exact Hosts and distinct bearer credentials; neither private listener
-publishes a host port.
+private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use
+distinct exact Hosts and distinct bearer credentials; neither private listener publishes a host port.
+ADR-0114 extends only scenario control with catalog discovery and lost-run recovery.
 
 | Method and path | Request | Successful response |
 | --- | --- | --- |
+| `GET /internal/v1/scenarios` (scenario only) | none | browser-facing scenario catalog |
 | `POST /internal/v1/runs` | service-specific start request | service-specific run status |
 | `GET /internal/v1/runs/{runId}` | none | service-specific run status |
 | `POST /internal/v1/runs/{runId}/cancel` | service-specific cancel request | service-specific run status |
+| `POST /internal/v1/runs/{runId}/recover` (scenario only) | scenario recovery request | scenario run status |
 
-The eight closed RPC schemas under `schemas/v1/rpc/` are the four documents in each row below. Every
+The nine closed RPC schemas under `schemas/v1/rpc/` are the five scenario documents and four fleet
+documents below. Every
 document carries integer `controlVersion: 1` and uses the canonical JSON profile. Start, status, and an
 established-cancel success deliberately share one run-status representation.
 
 | Document | Required contract members and meaning |
 | --- | --- |
 | scenario-control start request | `scenarioId`, integer `scenarioRevision`, stable `missionId`, and stable `runId` |
-| scenario-control run status | scenario, mission, and run identities; `PLANNED`, `SEARCHING`, `EXHAUSTED`, or `ABORTED`; truthful 23/20/3 participation counts; completed-tick and telemetry-publication counters |
+| scenario-control run status | scenario, mission, and run identities; `PLANNED`, `SEARCHING`, `EXHAUSTED`, or `ABORTED` |
 | scenario-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
+| scenario-control recovery request | scenario, mission, and run identities; an unknown fleet run becomes one guaranteed `ABORTED` lifecycle fact |
 | scenario-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
 | fleet-control start request | stable `runId` and exactly one nested lossless `FleetScenario` projection |
 | fleet-control run status | mission and run identities; `ACCEPTED`, `RUNNING`, `EXHAUSTED`, `CANCELLED`, or `FAILED`; completed-tick and telemetry-publication counters |
@@ -300,14 +318,26 @@ run returns current status without launching another run; changing the body for 
 automatically repeats start. Cancel reports success only after the run is stopped or already terminal;
 otherwise it returns `CANCELLATION_NOT_ESTABLISHED` and does not claim reset.
 
+`/internal/v1/runs/{runId}/recover` is used only for uncertain-start reconciliation and is never a reset
+fallback. Reset resolves the operation-bound predecessor from the current pointer or retained history,
+then reads its recorder-persisted lifecycle. `EXHAUSTED` or `ABORTED` causes no private cancel, recover,
+or start request. A nonterminal predecessor requires an identity-matching terminal cancel response.
+`RUN_NOT_FOUND`, explicit `CANCELLATION_NOT_ESTABLISHED`, or an identity-matching nonterminal response
+completes the dashboard operation with exact HTTP `409 CANCELLATION_NOT_ESTABLISHED`; no successor is
+prepared and no mission, run, pointer, prepared-state, or audit mutation occurs. Only the operation is
+completed with exact stored refusal bytes, which a safe retry returns without another private call.
+Identity mismatch remains `RUN_CONFLICT`; transport failure remains dependency unavailable
+([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+
 The Python trust-boundary twins are now service-local as required by
 [ADR-0108](adr/0108-register-strict-python-wire-models-before-http-runtime.md). The scenario service owns
-the scenario-control server models and separate fleet-control caller models; the fleet simulator owns
-the fleet-control server models; and the dashboard API owns separate scenario-control caller models.
+the scenario-control server models, the private browser-facing catalog response, and separate
+fleet-control caller models; the fleet simulator owns the fleet-control server models; and the
+dashboard API owns separate scenario-control caller models.
 Each boundary applies the contracts-owned canonical decoder before closed, frozen, strict, alias-only
 Pydantic validation. The independently implemented twins are checked against the same manifest-owned
-accepted and one-reason-negative fixtures. Framework-free three-route registries in each private HTTP
-owner pin the request, response, and default-refusal expectations for later runtime and OpenAPI parity.
+accepted and one-reason-negative fixtures. Framework-free route registries pin the five scenario and
+three fleet routes, request and response schemas, and default refusals for runtime and OpenAPI parity.
 They create no listener, client, generated OpenAPI document, or runtime route.
 
 ## Local HTTP API
@@ -317,8 +347,8 @@ The UI-first dashboard API is the closed surface accepted by
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/v1/health` | Process liveness and the non-secret runtime identifier |
-| `GET /api/v1/readiness?mode=degradedLive\|replay` | Whether the selected mode can start |
+| `GET /api/v1/health` | Process liveness only |
+| `GET /api/v1/readiness?mode=degradedLive\|replay` | The readiness document at `200` when ready or the same typed document with explicit reasons at `503` when unavailable |
 | `GET /api/v1/scenarios` | Validated synthetic geometry, roster, and participation |
 | `POST /api/v1/scenarios/{scenarioId}/start` | Start live execution or create a replay session |
 | `POST /api/v1/scenarios/current/reset` | Bounded live reset or a fresh replay session |
@@ -330,21 +360,36 @@ There is no approval route in this slice. Approval, evidence, command, model, re
 workflows remain follow-on work and gain no placeholder endpoint. The committed schemas under
 `schemas/v1/dashboard/` are normative. The dashboard API now owns strict Pydantic twins for its
 seventeen server-facing shapes and a framework-free registry for the exact route table above. The
-`mutation-outcome` and `source-signal` documents remain browser-owned and deliberately have no Python
-model. Generated OpenAPI, generated TypeScript, and Ajv remain future consumers of those same shapes
-rather than parallel authorities. The model and route registry do not create a FastAPI application or
-HTTP listener.
+`source-signal` document remains browser-owned and deliberately has no Python model. Mutation progress
+is an in-memory TypeScript union and has no wire schema ([ADR-0124](adr/0124-remove-unconsumed-dashboard-wire-values.md)).
+The implemented FastAPI application projects the server schemas into OpenAPI; generated
+TypeScript and the Ajv registry consume them at the browser boundary. OpenAPI, generated code, Pydantic,
+and Ajv remain freshness/parity-checked consumers rather than parallel authorities.
 
 Start is exactly `{mode, scenarioRevision}` with mode `degradedLive` or `replay` and integer revision
 `1`; reset is exactly `{}`. Accepted live responses carry stable mission and run identifiers; replay
 responses carry a stable session identifier. Start and reset responses also report the fixed roster as
 23 declared, 20 simulated, and three declared-only members. A `202` response updates mutation-operation
 state only: reducer-owned current mission state changes only after a validated snapshot or ordered event.
+The browser retains an accepted live mission/run identity as server-operation state and requires the
+next live snapshot to match both values. Every live snapshot also requires its `currentRun.missionId` to
+match `state.currentMission.identifier`; a mismatch retains the prior checkpoint and timeline.
 
 Both mutations require a lowercase UUID version 4 idempotency key. The durable idempotency operation
 stores a digest of the canonical request body plus the exact response status and bytes, so a same-key,
 same-body repeat returns the prior result and a same-key, different-body repeat refuses without an
-effect. Expected refusals use the closed versioned dashboard error schema.
+effect. Stable mission/run identity and prepared state are persisted before the private live-start call;
+an uncertain call leaves that operation pending and is reconciled by status on the same run without
+repeating start. Reset and pending-reset reconciliation first read the recorder-persisted predecessor
+lifecycle. `EXHAUSTED` or `ABORTED` establishes cancellation without another private call. A nonterminal
+predecessor still requires an identity-matching terminal response inside the shared fifteen-second
+budget; a missing private run completes the exact stored
+`409 CANCELLATION_NOT_ESTABLISHED` while leaving the predecessor, current pointer, prepared state, and
+audit history unchanged. Only established cancellation selects the fresh `PLANNED` successor without
+starting its fleet ([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+Operation state and exact bytes are mutation authority, and audit ordinals are timeline authority;
+unused claim, completion, mission, and run wall-clock metadata is not persisted. Expected refusals use
+the closed versioned dashboard error schema.
 
 The service binds only to its private Unix socket. Caddy is the sole loopback publisher. Every request
 must contain exactly one syntactically valid `Host` header whose parsed host and port exactly matches the
@@ -424,11 +469,18 @@ so state bytes cannot be replayed as proposal bytes.
 The API emits only `snapshot`, `dashboard-event`, and terminal `stream-overloaded` data frames;
 keepalives are comments. A snapshot carries the runtime identifier, an opaque run-bound cursor, current
 run, reduced state, replay-state digest, top-level `latestEventDigest`, and full non-telemetry timeline.
-A replay bundle carries the same top-level witness for its initial state. The witness is `null` exactly
-when the corresponding latest audit ordinal is `0`; a positive ordinal requires a lowercase SHA-256
-witness. A dashboard-event frame carries one ordered event, its suffix cursor, and the server digest
+A replay bundle carries the same top-level witness for its initial state. Its content is session-neutral:
+`sessionId` exists only in mutation responses, durable session lookup, and the replay route, never in the
+bundle or its checksum. The witness is `null` exactly when the corresponding latest audit ordinal is
+`0`; a positive ordinal requires a lowercase SHA-256 witness. A dashboard-event frame carries one
+ordered event, its suffix cursor, and the server digest
 after the fold; the receiver computes the successor witness from that event. An unknown, stale, or
 cross-run cursor receives a fresh snapshot.
+
+For snapshot and dashboard-event frames, EventSource's native `lastEventId` must match the validated
+cursor carried by the frame body. The live adapter forwards both witnesses; a mismatch fails closed
+before snapshot application or event folding. The browser does not retain a second unused cursor copy in
+server state.
 
 Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses direct
 delivery and a newer position supersedes a stale one. Each client retains 256 data frames plus one
@@ -436,6 +488,43 @@ reserved terminal slot. If removing the oldest telemetry cannot retain a non-dro
 sends one terminal control frame and closes; the browser disposes that source and requests exactly one
 fresh snapshot. It validates every frame, recomputes the digest, and retains the last validated state on
 any contract, ordinal, or digest refusal.
+
+The dynamic bootstrap runtime identifier is validated and anchored before the browser opens its first
+EventSource. A first or later snapshot from another runtime closes that source, retains the last
+validated checkpoint, locks mutations, and requires a full document reload. Process replacement is
+therefore derived from two validated anchors rather than from health or a transport callback.
+
+Browser-local source signals are exactly `connecting`, `disconnected`, `offline`, and `recovered`.
+`runtimeChanged` is not a source-signal value. The live adapter emits `disconnected` on the first
+EventSource error, emits `offline` only if the stream has not reopened within six seconds, and emits
+`recovered` when that same-runtime transport reopens. It cancels the bounded timer on reopen and
+disposal. These signals describe the dashboard transport only; they never change or infer fleet-member
+connectivity ([ADR-0125](adr/0125-anchor-browser-runtime-and-bound-transport-outages.md)).
+
+## Normalized dashboard recording
+
+[ADR-0115](adr/0115-record-normalized-events-and-serve-session-neutral-replay.md) defines a bounded,
+synthetic NDJSON interchange between authoritative audit export and isolated replay validation. The
+first canonical line is `dashboard-recording/v1`; each following canonical line wraps one
+`OrderedDashboardEvent` as `dashboard-record/v1`. The document is UTF-8, LF-only, ends in one newline,
+and contains no blank lines, floating-point values, transport metadata, credentials, traces, or session
+identity. Its checksum covers the checksum-free canonical header and every canonical record in order.
+
+`python -m aerial_rescue_recorder.exporter` is the only production path that constructs that recording
+from revision-0005 storage. It requires an exact mission ID and live run ID, joins that run to its
+authoritative mission lifecycle, accepts only `wilderness-missing-person` revision `1` at
+`EXHAUSTED`, and reads its exact prepared-state bytes plus no more than 512 recorder-linked audit events
+through one captured watermark. Stored payloads cross canonical validation again before the existing
+exporter folds them. The command writes only `wilderness-missing-person.r1.ndjson` below an existing
+regular output directory; an existing path, symlink, nonregular directory, incomplete history, or
+selection mismatch refuses without overwrite or partial output. Capture remains the recorder's default
+entrypoint, and the exporter opens no broker session.
+
+The validator folds the recording from its witnessed initial state through the production reducer,
+verifies the event count, checksum, final replay-state digest, and all structural bounds, then writes one
+canonical `dashboard-replay-bundle/v1` document. Failure leaves no partial output. The dashboard API
+serves the validator's exact bytes for the durable session lookup; it never rewrites the bundle to add a
+session identifier.
 
 Adding an application event type is one change: a projection row, a state rule, golden fixtures, and
 a manifest entry land together, or the type is refused as unprojected.
@@ -508,8 +597,8 @@ exactly one reason. `schemas/contract-manifest.toml` registers every schema and 
 
 ## Delivery and failure semantics
 
-- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. A queue is created only for a `(role, family)` pair the subscribe grant already permits, is bound only by its named owner, and sends what it cannot deliver to the dead-message queue rather than discarding it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)); the values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
-- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. The global projection derives queues from permitted consumers, with the recorder lifecycle consolidation and mission-control-specific projection selected by [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md); every queue is bound only by its named owner and sends what it cannot deliver to the dead-message queue rather than discarding it. The values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
+- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected is not delivered into the mesh; delivery into the mesh is at-least-once only while the gateway holds its connection. The evidence service consumes salient events through its own durable identity and queue. ADR-0120 narrows the dashboard recorder to connectivity within `DRONE_EVENT`, so it is not a second salient-event consumer; no command, approval, or audit record depends on gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md), [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
 - Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter; the schedule has one interval and the jitter only adds ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)), and the values are in [operating-parameters.md](operating-parameters.md#command-dispatch).
 - Retries reuse the original command ID.

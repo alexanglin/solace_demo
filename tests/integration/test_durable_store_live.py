@@ -1,4 +1,4 @@
-"""The first revision applied to a real cluster, on a database this run creates and drops.
+"""The complete store history applied to a real cluster on disposable run databases.
 
 Everything `packages/store` could establish before this file was that Alembic *emits* a data
 definition: `packages/store/tests/test_migration.py` runs the revision bodies against a
@@ -26,12 +26,13 @@ Carries `integration` and `docker`, and deliberately **not** `broker`: a resourc
 what a test needs, this module needs no broker, and `docker` alone already excludes it from every
 blocking stage (`tests/integration/AGENTS.md` section 3).
 
-What a green run establishes: PostgreSQL accepts the first revision, stamps it, is unchanged by a
-second application of the same head, enforces the two constraints the revision declares rather
-than only carrying their text, and returns to an empty schema on the downgrade. What it does not
-establish: transaction visibility, isolation behaviour, restart durability, pool cancellation,
-concurrent races, migration from a *prior* revision, mismatch, or failure recovery. Each of those
-needs its own case, and several need a second revision or a mechanism no record has selected yet.
+What a green run establishes: PostgreSQL accepts all five revisions one step at a time,
+enforces the selected constraints and transaction behavior below, and returns through the same
+history on downgrade. For revision 0005 it also establishes additive upgrade/downgrade,
+start/reset exact-byte replay, pending same-run recovery, retained predecessor history, broker
+deduplication, scenario-bound live runs, missionless replay rows, and snapshot reads on a real
+disposable database. It does not establish killed-process recovery, pool cancellation, or use of the
+operator's persistent database.
 """
 
 from __future__ import annotations
@@ -40,14 +41,26 @@ import asyncio
 import contextlib
 import os
 import unittest
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, override
+from typing import TYPE_CHECKING, Final, cast, override
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.orchestration import OperationCoordinator
+from aerial_rescue_dashboard_api.ports import (
+    CurrentRun,
+    MutationKind,
+    MutationProposal,
+    ReplayPreparation,
+    RunMode,
+    ScenarioRunStatus,
+)
+from aerial_rescue_dashboard_api.store_adapter import SqlStore
 from aerial_rescue_domain.approvals import (
     Approval,
     ApprovalError,
@@ -80,6 +93,22 @@ from aerial_rescue_store.bounds import (
     STATEMENT_TIMEOUT_MILLISECONDS,
     EngineBounds,
 )
+from aerial_rescue_store.dashboard_events import (
+    BrokerEvent,
+    BrokerEventOutcome,
+    EventSession,
+    append_broker_event,
+)
+from aerial_rescue_store.dashboard_runs import (
+    DashboardMission,
+    DashboardRun,
+    create_mission,
+    create_run,
+    run_by_identity,
+)
+from aerial_rescue_store.dashboard_runs import (
+    RunMode as StoredRunMode,
+)
 from aerial_rescue_store.engine import ISOLATION_LEVEL, create_engine
 from aerial_rescue_store.idempotency import (
     StoredClaim,
@@ -93,6 +122,12 @@ from aerial_rescue_store.migration import (
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
     COMMAND_OUTBOX_TABLE,
+    DASHBOARD_BROKER_EVENT_TABLE,
+    DASHBOARD_BROKER_SOURCE_TABLE,
+    DASHBOARD_CURRENT_RUN_TABLE,
+    DASHBOARD_MISSION_TABLE,
+    DASHBOARD_OPERATION_TABLE,
+    DASHBOARD_RUN_TABLE,
     HEAD_REVISION,
     IDEMPOTENCY_CLAIM_TABLE,
     live_config,
@@ -142,24 +177,35 @@ FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
 FOURTH_REVISION: Final = "0004_command_outbox"
+FIFTH_REVISION: Final = "0005_dashboard_runtime"
 
 _FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
 _SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
 _THIRD_TABLES: Final = (*_SECOND_TABLES, IDEMPOTENCY_CLAIM_TABLE)
 _FOURTH_TABLES: Final = (*_THIRD_TABLES, COMMAND_OUTBOX_TABLE)
+_FIFTH_TABLES: Final = (
+    *_FOURTH_TABLES,
+    DASHBOARD_BROKER_EVENT_TABLE,
+    DASHBOARD_BROKER_SOURCE_TABLE,
+    DASHBOARD_CURRENT_RUN_TABLE,
+    DASHBOARD_MISSION_TABLE,
+    DASHBOARD_OPERATION_TABLE,
+    DASHBOARD_RUN_TABLE,
+)
 
 HISTORY: Final = (
     (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
     (SECOND_REVISION, tuple(sorted(_SECOND_TABLES))),
     (THIRD_REVISION, tuple(sorted(_THIRD_TABLES))),
     (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
+    (FIFTH_REVISION, tuple(sorted(_FIFTH_TABLES))),
 )
 """Every step and what the database holds after it. Literals, so a new revision is noticed here
 too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
 express neither a path nor a step back along one."""
 
-HEAD_REVISION_ID: Final = FOURTH_REVISION
-APPLIED_TABLES: Final = tuple(sorted(_FOURTH_TABLES))
+HEAD_REVISION_ID: Final = FIFTH_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_FIFTH_TABLES))
 """Every table a migrated database holds: the history's five, and Alembic's own."""
 
 BOUNDS: Final = EngineBounds(
@@ -532,6 +578,360 @@ class FirstRevisionLiveTests(unittest.IsolatedAsyncioTestCase):
             ((VERSION_TABLE,), None),
             (await _table_names(self.engine), await _stamped_revision(self.engine)),
         )
+
+
+DASHBOARD_SCENARIO_FIXTURE: Final = (
+    REPOSITORY_ROOT / "fixtures/golden/v1/dashboard/scenario-catalog/baseline.json"
+)
+DASHBOARD_START_KEY: Final = "31f72c3e-2357-4d8d-8ec8-5ca709032590"
+DASHBOARD_RESET_KEY: Final = "4984a66b-ff04-4128-94ea-24578dc54851"
+DASHBOARD_RECOVERY_KEY: Final = "ada6dd4f-b742-447c-8479-9778919d993b"
+DASHBOARD_START_DIGEST: Final = "aa" * 32
+DASHBOARD_RESET_DIGEST: Final = "bb" * 32
+DASHBOARD_RECOVERY_DIGEST: Final = "cc" * 32
+DASHBOARD_EVENT_DIGEST: Final = "dd" * 32
+UNEXPECTED_REPLAY: Final = "live integration reached replay readiness"
+MISSING_CURRENT_RUN: Final = "dashboard integration expected a current run"
+
+
+@dataclass
+class _DashboardIdentifiers:
+    """Generate deterministic integration identities without process-global state."""
+
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def new(self, kind: str) -> str:
+        """Return the next stable identity for one namespace."""
+        count = self.counts.get(kind, 0) + 1
+        self.counts[kind] = count
+        return f"{kind}-test-{count:04d}"
+
+
+@dataclass
+class _DashboardScenario:
+    """Record private control while the real store owns durable behavior."""
+
+    catalog_bytes: bytes
+    starts: list[tuple[str, str]] = field(default_factory=list)
+    cancels: list[tuple[str, str, float]] = field(default_factory=list)
+    status_mission_id: str = "mission-test-0001"
+    status_run_id: str = "run-test-0001"
+
+    async def readiness(self) -> tuple[str, ...]:
+        """Return no private-control readiness refusal."""
+        return ()
+
+    async def catalog(self) -> bytes:
+        """Return exact committed catalog bytes."""
+        return self.catalog_bytes
+
+    async def start(
+        self,
+        scenario_id: str,
+        scenario_revision: int,
+        mission_id: str,
+        run_id: str,
+    ) -> ScenarioRunStatus:
+        """Accept and record one stable live run identity."""
+        self.starts.append((mission_id, run_id))
+        return ScenarioRunStatus(scenario_id, scenario_revision, mission_id, run_id, "SEARCHING")
+
+    async def status(self, run_id: str) -> ScenarioRunStatus:
+        """Reconcile the stable run without repeating start."""
+        if run_id != self.status_run_id:
+            raise AssertionError(run_id)
+        return ScenarioRunStatus(
+            "wilderness-missing-person",
+            1,
+            self.status_mission_id,
+            self.status_run_id,
+            "SEARCHING",
+        )
+
+    async def cancel(self, mission_id: str, run_id: str, timeout: float) -> ScenarioRunStatus:
+        """Establish cancellation and record its shared bound."""
+        self.cancels.append((mission_id, run_id, timeout))
+        return ScenarioRunStatus("wilderness-missing-person", 1, mission_id, run_id, "ABORTED")
+
+    async def recover(
+        self,
+        scenario_id: str,
+        scenario_revision: int,
+        mission_id: str,
+        run_id: str,
+    ) -> ScenarioRunStatus:
+        """Fail if the known-run integration unexpectedly takes lost-run recovery."""
+        raise AssertionError((scenario_id, scenario_revision, mission_id, run_id))
+
+
+class _RefusingReplay:
+    """Fail immediately if this live-only integration crosses into replay."""
+
+    async def readiness(self) -> tuple[str, ...]:
+        """Refuse an unexpected replay readiness read."""
+        raise AssertionError(UNEXPECTED_REPLAY)
+
+    async def prepare(self, scenario_id: str, scenario_revision: int) -> ReplayPreparation:
+        """Refuse an unexpected replay preparation."""
+        raise AssertionError((scenario_id, scenario_revision))
+
+    async def bundle(self, session_id: str) -> bytes | None:
+        """Refuse an unexpected replay bundle read."""
+        raise AssertionError(session_id)
+
+
+def _required_current(run: CurrentRun | None) -> CurrentRun:
+    """Narrow a required durable pointer without hiding a missing-run failure."""
+    if run is None:
+        raise AssertionError(MISSING_CURRENT_RUN)
+    return run
+
+
+async def _dashboard_runtime(
+    engine: AsyncEngine,
+) -> tuple[SqlStore, _DashboardScenario, OperationCoordinator]:
+    """Migrate and compose dashboard orchestration over the caller's real store."""
+    await _apply(engine, HEAD_REVISION)
+    store = SqlStore(
+        create_session_factory(engine),
+        engine,
+        SHUTDOWN_GRACE_SECONDS,
+    )
+    scenario = _DashboardScenario(DASHBOARD_SCENARIO_FIXTURE.read_bytes())
+    coordinator = OperationCoordinator(
+        store,
+        scenario,
+        _RefusingReplay(),
+        _DashboardIdentifiers(),
+    )
+    return store, scenario, coordinator
+
+
+class DashboardRuntimeLiveTests(unittest.IsolatedAsyncioTestCase):
+    """Prove revision 0005 and dashboard recovery on a real disposable database."""
+
+    target: DatabaseSettings
+    engine: AsyncEngine
+
+    @override
+    async def asyncSetUp(self) -> None:
+        """Create one empty database without applying a revision implicitly."""
+        self.target = probe_target()
+        await _on_maintenance_database(self.target, CREATE)
+        self.engine = create_engine(self.target, BOUNDS)
+
+    @override
+    async def asyncTearDown(self) -> None:
+        """Close every connection before dropping only this test's database."""
+        await self.engine.dispose()
+        await _on_maintenance_database(self.target, DROP)
+
+    async def test_revision_0005_upgrades_and_downgrades_as_one_additive_step(self) -> None:
+        # Arrange
+        await _apply(self.engine, FOURTH_REVISION)
+        before = (await _stamped_revision(self.engine), await _table_names(self.engine))
+
+        # Act
+        await _apply(self.engine, FIFTH_REVISION)
+        upgraded = (await _stamped_revision(self.engine), await _table_names(self.engine))
+        await _downgrade(self.engine, FOURTH_REVISION)
+        downgraded = (await _stamped_revision(self.engine), await _table_names(self.engine))
+
+        # Assert
+        self.assertEqual(
+            (
+                (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
+                (FIFTH_REVISION, tuple(sorted(_FIFTH_TABLES))),
+                (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
+            ),
+            (before, upgraded, downgraded),
+        )
+
+    async def test_live_run_scenario_identity_matches_its_mission_while_replay_stays_missionless(
+        self,
+    ) -> None:
+        # Arrange
+        await _apply(self.engine, HEAD_REVISION)
+        sessions = create_session_factory(self.engine)
+        mission = DashboardMission(
+            mission_id="mission-scenario-fk-0001",
+            scenario_id="wilderness-missing-person",
+            scenario_revision=1,
+            lifecycle="PLANNED",
+            predecessor_mission_id=None,
+        )
+        mismatched = DashboardRun(
+            run_identity="run-scenario-fk-mismatch",
+            mode=StoredRunMode.DEGRADED_LIVE,
+            scenario_id="different-scenario",
+            scenario_revision=1,
+            mission_id=mission.mission_id,
+            run_id="run-scenario-fk-mismatch",
+            session_id=None,
+            prepared_initial_state=b'{"canonicalizationVersion":1,"stateVersion":1}',
+        )
+        matching = replace(
+            mismatched,
+            run_identity="run-scenario-fk-match",
+            scenario_id=mission.scenario_id,
+            run_id="run-scenario-fk-match",
+        )
+        replay = DashboardRun(
+            run_identity="session-scenario-fk-0001",
+            mode=StoredRunMode.REPLAY,
+            scenario_id=mission.scenario_id,
+            scenario_revision=mission.scenario_revision,
+            mission_id=None,
+            run_id=None,
+            session_id="session-scenario-fk-0001",
+            prepared_initial_state=b'{"canonicalizationVersion":1,"stateVersion":1}',
+        )
+        async with transaction(sessions) as session:
+            await create_mission(session, mission)
+
+        # Act
+        with pytest.raises(IntegrityError) as refused:
+            async with transaction(sessions) as session:
+                await create_run(session, mismatched)
+        async with transaction(sessions) as session:
+            await create_run(session, matching)
+            await create_run(session, replay)
+        async with transaction(sessions) as session:
+            stored_matching = await run_by_identity(session, matching.run_identity)
+            stored_replay = await run_by_identity(session, replay.run_identity)
+
+        # Assert
+        self.assertIn("fk_dashboard_run_mission_scenario", str(refused.value.orig))
+        self.assertEqual((matching, replay), (stored_matching, stored_replay))
+
+    async def test_start_reset_and_pending_recovery_keep_exact_bytes_and_history(self) -> None:
+        # Arrange
+        store, scenario, coordinator = await _dashboard_runtime(self.engine)
+
+        # Act
+        started = await coordinator.start(
+            "wilderness-missing-person",
+            RunMode.DEGRADED_LIVE,
+            1,
+            DASHBOARD_START_KEY,
+            DASHBOARD_START_DIGEST,
+        )
+        start_repeat = await coordinator.start(
+            "wilderness-missing-person",
+            RunMode.DEGRADED_LIVE,
+            1,
+            DASHBOARD_START_KEY,
+            DASHBOARD_START_DIGEST,
+        )
+        predecessor = await store.current_run()
+        if predecessor is None or predecessor.mission_id is None:
+            self.fail("live start did not select its durable predecessor")
+        pending_reset = MutationProposal(
+            DASHBOARD_RESET_KEY,
+            MutationKind.RESET,
+            RunMode.DEGRADED_LIVE,
+            DASHBOARD_RESET_DIGEST,
+            "wilderness-missing-person",
+            1,
+            "mission-test-0002",
+            "run-test-0002",
+            None,
+            predecessor.mission_id,
+        )
+        await store.claim_operation(pending_reset)
+        await coordinator.reconcile_pending()
+        reset_repeat = await coordinator.reset(DASHBOARD_RESET_KEY, DASHBOARD_RESET_DIGEST)
+        reset_repeat_again = await coordinator.reset(DASHBOARD_RESET_KEY, DASHBOARD_RESET_DIGEST)
+        successor = await store.current_run()
+        if successor is None or successor.mission_id is None or successor.run_id is None:
+            self.fail("pending reset did not select its durable successor")
+        scenario.status_mission_id = successor.mission_id
+        scenario.status_run_id = successor.run_id
+        with (
+            patch.object(
+                scenario,
+                "start",
+                side_effect=ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE),
+            ) as uncertain_start,
+            pytest.raises(ApiError) as uncertain,
+        ):
+            await coordinator.start(
+                "wilderness-missing-person",
+                RunMode.DEGRADED_LIVE,
+                1,
+                DASHBOARD_RECOVERY_KEY,
+                DASHBOARD_RECOVERY_DIGEST,
+            )
+        await coordinator.reconcile_pending()
+        recovered = await coordinator.start(
+            "wilderness-missing-person",
+            RunMode.DEGRADED_LIVE,
+            1,
+            DASHBOARD_RECOVERY_KEY,
+            DASHBOARD_RECOVERY_DIGEST,
+        )
+        final = _required_current(await store.current_run())
+
+        # Assert
+        self.assertEqual((started.status, started.body), (start_repeat.status, start_repeat.body))
+        self.assertEqual(
+            (reset_repeat.status, reset_repeat.body),
+            (reset_repeat_again.status, reset_repeat_again.body),
+        )
+        self.assertIs(ErrorCode.DEPENDENCY_UNAVAILABLE, uncertain.value.code)
+        uncertain_start.assert_awaited_once()
+        self.assertEqual(started.status, recovered.status)
+        self.assertEqual(predecessor.mission_id, pending_reset.predecessor_mission_id)
+        self.assertEqual((successor.mission_id, successor.run_id), (final.mission_id, final.run_id))
+        self.assertTrue(final.started)
+        self.assertEqual((1, 1), (len(scenario.starts), len(scenario.cancels)))
+
+    async def test_broker_deduplication_is_visible_through_the_snapshot_read_path(self) -> None:
+        # Arrange
+        store, _, coordinator = await _dashboard_runtime(self.engine)
+        await coordinator.start(
+            "wilderness-missing-person",
+            RunMode.DEGRADED_LIVE,
+            1,
+            DASHBOARD_START_KEY,
+            DASHBOARD_START_DIGEST,
+        )
+        current = _required_current(await store.current_run())
+        if current.mission_id is None:
+            self.fail("live start did not select an operational mission")
+        event = BrokerEvent(
+            source="urn:aerial-rescue:recorder-probe",
+            event_id="event-store-probe-0001",
+            source_sequence=7,
+            payload_digest=DASHBOARD_EVENT_DIGEST,
+        )
+        record = _record(current.mission_id, "MISSION_LIFECYCLE")
+
+        # Act
+        async with transaction(store.session_factory) as session:
+            accepted = await append_broker_event(cast("EventSession", session), event, record)
+        async with transaction(store.session_factory) as session:
+            duplicate = await append_broker_event(cast("EventSession", session), event, record)
+        basis = await store.capture_snapshot_basis()
+        if basis is None:
+            self.fail("snapshot did not capture the selected live run")
+        page = await store.read_events(current, 0, basis.audit_watermark, 10)
+        suffix = await store.read_events(current, basis.audit_watermark, None, 10)
+
+        # Assert
+        self.assertEqual(BrokerEventOutcome.ACCEPTED, accepted.outcome)
+        self.assertEqual(BrokerEventOutcome.DUPLICATE, duplicate.outcome)
+        self.assertEqual(
+            (accepted.audit_mission_id, accepted.audit_ordinal),
+            (duplicate.audit_mission_id, duplicate.audit_ordinal),
+        )
+        self.assertEqual(current.identity, basis.current_run.identity)
+        self.assertEqual(accepted.audit_ordinal, basis.audit_watermark)
+        self.assertEqual(
+            ((accepted.audit_ordinal, record.kind, record.payload),),
+            tuple((item.audit_ordinal, item.kind, item.payload) for item in page),
+        )
+        self.assertEqual((), suffix)
 
 
 async def _append_and_hold(

@@ -9,7 +9,12 @@ test("matches the deterministic degraded-live command center", async ({ page }) 
 
   // Act
   await openDashboard(page, fixture);
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   await expect(page.getByRole("status", { name: "Operating mode" })).toHaveText(
@@ -24,7 +29,12 @@ test("matches the deterministic isolated replay command center", async ({ page }
 
   // Act
   await openDashboard(page, fixture);
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   await expect(page.getByRole("status", { name: "Operating mode" })).toHaveText("ISOLATED REPLAY");
@@ -39,7 +49,12 @@ test("matches the guarded reset confirmation with visible keyboard focus", async
   await openDashboard(page, fixture);
   await page.getByRole("button", { name: "Reset mission" }).focus();
   await page.keyboard.press("Enter");
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   await expect(page.getByRole("dialog", { name: "Reset current mission" })).toBeVisible();
@@ -54,7 +69,12 @@ test("matches the contract-failure state while retaining validated mission conte
 
   // Act
   await openDashboard(page, fixture);
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   await expect(page.getByRole("alert")).toContainText("Contract validation failed");
@@ -67,7 +87,12 @@ test("matches the recovered connection state without hiding mission state", asyn
 
   // Act
   await openDashboard(page, fixture);
-  const masks = [page.getByTestId("runtime-id"), page.locator("time")];
+  const masks = [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
 
   // Assert
   await expect(page.getByRole("status", { name: "Dashboard state" })).toHaveText(

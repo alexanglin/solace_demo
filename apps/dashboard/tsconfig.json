@@ -34,6 +34,8 @@
     "src",
     "tests",
     "playwright.config.ts",
+    "playwright.production.config.ts",
+    "playwright.soak.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "vitest.integration.config.ts"

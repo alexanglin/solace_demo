@@ -151,7 +151,7 @@ class GrantTests(unittest.TestCase):
             "DASHBOARD_API": (2, 7),
             "SCENARIO_SERVICE": (1, 0),
             "EVIDENCE_SERVICE": (1, 2),
-            "RECORDER": (0, 13),
+            "RECORDER": (0, 4),
             "EVENT_MESH_GATEWAY": (1, 1),
             "EVENT_MESH_TOOL": (1, 0),
             "AGENT_MESH_AGENT": (2, 0),
@@ -200,7 +200,17 @@ class GrantTests(unittest.TestCase):
                 ),
                 frozenset({"DRONE_COMMAND"}),
             ),
-            "RECORDER": (frozenset(), frozenset(PUBLISHER_NAMES)),
+            "RECORDER": (
+                frozenset(),
+                frozenset(
+                    {
+                        "DRONE_TELEMETRY",
+                        "DRONE_EVENT",
+                        "MISSION_EVENT",
+                        "SECTOR_EVENT",
+                    }
+                ),
+            ),
         }
 
         # Act
@@ -266,7 +276,7 @@ class GrantTests(unittest.TestCase):
             published,
         )
 
-    def test_the_recorder_subscribes_to_every_family(self) -> None:
+    def test_the_recorder_subscribes_only_to_dashboard_capture_sources(self) -> None:
         # Arrange
         role = Principal.RECORDER
 
@@ -274,7 +284,17 @@ class GrantTests(unittest.TestCase):
         subscribed = grants(role, Access.SUBSCRIBE)
 
         # Assert
-        self.assertEqual(frozenset(Family), subscribed)
+        self.assertEqual(
+            frozenset(
+                {
+                    Family.DRONE_TELEMETRY,
+                    Family.DRONE_EVENT,
+                    Family.MISSION_EVENT,
+                    Family.SECTOR_EVENT,
+                }
+            ),
+            subscribed,
+        )
 
     def test_the_discovery_role_holds_no_grant_in_either_direction(self) -> None:
         # Arrange

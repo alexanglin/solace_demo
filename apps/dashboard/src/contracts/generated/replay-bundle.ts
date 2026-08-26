@@ -14,7 +14,6 @@ export type DashboardEvent =
  */
 export interface DashboardReplayBundle {
   bundleVersion: "dashboard-replay-bundle/v1";
-  sessionId: string;
   scenarioId: string;
   scenarioRevision: 1;
   initialState: DashboardReducedState;

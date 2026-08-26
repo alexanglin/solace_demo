@@ -15,45 +15,56 @@ broker-enforced authority, and observable proof are the demonstration.
 
 ## Status
 
-**No end-to-end operational demonstration has run yet.** This is a repository under construction.
-Committed local slices now exercise Agent Mesh discovery and delegation, both official Event Mesh
-plugins, broker authorization and guaranteed delivery, fleet telemetry, and drone-side command
-consumption. The mission dashboard, evidence path, persistent command authorization, complete human
-approval flow, recording and replay, and the cross-system audit trace are not assembled.
+**No complete end-to-end operational demonstration is accepted yet.** This is a repository under
+construction. Committed local slices exercise Agent Mesh discovery and delegation, both official Event
+Mesh plugins, broker authorization and guaranteed delivery, fleet telemetry, and drone-side command
+consumption. The dashboard feature branch implements its production runtime and has passed the complete
+64-case fixture inventory, six inspected and redacted screenshot cases, an eight-case developmental
+production run, and a 61-sample, 31.3-minute developmental soak. Those production results were measured
+from an uncommitted revision, so A8/R7/R9 still require a clean committed rerun, release evidence,
+current diagrams, and final gates. The evidence path, persistent command authorization, complete human
+approval flow, and cross-system audit trace remain unassembled.
 
 | Area | State |
 | --- | --- |
 | Foundation, toolchain, and quality gates | Complete |
 | Contracts: canonical serialization and the proposal digest | Complete, in [`packages/contracts`](packages/contracts) |
 | Agent Mesh configuration validation | Complete as an offline gate, in [`agent-mesh/tools`](agent-mesh/tools); armed: five configurations under `agent-mesh/configs/` |
-| Docker Compose stack | Defined in [`deploy/`](deploy) — the PubSub+ broker container, Postgres, Agent Mesh from its official image, the application services, and the Event Portal discovery agent — pinned by digest and held to a policy gate on every commit; the Agent Mesh starts with the default profile ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). The broker and Postgres first live run is recorded in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md) |
-| Broker authorization | Nine least-privilege client usernames on deny-by-default ACL profiles, **applied to the running container**; approval-bypass cases B17, B18, and B19 pass against it ([`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md)) |
+| Docker Compose stack | Defined once in [`deploy/`](deploy) as the shared `aerial-rescue-mesh` project. Normal `just up` owns the broker, PostgreSQL, and default Agent Mesh lifecycle; `just mission-control-up` requires those two stateful services to be healthy, starts seven dashboard extension targets without replacing them, and post-verifies their container identities. Caddy remains the sole dashboard publisher. Pulled images are digest-pinned and the stack is held to a policy gate on every commit ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md), [ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)). The broker and Postgres first live run is recorded in [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md); complete mission-control live acceptance remains a release gate |
+| Broker authorization | The current matrix defines ten least-privilege client usernames over thirteen topic families on deny-by-default ACL profiles. The original nine-role matrix is **applied to the running container** in the Phase 0 record; the expanded dashboard lifecycle controls passed the exact 16-case local authorization suite on the developmental revision and still require clean committed evidence ([`release-evidence/phase-0/broker-authorization.md`](release-evidence/phase-0/broker-authorization.md), [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md)) |
 | Live Ollama messaging and the Agent Mesh runtime | **Running, and started by default.** The stack carries the Orchestrator, a specialised agent, a versioned workflow, the HTTP/SSE Web UI, and the Event Mesh Gateway on a digest-locked local model; agent-card discovery, structured workflow invocation, and one A2A delegation from a workflow node to its peer are asserted against the running broker. The model-chosen delegation is a recorded observation, not a repeatable test ([`release-evidence/phase-0/mesh-first-run.md`](release-evidence/phase-0/mesh-first-run.md)) |
 | Application events and official Event Mesh plugins | **Live slices recorded.** Fleet telemetry crosses the broker; one salient CloudEvent becomes a structured A2A task; one Event Mesh Tool request receives a validated, non-actuating command-gateway reply ([`fleet-simulator-first-run.md`](release-evidence/phase-3/fleet-simulator-first-run.md), [`event-mesh-gateway-first-run.md`](release-evidence/phase-0/event-mesh-gateway-first-run.md), [`event-mesh-tool-first-run.md`](release-evidence/phase-0/event-mesh-tool-first-run.md)) |
 | Guaranteed delivery and drone command consumption | **Live slices recorded.** Durable queues, settlement, bounded redelivery, dead-message handling, backlog drain, and drone-side command consumption are exercised against the local broker; an actual broken-session reconnect and gateway-side persistent dispatch remain unproved ([`guaranteed-delivery-first-run.md`](release-evidence/phase-2/guaranteed-delivery-first-run.md), [`backlog-recovery-first-run.md`](release-evidence/phase-2/backlog-recovery-first-run.md), [`command-dispatch-first-run.md`](release-evidence/phase-3/command-dispatch-first-run.md)) |
-| Durable mission store | **The schema, its migration path, and ADR-0006's three repositories are live.** Four Alembic revisions apply to a PostgreSQL 18.6 database the run creates and drops, one revision at a time in both directions, and six of the eleven declared constraints are provoked and enforced. Above them: a session, a bounded transaction, the append-only audit log, and the approval, idempotency, and outbox repositories. Two consumers of one approval commit once and deny once with the second observed *waiting*; two claimants of one idempotency key execute once and replay once; the outbox refuses the record past its bound; and the three writes [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) requires commit and roll back together ([ADR-0091](docs/adr/0091-consume-an-approval-under-its-own-row-lock.md), [ADR-0092](docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md), [ADR-0093](docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md), [`durable-transaction-first-run.md`](release-evidence/phase-3/durable-transaction-first-run.md)). No service imports the package yet, restart durability is unproven, and the paid-call ledger and the operator's own database remain untouched |
-| Mission dashboard | **A1 and R1 are green; A2 is unblocked but not started.** The production HTML host loads a tested React shell. The 19 browser-facing schemas, two scenario-file schemas, and eight private-control schemas have manifest-owned polarity fixtures, strict service-local Python twins at every Python trust boundary, and framework-free HTTP expectation registries. No FastAPI application, generated OpenAPI, map, source adapter, mutation client, or packaged runtime exists yet. Frontend coverage is independently inventory-adjudicated, while the unchanged 64 Playwright cases remain fixture acceptance rather than production end-to-end evidence ([FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md)) |
+| Durable mission store | **The five-revision schema and both repository families are exercised on PostgreSQL.** Focused integration uses databases created and dropped by the test, while the dashboard production topology deliberately reuses the shared project's retained PostgreSQL container and history. Revision `0005_dashboard_runtime` adds the narrow dashboard mission/run, exact-byte operation, broker-deduplication, and bounded ordered-read paths used by the dashboard API and recorder. The live integration walks all five revisions in both directions and proves prepared-before-start persistence, exact start/reset retry, same-run pending recovery, predecessor retention, broker deduplication, and snapshot reads. Audit ordinal plus exact operation state and bytes are authority; revision 0005 stores no unused operation, mission, or run wall-clock metadata. Killed-process recovery and the paid-call ledger remain unproved ([ADR-0113](docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md), [ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) |
+| Mission dashboard | **A5-A7 and R2/R4-R6/R8/R9 are implemented; A8/R7/R9 release qualification remains open.** The validated source adapters, secure mutation client, map-first UI, strict FastAPI/Unix-socket boundary, catalog, durable orchestration, private scenario/fleet control, recorder, replay validator, and shared-project packaging are present. All 64 fixture cases and six inspected/redacted screenshots are green. A developmental uncommitted shared-stack run passed eight production cases and a 61-sample, 31.3-minute soak; it is remediation evidence, not the required clean committed release record. Final status waits on that rerun, release evidence, refreshed diagrams, and the full gates ([FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md)) |
 | Supply-chain and workflow scanning | Locked-dependency audit on every push; Trivy over `deploy/` at pre-push and over every stack image daily in continuous integration; zizmor on every workflow change; CodeQL for Python; Dependabot for every ecosystem the repository has |
 | Solace Cloud | A non-gating showcase profile for the Cloud console; it has not been exercised, and no gate depends on it |
-| End-to-end mission experience | Not assembled: the dashboard, evidence service, persistent approval-to-command path, recorder/replayer, and complete audit trace remain release work |
+| End-to-end mission experience | Not yet accepted: the selected dashboard runtime is assembled and has passed developmental browser/restart/soak execution, but lacks the clean committed rerun and final evidence/gates. The broader evidence service, persistent approval-to-command path, executable edge agents, rescue path, and complete cross-system audit trace remain release work |
 
 Sequenced delivery and exit criteria are in
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md); committed live observations are scoped in
 [`release-evidence/`](release-evidence/).
 
-## The mission scenario
+## Target end-to-end mission scenario
 
-A person is missing in a wilderness area. An operator opens the dashboard, submits a last
-known position, a search polygon, a weather summary, and a time since last contact.
+The sequence below is the target demonstration, not the current dashboard acceptance claim. The
+implemented dashboard slice starts a fixed degraded-live search with twenty deterministic simulations;
+it lists the three external edge agents as `DECLARED ONLY — NOT EXECUTED` and accepts no telemetry or
+connectivity for them. Weather, time-since-contact, evidence, approval, command, and rescue inputs stay
+outside this slice until each has an implemented producer-to-consumer effect.
+
+A person is missing in a wilderness area. An operator opens the dashboard and submits a last-known
+position and search polygon.
 
 1. The Event Mesh Gateway validates the request and starts a versioned Mission Response
    workflow over A2A topics on the Solace broker.
 2. The workflow invokes a Mission Coordinator and discovered specialized agents with typed
    inputs and outputs. Agents **propose**; a deterministic command gateway outside model
    control is the only component that publishes an executable command.
-3. A fleet of 23 drones begins reporting telemetry — three model-backed edge agents on
-   local Ollama, and 20 deterministic simulations that exist to validate fleet-scale
-   behaviour. Routine telemetry never passes through a language model.
+3. In the future complete demonstration, 23 executable drones report telemetry — three model-backed
+   edge agents on local Ollama and 20 deterministic simulations that validate fleet-scale behaviour.
+   Routine telemetry never passes through a language model. That 23-executable-member claim does not
+   apply to the current dashboard slice described above.
 4. One drone loses connectivity. Its inbound commands wait in a durable broker queue, its
    edge-created critical events wait in a bounded local outbox, its sector is marked at
    risk, and the mesh coordinates reassignment.
@@ -129,9 +140,11 @@ disagree.
 
 ## Getting started
 
-There is no operational application to start yet. What you can do today is run the verification
-suite. The Agent Mesh semantic-configuration gate is part of it, and
-[`CONTRIBUTING.md`](CONTRIBUTING.md) shows how to run that gate on its own.
+The mission-control recipe extends the existing local runtime, but it is not yet an accepted operational
+demonstration: the clean committed production browser rerun, evidence, diagrams, and final gates remain.
+Run the verification suite before treating a local start as evidence.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) lists both the verification commands and the shared-project
+mission-control recipe.
 
 Prerequisites: `uv` 0.12.5, Python 3.14.7, `pre-commit` 4.5, Graphviz, and `shellcheck`.
 Agent Mesh work additionally needs Python 3.13.15. Exact versions and the rationale are in

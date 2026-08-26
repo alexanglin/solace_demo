@@ -17,8 +17,7 @@
         "connecting",
         "disconnected",
         "offline",
-        "recovered",
-        "runtimeChanged"
+        "recovered"
       ]
     }
   }

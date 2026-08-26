@@ -263,7 +263,9 @@ class CommandAuthorityAnswerTests(unittest.TestCase):
         # Act
         replies = _ask(request, _request_topic())
         commands = _observe(
-            Principal.RECORDER, subscription_for(Family.DRONE_COMMAND), SILENCE_WINDOW_SECONDS
+            Principal.DASHBOARD_API,
+            subscription_for(Family.DRONE_COMMAND),
+            SILENCE_WINDOW_SECONDS,
         )
 
         # Assert

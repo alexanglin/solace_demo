@@ -73,6 +73,6 @@ git ls-files -z --cached --others --exclude-standard -- \
 
 set -- run --frozen python -m tools.typescript_coverage_gate \
 	--report "$coverage_report" --dashboard-root apps/dashboard \
-	--source-inventory "$source_inventory"
+	--source-inventory "$source_inventory" --enforce-dashboard-tier-one
 
 uv "$@"

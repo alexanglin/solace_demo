@@ -112,7 +112,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0092](0092-claim-an-idempotency-key-with-one-conflicting-insert.md) | Claim an idempotency key with one conflicting insert, and let the domain say what a repeat means | Accepted |
 | [0093](0093-stage-the-command-outbox-under-a-counted-bound.md) | Give the command outbox three states, a counted bound, and an overflow that writes nothing | Accepted |
 | [0094](0094-validate-replay-before-browser-playback.md) | Validate replay in a zero-network one-shot container before browser playback | Accepted |
-| [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Accepted |
+| [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Superseded by ADR-0113 |
 | [0096](0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) | Publish the dashboard through Caddy and keep FastAPI on a private Unix socket | Accepted |
 | [0097](0097-close-the-ui-slice-http-contract.md) | Close the UI slice HTTP contract and mutation refusal order | Accepted |
 | [0098](0098-make-the-wilderness-dashboard-ui-first.md) | Make the wilderness mission dashboard a UI-first real slice | Accepted |
@@ -130,6 +130,38 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0110](0110-scope-the-duplication-gate-to-authored-source.md) | Scope the duplication gate to authored source | Accepted |
 | [0111](0111-broker-dashboard-lifecycle-sources.md) | Broker dashboard lifecycle sources as schema-bound application events | Accepted |
 | [0112](0112-witness-ordered-dashboard-events-outside-reduced-state.md) | Witness ordered dashboard events outside reduced state and correct v1 anchors | Accepted |
+| [0113](0113-persist-dashboard-runtime-after-the-current-store-head.md) | Persist the dashboard runtime after the current store head | Accepted |
+| [0114](0114-extend-private-scenario-control-with-catalog-and-recovery.md) | Extend private scenario control with catalog and lost-run recovery | Accepted |
+| [0115](0115-record-normalized-events-and-serve-session-neutral-replay.md) | Record normalized events and serve session-neutral replay | Accepted |
+| [0116](0116-bound-dashboard-ingress-cursors-and-streams.md) | Bound dashboard ingress, cursors, and streams | Accepted |
+| [0117](0117-select-the-exact-mission-control-service-closure.md) | Select the exact mission-control service closure | Accepted |
+| [0118](0118-provision-command-queues-only-for-executable-members.md) | Provision command queues only for executable members | Accepted |
+| [0119](0119-parameterize-disposable-non-ui-host-ports.md) | Parameterize disposable non-UI host ports | Accepted |
+| [0120](0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) | Run only the recorder endpoints the dashboard consumes | Accepted |
+| [0121](0121-reconstruct-synthetic-mission-lifecycle-witnesses.md) | Reconstruct synthetic mission-lifecycle witnesses from stable run identity | Accepted |
+| [0122](0122-bound-production-dashboard-script-and-style-bytes.md) | Bound production dashboard script and style bytes | Accepted |
+| [0123](0123-isolate-mission-control-state-and-broker-identities.md) | Isolate mission-control state and broker identities | Accepted |
+| [0124](0124-remove-unconsumed-dashboard-wire-values.md) | Remove dashboard wire values with no producer-to-consumer effect | Accepted |
+| [0125](0125-anchor-browser-runtime-and-bound-transport-outages.md) | Anchor browser runtime identity and bound transport outages | Accepted |
+| [0126](0126-instrument-the-dashboard-soak-with-bounded-process-growth.md) | Instrument the dashboard soak with bounded process growth | Accepted |
+| [0127](0127-bind-live-runs-to-their-mission-scenario.md) | Bind live runs to their mission scenario | Accepted |
+| [0128](0128-prove-sse-overload-through-authenticated-pressure.md) | Prove SSE overload through bounded authenticated pressure | Accepted |
+| [0129](0129-generate-only-consumed-local-secrets.md) | Generate only local secrets with active consumers | Accepted |
+| [0130](0130-enforce-dashboard-tier-one-coverage-per-file.md) | Enforce dashboard Tier 1 coverage per file | Accepted |
+| [0131](0131-isolate-loopback-publishers-and-forward-startup-flags.md) | Isolate loopback publishers and forward startup flags | Accepted |
+| [0132](0132-precompile-dashboard-validators-for-the-production-csp.md) | Precompile dashboard validators for the production CSP | Accepted |
+| [0133](0133-persist-the-one-shot-replay-handoff.md) | Persist the one-shot replay handoff | Accepted |
+| [0134](0134-prove-fleet-publication-separately-from-recorder-receipt.md) | Prove fleet publication separately from recorder receipt | Accepted |
+| [0135](0135-keep-overload-recovery-observable-without-delaying-state.md) | Keep overload recovery observable without delaying state | Accepted |
+| [0136](0136-bind-live-snapshots-to-accepted-run-identities.md) | Bind live snapshots to accepted run identities | Accepted |
+| [0137](0137-remove-unconsumed-recovery-and-recorder-results.md) | Remove unconsumed recovery and recorder results | Accepted |
+| [0138](0138-stall-the-publisher-not-the-api-for-sse-pressure.md) | Stall the publisher, not the API, for SSE pressure | Accepted |
+| [0139](0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) | Reuse the aerial-rescue-mesh runtime for the dashboard | Accepted |
+| [0140](0140-scope-live-telemetry-producers-to-one-mission.md) | Scope live telemetry producers to one mission | Accepted |
+| [0141](0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md) | Exhaust deployed SSE buffers with two bounded producers | Accepted |
+| [0142](0142-retain-dashboard-pressure-history-in-the-shared-runtime.md) | Retain dashboard pressure history in the shared runtime | Accepted |
+| [0143](0143-let-durable-terminal-state-establish-reset-cancellation.md) | Let durable terminal state establish reset cancellation | Accepted |
+| [0144](0144-serialize-the-related-dashboard-test-hook.md) | Serialize the related dashboard test hook | Accepted |
 
 ## Decisions still open
 

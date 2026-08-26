@@ -10,8 +10,8 @@ monitor API, then binds, receives, and settles, so what is asserted is the broke
 Depths are asserted as deltas rather than as absolutes. The dead-message queue has no
 consumer by design -- nothing may bind it -- so what a rejection puts there stays, and a
 later run would read a number a previous run left. Every queue this test fills is drained
-in ``tearDown`` for the same reason, the two collateral ones included: a drone command
-reaches three queues, and leaving two of them spooling would make the next run's arithmetic
+in ``tearDown`` for the same reason, the collateral dashboard queue included: a drone command
+reaches two queues, and leaving it spooling would make the next run's arithmetic
 depend on this one.
 
 The prerequisite is one command: ``just provision --namespace aerial-rescue-mesh --drone
@@ -83,7 +83,6 @@ COMMAND_BODY: Final = b'{"probe":1}'
 PROBE_QUEUE: Final = drone_queue_name(PROBE_DRONE)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
 )
 FILLED_QUEUES: Final = ((Principal.FLEET_SIMULATOR, PROBE_QUEUE), *COLLATERAL_QUEUES)
 

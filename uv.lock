@@ -69,6 +69,9 @@ version = "0.0.0"
 source = { editable = "services/dashboard_api" }
 dependencies = [
     { name = "aerial-rescue-contracts" },
+    { name = "aerial-rescue-domain" },
+    { name = "aerial-rescue-observability" },
+    { name = "aerial-rescue-store" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -78,6 +81,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "aerial-rescue-domain", editable = "packages/domain" },
+    { name = "aerial-rescue-observability", editable = "packages/observability" },
+    { name = "aerial-rescue-store", editable = "packages/store" },
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pydantic", specifier = "==2.13.4" },
@@ -180,18 +186,40 @@ dev = [
 name = "aerial-rescue-observability"
 version = "0.0.0"
 source = { editable = "packages/observability" }
+dependencies = [
+    { name = "aerial-rescue-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "aerial-rescue-contracts", editable = "packages/contracts" }]
 
 [[package]]
 name = "aerial-rescue-recorder"
 version = "0.0.0"
 source = { editable = "services/recorder" }
+dependencies = [
+    { name = "aerial-rescue-broker" },
+    { name = "aerial-rescue-contracts" },
+    { name = "aerial-rescue-observability" },
+    { name = "aerial-rescue-store" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aerial-rescue-broker", editable = "packages/broker" },
+    { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "aerial-rescue-observability", editable = "packages/observability" },
+    { name = "aerial-rescue-store", editable = "packages/store" },
+]
 
 [[package]]
 name = "aerial-rescue-scenario-service"
 version = "0.0.0"
 source = { editable = "services/scenario_service" }
 dependencies = [
+    { name = "aerial-rescue-broker" },
     { name = "aerial-rescue-contracts" },
+    { name = "aerial-rescue-domain" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -200,7 +228,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aerial-rescue-broker", editable = "packages/broker" },
     { name = "aerial-rescue-contracts", editable = "packages/contracts" },
+    { name = "aerial-rescue-domain", editable = "packages/domain" },
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pydantic", specifier = "==2.13.4" },

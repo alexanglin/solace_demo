@@ -40,6 +40,7 @@ from aerial_rescue_contracts.topics import (
 LEVEL_SEPARATOR: Final = "/"
 SINGLE_LEVEL_WILDCARD: Final = "*"
 MULTI_LEVEL_WILDCARD: Final = ">"
+CONNECTIVITY_EVENT_TYPE: Final = "connectivity-changed"
 
 
 class SubscriptionRefusal(Enum):
@@ -88,6 +89,20 @@ def subscription_for(family: Family) -> str:
         *(_wildcarded(level) for level in family.levels),
     )
     return LEVEL_SEPARATOR.join(levels)
+
+
+def connectivity_subscription() -> str:
+    """Return the recorder's exact connectivity-event subscription.
+
+    ``DRONE_EVENT`` also carries salient detections. The dashboard recorder does not consume
+    those events, so its queue and ACL exception keep the family template's mission and drone
+    wildcards while fixing the final event-type level to ``connectivity-changed``.
+    """
+    levels = tuple(
+        CONNECTIVITY_EVENT_TYPE if level == "{eventType}" else _wildcarded(level)
+        for level in Family.DRONE_EVENT.levels
+    )
+    return LEVEL_SEPARATOR.join((namespace_prefix(), SINGLE_LEVEL_WILDCARD, *levels))
 
 
 def drone_command_subscription(drone_id: str) -> str:

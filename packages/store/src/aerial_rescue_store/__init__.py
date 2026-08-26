@@ -17,8 +17,15 @@ single handler.
 
 from __future__ import annotations
 
+from typing import Final
+
 from aerial_rescue_domain import DomainError
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class StoreError(DomainError):
     """A value the durable store refuses, carrying the refusal as structured data."""
+
+
+STORE_BOUNDARY_ERRORS: Final = (StoreError, SQLAlchemyError)
+"""Typed repository and driver failures an application adapter may redact as unavailable."""

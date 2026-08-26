@@ -605,11 +605,19 @@ function snapshot(
 }
 
 function sourceSignal(
-  signal: "connecting" | "disconnected" | "offline" | "recovered" | "runtimeChanged",
+  signal: "connecting" | "disconnected" | "offline" | "recovered",
 ): DashboardSourceInput {
   return sourceInput("source-signal", signal, {
     signal,
     signalVersion: "dashboard-source-signal/v1",
+  });
+}
+
+function changedRuntimeSnapshot(input: DashboardSourceInput): DashboardSourceInput {
+  const document = JSON.parse(input.raw) as Record<string, unknown>;
+  return sourceInput(input.channel, input.name, {
+    ...document,
+    runtimeId: "runtime-restarted-0002",
   });
 }
 
@@ -935,7 +943,6 @@ function replayBundle(overrides: ReplayFixtureOverrides): DashboardSourceInput {
     latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
-    sessionId: "replay-session-0001",
   };
   const provisionalR1ChecksumMaterial = {
     ...coveredBundle,
@@ -997,7 +1004,7 @@ export function fixtureForState(
     return script([...common, running, sourceSignal("disconnected"), sourceSignal("recovered")]);
   }
   if (viewState === "staleRuntime") {
-    return script([...common, running, sourceSignal("runtimeChanged")]);
+    return script([...common, running, changedRuntimeSnapshot(running)]);
   }
   if (viewState === "contractFailure") {
     return script([
@@ -1062,7 +1069,6 @@ export function malformedBoundaryInputs(
     latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
-    sessionId: "replay-session-malformed",
   };
   const malformedIntegrity = {
     algorithm: "sha256" as const,

@@ -22,13 +22,14 @@ from __future__ import annotations
 import argparse
 import ssl
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Final, TextIO
 
 from aerial_rescue_contracts.topics import TopicError
-from aerial_rescue_domain.principals import Principal
+from aerial_rescue_domain.principals import Principal, may_use_a2a
 
 from aerial_rescue_broker.provisioning import (
     FACTORY_CLIENT_USERNAME,
@@ -37,7 +38,9 @@ from aerial_rescue_broker.provisioning import (
     SempTransport,
     apply,
     desired_state,
+    principals_for_projection,
 )
+from aerial_rescue_broker.queues import QueueProjection
 from aerial_rescue_broker.semp import SempEndpoint, SempError, SempSession, connect
 from aerial_rescue_broker.subscriptions import SubscriptionError
 
@@ -99,9 +102,12 @@ def read_credential(deploy: Path, role: Principal) -> str:
     return _read(credential_path(deploy, role))
 
 
-def read_credentials(deploy: Path) -> dict[Principal, str]:
-    """Return one credential per role, refusing the whole set if any is absent."""
-    return {role: read_credential(deploy, role) for role in Principal}
+def read_credentials(
+    deploy: Path,
+    principals: Iterable[Principal] = tuple(Principal),
+) -> dict[Principal, str]:
+    """Return one credential per selected runtime role, refusing if any is absent."""
+    return {role: read_credential(deploy, role) for role in principals}
 
 
 def endpoint(deploy: Path, host: str, port: int) -> SempEndpoint:
@@ -128,11 +134,14 @@ def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     exceptions = sum(len(profile.publish) + len(profile.subscribe) for profile in state.profiles)
     subscriptions = sum(len(queue.subscriptions) for queue in state.queues)
     fleet = sum(1 for queue in state.queues if queue.owner == Principal.FLEET_SIMULATOR.value)
-    a2a = (
-        f"A2A namespace {namespace!r} granted to the Agent Mesh roles"
-        if namespace is not None
-        else "A2A namespace unset: the Agent Mesh roles hold no A2A grant"
-    )
+    projected_roles = {profile.name for profile in state.profiles}
+    projected_a2a = any(role.value in projected_roles and may_use_a2a(role) for role in Principal)
+    if not projected_a2a:
+        a2a = "no Agent Mesh identities in this projection"
+    elif namespace is not None:
+        a2a = f"A2A namespace {namespace!r} granted to the Agent Mesh roles"
+    else:
+        a2a = "A2A namespace unset: the Agent Mesh roles hold no A2A grant"
     drones = (
         f"{fleet} drone command queues"
         if fleet
@@ -149,12 +158,20 @@ def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     )
 
 
+@dataclass(frozen=True)
+class QueueSelection:
+    """The executable-drone inventory and endpoint projection to provision."""
+
+    drones: tuple[str, ...]
+    projection: QueueProjection = QueueProjection.GLOBAL
+
+
 def provision(
     transport: SempTransport,
     deploy: Path,
     vpn: str,
     namespace: object | None,
-    drones: Sequence[str],
+    queues: QueueSelection,
 ) -> tuple[str, ...]:
     """Apply the authorization matrix and the queue set to ``vpn``, and return the summary.
 
@@ -163,7 +180,7 @@ def provision(
         deploy: The deploy directory holding the generated authority and credentials.
         vpn: The message VPN to write to.
         namespace: The A2A namespace, or ``None`` when it is not yet fixed.
-        drones: The drone identifiers the scenario declares. An empty fleet provisions no
+        queues: The drone identifiers and explicit endpoint projection. An empty fleet provisions no
             command queue, and the summary says so rather than leaving it to be inferred:
             a command published for a drone with no queue is discarded and not refused
             (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
@@ -178,7 +195,13 @@ def provision(
         TopicError: When a drone identifier is outside the identifier rule.
         SempError: When the broker refuses a call or cannot be reached.
     """
-    state = desired_state(vpn, read_credentials(deploy), namespace, drones)
+    state = desired_state(
+        vpn,
+        read_credentials(deploy, principals_for_projection(queues.projection)),
+        namespace,
+        queues.drones,
+        queues.projection,
+    )
     apply(transport, state)
     return _report(state, namespace)
 
@@ -195,6 +218,11 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--namespace", default=None)
     parser.add_argument("--deploy-directory", default=DEFAULT_DEPLOY_DIRECTORY)
     parser.add_argument("--drone", action="append", default=[])
+    parser.add_argument(
+        "--queue-projection",
+        choices=tuple(projection.value for projection in QueueProjection),
+        default=QueueProjection.GLOBAL.value,
+    )
     return parser.parse_args(argv)
 
 
@@ -221,7 +249,14 @@ def main(
     try:
         transport = session(endpoint(deploy, arguments.host, arguments.port))
         lines = provision(
-            transport, deploy, arguments.vpn, arguments.namespace, tuple(arguments.drone)
+            transport,
+            deploy,
+            arguments.vpn,
+            arguments.namespace,
+            QueueSelection(
+                tuple(arguments.drone),
+                QueueProjection(arguments.queue_projection),
+            ),
         )
     except (
         DeploymentError,

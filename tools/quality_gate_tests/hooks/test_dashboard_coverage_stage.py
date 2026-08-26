@@ -145,6 +145,19 @@ done
             self.assertTrue(Path(report_match.group(1)).is_absolute())
             self.assertFalse(Path(report_match.group(1)).parent.exists())
 
+    def test_the_stage_enables_the_fixed_dashboard_tier_one_policy(self) -> None:
+        # Arrange
+        repository = self._dashboard_repository()
+        arguments, environment = self._runtime_environment(repository)
+
+        # Act
+        result = self.run_hook("dashboard-test-full.sh", repository, environment=environment)
+        recorded = arguments.read_text(encoding="utf-8")
+
+        # Assert
+        self.assert_hook_succeeded(result)
+        self.assertIn("--enforce-dashboard-tier-one", recorded)
+
     def test_source_inventory_is_nul_delimited_and_includes_every_module_extension(self) -> None:
         # Arrange
         repository = self._dashboard_repository()

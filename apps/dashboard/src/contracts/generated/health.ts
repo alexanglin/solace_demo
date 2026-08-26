@@ -4,10 +4,9 @@
  */
 
 /**
- * Dashboard API process liveness and its non-secret runtime identity.
+ * Dashboard API process liveness.
  */
 export interface DashboardHealth {
   healthVersion: "dashboard-health/v1";
   status: "alive";
-  runtimeId: string;
 }

@@ -23,6 +23,8 @@
     "test:coverage": "vitest run --coverage --coverage.thresholds.statements=95 --coverage.thresholds.branches=95 --coverage.thresholds.functions=95 --coverage.thresholds.lines=95",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "test:e2e:production": "DASHBOARD_E2E_DRIVER=production playwright test --config playwright.production.config.ts",
+    "test:e2e:soak": "DASHBOARD_E2E_DRIVER=production playwright test --config playwright.soak.config.ts",
     "test:e2e:update": "playwright test --update-snapshots",
     "typecheck": "tsc --noEmit"
   },

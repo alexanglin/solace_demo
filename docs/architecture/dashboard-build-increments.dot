@@ -40,10 +40,10 @@ digraph DashboardBuildIncrements {
     a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
     a3 [label="A3 — complete\ncanonical browser digests\n10-run parity oracle", fillcolor="#DFF7EE", color="#008F6B"];
     a4 [label="A4 — complete\nimmutable ordered reducer\n+ verified timeline append", fillcolor="#DFF7EE", color="#008F6B"];
-    a5 [label="A5 — next\nevent-source interface\nfixture / live / replay adapters", fillcolor="#E8F1FB", color="#2F6FB7"];
-    a6 [label="A6\nmutation client"];
-    a7 [label="A7\npresentation state\nmap adapter + components"];
-    a8 [label="A8 — blocked\nscreenshot baselines\nfixture + production acceptance", fillcolor="#FDEBD0", color="#B7791F"];
+    a5 [label="A5 — implementation complete\nfixture / live / replay adapters\nproduction endpoints connected", fillcolor="#E8F1FB", color="#2F6FB7"];
+    a6 [label="A6 — implementation complete\nguarded mutation client\ndevelopmental production path green", fillcolor="#E8F1FB", color="#2F6FB7"];
+    a7 [label="A7 — implementation complete\nmap-first presentation\nfixture + production sources", fillcolor="#E8F1FB", color="#2F6FB7"];
+    a8 [label="A8 — final qualification pending\n6 baselines inspected • 64/64 fixture\ndevelopmental 8/8 + 31.3 min soak green\nclean committed rerun + evidence owed", fillcolor="#FDEBD0", color="#B7791F"];
     a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8;
   }
 
@@ -53,14 +53,14 @@ digraph DashboardBuildIncrements {
     color="#8193A6";
     style="rounded,dashed";
     r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
-    r2 [label="R2\nscenario catalog + loader\nADR-0100"];
+    r2 [label="R2 — complete\nscenario catalog + bounded loader\n20 simulated-only fleet projection\nADR-0100", fillcolor="#DFF7EE", color="#008F6B"];
     r3 [label="R3 — complete\nPython checkpoint + ordered fold\nstate/event digest parity\nADR-0111 / 0112", fillcolor="#DFF7EE", color="#008F6B"];
-    r4 [label="R4\nstore timeline + ordinal witness\nUI-slice revision (ADR-0095)"];
-    r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101 / 0112"];
-    r6 [label="R6\nreceiver + 2 recorder queues\n46 endpoints / 460 MB nominal\nreplay validator\nADR-0094 / 0111"];
-    r7 [label="R7 — in progress\ncanonical-doc propagation"];
-    r8 [label="R8\nlive control + lifecycle publishers\nsource identity + sequence\n14 ticks / 280 publications\nADR-0111"];
-    r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
+    r4 [label="R4 — complete\n0005 runtime store + ordered reads\nfocused PostgreSQL evidence\nADR-0113", fillcolor="#DFF7EE", color="#008F6B"];
+    r5 [label="R5 — implementation complete\ndashboard API + Caddy / UDS\ndevelopmental E2E green\nclean release evidence pending\nADR-0096 / 0116 / 0143", fillcolor="#E8F1FB", color="#2F6FB7"];
+    r6 [label="R6 — implementation complete\ndirect telemetry + 1 lifecycle queue\nrequired subset: 2 endpoints / 20 MB\nbounded replay validator\ndevelopmental live path green\nADR-0094 / 0111 / 0120 / 0139", fillcolor="#E8F1FB", color="#2F6FB7"];
+    r7 [label="R7 — in progress\ncanonical docs + release evidence\nfinal diagrams and gates", fillcolor="#FDEBD0", color="#B7791F"];
+    r8 [label="R8 — implementation complete\nprivate live control + lifecycle\n14 ticks / 280 publications\ndevelopmental production path green\nADR-0111 / 0121", fillcolor="#E8F1FB", color="#2F6FB7"];
+    r9 [label="R9 — final qualification pending\nshared project: 7 start / 5 stop\nbase container IDs guarded\ndevelopmental 8/8 + soak green\nclean evidence owed\nADR-0117 / 0120 / 0139 / 0142", fillcolor="#FDEBD0", color="#B7791F"];
   }
 
   r1 -> a2 [label="contract delivered", color="#008F6B", penwidth=1.6];
@@ -76,5 +76,6 @@ digraph DashboardBuildIncrements {
   r5 -> r9 [label="packaged API", style=dashed];
   r6 -> r9 [label="validated replay", style=dashed];
   r8 -> r9 [label="live runtime", style=dashed];
+  r7 -> a8 [label="release record + current diagrams", color="#B7791F", penwidth=1.4];
   r9 -> a8 [label="production E2E evidence", color="#B7791F", penwidth=1.4];
 }
