@@ -103,3 +103,21 @@ valid = [
 invalid = [
   "fixtures/golden/v1/topics/case-without-topic.json",
 ]
+
+[[contracts]]
+schema = "schemas/v1/dashboard-state.schema.json"
+valid = [
+  "fixtures/golden/v1/dashboard-state/baseline.json",
+  "fixtures/golden/v1/dashboard-state/empty.json",
+]
+invalid = [
+  "fixtures/golden/v1/dashboard-state/unknown-member.json",
+  "fixtures/golden/v1/dashboard-state/mission-uppercase.json",
+  "fixtures/golden/v1/dashboard-state/canonicalization-version-two.json",
+  "fixtures/golden/v1/dashboard-state/view-version-two.json",
+  "fixtures/golden/v1/dashboard-state/drones-not-array.json",
+  "fixtures/golden/v1/dashboard-state/drone-unknown-member.json",
+  "fixtures/golden/v1/dashboard-state/drone-missing-drone-id.json",
+  "fixtures/golden/v1/dashboard-state/drone-battery-over-100.json",
+  "fixtures/golden/v1/dashboard-state/drone-latitude-not-integer.json",
+]

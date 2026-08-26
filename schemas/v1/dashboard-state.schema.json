@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard-state.schema.json",
+  "description": "The reduced dashboard state: the fold of every dashboard event so far. It carries no wall-clock instant, event identifier, or trace context, because those legitimately differ between runs of one seeded scenario, and it holds collections as arrays in ascending byte order of their identifier because a canonical object key admits no hyphen.",
+  "type": "object",
+  "required": [
+    "canonicalizationVersion",
+    "viewVersion",
+    "drones"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "canonicalizationVersion": {
+      "description": "The canonical serialization version, carried inside the hashed bytes so a downgrade fails.",
+      "const": 1
+    },
+    "viewVersion": {
+      "description": "The reduced state's shape version.",
+      "const": 1
+    },
+    "mission": {
+      "description": "The mission the state has adopted; omitted before the first event is folded.",
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "drones": {
+      "description": "Every drone the state holds, in ascending byte order of drone identifier.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/drone"
+      }
+    }
+  },
+  "$defs": {
+    "drone": {
+      "description": "One drone's last accepted telemetry, in the integer units of the canonical profile.",
+      "type": "object",
+      "required": [
+        "droneId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "batteryPercent",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        },
+        "batteryPercent": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/percent"
+        },
+        "altitudeMetres": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/altitudeMetres"
+        },
+        "headingDegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/headingDegrees"
+        },
+        "groundSpeedCentimetresPerSecond": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/groundSpeedCentimetresPerSecond"
+        }
+      }
+    }
+  }
+}

@@ -10,6 +10,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The dashboard event stream has a shape, and the replay determinism oracle has something to
+  hash.** `docs/CONTRACTS.md` defined `GET /api/v1/events` as an "SSE stream for normalized dashboard
+  events" and stopped there: no schema, no fixture, and nothing for the browser, the recorder, and the
+  replay comparison to agree on. `digest.Context.REPLAY_STATE` had existed unused since ADR-0027, and
+  the per-client buffer bound and droppable event classes were an open row in
+  `docs/operating-parameters.md`.
+
+  `packages/contracts/src/aerial_rescue_contracts/view.py` is that contract. `project` turns one
+  validated envelope into a dashboard event carrying the projection's kind, its class, the mission,
+  the envelope's instant, and the projected fields — and no transport member, so a browser reads the
+  stream without the CloudEvents profile or the topic grammar. `apply` folds events into a reduced
+  state that carries no wall-clock instant, no event identifier, and no trace context, because those
+  legitimately differ between runs of one seeded scenario; `state_digest` hashes it under the
+  `replay-state` context ([ADR-0067](docs/adr/0067-normalized-dashboard-events-and-reduced-state.md)).
+
+  Collections are arrays in ascending byte order of their identifier rather than objects keyed by it,
+  because a canonical object key admits no hyphen and a drone identifier may carry one. That sort is
+  part of the contract: two states differing only in the order their drones arrived produce one
+  digest, which the tests assert directly, alongside ten folds of one event sequence agreeing on one
+  hash.
+
+  `schemas/v1/dashboard-state.schema.json` and eleven golden fixtures register the state shape in the
+  contract manifest. The open parameter row is closed: the per-client buffer holds 256 dashboard
+  events, `TELEMETRY` is the only droppable class, and a buffer still full after discarding droppable
+  events closes the stream with a typed reason rather than silently dropping an approval, an evidence
+  record, or an audit record.
+
 - **The commit stage runs the tests a change affects, and the Agent Mesh domain is no longer
   untested there.** [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) decided in its
   Decision and again in its Consequences that `pre-commit` runs "the affected unit tests" and
