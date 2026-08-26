@@ -100,6 +100,35 @@ published for a drone with no queue is discarded rather than refused.
 `test_command_dispatch_live.PROVISIONING` holds a shorter five-drone command in its raw `python -m`
 form; prefer the twenty-eight-drone superset above.
 
+The dead-message queue must be empty before a live run. `test_command_dispatch_live`'s
+`UnreadableCommandLiveTests` and `test_backlog_recovery_live` both read `#DEAD_MSG_QUEUE`'s depth in
+their Arrange step, and `message_count` walks the collection at 100 rows per page for at most 20
+pages, so a queue holding more than 2000 messages raises `SempError` with `PAGING` before either
+probe reaches its own queues. The dead-message queue is written with no `maxRedeliveryCount` and no
+`maxTtl`, and with `respectTtlEnabled` false
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)), so nothing
+in it expires, and nothing may bind it to drain it: it only grows. One full live run puts it past
+2000, because the collateral `dashboard-api`, `evidence-service`, and `recorder` family queues have
+no consumer while the `services` profile is down, and everything they collect expires into it.
+
+Past 10 MB it stops being a reporting problem. Every queue carries
+`rejectMsgToSenderOnDiscardBehavior: always`, so once the dead-message queue is at its bound the next
+guaranteed publish is never acknowledged, and the probes fail with `PubSubTimeoutError: Message
+publish timeout` naming the published topic -- not anything that mentions the dead-message queue.
+Telemetry and gateway-request publishes keep passing in the same run, because only `GUARANTEED`
+families are spooled; that asymmetry is the signature.
+
+Clearing it is an out-of-band action to request explicitly, not a step any probe or recipe performs:
+delete the queue over SEMP, then re-run the provisioning invocation above, which writes
+`#DEAD_MSG_QUEUE` first and recreates it empty.
+
+A broker provisioned before
+[ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) also keeps
+the eight superseded `recorder` family queues that one combined `recorder/dashboard.lifecycle` queue
+replaced. Because the applier deletes no queue, they persist with their original wildcard
+subscriptions, bind nothing, and feed the dead-message queue on every run. They are removed by the
+same out-of-band SEMP delete, and the applier does not recreate them.
+
 What each file adds to that shared prerequisite:
 
 - `test_fleet_simulator_live.py` needs a durable command queue for each of the three drones its
