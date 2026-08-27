@@ -268,7 +268,9 @@ The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its digest 
   synchronized without entering mission state. Fixture checks cover compact layout, 200% zoom, axe,
   reduced motion, replay labeling, and zero remote requests.
 - **A8 — screenshot baselines and final acceptance.** *Status: complete.* Six screenshot baselines are
-  green, masked, and visually inspected. On clean committed revision `db2b640`, all 64 fixed fixture cases
+  green, masked, and visually inspected. `playwright.config.ts` keys each snapshot by `{platform}`, so
+  the same six are committed twice: the darwin set for a workstation run and the linux set rendered on
+  the `ubuntu-24.04-arm` image that continuous integration asserts against. On clean committed revision `db2b640`, all 64 fixed fixture cases
   passed in 42.0 seconds, eight production cases passed in 1.6 minutes, and the 61-sample soak passed in
   30.3 minutes with accepted RSS/file-descriptor growth plus stable dashboard API, broker, and PostgreSQL
   identities. The final replay reached ordinal 48 in `EXHAUSTED` state with its digest shown as `Verified`
