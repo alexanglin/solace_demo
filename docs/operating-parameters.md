@@ -264,7 +264,7 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Broker image | `solace/solace-pubsub-standard:10.26.0.8799` at `sha256:05f80ec7bd38c7592bebfb88a729b1b61c99fc1553758663f13eac626624698f` | `deploy/compose.yaml`, held by the compose policy gate |
-| Postgres image | `postgres:18.6-trixie` at `sha256:1957b2ff3137e4ef7f3bc813e74fff50b1e1ffddc85c8b9d6f14ade972be8687` | `deploy/compose.yaml`, held by the compose policy gate |
+| Postgres image | `postgres:18.6-trixie` at `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280` | `deploy/compose.yaml`, held by the compose policy gate |
 | Postgres data directory | `/var/lib/postgresql/18/docker`, inside the `/var/lib/postgresql` volume the image declares ([ADR-0060](adr/0060-postgresql-18-and-its-data-directory-layout.md)) | `show data_directory` on the running cluster; the named volume holds `18/docker/PG_VERSION` |
 | Agent Mesh base image | `solace/solace-agent-mesh:1.28.7` at `sha256:25dc09b55e8a718e5a690e4abba039cbd032872cd6d4c402b7c69d1dead70255` | `deploy/agent-mesh/Dockerfile` |
 | Application base image | `python:3.14.7-slim-trixie` at `sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83` | `deploy/application/Dockerfile` |
