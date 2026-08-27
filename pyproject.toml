@@ -51,7 +51,7 @@ dev = [
     "hypothesis>=6",
     # Pinned to match the pre-commit hook versions so `scripts/fix.sh` and the hooks
     # cannot drift apart (.pre-commit-config.yaml).
-    "mypy==1.19.0",
+    "mypy==2.3.1",
     "ruff==0.16.3",
     "tree-sitter==0.26.0",
     "tree-sitter-typescript==0.23.2",
