@@ -71,6 +71,18 @@ class DecodingTests(unittest.TestCase):
         self.assertEqual(canonical.Refusal.MALFORMED_TEXT, captured.value.refusal)
         self.assertEqual(text, captured.value.value)
 
+    def test_bytes_that_decode_as_no_json_encoding_are_refused_as_malformed(self) -> None:
+        # Arrange
+        payload = b"a\x00\x00\x00\xff\xff\xff\xff"
+
+        # Act
+        with pytest.raises(canonical.CanonicalizationError) as captured:
+            canonical.decode(payload)
+
+        # Assert
+        self.assertEqual(canonical.Refusal.MALFORMED_TEXT, captured.value.refusal)
+        self.assertEqual(payload, captured.value.value)
+
     def test_a_real_number_in_the_text_is_refused(self) -> None:
         # Arrange
         text = '{"latitude":47.1}'

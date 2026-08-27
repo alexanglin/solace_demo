@@ -2022,6 +2022,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **`canonical.decode` refuses undecodable bytes as malformed text.** Bytes that fit none of
+  JSON's encodings raised the codec's `UnicodeDecodeError` past the typed `CanonicalizationError`,
+  so a foreign body on a durable queue broke the receiver's bounded shutdown instead of becoming
+  a typed refusal; the first live application data-plane run met one.
 - **Every owned client profile now reserves one subscription for the SDK reply inbox.** The first
   live apply of the ADR-0153 profile table refused every connection from a profile with zero direct
   subscriptions and refused the command gateway's second application subscription, because the
