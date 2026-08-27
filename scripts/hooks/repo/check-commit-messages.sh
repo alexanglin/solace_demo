@@ -44,13 +44,16 @@ git rev-parse --verify --quiet "$head^{commit}" >/dev/null || {
 # message rather than as the truncated graph it is (docs/adr/0019 fails closed).
 if [ -n "$base" ] && [ "$base" != "$zero" ] &&
 	[ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-	printf 'Refusing a commit-message range in a shallow repository: %s\n' \
-		'unshallow it before validating, or the range reaches history it cannot see' >&2
-	printf '  git-dir=%s toplevel=%s cwd=%s shallow-file=%s base_ancestors=%s\n' \
-		"$(git rev-parse --absolute-git-dir 2>&1)" "$(git rev-parse --show-toplevel 2>&1)" \
-		"$PWD" "$(ls "$(git rev-parse --absolute-git-dir)/shallow" 2>&1)" \
-		"$(git rev-list --count "$base" 2>&1)" >&2
-	exit 2
+	# Same reasoning as the missing-remote-history case below, and the same answer.
+	# A shallow clone resolves both endpoints but not the ancestry behind them, so
+	# "$base..$head" excludes nothing and walks back to the first commit in the
+	# repository -- reporting history written before Conventional Commits as though
+	# this change introduced it. Validate the tip rather than that fiction, and say
+	# which range was not checked. CI validates the complete range in its
+	# commit-stage job, whose checkout no tooling has shallowed.
+	printf 'Shallow repository: validating %s only, not %s..%s\n' \
+		"$head" "$base" "$head" >&2
+	base=
 fi
 
 if [ -z "$base" ]; then

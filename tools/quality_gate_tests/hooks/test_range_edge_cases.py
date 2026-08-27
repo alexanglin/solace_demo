@@ -78,7 +78,7 @@ class RangeEdgeCaseTests(QualityGateTestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("Initial commit", inspected_messages.read_text(encoding="utf-8"))
 
-    def test_a_shallow_clone_refuses_rather_than_validating_unreachable_history(self) -> None:
+    def test_a_shallow_clone_validates_the_tip_rather_than_unreachable_history(self) -> None:
         # Arrange
         origin = self.temporary_repository()
         tracked = origin / "tracked.txt"
@@ -114,8 +114,11 @@ class RangeEdgeCaseTests(QualityGateTestCase):
         )
 
         # Assert
-        self.assertEqual(2, result.returncode, result.stdout)
-        self.assertIn("shallow", result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Shallow repository", result.stderr)
+        self.assertEqual(
+            "feat: add feature", inspected_messages.read_text(encoding="utf-8").strip()
+        )
 
     def test_quality_range_cannot_borrow_one_pre_commit_endpoint(self) -> None:
         # Arrange
