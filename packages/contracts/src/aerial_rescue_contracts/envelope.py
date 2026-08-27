@@ -96,6 +96,7 @@ class EnvelopeRefusal(Enum):
     DATA_PROFILE = "data outside the canonical profile"
     RESERVED_MISSION = "subject is the reserved reply identifier, which names no mission"
     UNKNOWN_TYPE = "type has no bound payload schema"
+    SOURCE_BINDING = "source is not the producer kind bound to the event type"
     DATASCHEMA_BINDING = "dataschema is not the schema bound to the type"
     SUBJECT_BINDING = "subject does not equal the payload mission identifier"
     TOPIC_BINDING = "envelope does not bind to the arriving topic"
@@ -119,6 +120,13 @@ class Binding:
     event_type: str
     family: Family
     dataschema: str
+    source_pattern: str | None = None
+
+
+def _lifecycle_source_pattern(producer_kind: str) -> str:
+    """Return the run-identifier source pattern bound to one lifecycle producer kind."""
+    identifier = IDENTIFIER_PATTERN.removeprefix("^").removesuffix("$")
+    return f"^urn:aerial-rescue:{producer_kind}:{identifier}$"
 
 
 BINDINGS: Final[Mapping[str, Binding]] = {
@@ -131,6 +139,24 @@ BINDINGS: Final[Mapping[str, Binding]] = {
         "aerial-rescue.v1.drone.event.salient",
         Family.DRONE_EVENT,
         SCHEMA_ID_BASE + "schemas/v1/payload/drone-event-salient.schema.json",
+    ),
+    "aerial-rescue.v1.drone.event.connectivity-changed": Binding(
+        "aerial-rescue.v1.drone.event.connectivity-changed",
+        Family.DRONE_EVENT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-event-connectivity-changed.schema.json",
+        _lifecycle_source_pattern("connectivity-lifecycle"),
+    ),
+    "aerial-rescue.v1.mission.event.lifecycle": Binding(
+        "aerial-rescue.v1.mission.event.lifecycle",
+        Family.MISSION_EVENT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/mission-event-lifecycle.schema.json",
+        _lifecycle_source_pattern("mission-lifecycle"),
+    ),
+    "aerial-rescue.v1.sector.event.lifecycle": Binding(
+        "aerial-rescue.v1.sector.event.lifecycle",
+        Family.SECTOR_EVENT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/sector-event-lifecycle.schema.json",
+        _lifecycle_source_pattern("sector-lifecycle"),
     ),
     "aerial-rescue.v1.gateway.response": Binding(
         "aerial-rescue.v1.gateway.response",
@@ -240,6 +266,11 @@ def _reserved(texts: Mapping[str, str]) -> None:
 def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
     """Refuse an envelope whose type, schema, and subject do not agree."""
     binding = binding_for(texts["type"])
+    if (
+        binding.source_pattern is not None
+        and re.fullmatch(binding.source_pattern, texts["source"]) is None
+    ):
+        raise EnvelopeError(EnvelopeRefusal.SOURCE_BINDING, "source", texts["source"])
     if texts["dataschema"] != binding.dataschema:
         raise EnvelopeError(EnvelopeRefusal.DATASCHEMA_BINDING, "dataschema", texts["dataschema"])
     if data.get(_MISSION_KEY) != texts["subject"]:
@@ -270,8 +301,9 @@ def parse_envelope(document: object) -> Envelope:
 
     Refusals come in a fixed order: not an object; an unknown member; a missing required
     member; a member outside its rule; a subject that is the reserved reply identifier;
-    data outside the canonical profile; an unbound type; a schema other than the bound
-    one; a subject that is not the payload's mission.
+    data outside the canonical profile; an unbound type; a source kind other than the
+    bound producer; a schema other than the bound one; a subject that is not the payload's
+    mission.
 
     Args:
         document: A decoded JSON value, normally from :func:`decode_envelope`.

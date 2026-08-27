@@ -32,8 +32,8 @@ policy, authorization grants, queue parameters, or operational targets.
 
 ## 2. Directory boundary
 
-All three modules run in the repository-root Python 3.14 workspace and cross package, service,
-deployment, and broker boundaries. Behavior owned by one workspace member still belongs in that
+All five modules run in the repository-root Python 3.14 workspace and cross package, service,
+deployment, broker, and durable-store boundaries. Behavior owned by one workspace member still belongs in that
 member's test directory; keep only real cross-component evidence here.
 
 | Path | Responsibility |
@@ -42,6 +42,7 @@ member's test directory; keep only real cross-component evidence here.
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
 | `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
 | `test_backlog_recovery_live.py` | Spool 500 drone commands across a 23-drone fleet with no consumer bound, then measure how long one fleet-simulator run takes to drain them, under the instrument [ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) defines |
+| `test_durable_store_live.py` | Create a database named for the run, walk the store's five-revision Alembic history one step at a time in both directions, and exercise its constraints and transactions; revision 0005 also proves additive upgrade/downgrade, prepared-before-start persistence, exact-byte start/reset retry, pending recovery on the same run, predecessor retention, live mission/scenario identity, missionless replay, broker deduplication, and snapshot reads. Drop only that database afterwards |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -89,9 +90,44 @@ The twenty-three `drone-backlog-NN` identifiers are written out in full in
 `test_backlog_recovery_live.PROVISIONING`; the ellipsis above stands for the other twenty-one and
 is not a shell form that works.
 
-Keep every drone in that single invocation. The applier converges the desired state and deletes what
-the matrix no longer grants, so naming one drone alone removes the queues the other probes need.
-`test_command_dispatch_live.PROVISIONING` holds the same command in its raw `python -m` form.
+Keep every drone in that single invocation, because a drone the invocation never names is never
+created. The applier adds what the matrix grants and deletes only ACL topic exceptions and queue
+subscriptions; it never deletes a queue, a client username, or an ACL profile
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) records that
+gap, and `packages/broker/tests/test_provisioning.py` asserts it). So a short invocation leaves the
+other probes' queues in place but never creates the ones it omitted, and a guaranteed command
+published for a drone with no queue is discarded rather than refused.
+`test_command_dispatch_live.PROVISIONING` holds a shorter five-drone command in its raw `python -m`
+form; prefer the twenty-eight-drone superset above.
+
+The dead-message queue must be empty before a live run. `test_command_dispatch_live`'s
+`UnreadableCommandLiveTests` and `test_backlog_recovery_live` both read `#DEAD_MSG_QUEUE`'s depth in
+their Arrange step, and `message_count` walks the collection at 100 rows per page for at most 20
+pages, so a queue holding more than 2000 messages raises `SempError` with `PAGING` before either
+probe reaches its own queues. The dead-message queue is written with no `maxRedeliveryCount` and no
+`maxTtl`, and with `respectTtlEnabled` false
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)), so nothing
+in it expires, and nothing may bind it to drain it: it only grows. One full live run puts it past
+2000, because the collateral `dashboard-api`, `evidence-service`, and `recorder` family queues have
+no consumer while the `services` profile is down, and everything they collect expires into it.
+
+Past 10 MB it stops being a reporting problem. Every queue carries
+`rejectMsgToSenderOnDiscardBehavior: always`, so once the dead-message queue is at its bound the next
+guaranteed publish is never acknowledged, and the probes fail with `PubSubTimeoutError: Message
+publish timeout` naming the published topic -- not anything that mentions the dead-message queue.
+Telemetry and gateway-request publishes keep passing in the same run, because only `GUARANTEED`
+families are spooled; that asymmetry is the signature.
+
+Clearing it is an out-of-band action to request explicitly, not a step any probe or recipe performs:
+delete the queue over SEMP, then re-run the provisioning invocation above, which writes
+`#DEAD_MSG_QUEUE` first and recreates it empty.
+
+A broker provisioned before
+[ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) also keeps
+the eight superseded `recorder` family queues that one combined `recorder/dashboard.lifecycle` queue
+replaced. Because the applier deletes no queue, they persist with their original wildcard
+subscriptions, bind nothing, and feed the dead-message queue on every run. They are removed by the
+same out-of-band SEMP delete, and the applier does not recreate them.
 
 What each file adds to that shared prerequisite:
 
@@ -104,6 +140,20 @@ What each file adds to that shared prerequisite:
 - `test_backlog_recovery_live.py` needs a durable command queue for each of the twenty-three
   `drone-backlog-NN` drones its scenario declares, and the `command-gateway`
   drone-command-result queue. It is the reason the shared invocation names twenty-eight drones.
+- `test_durable_store_live.py` needs **none of that shared prerequisite**. It needs the PostgreSQL
+  container healthy, the credential at `deploy/secrets/postgres-password`, and `POSTGRES_USER` and
+  `POSTGRES_DB` present in the probe's own environment:
+
+  ```sh
+  export POSTGRES_USER=... POSTGRES_DB=...
+  ```
+
+  Those two live only in the untracked `.env`, which `just up` passes to Compose and no Python in
+  this tree parses. The probe reads `os.environ` rather than a constant on purpose: the refusal
+  below compares against what is *actually* configured, and a constant matching `.env.example`
+  would silently diverge from an edited `.env`. A missing setting is `SettingsError`
+  (`MISSING_SETTING`) from `database_settings`, which is the intended fail-closed outcome and
+  never a skip.
 
 Two files drain broker state. The guaranteed-delivery file automatically accepts and removes every
 message already present in each `FILLED_QUEUES` entry before a case and after the class, and its reject
@@ -306,9 +356,68 @@ establish the broker's own delivery ceiling -- the drain is bounded by the intak
 size divided by the tick interval, so the number says the configuration is adequate rather than that
 the broker was the constraint.
 
-## 9. Evidence and change coordination
+## 9. Durable-store probe
 
-The existing Phase 2 guaranteed-delivery and Phase 3 fleet-simulator records under
+`test_durable_store_live.py` is the only module here that needs no broker, and the only one whose
+subject is a schema rather than a message. It is also the first `async` code in this repository.
+
+- **The database is created and dropped by the run, per case.** Transactional rollback is rejected
+  by [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) on
+  three independently sufficient grounds, and the first one governs this module directly: the
+  migration *is* the data-definition change under test, so a strategy that rolls everything back
+  leaves nothing to observe. Rollback stays permitted inside a case whose claim does not depend on
+  commit; never for a migration, a race, or a durability claim.
+- **The refusal is a precondition, not a comment.** `run_database_name` refuses a derived name equal
+  to the configured `POSTGRES_DB`. Keep that comparison against the resolved environment, and keep
+  the two pure cases that exercise it -- they are what make "a probe never touches persistent
+  mission data" executable. Never widen the probe to accept an operator-supplied database name.
+- **Creating a database costs an autocommit connection to the maintenance database**, because
+  `CREATE DATABASE` cannot run inside a transaction. That connection uses the compose bootstrap
+  superuser, which is a privilege the application services do not need. Do not copy this connection
+  shape into a service, and do not let anything but create and drop travel over it.
+- **Every statement is a typed SQLAlchemy expression.** The table names are the store package's own
+  constants and the identifier for a database name is quoted by the dialect that executes the
+  statement. Do not reintroduce an interpolated table name, and do not hand-quote an identifier.
+- **Assert what PostgreSQL reports, not what was sent to it.** Columns and table names come back
+  through the inspector and the stamped revision through Alembic's own table. An assertion that
+  re-reads the rendered data definition would be the member's offline test wearing a marker.
+- **The bounds are ADR-0090's, unmodified.** A probe that widened one would be measuring a
+  different engine than the one the services will get.
+- **Leave nothing behind.** Each case drops its database in teardown. An interrupted run leaks one,
+  named `aerial_rescue_probe_*` so it is visible; removing a leaked database is an authorized
+  cleanup action outside the test, never something the probe does to a name it did not create.
+
+A green result establishes that PostgreSQL accepts the declared history, stamps it, is unchanged by
+a repeat application, enforces the constraints the revision declares rather than only carrying their
+text, and empties on the downgrade. It now also establishes what the unit of work above that schema
+does on a cluster: the three server-side bounds and the stated isolation level are what a session
+opened through this engine actually carries, read back from the server rather than inferred from the
+arguments handed to the driver; a committed record is visible to a session that did not write it; an
+abandoned transaction leaves neither a record nor a gap; and two appenders for one mission take 1 and
+2 because the second **waits** on the row lock the first holds until it commits, which is the
+property [ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)
+rests the gap-free timeline on.
+
+It now also establishes the approval-consumption transaction it once could not: two consumers of one
+approval commit once and deny once, with the second observed **waiting** and then refused by the
+domain's own `ALREADY_CONSUMED` rather than by a row count
+([ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md)); two claimants of one
+idempotency key execute once and replay once, and a claim abandoned before commit leaves the key
+claimable ([ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md));
+the outbox refuses the record past its bound and writes nothing
+([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)); and the three
+writes [ADR-0006](../../docs/adr/0006-proposal-bound-single-use-approvals.md) requires to move
+together commit together and roll back together.
+
+It establishes **nothing** about restart durability, interrupted-process rollback, or pool
+cancellation as a durable outcome: every case here ends its transaction deliberately and no process is
+ever killed. It establishes nothing about a caller, because no service imports this package. The
+member's own suite establishes none of these, by construction; that division is the whole point of
+ADR-0086 and is the easiest claim in this repository to overstate.
+
+## 10. Evidence and change coordination
+
+The existing Phase 2 guaranteed-delivery and Phase 3 fleet-simulator and durable-store records under
 `release-evidence/` are dated historical observations, not mutable expected-output files. Do not edit
 an old record to make a new run appear equivalent. After an explicitly authorized run, add a new
 curated record only when the user asks for evidence capture, and follow the release-evidence guide's
@@ -330,7 +439,7 @@ Do not change a live assertion merely because the current container disagrees. F
 the implementation, desired-state projection, stale broker state, prerequisite, test, contract, or ADR
 is defective, and fix the owning artifact through the approved TDD workflow.
 
-## 10. Verification
+## 11. Verification
 
 Use the repository-root `.venv`, `pyproject.toml`, and `uv.lock`. A fresh worktree needs:
 
@@ -376,10 +485,13 @@ uv run --frozen pytest -q tests/integration/test_fleet_simulator_live.py
 uv run --frozen pytest -q tests/integration/test_guaranteed_delivery_live.py
 uv run --frozen pytest -q tests/integration/test_command_dispatch_live.py
 uv run --frozen pytest -q tests/integration/test_backlog_recovery_live.py
+uv run --frozen pytest -q tests/integration/test_durable_store_live.py
 ```
 
 Running the guaranteed-delivery or command-dispatch file requires authorization that includes that
-file's documented queue drains and persistent dead-message additions. Authorization for one file does
+file's documented queue drains and persistent dead-message additions. Running the durable-store file
+requires authorization that includes its per-case creation and dropping of a database on the
+authorized cluster. Authorization for one file does
 not authorize another, or any out-of-band provisioning, secret rotation, container startup or
 recreation, queue deletion, volume removal, Cloud access, or evidence capture. A documentation-only
 change does not require fabricating live evidence; report the probes as not run when they were not

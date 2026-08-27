@@ -110,9 +110,10 @@ weaponization, or autonomous use-of-force instructions, tools, fields, examples,
   budget and model decisions. Never introduce `model_provider`, a floating `latest` tag, or an
   environment-indirected model name merely to make a provider easy to swap.
 - A local model addition or change also updates `model-lock.toml` from a measured Ollama manifest
-  digest. The offline validator proves lock form and membership only. Readiness is required to compare
-  the lock with the running daemon, but that comparison remains open technical debt; do not report it as
-  an existing control. An authorized model probe must establish behavior.
+  digest. The offline validator proves lock form and membership only. `scripts/preflight-ollama.sh`
+  is the readiness half: it compares the lock with the running daemon and refuses to start the mesh on
+  a mismatch ([ADR-0102](../../docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)).
+  Neither is behavioural evidence; an authorized model probe must establish behavior.
 - A prompt or tool description is production behavior and untrusted-model context. Preserve the
   proposal-only, anonymous-subject, and no-false-actuation language. A shape-valid prompt is not proof
   of safe, useful, deterministic, or correctly structured output.

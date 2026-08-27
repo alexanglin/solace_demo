@@ -3,8 +3,9 @@
 The tables in ``packages/domain`` and their projection in ``packages/broker`` are proven
 offline against a fake. That is evidence about a plan, not about a broker. These probes are
 the other kind: they open real connections to the container in ``deploy/compose.yaml`` and
-try to publish, so what is asserted is the broker's answer rather than the project's
-intention (``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``).
+try to publish or subscribe, so what is asserted is the broker's answer rather than the
+project's intention
+(``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``).
 
 Catalogue cases B17, B18, and B19 live here. Every one of them is a denial, and a denial
 proves nothing on its own: a broker that refused everybody would pass all three. The
@@ -40,6 +41,7 @@ from solace.messaging.config.transport_security_strategy import TLS
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
 from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic import Topic as SolaceTopic
+from solace.messaging.resources.topic_subscription import TopicSubscription
 
 pytestmark = [pytest.mark.security, pytest.mark.docker, pytest.mark.broker]
 
@@ -58,6 +60,35 @@ GATEWAY_REQUEST = format_topic(
     Topic(Family.GATEWAY_REQUEST, MISSION, {"operation": "propose-escalation"})
 )
 DRONE_TELEMETRY = format_topic(Topic(Family.DRONE_TELEMETRY, MISSION, {"droneId": "d-1"}))
+A2A_REQUEST = "aerial-rescue-mesh/a2a/v1/agent/request/mission-coordinator"
+
+
+def _lifecycle_topic(family_name: str, parameters: dict[str, str]) -> str:
+    """Return one lifecycle topic, or a red-phase sentinel while its family is absent."""
+    family = Family.__members__.get(family_name)
+    if family is None:
+        return f"missing-family/{family_name}"
+    return format_topic(Topic(family, MISSION, parameters))
+
+
+CONNECTIVITY_LIFECYCLE = format_topic(
+    Topic(
+        Family.DRONE_EVENT,
+        MISSION,
+        {"droneId": "d-1", "eventType": "connectivity-changed"},
+    )
+)
+SALIENT_DRONE_EVENT = format_topic(
+    Topic(
+        Family.DRONE_EVENT,
+        MISSION,
+        {"droneId": "d-1", "eventType": "salient"},
+    )
+)
+MISSION_LIFECYCLE = _lifecycle_topic("MISSION_EVENT", {"eventType": "lifecycle"})
+SECTOR_LIFECYCLE = _lifecycle_topic(
+    "SECTOR_EVENT", {"sectorId": "sector-01", "eventType": "lifecycle"}
+)
 
 
 class Outcome(Enum):
@@ -65,6 +96,8 @@ class Outcome(Enum):
 
     PUBLISHED = "the identity connected and the broker accepted the publish"
     PUBLISH_DENIED = "the identity connected and the broker refused the publish"
+    SUBSCRIBED = "the identity connected and the broker accepted the subscription"
+    SUBSCRIBE_DENIED = "the identity connected and the broker refused the subscription"
     CONNECT_DENIED = "the broker refused the connection"
 
 
@@ -131,6 +164,33 @@ def _publish_as(role: Principal, topic: str) -> Outcome:
     return _attempt(role.value, _credential(role), topic)
 
 
+def _subscribe_as(role: Principal, topic: str) -> Outcome:
+    """Connect as ``role`` and return the broker's answer to one direct subscription."""
+    service = _service(role.value, _credential(role))
+    try:
+        service.connect()
+    except PubSubPlusClientError:
+        return Outcome.CONNECT_DENIED
+    receiver = None
+    started = False
+    try:
+        receiver = (
+            service.create_direct_message_receiver_builder()
+            .with_subscriptions([TopicSubscription.of(topic)])
+            .build()
+        )
+        receiver.start()
+        started = True
+    except PubSubPlusClientError:
+        return Outcome.SUBSCRIBE_DENIED
+    else:
+        return Outcome.SUBSCRIBED
+    finally:
+        if started and receiver is not None:
+            receiver.terminate()
+        service.disconnect()
+
+
 class PositiveControlTests(unittest.TestCase):
     def test_the_command_gateway_may_publish_an_executable_drone_command(self) -> None:
         # Arrange
@@ -161,6 +221,28 @@ class PositiveControlTests(unittest.TestCase):
 
         # Assert
         self.assertIs(Outcome.PUBLISHED, outcome)
+
+    def test_the_scenario_service_may_publish_mission_lifecycle_only(self) -> None:
+        # Arrange
+        role_name = "SCENARIO_SERVICE"
+        role = Principal.__members__.get(role_name)
+
+        # Act
+        outcome = None if role is None else _publish_as(role, MISSION_LIFECYCLE)
+
+        # Assert
+        self.assertIsNotNone(role)
+        self.assertIs(Outcome.PUBLISHED, outcome)
+
+    def test_the_fleet_simulator_may_publish_connectivity_and_sector_lifecycle(self) -> None:
+        # Arrange
+        topics = (CONNECTIVITY_LIFECYCLE, SECTOR_LIFECYCLE)
+
+        # Act
+        outcomes = tuple(_publish_as(Principal.FLEET_SIMULATOR, topic) for topic in topics)
+
+        # Assert
+        self.assertEqual(tuple(Outcome.PUBLISHED for _ in topics), outcomes)
 
 
 class DenialTests(unittest.TestCase):
@@ -213,6 +295,66 @@ class DenialTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tuple(Outcome.PUBLISH_DENIED for _ in roles), outcomes)
+
+    def test_the_scenario_service_is_denied_sector_connectivity_command_approval_and_a2a(
+        self,
+    ) -> None:
+        # Arrange
+        role = Principal.__members__.get("SCENARIO_SERVICE")
+        approval = format_topic(Topic(Family.OPERATOR_APPROVAL, MISSION, {"decision": "approve"}))
+        topics = (
+            SECTOR_LIFECYCLE,
+            CONNECTIVITY_LIFECYCLE,
+            DRONE_COMMAND,
+            approval,
+            A2A_REQUEST,
+        )
+
+        # Act
+        outcomes = () if role is None else tuple(_publish_as(role, topic) for topic in topics)
+
+        # Assert
+        self.assertIsNotNone(role)
+        self.assertEqual(tuple(Outcome.PUBLISH_DENIED for _ in topics), outcomes)
+
+    def test_fleet_and_recorder_are_denied_mission_lifecycle_publication(self) -> None:
+        # Arrange
+        roles = (Principal.FLEET_SIMULATOR, Principal.RECORDER)
+
+        # Act
+        outcomes = tuple(_publish_as(role, MISSION_LIFECYCLE) for role in roles)
+
+        # Assert
+        self.assertEqual(tuple(Outcome.PUBLISH_DENIED for _ in roles), outcomes)
+
+
+class SubscriptionAuthorizationTests(unittest.TestCase):
+    def test_scenario_service_cannot_subscribe_to_mission_lifecycle_while_recorder_can(
+        self,
+    ) -> None:
+        """The recorder positive control distinguishes an ACL denial from a shared outage."""
+        # Arrange
+        topic = MISSION_LIFECYCLE
+
+        # Act
+        denied = _subscribe_as(Principal.SCENARIO_SERVICE, topic)
+        allowed = _subscribe_as(Principal.RECORDER, topic)
+
+        # Assert
+        self.assertEqual((Outcome.SUBSCRIBE_DENIED, Outcome.SUBSCRIBED), (denied, allowed))
+
+    def test_recorder_subscription_is_limited_to_dashboard_state_sources(self) -> None:
+        # Arrange
+        allowed_topic = MISSION_LIFECYCLE
+        denied_topics = (SALIENT_DRONE_EVENT, DRONE_COMMAND, GATEWAY_REQUEST, A2A_REQUEST)
+
+        # Act
+        allowed = _subscribe_as(Principal.RECORDER, allowed_topic)
+        denied = tuple(_subscribe_as(Principal.RECORDER, topic) for topic in denied_topics)
+
+        # Assert
+        self.assertIs(Outcome.SUBSCRIBED, allowed)
+        self.assertEqual(tuple(Outcome.SUBSCRIBE_DENIED for _ in denied_topics), denied)
 
 
 class FactoryIdentityTests(unittest.TestCase):

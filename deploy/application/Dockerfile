@@ -1,9 +1,24 @@
-# The Python 3.14 application image (docs/adr/0044): uv 0.12.5 by hash (docs/adr/0020), the
-# locked workspace synchronized without development dependencies, and a numeric unprivileged
-# user. The build context is the repository root; .dockerignore keeps secrets, caches, and
-# the Agent Mesh project out of it. No service has an entrypoint yet, so the compose file
-# gives each one an import probe as its command.
-FROM python:3.14.7-slim-trixie@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
+# Build the production dashboard with the exact toolchain ADR-0117 accepts. This stage is
+# absent from the final image; only the immutable Vite output crosses the boundary.
+FROM node:26.7.0-slim@sha256:5758d367d7b4f48b73a9bb3530e687e47efb289f3b43f9c0450a25225ae0db5d AS dashboard-builder
+RUN npm install --global --ignore-scripts pnpm@11.23.0
+WORKDIR /workspace/apps/dashboard
+COPY apps/dashboard/package.json apps/dashboard/pnpm-lock.yaml apps/dashboard/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+WORKDIR /workspace
+COPY schemas ./schemas
+COPY apps/dashboard/index.html apps/dashboard/tsconfig.json apps/dashboard/vite.config.ts ./apps/dashboard/
+COPY apps/dashboard/scripts ./apps/dashboard/scripts
+COPY apps/dashboard/src ./apps/dashboard/src
+WORKDIR /workspace/apps/dashboard
+RUN pnpm build \
+    && test "$(grep --count --fixed-strings '<!--DASHBOARD_BOOTSTRAP-->' dist/index.html)" = 1 \
+    && ! grep --recursive --fixed-strings "__AERIAL_RESCUE_DASHBOARD_TEST__" dist \
+    && ! grep --recursive --fixed-strings "TestFixtureSource" dist \
+    && ! grep --recursive --fixed-strings "memory-only-test-bearer" dist \
+    && ! grep --recursive --fixed-strings "synthetic-browser-bearer-do-not-persist" dist
+
+FROM python:3.14.7-slim-trixie@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS builder
 COPY deploy/application/uv-requirements.txt /tmp/uv-requirements.txt
 RUN pip install --no-cache-dir --require-hashes --requirement /tmp/uv-requirements.txt
 WORKDIR /app
@@ -15,9 +30,13 @@ COPY services ./services
 COPY tools ./tools
 RUN uv sync --frozen --all-packages --no-dev
 
-FROM python:3.14.7-slim-trixie@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
-RUN groupadd --system --gid 10001 aerial && useradd --system --uid 10001 --gid 10001 --create-home aerial
+FROM python:3.14.7-slim-trixie@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83
+RUN groupadd --system --gid 10001 aerial \
+    && useradd --system --uid 10001 --gid 10001 --create-home aerial \
+    && install --directory --owner=10001 --group=10001 --mode=0770 \
+        /run/aerial-rescue /run/aerial-rescue/replay-output
 COPY --from=builder --chown=10001:10001 /app /app
+COPY --from=dashboard-builder --chown=10001:10001 /workspace/apps/dashboard/dist /app/dashboard
 WORKDIR /app
 USER 10001:10001
 CMD ["/app/.venv/bin/python", "-c", "import aerial_rescue_contracts"]

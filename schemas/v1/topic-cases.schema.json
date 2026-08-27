@@ -50,7 +50,9 @@
             "GATEWAY_RESPONSE",
             "AGENT_PROPOSAL",
             "AGENT_RESPONSE",
-            "AUDIT"
+            "AUDIT",
+            "MISSION_EVENT",
+            "SECTOR_EVENT"
           ]
         },
         "missionId": {

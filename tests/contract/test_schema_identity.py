@@ -31,7 +31,9 @@ ALLOWED_KEYWORDS = frozenset(
         "enum",
         "pattern",
         "maxLength",
+        "minLength",
         "minItems",
+        "maxItems",
         "minimum",
         "maximum",
         "required",
@@ -43,7 +45,7 @@ ALLOWED_KEYWORDS = frozenset(
         "items",
     }
 )
-EXPECTED_SCHEMA_COUNT = 14
+EXPECTED_SCHEMA_COUNT = 51
 
 
 def _schema_paths() -> tuple[Path, ...]:

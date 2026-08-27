@@ -28,6 +28,8 @@ Use the canonical source for the fact under test instead of treating an assertio
 | Untyped Solace client containment | [ADR-0028](../docs/adr/0028-untyped-solace-client-boundary.md) |
 | Agent Mesh test environment | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md) |
 | Schema identity and one-reason fixtures | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
+| Ordered dashboard state and stream frames | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
+| Dashboard schema collection bounds | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Local broker and non-gating Cloud showcase | [ADR-0043](../docs/adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Static Compose policy | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md) |
 | Generated per-checkout certificate authority | [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md) |
@@ -58,7 +60,7 @@ The current suites have these deliberately different boundaries:
 | `contract/test_command_vocabulary.py` | Offline agreement between command-result schema words, dispatch states, and the fleet-simulator publishing table |
 | [`phase0/`](phase0/AGENTS.md) | Offline native-client compatibility and explicitly authorized live stack, Agent Mesh, and Event Mesh feasibility probes |
 | [`integration/`](integration/AGENTS.md) | Explicitly authorized live fleet telemetry, guaranteed-delivery, command-dispatch, and backlog-recovery probes |
-| `security/test_broker_authorization.py` | Live positive and negative broker publish/connect authorization controls |
+| `security/test_broker_authorization.py` | Live positive and negative broker publish/connect controls plus one lifecycle subscription denial |
 
 All files here execute in the root Python 3.14 workspace, including the client-side Agent Mesh live
 probe. Tests under `agent-mesh/tests/` execute from `agent-mesh/` with its isolated Python 3.13 project.
@@ -190,9 +192,10 @@ prompt-injection or delegation case; treat it as public and keep secrets, person
 out of it. Synthetic mission identifiers, public project role names, and public topic shapes are not
 credentials, but still keep output to what the assertion needs.
 
-The live broker-authorization tests connect and publish acknowledged persistent messages. Phase 0 probes
-have distinct broker, model, application, temporary-endpoint, and persistent-message side effects; their
-local guide owns the exact boundaries.
+The live broker-authorization tests connect, publish acknowledged persistent messages, and open direct
+receivers for one lifecycle subscription-authorization control. Phase 0 probes have distinct broker,
+model, application, temporary-endpoint, and persistent-message side effects; their local guide owns the
+exact boundaries.
 
 Confirm the exact prerequisite set for the selected file rather than applying one blanket setup:
 
@@ -233,9 +236,10 @@ Keep every report within what the present assertions establish:
   Mesh Gateway and Event Mesh Tool probes; do not infer durability, causation, model quality, or complete
   authorization coverage from their class name.
 - The broker-authorization suite establishes only its current allowed and denied publish/connect cases
-  against the local projection. It does not establish subscription denial, every grant, A2A policy,
-  queues or redelivery, stale-identity deletion, per-process identity separation, TLS-downgrade closure,
-  or Cloud parity.
+  plus scenario-service denial and recorder acceptance for the exact mission-lifecycle subscription
+  against the local projection. It does not establish every subscription grant, queue ownership or
+  redelivery, stale-identity deletion, per-process identity separation, TLS-downgrade closure, or Cloud
+  parity.
 
 ## 8. Required verification
 

@@ -6,8 +6,9 @@ These instructions apply to every file under `packages/observability/`. Read the
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control rules
 still apply.
 
-This member is the planned application-side home for reusable structured-logging, metrics, and trace-context
-primitives. It is not implemented yet. Read the authority for each concern before changing it:
+This active Tier 2 member owns one shared readiness-freshness codec used by the recorder and dashboard
+API. Structured logging, metrics, and trace-context primitives remain planned and unimplemented. Read
+the authority for each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -34,6 +35,8 @@ primitives. It is not implemented yet. Read the authority for each concern befor
 | Dashboard event projection and trace-free reduced state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Schema-bound gateway RPC and its stamped CloudEvent record | [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md) |
 | Reserved reply channel and Solace correlation properties | [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
+| Recorder freshness lease and composite consumers | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
+| Effect-only readiness refresh | [ADR-0137](../../docs/adr/0137-remove-unconsumed-recovery-and-recorder-results.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 No accepted decision selects a logging or metrics library, tracing SDK, exporter, collector, or storage
@@ -44,38 +47,26 @@ remain open and must be recorded in their canonical authority, with an ADR where
 one. Do not settle an open decision through an incidental dependency, helper name, or environment-variable
 convention.
 
-## 2. Preserve the current scaffold truth
+## 2. Preserve the active boundary truth
 
-Apart from this guide and its symlink, the member contains only:
+The member contains:
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, and Tier 2 status |
-| `src/aerial_rescue_observability/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_observability/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | Declares the Python range, Tier 2 status, and canonical-contract dependency |
+| `src/aerial_rescue_observability/freshness.py` | Strict canonical lease codec, atomic writer, safe reader, freshness policy, and cleanup |
+| `tests/test_freshness.py` | Success, tamper, path, timestamp, atomic-replacement, and cleanup evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no logger, formatter, context carrier, meter, instrument, tracer,
-provider, processor, exporter, sink, queue, health primitive, or member-local test. No other workspace
-member declares it as a dependency or imports it. The application image copies the package shell because
-it copies the whole workspace, but that is not evidence that a runtime uses it.
+[`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies this member as active and its
+Tier 2 coverage is fail-closed. The shared lease exists because two production consumers validate the
+same cross-container document; it is not a generic health framework. The recorder still owns the
+composite predicate that activates and refreshes the lease only after its store and receivers work. The
+dashboard and Compose healthcheck consume the lease but cannot use it to infer any other dependency.
+Refresh returns no process-local status echo; replacement of the bounded file is the observable effect.
 
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies this member as
-`SCAFFOLD`, and
-[`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
-
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
-
-A Python file that is unreadable, invalid UTF-8, or syntactically invalid is also non-scaffold. Any
-activating input restores normal fail-closed coverage behavior: executable Python is measured at Tier 2;
-a tests-only or non-Python activation with zero measurable Python fails as `no measurable source`. Never
-add a no-op logger, dummy counter, placeholder exporter, mutable context global, empty test directory, or
-import-time configuration just to make the package look started. The first behavior lands through
-red-green-refactor with its member-local tests and affected integration evidence. `AGENTS.md` and its
-`CLAUDE.md` symlink live outside `src/` and do not activate the scaffold.
+Do not add a no-op logger, dummy counter, placeholder exporter, mutable context global, or unconsumed
+health primitive. New behavior needs two real consumers or an owner-specific implementation, plus
+red-green-refactor evidence.
 
 ## 3. Keep diagnostics separate from authority and transport
 
@@ -110,8 +101,8 @@ environment installs every workspace member together and can mask undeclared dep
 These are ownership boundaries, not current runtime evidence. The broker now has a typed
 publisher/direct-receiver/session facade used by the command gateway, and the command gateway mints a fresh
 `traceparent` for each gateway-response CloudEvent record. It does not continue an inbound W3C parent, and
-generic broker-level trace injection and extraction remain unimplemented. The store remains a scaffold,
-and no collector or exporter process exists in deployment today.
+generic broker-level trace injection and extraction remain unimplemented. No collector or exporter
+process exists in deployment today.
 
 ## 4. Emit structured, secret-safe diagnostic records
 
@@ -147,7 +138,7 @@ create, authorize, consume, acknowledge, or advance mission state.
 ADR-0037 requires every application-event producer, simulator and replay included, to mint a valid W3C
 `traceparent`; `tracestate` is optional. ADR-0014 requires task, correlation, and causation identifiers to
 cross the application-event and A2A boundary so one trace can link a task, event, proposal, and command.
-Those are contract and acceptance obligations, not proof that this scaffold implements them.
+Those are contract and acceptance obligations, not proof that the freshness codec implements them.
 
 ADR-0068's Event Mesh Tool request is schema-bound RPC, not an application event, and carries no `id`,
 `time`, `sequence`, or `traceparent`. Its functional request/reply correlation rides the two user properties
@@ -235,9 +226,9 @@ range, both lockfiles, and the doubled type, lint, and test matrix required by A
 
 ## 8. Build evidence at the boundary that owns the claim
 
-For the first behavior in this member:
+For each new behavior in this member:
 
-1. Run the scaffold predicate and every relevant contracts, broker, service, deployment, and root test
+1. Run the active-member coverage gate and every relevant contracts, broker, service, deployment, and root test
    before editing.
 2. Add the smallest member-local test under `packages/observability/tests/` with the mandatory AAA
    structure.
@@ -280,7 +271,7 @@ evidence separately; one class never proves another.
   coverage data, caches, generated configuration, credentials, tenant values, or live/provider captures.
 - Pass a new untracked guide explicitly to file-based hooks because diff discovery does not see it.
 
-For a guide-only change, create the locked environment, prove the member remains a scaffold, and pass the
+For a guide-only change, create the locked environment, prove the member remains active, and pass the
 files explicitly to the hooks:
 
 ```sh
@@ -318,7 +309,7 @@ git diff --no-index /dev/null packages/observability/CLAUDE.md
 readlink packages/observability/CLAUDE.md
 ```
 
-Inspect the complete diff and symlink target. Confirm scaffold or active status, dependency declarations,
+Inspect the complete diff and symlink target. Confirm active status, dependency declarations,
 runtime compatibility, context ownership, redaction, metric and trace claims, operating parameters, tests,
 and affected documentation agree. Report every external backend or live propagation check that did not run;
 an offline pass is not exporter, broker, or end-to-end tracing evidence.

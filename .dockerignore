@@ -4,7 +4,11 @@
 .venv
 **/.venv
 agent-mesh
-apps
+apps/dashboard/node_modules
+apps/dashboard/dist
+apps/dashboard/coverage
+apps/dashboard/playwright-report
+apps/dashboard/test-results
 dist
 docs
 release-evidence

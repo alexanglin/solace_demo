@@ -1,5 +1,10 @@
 #!/usr/bin/env sh
-# Cross-language duplication gate over project-owned code and tests.
+# Cross-language duplication gate over authored code and tests.
+#
+# Generated dashboard contract types are excluded (docs/adr/0110). One module per schema is
+# fixed by ADR-0058, so their shared shapes are not a defect an author can refactor, and the
+# dashboard-contracts-check hook rewrites and byte-compares that directory, so nothing
+# hand-written can hide inside it.
 set -eu
 
 cd "$(git rev-parse --show-toplevel)"
@@ -46,5 +51,6 @@ jscpd \
 	--min-tokens 50 \
 	--mode strict \
 	--format python,javascript,jsx,typescript,tsx,bash \
+	--ignore 'apps/dashboard/src/contracts/generated/**' \
 	--reporters console \
 	"$@"

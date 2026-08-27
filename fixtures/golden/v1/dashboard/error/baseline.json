@@ -1,0 +1,5 @@
+{
+  "errorVersion": "dashboard-error/v1",
+  "errorCode": "CANCELLATION_NOT_ESTABLISHED",
+  "message": "current run cancellation was not established within the bounded interval"
+}

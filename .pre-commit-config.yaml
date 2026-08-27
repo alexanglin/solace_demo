@@ -38,8 +38,11 @@ default_install_hook_types:
   - post-merge
   - pre-merge-commit
 
-# Without this, every hook would run at every installed stage.
-default_stages: [pre-commit]
+# A push must be at least as strict as the commit it publishes, so every hook runs at
+# both blocking stages unless it says otherwise (docs/adr/0104). Naming the two
+# explicitly is still load-bearing: an unset default_stages would also wire every hook
+# into commit-msg, post-checkout, post-merge, and pre-merge-commit.
+default_stages: [pre-commit, pre-push]
 
 fail_fast: false
 
@@ -74,9 +77,12 @@ repos:
       # store into the commit path. gitleaks covers this properly.
       # docs/adr/0001 forbids vendoring Agent Mesh as a submodule.
       - id: forbid-submodules
-      # AGENTS.md §9 (Version control): work in a branch.
+      # AGENTS.md §9 (Version control): work in a branch. Commit stage only -- at
+      # pre-push this would refuse every push made from main, which is the branch this
+      # repository publishes (docs/adr/0104).
       - id: no-commit-to-branch
         args: [--branch, main]
+        stages: [pre-commit]
       - id: check-ast
       - id: debug-statements
 
@@ -85,8 +91,11 @@ repos:
     rev: v8.30.1
     hooks:
       # The stock hook hardcodes `--staged --pre-commit`, so it scans the staged
-      # diff only. Full-history scanning is a separate local hook at pre-push.
+      # diff only. Full-history scanning is a separate local hook at pre-push, and
+      # this one stays off that stage rather than passing over an empty staged diff
+      # and reporting a verdict it never reached (docs/adr/0104).
       - id: gitleaks
+        stages: [pre-commit]
 
   # ----------------------------------------------------------------- python --
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -110,7 +119,7 @@ repos:
     rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
-        # Pin Node 24 LTS for this hook (ADR-0019 and CONTRIBUTING.md). pre-commit provisions it
+        # Pin Node 24 LTS for this hook (ADR-0103). pre-commit provisions it
         # via nodeenv, so the hook is reproducible regardless of system Node --
         # and it must be pinned: markdownlint's dependency tree rejects the
         # Node 25 "Current" line outright.
@@ -273,6 +282,17 @@ repos:
         always_run: true
         pass_filenames: false
 
+      # Generated dashboard types are committed review artifacts. Re-run the
+      # check-only offline generator whenever an input or generated output changes.
+      - id: dashboard-contracts-current
+        name: generated dashboard contracts are current
+        entry: scripts/hooks/dashboard/dashboard-contracts-check.sh
+        language: script
+        files: ^(schemas/contract-manifest\.toml|schemas/v1/canonical\.schema\.json|schemas/v1/dashboard/.*\.schema\.json|fixtures/golden/v1/dashboard/.*\.json|apps/dashboard/(scripts/generate-dashboard-contracts\.ts|src/contracts/generated/.*\.ts|package\.json|pnpm-lock\.yaml))$
+        stages: [pre-commit, pre-push]
+        pass_filenames: false
+        require_serial: true
+
       - id: docs-facts-and-links
         name: docs (facts, links, ADR index)
         entry: scripts/hooks/docs/check-docs.sh
@@ -360,6 +380,7 @@ repos:
         entry: pre-commit hazmat cd apps/dashboard pnpm exec vitest related --run --
         language: system
         files: ^apps/dashboard/.*\.(ts|tsx)$
+        require_serial: true
 
       # The affected unit tests ADR-0012 asks for at this stage, selected from the import
       # graph tools/affected_tests builds (docs/adr/0066). A staged Python file narrows to
@@ -422,6 +443,7 @@ repos:
         name: cross-language duplication (whole owned tree)
         entry: scripts/hooks/repo/duplication-full.sh
         language: node
+        # Isolated third-party hook: nodeenv provisions Node 24 LTS here (ADR-0103).
         language_version: "24.19.0"
         additional_dependencies:
           - jscpd@5.0.14
@@ -534,6 +556,31 @@ repos:
       - id: dashboard-test-full
         name: vitest (dashboard, full suite)
         entry: scripts/hooks/dashboard/dashboard-test-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-contracts-current-all
+        name: generated dashboard contracts are current (whole tree)
+        entry: scripts/hooks/dashboard/dashboard-contracts-check.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+
+      - id: dashboard-integration-full
+        name: vitest (dashboard, integration suite)
+        entry: scripts/hooks/dashboard/dashboard-integration-full.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
+      - id: dashboard-playwright-full
+        name: playwright (dashboard, Chromium acceptance)
+        entry: scripts/hooks/dashboard/dashboard-playwright-full.sh
         language: script
         stages: [pre-push]
         always_run: true

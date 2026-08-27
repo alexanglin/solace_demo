@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
+  "description": "Dashboard API process liveness.",
+  "type": "object",
+  "required": [
+    "healthVersion",
+    "status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "healthVersion": {
+      "const": "dashboard-health/v1"
+    },
+    "status": {
+      "const": "alive"
+    }
+  }
+}

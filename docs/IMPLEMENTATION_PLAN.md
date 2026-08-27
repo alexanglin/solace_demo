@@ -3,7 +3,7 @@
 ## Document status
 
 - **Status:** Active build plan
-- **Last updated:** August 21, 2026
+- **Last updated:** August 26, 2026
 - **Release model:** Incremental, test-driven delivery
 - **Primary audience:** Engineering contributors and search-and-rescue stakeholders
 - **Repository:** Public reference implementation
@@ -17,6 +17,12 @@ Build a durable, technically credible system in which Solace Agent Mesh coordina
 The primary operational use case is civilian wilderness search and rescue. Disaster response and military personnel recovery are documented extension scenarios. The project must not implement weapons, targeting, facial recognition, autonomous use of force, or any other offensive capability.
 
 ### Success criteria
+
+The criteria below describe the complete initial-release target, not the current dashboard slice. The
+implemented dashboard executes twenty deterministic simulations and displays three external edge-agent
+descriptors as `DECLARED ONLY — NOT EXECUTED`; those three have no telemetry or connectivity. Making all
+23 members executable, and adding evidence, approval, command, and rescue paths, remains later release
+work.
 
 The initial release is successful when it can:
 
@@ -44,7 +50,7 @@ decision has no ADR yet and one is owed.
 | Agent integration plugins | Official `sam-event-mesh-gateway` 1.1.0 and `sam-event-mesh-tool` 0.1.1, pinned and locked | [ADR-0001](adr/0001-self-hosted-open-source-agent-mesh.md) |
 | Event broker | The PubSub+ software event broker container, pinned by digest under `deploy/compose.yaml`, is the broker for development, integration, continuous integration, acceptance, and release; the Developer-class Solace Cloud service is a non-gating showcase profile selected by environment alone | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Application event namespace | Application CloudEvents use `aerial-rescue/v1/...`, separate from the A2A namespace | [ADR-0014](adr/0014-application-events-separate-from-a2a.md) |
-| Delivery semantics | Each topic family is bound to its guarantee by a total table; the guaranteed families get one durable queue per consuming role, owned by that role's client username, plus one command queue per drone and one dead-message queue | [ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| Delivery semantics | Each topic family is bound to its guarantee by a total table. The global projection derives family and executable-drone command queues; the mission-control projection requires the recorder's combined lifecycle queue and dead-message queue as a subset of the shared broker inventory | [ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md), [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md), [ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
 | Agent models | Local Ollama for the three edge agents. The Agent Mesh `general` and `planning` roles may use a paid Anthropic or OpenAI model; provider, model, and split are selected by the Phase 0 evaluation | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Model budget | USD $50 total for the initial release, enforced before each call in tranches, with a persisted spend ledger. Local-only operation stays a supported, tested configuration and no release gate depends on a paid API | [ADR-0002](adr/0002-paid-orchestration-under-enforced-budget-cap.md) |
 | Local environment | Apple Silicon MacBook, 64 GB RAM, Docker Desktop, and Ollama on the host; every other component runs under Docker Compose from digest-pinned images | [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
@@ -52,8 +58,8 @@ decision has no ADR yet and one is owed.
 | Python runtimes | Application services on Python 3.14.7; Agent Mesh and its plugins on Python 3.13.15, in separate `uv`-managed environments | [ADR-0004](adr/0004-split-python-runtimes.md) |
 | Project layout | A `uv` workspace with per-member packages and one shared lockfile; `agent-mesh/` is a separate non-member project; local and CI tooling use uv 0.12.5 | [ADR-0010](adr/0010-uv-workspace-and-toolchain.md), [ADR-0020](adr/0020-pin-uv-version.md) |
 | Durable store | PostgreSQL in Docker Compose, via async SQLAlchemy 2.x and `asyncpg`, with Alembic migrations | [ADR-0003](adr/0003-postgres-durable-mission-store.md) |
-| Dashboard | React, TypeScript, Vite, MapLibre, and Playwright, built with Node 24 LTS and `pnpm` | — |
-| Fleet | 23 drones by default: three model-backed agents and 20 deterministic simulations | — |
+| Dashboard | A UI-first React, TypeScript, Vite, MapLibre, and Playwright command center, built with the exact Node 26.7.0 and `pnpm` pins and kept separate from deferred approval/evidence controls | [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md), [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md), [ADR-0103](adr/0103-move-the-system-node-runtime-to-26.md) |
+| Fleet | Initial-release target: 23 executable drones, comprising three model-backed agents and 20 deterministic simulations. Current dashboard slice: 20 simulations plus three declared-only, non-executed descriptors | [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md), [ADR-0118](adr/0118-provision-command-queues-only-for-executable-members.md) |
 | Integration style | Agent Mesh A2A plus separate application topics over Solace; no public tunnel to the laptop | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |
 | Infrastructure policy | Prefer supported Solace components over project-owned equivalents; custom infrastructure requires a documented capability gap and a proving test | [ADR-0007](adr/0007-solace-first-implementation-policy.md) |
 | Safety boundary | Agents may only propose. A deterministic command gateway outside model control is the sole publisher of executable commands | [ADR-0005](adr/0005-deterministic-command-gateway.md) |
@@ -62,13 +68,14 @@ decision has no ADR yet and one is owed.
 | Degraded behaviour | Model failure yields an explicit abstention or manual review; recorded evidence is never substituted into a live run | [ADR-0008](adr/0008-abstention-over-recorded-substitution.md) |
 | Continuity | Clearly labeled degraded live simulation, and replay isolated by structural deny sinks rather than by credentials alone | [ADR-0009](adr/0009-isolated-side-effect-free-replay.md) |
 | Deployment boundary | The local workstation's Docker Compose stack; Solace Cloud only as the showcase profile; no AWS deployment in the initial release | [ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md) |
+| Dashboard runtime | `just mission-control-up` extends the shared `aerial-rescue-mesh` project with seven dashboard targets, reuses and identity-guards its healthy broker and PostgreSQL containers, and stops only five long-running dashboard services without deleting history or volumes | [ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
 | Data | Search-and-rescue artifacts composited onto public-domain wilderness backgrounds; never photographs of real people | [ADR-0013](adr/0013-sar-artifact-imagery-policy.md) |
-| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, and tier coverage by risk | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md) |
-| Verification authority | Staged git hooks give fast feedback; CI re-runs the identical hooks and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md) |
+| Quality gates | Lint and typecheck everything with no escape hatches, enforce mandatory AAA test structure, fail closed when an active gate cannot run, enforce complexity, duplication, mutation, and layering budgets, validate contract artifacts offline, hold the compose stack to its policy, tier coverage by risk, and adjudicate dashboard coverage independently from fixture and production browser evidence | [ADR-0011](adr/0011-no-exception-lint-typecheck-and-complexity-budgets.md), [ADR-0015](adr/0015-tiered-quality-gates.md), [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md), [ADR-0018](adr/0018-enforced-arrange-act-assert.md), [ADR-0019](adr/0019-fail-closed-quality-gates.md), [ADR-0021](adr/0021-contract-artifact-manifest.md), [ADR-0023](adr/0023-executable-deep-quality-gates.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md), [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md), [ADR-0130](adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) |
+| Verification authority | Commit-stage hooks give fast feedback; pre-push repeats every commit-stage hook plus full-tree gates; CI re-runs the same stages and is the authority | [ADR-0012](adr/0012-git-hooks-with-ci-as-authority.md), [ADR-0104](adr/0104-run-every-commit-stage-hook-at-pre-push.md) |
 | Document precedence | Each normative fact has exactly one home; `AGENTS.md` keeps process rules and this plan keeps sequenced delivery | [ADR-0016](adr/0016-documentation-set-split.md) |
 | Version control | Never commit without explicit human approval | — |
 | Local TLS | A per-checkout certificate authority signs the broker's certificate; keys are never tracked and `tcps` validation is never relaxed | [ADR-0046](adr/0046-generated-local-certificate-authority.md) |
-| Broker authorization | Nine authorization roles carry a total, deny-by-default publish and subscribe matrix over the eleven topic families; one client username per process binds to its role's ACL profile, and the factory `default` username is disabled | [ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Broker authorization | Ten authorization roles carry a total, deny-by-default publish and subscribe matrix over thirteen topic families; one client username per process binds to its role's ACL profile, and the factory `default` username is disabled | [ADR-0061](adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) |
 
 The upstream baseline is the Apache-2.0-licensed [`SolaceLabs/solace-agent-mesh`](https://github.com/SolaceLabs/solace-agent-mesh) repository. As of August 18, 2026, the pinned stable release is tag `1.28.7` (there is no `v` prefix), commit [`6344d2b8899a6c326e8b52fce9947c4bf4b56ae2`](https://github.com/SolaceLabs/solace-agent-mesh/commit/6344d2b8899a6c326e8b52fce9947c4bf4b56ae2). Install the released package in an isolated, locked subproject rather than vendoring upstream source. Record the package version and source commit in acceptance evidence, and evaluate upgrades deliberately against the full Agent Mesh integration and evaluation suites.
 
@@ -76,10 +83,11 @@ Managed Agent Mesh and Agent Mesh Manager are outside the initial-release archit
 
 ## 3. Primary operational scenario
 
-The initial end-to-end scenario is:
+The initial end-to-end scenario below is the release target. It must not be read as the current
+dashboard capability described above.
 
 1. The operator opens the dashboard and selects the prepared **Wilderness Missing Person** scenario.
-2. The operator submits a mission containing the last-known position, search polygon, weather summary, and time-since-last-contact.
+2. The operator submits a mission containing the last-known position and search polygon.
 3. The official Event Mesh Gateway plugin validates and transforms the request, then uses structured invocation to start the versioned Mission Response workflow over A2A topics on the Solace broker.
 4. The workflow invokes the Mission Coordinator and discovered specialized agents with typed inputs and outputs. The Orchestrator handles open-ended operator questions and unexpected replanning events. Agents return action proposals; the deterministic command gateway validates and persists each accepted proposal before publishing executable commands.
 5. All 23 drones begin reporting telemetry. The dashboard renders the search pattern without sending high-frequency telemetry through an LLM.
@@ -140,33 +148,37 @@ justfile                       (exists)
 .github/workflows/             (exists)
 scripts/                       (exists)  hooks/, diagrams.sh, fix.sh, broker-secrets.sh
 .python-version                (exists)  application Python 3.14.7 pin
-tools/                         (scaffold) root repository-tooling package marker
+tools/                         (exists)  root quality gates, conformance tests, and package marker
 pyproject.toml                 (exists)  uv workspace root, declares members
 uv.lock                        (exists)  macOS arm64 and Linux aarch64 resolution
 mutation-survivors.toml        (exists)  exact, expiring Tier 1 survivor reviews
 dependency-waivers.toml        (exists)  expiring, reviewed upstream advisory waivers
 apps/
-  dashboard/
-services/                      (scaffold) four typed service package shells
-  dashboard_api/
-  fleet_simulator/             (exists)  scenario boundary, tick fold, telemetry, composition root
+  dashboard/                  (exists)  validated sources, reducer, mutation client, map-first UI,
+                                         fixture and production Playwright drivers
+services/                      (mixed)   five active members and one typed package shell
+  dashboard_api/              (exists)  FastAPI/Unix-socket boundary, durable orchestration, SSE
+  fleet_simulator/             (exists)  private control, tick fold, telemetry/lifecycle publication
     tests/                     (exists)  member-local unit and property tests
-  command_gateway/
-    tests/                               member-local mutation tests
-  scenario_service/
+  command_gateway/             (exists)  deny-by-default operation and actuation tables, the
+                                         request-reply half of the deterministic boundary
+    tests/                     (exists)  member-local mutation tests
+  scenario_service/            (exists)  strict catalog, private control, fleet client, lifecycle owner
   evidence_service/
-  recorder/
-packages/                      (exists)  four active members and one typed package shell
+  recorder/                    (exists)  receiver, durable audit adapter, recording/replay validation
+packages/                      (exists)  five active members
   broker/                      (exists)  subscriptions, queue projection, messaging, SEMP
     tests/                     (exists)  member-local unit and property tests
   contracts/                   (exists)  canonical serialization, digest, topic grammar, envelope profile
     tests/                     (exists)  member-local mutation tests
   domain/                      (exists)  connectivity, idempotency, approvals, command authority
     tests/                     (exists)  member-local mutation tests
-  store/                       (exists)  the durable target, its bounds, and its engine
+  store/                       (exists)  the durable target, its bounds, its engine, a five-revision
+                                         schema, session/transaction boundary, audit/approval/command
+                                         repositories, and narrow dashboard runtime repositories
     src/aerial_rescue_store/migrations/  Alembic revisions, inside the member that owns them
     tests/                     (exists)  member-local unit tests
-  observability/               (scaffold)
+  observability/               (exists)  bounded freshness lease parsing and checks
 deploy/                        (exists)  held to the compose policy gate on every commit
   compose.yaml                 (exists)  broker, Postgres, Agent Mesh, services, discovery agent
   agent-mesh/Dockerfile        (exists)  official image plus the two hashed plugin wheels
@@ -188,13 +200,13 @@ agent-mesh/                    (exists)  separate non-member uv project
 schemas/                       (exists)  contract-manifest.toml and the v1 JSON Schemas
 fixtures/
   golden/                      (exists)  golden fixtures, one directory per schema
-scenarios/
+scenarios/                     (exists)  strict catalog plus revision-one wilderness definition
 release-evidence/              (exists)  per-phase acceptance evidence, redacted
 tests/
   phase0/                      (exists)  feasibility probes against the pinned runtimes
   unit/
   contract/                    (exists)  schema identity and the golden-fixture oracle
-  integration/                 (exists)  the fleet simulator against the running broker
+  integration/                 (exists)  broker probes and disposable-PostgreSQL migration/runtime cases
   e2e/
   performance/
   security/                    (exists)  broker authorization against the running broker
@@ -239,7 +251,7 @@ contract, and operator-flow evidence.
 
 ### Phase 1: Foundation
 
-- **Done:** the Docker Compose stack definition, the compose policy gate that holds it at both blocking stages, and the per-checkout certificate authority ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](adr/0046-generated-local-certificate-authority.md)). The default profile's first live run is recorded in [first-live-run.md](../release-evidence/phase-0/first-live-run.md): broker and Postgres both reach healthy in 40.75s, every published port is on loopback, and TLS validates against the generated authority with hostname checking left on. The `mesh`, `services`, and `event-portal` profiles remain unstarted.
+- **Done:** the Docker Compose stack definition, the compose policy gate that holds it at both blocking stages, and the per-checkout certificate authority ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](adr/0046-generated-local-certificate-authority.md)). The default profile's first live run is recorded in [first-live-run.md](../release-evidence/phase-0/first-live-run.md): broker and Postgres both reach healthy in 40.75s, every published port is on loopback, and TLS validates against the generated authority with hostname checking left on. The Agent Mesh joined the default profile under [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md); the `services` and `event-portal` profiles remain unstarted.
 - Create project guidance, implementation plan, changelog, README skeleton, toolchain files, virtual environment, lockfiles, and CI gates.
 - Enforce exactly one ordered Arrange-Act-Assert cycle in every project-owned executable test before the first production behavior lands.
 - Make every active quality gate fail on a missing tool, manifest, lockfile, test, or report; run the same
@@ -248,9 +260,11 @@ contract, and operator-flow evidence.
   Tier 1 mutation scoring before production behavior lands.
 - Create the separate Python 3.14.7 application and Python 3.13.15 Agent Mesh environments and verify both lockfiles from a clean checkout.
 - **Done:** the Agent Mesh YAML is `agent-mesh/configs/`, the agent cards are declared there and read back from the running mesh, and the model parameters are pinned by digest in `agent-mesh/model-lock.toml` ([ADR-0063](adr/0063-lock-local-models-by-manifest-digest.md)). The Event Mesh Gateway and the Event Mesh Tool are both configured there and both proven live against the broker.
-- **Done:** establish and self-test the dashboard TypeScript policy and whole-tree verification stages. They
-  remain inert until Phase 3 creates `apps/dashboard`, then fail closed on an incomplete configuration
-  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)).
+- **Done and active:** establish and self-test the dashboard TypeScript policy and whole-tree verification
+  stages. Phase 3 now contains `apps/dashboard`, so incomplete configuration, missing integration
+  discovery, missing source inventory, and incomplete coverage evidence fail closed
+  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ### Phase 2: Contracts and broker
 
@@ -260,12 +274,17 @@ contract, and operator-flow evidence.
   guarantee by a total table ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)),
   and the queue set is a projection of the subscribe grants intersected with it, so a queue narrows
   authority and can never widen it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
-  Twenty-two queues are live on the container, written with every value explicit because five broker
+  A prior twenty-two-queue projection was exercised live on the container, written with every value explicit because five broker
   defaults are wrong for this system. Spooling with nothing bound, fan-out to every matching queue,
   removal only on acknowledgement, rejection to the dead-message queue, the redelivery bound ending
   rather than looping, and a role holding the topic grant still being refused another role's queue
   are all asserted against the broker
   ([guaranteed-delivery-first-run.md](../release-evidence/phase-2/guaranteed-delivery-first-run.md)).
+  ADR-0120 now narrows recorder authority and selects two explicit projections: global is 34
+  endpoints/340 MB, while mission control requires the combined recorder lifecycle queue and
+  dead-message queue at 2 endpoints/20 MB. Those two endpoints are a subset of the shared broker rather
+  than its exclusive inventory. Static projection tests are green; the changed live broker authorization
+  and receipt path still require the production acceptance run.
   **The backlog-recovery target is measured.** Five hundred commands spooled across the reference
   fleet drain in 7.141 seconds at worst over three samples, against a target of 10, under the
   instrument [ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md) defines
@@ -297,14 +316,21 @@ contract, and operator-flow evidence.
   of its own, separate from the state machines. Bypass cases B31 and B32 are closed at the domain;
   the evidence service's use of them is still owed. The band boundaries are an open row in
   [operating-parameters.md](operating-parameters.md).
-- **Four of five done.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
+- **Done for the fixed dashboard workload.** The Tier 2 fleet-simulator adapter accepts a scenario as a frozen
   composition-boundary value ([ADR-0077](adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md)),
   folds one heartbeat-or-miss observation per drone per tick in ascending identifier order
   ([ADR-0078](adr/0078-one-tick-is-one-observation-per-drone.md)), and drives the mission, sector, and
   connectivity machines from it. Each tick publishes one schema-bound telemetry CloudEvent through a
   direct publisher, proven live on the least-privilege `fleet-simulator` identity with a
   `dashboard-api` reader as the positive control
-  ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)).
+  ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md)). The R8
+  private start/status/cancel runtime adds interruptible pacing and guaranteed connectivity/sector
+  sources; its deterministic service evidence asserts 14 ticks and 280 successful telemetry
+  publications for the committed twenty-simulation projection. Scenario control separately owns
+  mission lifecycle and lost-run recovery. Clean committed revision `db2b640` exercised the twenty-member
+  workload through the eight-case production inventory, which passed in 1.6 minutes; the fixed synthetic
+  dashboard result is recorded in
+  [wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md).
 - **Done: the command dispatch lifecycle, drone side.** The drone-command and command-result
   families are bound to payload and event schemas
   ([ADR-0082](adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)), and the send
@@ -314,30 +340,113 @@ contract, and operator-flow evidence.
   what arrives, publishes an acknowledgement and then a resolution, and settles only after both are
   on the wire. It is the first process in this repository to bind a durable queue in production
   ([command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)).
+  This global capability remains available outside the dashboard slice. Mission control deliberately
+  starts the fleet in publication-only mode and opens no command receiver or command queue
+  ([ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
   What the plan recorded as this capability's blocker -- the send budget -- turned out not to be
   one: every edge a drone applies is blind to it, and a property test asserts that. The blocker was
   the wire contract.
-  Still owed on this lifecycle: the **gateway's half**, which needs `packages/store`, because
-  `ACCEPTED` in [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
+  Still owed on this lifecycle: the **gateway's half**. `packages/store` no longer blocks it -- the
+  approval, idempotency, and outbox repositories exist and commit together -- but nothing opens the
+  transaction they are for, and `ACCEPTED` in
+  [ADR-0074](adr/0074-command-dispatch-lifecycle.md) means validated *and persisted*.
   `SEND`, `TIME_OUT`, and `ABANDONED` are therefore unexercised and the intake claim is
   at-least-once with duplicates possible across a restart. The backlog-recovery measurement this
   consumer unblocked has since been made.
+- **Done: the schema exists on a cluster.** The first revision is applied, live, to a PostgreSQL
+  18.6 database the run creates and drops, under the two-class split
+  ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)) that keeps the
+  member's own suite offline and makes `tests/integration/test_durable_store_live.py` the only
+  evidence for anything about PostgreSQL. The cluster accepts the revision, stamps it, is unchanged
+  by a repeat application, and empties on the downgrade -- and **both declared constraints are
+  enforced rather than merely emitted**, which is what
+  [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
+  gap-free mission timeline on ([durable-store-first-run.md](../release-evidence/phase-3/durable-store-first-run.md)).
+  A later run at the five-revision history walks it up one step at a time and back down again, and
+  provokes six of the eleven declared constraints; the other five are declared and never refused
+  anything ([durable-transaction-first-run.md](../release-evidence/phase-3/durable-transaction-first-run.md)).
+  **Done: the schema has a unit of work above it.** `session.py` opens sessions and bounds one
+  transaction; `audit.py` appends a record at an ordinal issued by the conditional upsert
+  [ADR-0088](adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) selected.
+  The isolation level that claim depends on is no longer inherited from the cluster:
+  [ADR-0089](adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED` on the
+  engine, having measured that under `REPEATABLE READ` the second appender is refused rather than
+  ordered. Two appenders for one mission now take 1 and 2 against a live cluster, with the second
+  observed **waiting** rather than merely finishing later, and the three server-side bounds are read
+  back from a session rather than inferred from the driver arguments.
+  **Done: ADR-0006's atomic set has all three of its durable halves.** The concurrency mechanism is
+  selected and measured -- [ADR-0091](adr/0091-consume-an-approval-under-its-own-row-lock.md) takes the
+  approval row with a plain `SELECT ... FOR UPDATE` and lets the domain's `ALREADY_CONSUMED` be the
+  denial, having measured that `SKIP LOCKED` hands the second consumer no row at all and that a
+  conditional update alone lets the domain say yes before the store says no.
+  [ADR-0092](adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md) claims a key with one
+  conflicting insert and asks `packages/domain` what a repeat means, and
+  [ADR-0093](adr/0093-stage-the-command-outbox-under-a-counted-bound.md) gives the outbox three states,
+  a bound of 500 unconfirmed records, and an overflow that writes nothing. Three revisions arrived with
+  them, and revision 0005 later added the separate dashboard runtime tables selected by
+  [ADR-0113](adr/0113-persist-dashboard-runtime-after-the-current-store-head.md). The five-revision path
+  is walked one step at a time in both directions against a live cluster. The three ADR-0006 writes
+  commit together and roll back together; separate live 0005 cases exercise prepared-before-start
+  persistence, exact-byte start/reset replay, same-run pending recovery, predecessor retention, broker
+  deduplication, and snapshot reads.
+  A measurement on the way found ADR-0085's lock bound unreachable -- with the lock wait equal to the
+  statement time the lock timeout never fires, so a contended row was reported as a stuck statement --
+  and [ADR-0090](adr/0090-bound-the-lock-wait-below-the-statement-time.md) supersedes it at 2 s.
+  The dashboard API and recorder are now production callers of the revision-0005 repositories. The
+  recorder advances an accepted mission lifecycle under the domain transition policy in the same
+  transaction as broker deduplication and audit append, so the mission row is active authority rather
+  than unused storage. For reset recovery, a recorder-owned terminal predecessor establishes
+  cancellation without an obsolete private call; a missing nonterminal private run persists an exact
+  refusal and leaves pointer and history unchanged
+  ([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)). The production
+  dashboard reuses the shared project's retained PostgreSQL container and never treats its history as
+  disposable ([ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)). Still
+  owed on the store: the paid-call ledger, whose atomic pre-call cap mechanism no record has selected,
+  plus restart durability and interrupted-process rollback, which need a probe that kills a process. The
+  clean live PostgreSQL suite passed 43 cases in 14.24 seconds against revision `db2b640`, including the
+  five-revision path and revision-0005 dashboard cases; the shared production path retained the existing
+  PostgreSQL container and history
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md) documents the non-destructive recipe.
 - Still owed: the **evidence lifecycle and score**, which needs the evidence band boundaries, an
   open row in [operating-parameters.md](operating-parameters.md).
-- Before the first dashboard source file, record the dashboard stack and exact runtime and toolchain pins in
-  an ADR. Then create `apps/dashboard`, commit its `pnpm` lockfile, and activate the strict TypeScript,
-  lint, format, test, coverage, duplication, and production-build gates from
-  [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md).
-- Generate and commit dashboard contract types from the versioned schemas, freshness-gate them, validate
-  every HTTP/SSE input at runtime, and prove Python and TypeScript refusal parity with the shared golden
+- **Done through A8 against fixture and production sources:** the dashboard stack, exact runtime, lockfile,
+  strict TypeScript policy, production build, validated sources, secure mutation client, map-first
+  command center, and replay presentation are implemented. Coverage
+  now has the same fail-closed evidence discipline as the Python workspace: Vitest produces the report,
+  while a separate gate matches it to the complete hand-written source inventory and independently
+  adjudicates statements, branches, functions, and lines. A non-empty deterministic integration suite
+  blocks separately. All 64 fixed Playwright cases and six inspected/redacted screenshot cases are
+  green. On clean committed revision `db2b640`, the fixture inventory passed in 42.0 seconds and the
+  separate eight-case production-stack end-to-end inventory passed in 1.6 minutes; neither substitutes for
+  the other
+  ([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md),
+  [ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md),
+  [production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+- **Done:** generated dashboard contract types are freshness-gated, every browser HTTP/SSE boundary
+  validates before typing, and Python/TypeScript reducers and digests share manifest-owned parity
   fixtures ([ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md)).
-- Implement the FastAPI dashboard API and the first tested operator vertical slice: scenario selection and
-  mission start and reset, a persistent run-mode and readiness region, the MapLibre search map, fleet status,
-  the ordered mission timeline, and the record/replay adapter. Reduce normalized domain events into
-  presentation state, and cover loading, empty, retrying, failure, and recovered states from this first slice.
-  Deliver the current API process's bearer through the local startup path, and re-establish that runtime
-  context after an API restart before retrying a mutation
-  ([ADR-0024](adr/0024-local-operator-api-boundary.md)).
+- **Done for the fixed synthetic dashboard slice:** the FastAPI dashboard API, strict catalog, private
+  scenario/fleet control, revision-0005 persistence, normalized recorder/replay path, and the first
+  operator vertical slice are assembled. Start persists a stable prepared mission/run before scenario
+  HTTP and reconciles an uncertain handoff on that same run without repeating start. Reset uses a
+  recorder-owned terminal predecessor as proof that cancellation is established; a nonterminal
+  predecessor still requires private cancellation, and a missing private run stores an exact refusal
+  without changing pointer or history. Success selects a fresh `PLANNED` successor without starting it;
+  a later Start activates that identity. Exact operation state/response bytes and audit ordinals are
+  authority, so revision 0005 carries no unused orchestration timestamps. The runtime bearer is
+  delivered through the no-store shell and stale runtime disables mutation until reload
+  ([ADR-0024](adr/0024-local-operator-api-boundary.md),
+  [ADR-0113](adr/0113-persist-dashboard-runtime-after-the-current-store-head.md)). Four operator
+  workflows and four resilience cases passed in 1.6 minutes on clean committed revision `db2b640`. The
+  separate 61-sample soak passed in 30.3 minutes with its RSS/file-descriptor growth and process/container
+  identity invariants intact. The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its
+  digest shown as `Verified`. This closes A8, R7, and R9 for twenty simulated members plus three
+  declared-only descriptors; recorder telemetry receipt remains best-effort, and the evidence, approval,
+  command, executable edge-agent, rescue, and complete cross-system mission remain later phases
+  ([production evidence](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+- The dashboard-internal build increments that satisfy these bullets, and the blocker each one
+  waits on, are sequenced in [FRONTEND_BUILD.md](FRONTEND_BUILD.md).
 
 ### Phase 4: Edge intelligence and evidence interface
 
@@ -383,6 +492,12 @@ contract, and operator-flow evidence.
 - Qualify every completed member against its declared coverage, complexity, duplication, mutation, and
   test-inventory gates.
 - Complete integration, E2E, Playwright UAT, agent evaluations, performance checks, threat model, and dependency/secret scanning.
+- Keep deterministic dashboard integration, fixture-driven Playwright acceptance, resourceful service
+  integration, and production-stack browser end-to-end execution as separate required claims. The
+  production path executes four operator workflows and four resilience cases only after the shared
+  broker and PostgreSQL are healthy and the seven mission-control extension targets are available;
+  fixture acceptance cannot substitute for it
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - Qualify the mode-appropriate operator workflows in live simulation, degraded live simulation, and replay
   at the reference MacBook's normal resolution without developer tools. Playwright acceptance covers the
   accessible proposal-bound approval in the live modes and an unavailable approval control in replay while
@@ -424,6 +539,9 @@ The initial release is ready only when:
 - Ruff complexity, cognitive complexity, multi-language duplication, and per-module Tier 1 mutation gates
   pass at the limits in `docs/operating-parameters.md`.
 - Linting, formatting, type checking, security scans, integration tests, E2E tests, and UAT pass without introduced warnings.
+- Dashboard unit/component/integration coverage passes its independent source-inventory adjudication;
+  the fixed fixture acceptance inventory and the separate packaged production end-to-end execution both
+  pass without one contributing coverage to or substituting for the other.
 - Broker disconnect and model-failure tests demonstrate recovery or safe degradation.
 - No secrets or improperly licensed assets exist in Git history or the working tree.
 - Architecture and workflow documentation includes editable diagram sources and generated PNGs.

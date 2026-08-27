@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/fleet-control-cancel-request.schema.json",
+  "description": "The authenticated private request to stop one exact fleet run within the remaining cancellation budget.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "missionId",
+    "runId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": 1
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "runId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

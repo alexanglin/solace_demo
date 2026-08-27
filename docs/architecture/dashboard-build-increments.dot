@@ -1,0 +1,89 @@
+digraph DashboardBuildIncrements {
+  graph [
+    rankdir=LR,
+    bgcolor="#FFFFFF",
+    pad="0.35",
+    nodesep="0.40",
+    ranksep="0.75",
+    splines=polyline,
+    compound=true,
+    newrank=true,
+    fontname="Helvetica",
+    fontsize=18,
+    label="Dashboard build increments — browser delivery, vertical runtime blockers, and production evidence",
+    labelloc=t
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#314158",
+    fillcolor="#F7F9FC",
+    fontname="Helvetica",
+    fontsize=10,
+    margin="0.16,0.11"
+  ];
+
+  edge [
+    color="#52657A",
+    fontcolor="#314158",
+    fontname="Helvetica",
+    fontsize=9,
+    arrowsize=0.7
+  ];
+
+  subgraph cluster_lane_a {
+    label="Lane A — browser delivery (A1-A7 fixture-driven; A8 production-gated)";
+    color="#2F6FB7";
+    style="rounded";
+    a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
+    a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
+    a3 [label="A3 — complete\ncanonical browser digests\n10-run parity oracle", fillcolor="#DFF7EE", color="#008F6B"];
+    a4 [label="A4 — complete\nimmutable ordered reducer\n+ verified timeline append", fillcolor="#DFF7EE", color="#008F6B"];
+    a5 [label="A5 — complete\nfixture / live / replay adapters\nproduction endpoints connected", fillcolor="#DFF7EE", color="#008F6B"];
+    a6 [label="A6 — complete\nguarded mutation client\nproduction workflow green", fillcolor="#DFF7EE", color="#008F6B"];
+    a7 [label="A7 — complete\nmap-first presentation\nfixture + production sources", fillcolor="#DFF7EE", color="#008F6B"];
+    a8 [label="A8 — complete\n6 baselines inspected • 64/64 fixture\n8/8 production • 61-sample soak\nclean committed evidence", fillcolor="#DFF7EE", color="#008F6B"];
+    a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8;
+  }
+
+  subgraph cluster_lane_b {
+    label="Lane B — vertical unblockers (owners outside apps/dashboard)";
+    labelloc=b;
+    color="#8193A6";
+    style="rounded,dashed";
+    r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
+    r2 [label="R2 — complete\nscenario catalog + bounded loader\n20 simulated-only fleet projection\nADR-0100", fillcolor="#DFF7EE", color="#008F6B"];
+    r3 [label="R3 — complete\nPython checkpoint + ordered fold\nstate/event digest parity\nADR-0111 / 0112", fillcolor="#DFF7EE", color="#008F6B"];
+    r4 [label="R4 — complete\n0005 runtime store + ordered reads\nfocused PostgreSQL evidence\nADR-0113", fillcolor="#DFF7EE", color="#008F6B"];
+    r5 [label="R5 — complete\ndashboard API + Caddy / UDS\nclean production E2E evidence\nADR-0096 / 0116 / 0143", fillcolor="#DFF7EE", color="#008F6B"];
+    r6 [label="R6 — complete\ndirect telemetry + 1 lifecycle queue\nrequired subset: 2 endpoints / 20 MB\nbounded replay validator\nADR-0094 / 0111 / 0120 / 0139", fillcolor="#DFF7EE", color="#008F6B"];
+    r7 [label="R7 — complete\ncanonical docs + release evidence\ncurrent editable diagrams", fillcolor="#DFF7EE", color="#008F6B"];
+    r8 [label="R8 — complete\nprivate live control + lifecycle\n14 ticks / 280 publications\nADR-0111 / 0121", fillcolor="#DFF7EE", color="#008F6B"];
+    r9 [label="R9 — complete\nshared project: 7 start / 5 stop\nbase container IDs guarded\n8/8 production + soak evidence\nADR-0117 / 0120 / 0139 / 0142", fillcolor="#DFF7EE", color="#008F6B"];
+  }
+
+  initial_release_gaps [
+    shape=note,
+    label="Initial-release gaps remain\ncurrent slice: 20 simulated + 3 declared only\nno executable edge agents, Agent Mesh/model evidence,\napproval, command, rescue, or escalation workflow",
+    fillcolor="#F2F4F7",
+    color="#697586"
+  ];
+
+  r1 -> a2 [label="contract delivered", color="#008F6B", penwidth=1.6];
+  r3 -> a3 [label="state + event digest parity", color="#008F6B", penwidth=1.6];
+  r3 -> a4 [label="witnessed fold parity", color="#008F6B", penwidth=1.6];
+  r3 -> r6 [label="validated projections", style=dashed];
+  r3 -> r8 [label="source contracts", style=dashed];
+  r2 -> r5 [label="catalog data", style=dashed];
+  r4 -> r5 [label="snapshot + witness reads", style=dashed];
+  r5 -> a5 [label="live SSE + HTTP", style=dashed];
+  r6 -> a5 [label="replay bundles", style=dashed];
+  r8 -> r5 [label="live control + lifecycle events", style=dashed];
+  r5 -> r9 [label="packaged API", style=dashed];
+  r6 -> r9 [label="validated replay", style=dashed];
+  r8 -> r9 [label="live runtime", style=dashed];
+  r7 -> a8 [label="release record + current diagrams", color="#008F6B", penwidth=1.4];
+  r9 -> a8 [label="production E2E evidence", color="#008F6B", penwidth=1.4];
+  a8 -> initial_release_gaps [label="dashboard slice only", style=dashed, color="#697586"];
+}

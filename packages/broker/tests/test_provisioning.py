@@ -40,11 +40,13 @@ from aerial_rescue_broker.queues import (
     MAX_TTL_SECONDS,
     QUEUE_ACCESS_TYPE,
     QUEUE_PERMISSION,
+    QueueProjection,
     desired_queues,
     drone_queue_name,
 )
 from aerial_rescue_broker.subscriptions import (
     a2a_subscription,
+    connectivity_subscription,
     drone_command_subscription,
     reply_subscription,
     subscription_for,
@@ -63,12 +65,12 @@ NAMESPACE = "acme/dev"
 CREDENTIAL = "fixture-not-a-real-credential"
 CREDENTIALS = {role: CREDENTIAL for role in Principal}
 
-EXPECTED_PUBLISH_EXCEPTIONS = 16
-EXPECTED_SUBSCRIBE_EXCEPTIONS = 31
+EXPECTED_PUBLISH_EXCEPTIONS = 18
+EXPECTED_SUBSCRIBE_EXCEPTIONS = 24
 
 DRONES = ("drone-vision-01", "drone-thermal-02")
-EXPECTED_QUEUES = 23
-EXPECTED_QUEUE_SUBSCRIPTIONS = 22
+EXPECTED_QUEUES = 16
+EXPECTED_QUEUE_SUBSCRIPTIONS = 17
 
 
 class FakeBroker:
@@ -140,6 +142,9 @@ def _exceptions_of(state: DesiredState, role: Principal, access: Access) -> froz
 def _expected_exceptions(role: Principal, access: Access) -> frozenset[str]:
     """Return the exceptions the matrix and the subscription renderer imply for ``role``."""
     topics = {subscription_for(family) for family in grants(role, access)}
+    if role is Principal.RECORDER and access is Access.SUBSCRIBE:
+        topics.remove(subscription_for(Family.DRONE_EVENT))
+        topics.add(connectivity_subscription())
     if may_use_a2a(role):
         topics.add(a2a_subscription(NAMESPACE))
     if access is Access.SUBSCRIBE and may_use_reply_channel(role):
@@ -160,6 +165,20 @@ def _state_refusal_of(
 
 
 class DesiredStateTests(unittest.TestCase):
+    def test_mission_control_projects_only_its_two_active_durable_endpoints(self) -> None:
+        # Arrange
+        projection = QueueProjection.MISSION_CONTROL
+
+        # Act
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES, projection)
+
+        # Assert
+        self.assertEqual(2, len(state.queues))
+        self.assertEqual(
+            {"#DEAD_MSG_QUEUE", "aerial-rescue/v1/recorder/dashboard.lifecycle"},
+            {queue.name for queue in state.queues},
+        )
+
     def test_one_acl_profile_and_one_client_username_exist_for_every_role(self) -> None:
         # Arrange
         expected = {role.value for role in Principal}
@@ -301,7 +320,7 @@ class DesiredStateTests(unittest.TestCase):
         # Assert
         self.assertIn(reply, _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE))
 
-    def test_the_recorder_profile_reads_every_family_and_writes_none(self) -> None:
+    def test_the_recorder_profile_reads_only_dashboard_sources_and_writes_none(self) -> None:
         # Arrange
         state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
 
@@ -312,7 +331,63 @@ class DesiredStateTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((frozenset(), len(tuple(Family))), held)
+        self.assertEqual((frozenset(), 4), held)
+
+    def test_the_recorder_profile_narrows_drone_events_to_connectivity(self) -> None:
+        # Arrange
+        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+
+        # Act
+        subscribed = _exceptions_of(state, Principal.RECORDER, Access.SUBSCRIBE)
+
+        # Assert
+        self.assertIn(connectivity_subscription(), subscribed)
+        self.assertNotIn(subscription_for(Family.DRONE_EVENT), subscribed)
+
+    def test_lifecycle_acl_exceptions_are_projected_offline_for_the_runtime_roles(self) -> None:
+        # Arrange
+        expected = {
+            "SCENARIO_SERVICE": (
+                frozenset({"aerial-rescue/v1/*/mission/event/*"}),
+                frozenset(),
+            ),
+            "FLEET_SIMULATOR": (
+                frozenset(
+                    {
+                        "aerial-rescue/v1/*/drone/*/telemetry",
+                        "aerial-rescue/v1/*/drone/*/event/*",
+                        "aerial-rescue/v1/*/drone/*/command-result/*",
+                        "aerial-rescue/v1/*/sector/*/event/*",
+                    }
+                ),
+                frozenset({"aerial-rescue/v1/*/drone/*/command/*"}),
+            ),
+            "RECORDER": (
+                frozenset(),
+                frozenset(
+                    {
+                        "aerial-rescue/v1/*/drone/*/telemetry",
+                        "aerial-rescue/v1/*/drone/*/event/connectivity-changed",
+                        "aerial-rescue/v1/*/mission/event/*",
+                        "aerial-rescue/v1/*/sector/*/event/*",
+                    }
+                ),
+            ),
+        }
+        state = desired_state(VPN, CREDENTIALS, None, DRONES)
+
+        # Act
+        actual = {
+            role.name: (
+                _exceptions_of(state, role, Access.PUBLISH),
+                _exceptions_of(state, role, Access.SUBSCRIBE),
+            )
+            for role in Principal
+            if role.name in expected
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
 
     def test_a_role_with_no_credential_is_refused(self) -> None:
         # Arrange

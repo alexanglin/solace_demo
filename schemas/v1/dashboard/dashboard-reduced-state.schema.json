@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json",
+  "description": "The normalized mission state reduced from audit-ordered dashboard events.",
+  "type": "object",
+  "required": [
+    "canonicalizationVersion",
+    "stateVersion",
+    "currentMission",
+    "fleet",
+    "latestAuditOrdinal",
+    "sectors"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "canonicalizationVersion": {
+      "const": 1
+    },
+    "stateVersion": {
+      "const": 1
+    },
+    "currentMission": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/mission"
+        }
+      ]
+    },
+    "fleet": {
+      "type": "array",
+      "maxItems": 23,
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/simulatedFleetMember"
+          },
+          {
+            "$ref": "#/$defs/declaredOnlyFleetMember"
+          }
+        ]
+      }
+    },
+    "latestAuditOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "sectors": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/sector"
+      }
+    }
+  },
+  "$defs": {
+    "mission": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "lifecycle",
+        "predecessorIdentifier"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "lifecycle": {
+          "enum": [
+            "PLANNED",
+            "SEARCHING",
+            "EXHAUSTED",
+            "ABORTED"
+          ]
+        },
+        "predecessorIdentifier": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            }
+          ]
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "required": [
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "batteryPercent",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        },
+        "batteryPercent": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/percent"
+        },
+        "altitudeMetres": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/altitudeMetres"
+        },
+        "headingDegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/headingDegrees"
+        },
+        "groundSpeedCentimetresPerSecond": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/groundSpeedCentimetresPerSecond"
+        }
+      }
+    },
+    "simulatedFleetMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation",
+        "connectivity",
+        "telemetry"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "SIMULATED"
+        },
+        "connectivity": {
+          "enum": [
+            "CONNECTED",
+            "DEGRADED",
+            "OFFLINE"
+          ]
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/telemetry"
+            }
+          ]
+        }
+      }
+    },
+    "declaredOnlyFleetMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "DECLARED_ONLY"
+        }
+      }
+    },
+    "sector": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "state",
+        "assignedMemberId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "state": {
+          "enum": [
+            "UNASSIGNED",
+            "ASSIGNED",
+            "AT_RISK",
+            "SEARCHED"
+          ]
+        },
+        "assignedMemberId": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

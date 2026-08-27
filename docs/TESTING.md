@@ -102,8 +102,19 @@ limits and their instruments live only in [operating-parameters.md](operating-pa
 - **Python:** statement coverage and branch coverage are measured independently per `uv` workspace
   member at its declared risk tier. `coverage.py` reports no function-coverage metric, and statements and
   lines are the same measurement, so those are not separate Python dimensions.
-- **TypeScript:** statements, branches, functions, and lines are enforced independently per production
-  package through Vitest.
+- **TypeScript:** Vitest measures statements, branches, functions, and lines independently per
+  production package. `tools/typescript_coverage_gate.py` treats its JSON summary as untrusted,
+  recomputes the aggregate with integer arithmetic, and requires an exact match with every
+  hand-written production source enumerated by the wrapper. Missing, empty, skipped, malformed,
+  duplicate-key, out-of-inventory, or coverage-ignored evidence fails closed
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
+- **Dashboard Tier 1 coverage:** the canonical bootstrap decoder, Ajv schema registry, canonical
+  digest, ordered reducer, and mutation client are an exact five-file inventory. Each file independently
+  requires complete statement and branch coverage from the same full Vitest pass. Missing modules,
+  inventory entries, report entries, and measurable statements fail closed
+  ([ADR-0130](adr/0130-enforce-dashboard-tier-one-coverage-per-file.md)). Source-session and runtime
+  transport orchestration plus UI and presentation modules remain under the package-wide four-dimensional
+  gate; they are not silently classified as Tier 1.
 - **Safety-critical core:** approval authorization, command-gateway dispatch, domain state machines,
   idempotency and sequence rules, evidence scoring, and `packages/contracts` carry the Tier 1 coverage,
   property-based, failure-injection, and mutation obligations.
@@ -124,8 +135,11 @@ threshold into a pass ([ADR-0019](adr/0019-fail-closed-quality-gates.md)).
 
 Ruff enforces the cyclomatic, function-size, branch, return, local-variable, parameter, nesting, and
 Boolean-expression budgets over the complete owned Python tree. Complexipy independently enforces
-cognitive complexity. jscpd performs one multi-language strict duplication scan across owned source,
-tests, and scripts. Their values and instruments are in
+cognitive complexity. jscpd performs one multi-language strict duplication scan across authored source,
+tests, and scripts; generated dashboard contract types are outside it, because one module per schema is
+fixed by [ADR-0058](adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) and their
+freshness gate rewrites and byte-compares that directory
+([ADR-0110](adr/0110-scope-the-duplication-gate-to-authored-source.md)). Their values and instruments are in
 [operating-parameters.md](operating-parameters.md#code-quality-gates); `scripts/hooks/` contains the
 canonical fail-closed entry points. Static analyzers may parse both Python trees from the root tool
 environment because they do not import or execute the Agent Mesh project.
@@ -159,18 +173,87 @@ and review remain mandatory for those behaviors.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
 - **Property-based tests:** Event ordering, idempotency, coordinate ranges, schema round trips, and state-machine invariants using Hypothesis.
 - **Contract tests:** Python and TypeScript validate the same JSON Schemas, topic rules, CloudEvents, OpenAPI schema, and golden fixtures.
-- **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml` ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent delivery, queues, reconnects, acknowledgement, and ACL denial. Admitting the class to a blocking continuous-integration stage is a verification change that needs its own record.
-- **Durable-store integration tests:** The PostgreSQL container from `deploy/compose.yaml`, against a database the run creates and drops ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only evidence for isolation, constraints, transaction visibility, Alembic behaviour, restart durability, pool cancellation, and concurrent races; the store's own member suite never opens a connection and establishes none of them. They carry `integration` and `docker`, and never `broker`.
+- **Broker integration tests:** The PubSub+ software event broker container from `deploy/compose.yaml`
+  ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) covering direct and persistent
+  delivery, queues, reconnects, acknowledgement, and ACL denial. At revision `db2b640`, the selected
+  local authorization suite passed 16 of 16 cases in 0.57 seconds against the shared broker
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  That selector is not complete ACL, queue, TLS-downgrade, or Solace Cloud evidence. Admitting the class
+  to a blocking continuous-integration stage is a verification change that needs its own record.
+- **Durable-store integration tests:** The PostgreSQL container from `deploy/compose.yaml`, against a
+  database the run creates and drops
+  ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only
+  evidence for isolation, constraints, transaction visibility, Alembic behaviour, restart durability,
+  pool cancellation, and concurrent races; the store's own member suite never opens a connection and
+  establishes none of them. The revision-0005 cases walk the five-revision history in both directions
+  and exercise prepared-before-start persistence, exact-byte start/reset replay, same-run pending
+  recovery, predecessor retention, broker deduplication, and snapshot reads. At revision `db2b640`, the
+  exact selector passed 43 of 43 cases in 14.24 seconds: 41 PostgreSQL cases each created and dropped
+  its own disposable database, while two local cases exercised target-name and refusal behavior
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  Those cases do not claim a killed-process recovery test. They carry `integration` and `docker`, and
+  never `broker`.
 - **Provider integration tests:** Local Ollama, the pinned Agent Mesh runtime, A2A discovery and
   delegation, and both pinned Event Mesh plugins. A test asserting transport, schema, or error handling
   uses a deterministic stub at the model boundary; only a test asserting model capability calls a real
   model, and those are the model-dependent class excluded from the blocking safety gate.
+- **Dashboard integration tests:** Dedicated `*.integration.test.ts` and
+  `*.integration.test.tsx` specifications exercise composition across production browser modules. The A1
+  case joins the production HTML host to the real application entry point. A4 carries a manifest-owned
+  replay through canonical decoding, Ajv and Pydantic validation, and the production Python and
+  TypeScript reducers to compare every checkpoint across ten independent runs. A5 extends the same class
+  through all three source adapters, including disposal, stale callbacks, last-valid-state retention, and
+  exactly one overload resnapshot; later cases carry serialized boundary input through mutation and render
+  composition. The production-asset case builds the actual minified browser output, measures every
+  JavaScript chunk and CSS asset through the same owner as Vite, and proves that an over-budget output
+  blocks. The separate non-empty suite blocks at pre-push and in continuous integration, and the
+  complete Vitest coverage run includes it.
 - **End-to-end tests:** Mission start through evidence, connectivity failure, replan, approval, and completion.
-- **User acceptance tests:** Playwright exercises the complete operator workflow, including live/replay labeling and approval blocking.
+- **User acceptance tests:** The manifest-owned Playwright inventory exercises the selected operator
+  slice through serialized fixture inputs, including live/replay labeling and the explicit absence of
+  deferred approval, command, evidence, model, rescue, and escalation controls. At revision `db2b640`,
+  all 64 fixture cases passed in 42.0 seconds with no failure, skip, or retry
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md));
+  the manifest count and discovery command remain the inventory authority.
+- **Dashboard production end-to-end tests:** The production driver contains eight serial cases: four
+  operator/replay workflows and four resilience workflows. Fixture selection, request interception,
+  production test globals, and production control routes are forbidden. The resilience cases restart
+  the dashboard API before the first accepted snapshot to prove stale-runtime lockout, stop the recorder
+  to prove typed `503` readiness blockers and `200` recovery, and stop Caddy beyond the browser outage
+  bound before restoring offline-to-recovered behavior on the same API runtime. The overload case pauses
+  Caddy without pausing the API, targets a retained `EXHAUSTED` predecessor with the bounded pressure
+  sources in [operating-parameters.md](operating-parameters.md#dashboard-event-stream), and proves that
+  the current `PLANNED` successor and its audit ordinal do not change. It also holds API process identity,
+  requires the terminal frame, and permits exactly one browser resnapshot under
+  [ADR-0141](adr/0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md). The retained-history
+  semantics are fixed by
+  [ADR-0142](adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md). The live mission case
+  observes fleet publication independently from best-effort recorder receipt; a receipt count is not a
+  telemetry-completeness guarantee. Replay is the final serial case so isolated mode cannot contaminate
+  an operational workflow. At revision `db2b640`, all eight cases passed against the shared
+  `aerial-rescue-mesh` closure in 1.6 minutes with no failure, skip, or retry
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  The prepared production mission reached 14 ticks and 280 successful fleet publications. A separate
+  post-soak mission readback recorded 280 best-effort telemetry receipts and 328 audit events. Receipt
+  equality is an observation from that run, not a telemetry-completeness guarantee. The dedicated
+  continuous-integration job will also run the resourceful
+  broker, store, recorder, replay, HTTP, SSE, and packaging integration class. Once admitted, missing
+  runtime evidence will fail rather than falling back to fixture acceptance
+  ([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 - **Agent evaluations:** Curated datasets validate delegation, tool selection, structured outputs, refusal of unsafe requests, and approval behavior.
 - **Failure-injection tests:** Broker loss, Agent Mesh container loss, Ollama loss, duplicate and out-of-order events, malformed input, model timeout, invalid output, and recovery.
 - **Performance tests:** The full fleet at the telemetry rate, dashboard update latency, queue-backlog
-  recovery, and the soak run. Every value, and the instrument that measures it, is in
+  recovery, and the separate thirty-minute Playwright soak. Its 61 browser/process samples fail on
+  transport or readiness loss, process replacement, remote requests, or RSS/file-descriptor growth over
+  the accepted envelope without adding a production probe endpoint. At revision `db2b640`, the soak
+  passed its single case and all 61 samples in 30.3 minutes: API container and PID remained stable; RSS
+  growth stayed at most 64 MiB; file-descriptor growth stayed at most 8; and every browser sample remained
+  READY and CONNECTED with the map visible, zero alerts, and zero remote requests. The retained record
+  does not contain the numeric baseline or maximum values; its separate post-soak point sample was
+  114,425,856 bytes RSS and 12 file descriptors, which is neither a baseline nor a maximum
+  ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  The soak measures only the dashboard API process after mission exhaustion, not browser, broker,
+  PostgreSQL, other-service, or whole-stack resources. Every target and instrument is in
   [operating-parameters.md](operating-parameters.md).
 - **Security tests:** Secret scanning, dependency scanning, container-image and deploy misconfiguration
   scanning, workflow auditing, CodeQL static analysis, authorization-negative cases, schema fuzzing,
@@ -198,17 +281,25 @@ that transitively import it
 Mesh tree are selected separately, because the Agent Mesh domain carries its own `tools` package and
 its tests run on their own 3.13 interpreter
 ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)). The dashboard uses
-`vitest related` on staged `.ts` and `.tsx` files.
+`vitest related` on staged `.ts` and `.tsx` files. Pre-commit serializes any filename partitions before
+starting Vitest because Vitest already schedules the selected files internally; this prevents multiple
+jsdom pools from competing until valid five-second waits fail
+([ADR-0144](adr/0144-serialize-the-related-dashboard-test-hook.md)).
 
 The selector fails safe rather than guessing. A staged path that is not a Python file in the graph, is
 a `conftest.py`, has an ambiguous module name, or does not parse, widens the run to the whole
 deterministic suite. That is what makes a change to a hook script, a workflow, a manifest, or a
 committed registry run the tests that read it, none of which any import names.
 
-**Push stage — every unit test, unconditionally.** `pytest-full.sh` runs the root suite with the
-per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its own interpreter,
-and `dashboard-test-full.sh` runs the dashboard suite with all four coverage dimensions. None of the
-three selects a subset, and a test asserts that none of them ever starts to.
+**Push stage — every unit, deterministic dashboard integration, and dashboard acceptance test,
+unconditionally.** `pytest-full.sh` runs the
+root suite with the per-member coverage gates, `agent-mesh-test-full.sh` runs the Agent Mesh suite on its
+own interpreter, `dashboard-test-full.sh` runs the complete dashboard unit/component/integration suite
+and independently adjudicates all four coverage dimensions, and `dashboard-integration-full.sh`
+separately refuses an empty dedicated integration inventory. `dashboard-playwright-full.sh` verifies
+discovery against the manifest-owned inventory and runs every Playwright acceptance case against the
+package-pinned Chromium. None selects a subset, and conformance tests hold every entry point to that
+whole-suite contract.
 
 Narrowing the commit stage is only safe while the push stage stays whole. Selection is fast feedback;
 `pre-push` and continuous integration remain the authority.
@@ -218,7 +309,11 @@ Narrowing the commit stage is only safe while the push stage stays whole. Select
 Python quality gates use pytest, pytest-asyncio, pytest-cov, Hypothesis, Ruff, strict mypy, Complexipy
 7.0.1, Bandit, pip-audit, and mutmut 3.7.0 with per-module scoring over the Tier 1 core
 ([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md),
-[ADR-0023](adr/0023-executable-deep-quality-gates.md)). Bandit ignores inline suppression comments
+[ADR-0023](adr/0023-executable-deep-quality-gates.md)). Root-workspace strict mypy loads the official
+plugin shipped by the pinned Pydantic dependency so service-owned model constructors remain typed while
+the global explicit-`Any` prohibition stays enabled; a configuration conformance test holds the policy
+selected by [ADR-0109](adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md). The separate
+Agent Mesh environment does not load that plugin. Bandit ignores inline suppression comments
 and blocks medium-or-higher findings at medium-or-higher confidence; dependency auditing operates on
 hashed exports of every active uv lock. A reported advisory is adjudicated against
 `dependency-waivers.toml`, which binds each review to an exact domain, package, version, and
@@ -239,16 +334,29 @@ tree in continuous integration only
 `.github/workflows/security.yml` repeats the dependency audit, the configuration audit, and the image
 scans daily, and Dependabot raises pinned-update pull requests under a seven-day cooldown
 ([ADR-0051](adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md),
-[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest, Testing Library, Playwright, `tsc --noEmit` over the whole
-project, and typescript-eslint's type-aware presets at zero tolerated warnings; the compiler
-options, the required package scripts, and the coverage thresholds are held by
+[ADR-0052](adr/0052-hold-dependabot-to-a-seven-day-cooldown.md)). TypeScript quality gates use Vitest,
+Testing Library, Playwright, `tsc --noEmit` over the whole project, and typescript-eslint's type-aware
+presets at zero tolerated warnings; the compiler options, the required package scripts, and the coverage
+thresholds are held by
 `tools/typescript_policy_gate.py` at both blocking stages
-([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)). Playwright
+([ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md)). The full Vitest wrapper
+writes a temporary JSON summary, passes the tracked-or-unignored source inventory to
+`tools/typescript_coverage_gate.py`, enforces its exact per-file Tier 1 statement and branch inventory,
+and removes the report after adjudication; a dedicated integration
+configuration has its own fail-closed wrapper. Playwright
 specifications live under `apps/dashboard/tests/e2e/`, because anything outside `apps/dashboard`
 escapes the type check, the linter, the formatter, and the duplication scan together. Vitest must
 not register its globals: the AAA gate resolves test identifiers from `vitest` and
-`@playwright/test` imports, so global registration fails every dashboard test closed. jscpd 5.0.14 provides the multi-language duplication scan. The
-cross-language AAA gate uses Python's `ast` and `tokenize`
+`@playwright/test` imports, so global registration fails every dashboard test closed. The blocking
+Playwright wrapper accepts only the manifest-pinned Node and pnpm runtimes, verifies the discovered test
+count against `config.playwrightExpectedTests`, checks that Chromium revision 1234 is already cached
+instead of downloading from a local hook, and scans retained `test-results/` and `playwright-report/`
+files for the synthetic bearer sentinel after both passing and failing browser runs.
+Continuous integration performs the explicit Chromium-only installation before invoking the identical
+pre-push hook. Playwright execution coverage is not merged into the package result, and fixture
+acceptance is not described as production end-to-end evidence
+([ADR-0105](adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)). jscpd 5.0.14
+provides the multi-language duplication scan. The cross-language AAA gate uses Python's `ast` and `tokenize`
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
 message validation, pushed-range `git diff --check`, and the directory fan-out gate, which bounds how

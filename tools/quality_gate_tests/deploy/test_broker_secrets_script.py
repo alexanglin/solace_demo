@@ -17,8 +17,12 @@ PASSWORD_HEX_LENGTH = 64
 STACK_PASSWORDS = (
     "secrets/broker-admin-password",
     "secrets/postgres-password",
-    "secrets/semp-discovery-password",
+    "secrets/session-secret-key",
+    "secrets/scenario-control-secret",
+    "secrets/fleet-control-secret",
 )
+UNUSED_SEMP_DISCOVERY_PATH = "secrets/semp-discovery-password"
+"""The optional external SEMP consumer has no repository-provisioned identity."""
 ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in Principal)
 """One per broker authorization role (ADR-0061); the script's own list is held equal below."""
 PRIVATE_FILES = (
@@ -37,7 +41,10 @@ def _material(deploy: Path) -> dict[str, bytes]:
 
 
 ROLE_ENVIRONMENT = "secrets/.env.roles"
-"""The generated file Compose reads for the nine role identities; never tracked."""
+"""The generated file Compose reads for the ten role identities; never tracked."""
+SESSION_VARIABLE = "SESSION_SECRET_KEY"
+"""The Web UI's session signing key. The image ships a placeholder and the upstream check is
+presence-only, so an unreplaced value signs real sessions (ADR-0102)."""
 
 
 def _variable(role: Principal, suffix: str) -> str:
@@ -79,7 +86,9 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_twelve_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_fifteen_used_passwords(
+        self,
+    ) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -88,8 +97,51 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(15, len((*STACK_PASSWORDS, *ROLE_PASSWORDS)))
         self.assertTrue(all((repository / "deploy" / name).is_file() for name in PRIVATE_FILES))
         self.assertTrue((repository / "deploy" / "certs" / "ca.pem").is_file())
+        self.assertFalse((repository / "deploy" / UNUSED_SEMP_DISCOVERY_PATH).exists())
+        self.assertNotIn("semp-discovery", result.stdout)
+
+    def test_private_control_hops_receive_distinct_256_bit_secrets(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+        values = {
+            name: (repository / "deploy" / name).read_text(encoding="ascii").strip()
+            for name in (
+                "secrets/scenario-control-secret",
+                "secrets/fleet-control-secret",
+            )
+        }
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({PASSWORD_HEX_LENGTH}, {len(value) for value in values.values()})
+        self.assertEqual(2, len(set(values.values())))
+
+    def test_it_generates_the_scenario_service_credential_and_environment_pair(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        credential_name = "secrets/broker-scenario-service-password"
+
+        # Act
+        result = self.generate(repository)
+        declarations = _role_environment(repository / "deploy")
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue((repository / "deploy" / credential_name).is_file())
+        self.assertEqual(
+            "scenario-service",
+            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
+        )
+        self.assertEqual(
+            (repository / "deploy" / credential_name).read_text(encoding="utf-8"),
+            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
+        )
 
     def test_private_files_are_mode_0600_and_the_public_certificate_is_readable(self) -> None:
         # Arrange
@@ -285,6 +337,18 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
             _expected_passwords(deploy),
             _suffixed(_role_environment(deploy), "_PASSWORD"),
         )
+
+    def test_the_role_environment_file_carries_a_generated_session_secret(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        self.generate(repository)
+
+        # Assert
+        secret = _role_environment(repository / "deploy").get(SESSION_VARIABLE, "")
+        self.assertEqual(PASSWORD_HEX_LENGTH, len(secret))
+        self.assertTrue(all(character in "0123456789abcdef" for character in secret))
 
     def test_a_deleted_role_environment_file_is_rewritten_without_rotating_anything(self) -> None:
         # Arrange

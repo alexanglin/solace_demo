@@ -24,7 +24,7 @@ command -v docker >/dev/null 2>&1 || {
 	exit 1
 }
 docker image inspect "$IMAGE" >/dev/null 2>&1 || {
-	printf 'MISSING: %s is not built; run "just up --profile mesh" first\n' "$IMAGE" >&2
+	printf 'MISSING: %s is not built; run "just up" first\n' "$IMAGE" >&2
 	exit 1
 }
 

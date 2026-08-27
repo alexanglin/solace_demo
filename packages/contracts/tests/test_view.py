@@ -25,9 +25,17 @@ from aerial_rescue_contracts.view import (
 )
 
 TELEMETRY_TYPE: Final = "aerial-rescue.v1.drone.telemetry"
+CONNECTIVITY_TYPE: Final = "aerial-rescue.v1.drone.event.connectivity-changed"
+MISSION_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.mission.event.lifecycle"
+SECTOR_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.sector.event.lifecycle"
 TELEMETRY_SCHEMA: Final = (
     "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
 )
+LIFECYCLE_SOURCES: Final = {
+    CONNECTIVITY_TYPE: "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+    MISSION_LIFECYCLE_TYPE: "urn:aerial-rescue:mission-lifecycle:run-synthetic-0001",
+    SECTOR_LIFECYCLE_TYPE: "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
+}
 MISSION: Final = "m-2026-0001"
 DRONE: Final = "drone-vision-01"
 TIME: Final = "2026-08-21T09:15:30.250Z"
@@ -70,6 +78,22 @@ def _envelope(event_type: str = TELEMETRY_TYPE) -> Envelope:
         correlation_id="c-0000000001",
         traceparent=TRACEPARENT,
         data=dict(TELEMETRY_PAYLOAD),
+    )
+
+
+def _lifecycle_envelope(event_type: str, data: dict[str, object]) -> Envelope:
+    """Return one lifecycle envelope at the projection boundary."""
+    return Envelope(
+        id="e-0000000002",
+        source=LIFECYCLE_SOURCES[event_type],
+        type=event_type,
+        subject=MISSION,
+        time=TIME,
+        dataschema=BINDINGS[event_type].dataschema,
+        sequence="000000000000043",
+        correlation_id="c-0000000001",
+        traceparent=TRACEPARENT,
+        data=data,
     )
 
 
@@ -139,6 +163,180 @@ class ProjectionTests(unittest.TestCase):
         # Assert
         self.assertEqual((ViewRefusal.UNPROJECTED, "type", "aerial-rescue.v1.drone.event"), refusal)
 
+    def test_valid_lifecycle_payloads_project_through_the_same_normalized_boundary(self) -> None:
+        # Arrange
+        envelopes = (
+            _lifecycle_envelope(
+                CONNECTIVITY_TYPE,
+                {"missionId": MISSION, "droneId": DRONE, "connectivity": "DEGRADED"},
+            ),
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"missionId": MISSION, "lifecycle": "SEARCHING"},
+            ),
+            _lifecycle_envelope(
+                SECTOR_LIFECYCLE_TYPE,
+                {
+                    "missionId": MISSION,
+                    "sectorId": "sector-01",
+                    "state": "ASSIGNED",
+                    "assignedMemberId": DRONE,
+                },
+            ),
+            _lifecycle_envelope(
+                SECTOR_LIFECYCLE_TYPE,
+                {
+                    "missionId": MISSION,
+                    "sectorId": "sector-02",
+                    "state": "UNASSIGNED",
+                    "assignedMemberId": None,
+                },
+            ),
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(
+            ("connectivityChanged", "missionLifecycle", "sectorLifecycle", "sectorLifecycle"),
+            tuple(event.kind for event in events),
+        )
+
+    def test_malformed_lifecycle_payloads_are_refused_before_normalized_projection(self) -> None:
+        # Arrange
+        cases = (
+            _lifecycle_envelope(
+                CONNECTIVITY_TYPE,
+                {"missionId": MISSION, "droneId": DRONE, "connectivity": "UNKNOWN"},
+            ),
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"lifecycle": "SEARCHING"},
+            ),
+            _lifecycle_envelope(
+                SECTOR_LIFECYCLE_TYPE,
+                {
+                    "missionId": MISSION,
+                    "sectorId": "sector-01",
+                    "state": "UNASSIGNED",
+                    "assignedMemberId": DRONE,
+                },
+            ),
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"missionId": MISSION, "lifecycle": "SEARCHING", "reason": "synthetic"},
+            ),
+            _lifecycle_envelope(
+                CONNECTIVITY_TYPE,
+                {"missionId": MISSION, "droneId": "Drone-01", "connectivity": "CONNECTED"},
+            ),
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"missionId": "another-mission", "lifecycle": "SEARCHING"},
+            ),
+        )
+
+        # Act
+        outcomes = []
+        for envelope in cases:
+            refusal, attribute, value = _refusal_of(envelope)
+            outcomes.append((refusal.name, attribute, value))
+
+        # Assert
+        self.assertEqual(
+            [
+                ("MALFORMED_PAYLOAD", "connectivity", "UNKNOWN"),
+                ("MALFORMED_PAYLOAD", "missionId", None),
+                ("MALFORMED_PAYLOAD", "assignedMemberId", DRONE),
+                ("MALFORMED_PAYLOAD", "reason", "synthetic"),
+                ("MALFORMED_PAYLOAD", "droneId", "Drone-01"),
+                ("MALFORMED_PAYLOAD", "missionId", "another-mission"),
+            ],
+            outcomes,
+        )
+
+
+class ClosedVocabularyProjectionTests(unittest.TestCase):
+    """Every member of every closed lifecycle vocabulary crosses the boundary."""
+
+    def test_every_connectivity_value_projects(self) -> None:
+        # Arrange
+        values = ("CONNECTED", "DEGRADED", "OFFLINE")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                CONNECTIVITY_TYPE,
+                {"missionId": MISSION, "droneId": DRONE, "connectivity": value},
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["connectivity"]) for event in events))
+
+    def test_every_mission_lifecycle_value_projects(self) -> None:
+        # Arrange
+        values = ("PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                MISSION_LIFECYCLE_TYPE,
+                {"missionId": MISSION, "lifecycle": value},
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["lifecycle"]) for event in events))
+
+    def test_every_sector_state_projects_under_its_own_assignment_rule(self) -> None:
+        # Arrange
+        values = ("UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED")
+        envelopes = tuple(
+            _lifecycle_envelope(
+                SECTOR_LIFECYCLE_TYPE,
+                {
+                    "missionId": MISSION,
+                    "sectorId": "sector-01",
+                    "state": value,
+                    "assignedMemberId": None if value == "UNASSIGNED" else DRONE,
+                },
+            )
+            for value in values
+        )
+
+        # Act
+        events = tuple(project(envelope) for envelope in envelopes)
+
+        # Assert
+        self.assertEqual(values, tuple(str(event.data["state"]) for event in events))
+
+    def test_the_first_unknown_member_refused_is_the_lowest_in_byte_order(self) -> None:
+        # Arrange
+        envelope = _lifecycle_envelope(
+            MISSION_LIFECYCLE_TYPE,
+            {
+                "missionId": MISSION,
+                "lifecycle": "SEARCHING",
+                "zeta": "last-inserted-but-highest",
+                "alpha": "later-inserted-but-lowest",
+            },
+        )
+
+        # Act
+        refusal = _refusal_of(envelope)
+
+        # Assert
+        self.assertEqual(
+            (ViewRefusal.MALFORMED_PAYLOAD, "alpha", "later-inserted-but-lowest"),
+            refusal,
+        )
+
 
 class ProjectionTableTests(unittest.TestCase):
     def test_every_projection_names_an_event_type_with_a_bound_payload_schema(self) -> None:
@@ -162,6 +360,24 @@ class ProjectionTableTests(unittest.TestCase):
         self.assertEqual(
             ("droneTelemetry", EventClass.TELEMETRY), (projection.kind, projection.event_class)
         )
+
+    def test_all_three_lifecycle_sources_have_their_normalized_projection(self) -> None:
+        # Arrange
+        expected = {
+            CONNECTIVITY_TYPE: ("connectivityChanged", EventClass.CONNECTIVITY),
+            MISSION_LIFECYCLE_TYPE: ("missionLifecycle", EventClass.MISSION),
+            SECTOR_LIFECYCLE_TYPE: ("sectorLifecycle", EventClass.MISSION),
+        }
+
+        # Act
+        projected = {
+            event_type: (PROJECTIONS[event_type].kind, PROJECTIONS[event_type].event_class)
+            for event_type in expected
+            if event_type in PROJECTIONS
+        }
+
+        # Assert
+        self.assertEqual(expected, projected)
 
 
 class DroppabilityTests(unittest.TestCase):

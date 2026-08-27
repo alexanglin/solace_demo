@@ -18,14 +18,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
 from aerial_rescue_store.migration import (
+    APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
+    COMMAND_OUTBOX_TABLE,
+    CONNECTION_ATTRIBUTE,
+    IDEMPOTENCY_CLAIM_TABLE,
     PARAMSTYLE,
     SCRIPT_DIRECTORY,
+    URL_OPTION,
     VERSION_SERIES,
     downgrade_statements,
     environment_arguments,
     heads,
+    live_config,
     migration_config,
     revisions,
     upgrade_statements,
@@ -35,6 +41,15 @@ if TYPE_CHECKING:
     from sqlalchemy import Connection
 
 PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
+
+FIRST_REVISION: Final = "0001_audit_log"
+SECOND_REVISION: Final = "0002_approval"
+THIRD_REVISION: Final = "0003_idempotency"
+FOURTH_REVISION: Final = "0004_command_outbox"
+FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
+SECOND_TO_THIRD: Final = f"{SECOND_REVISION}:{THIRD_REVISION}"
+THIRD_TO_FOURTH: Final = f"{THIRD_REVISION}:{FOURTH_REVISION}"
+"""Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
 class TreeLayoutTests(unittest.TestCase):
@@ -153,6 +168,214 @@ class FirstRevisionTests(unittest.TestCase):
         )
 
 
+class SecondRevisionTests(unittest.TestCase):
+    """Rendered as the step from the first revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_first_revision_creates_the_approval_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {APPROVAL_TABLE}" in emitted,
+                f"CREATE TABLE {AUDIT_RECORD_TABLE}" in emitted,
+            ),
+        )
+
+    def test_one_proposal_has_one_approval_because_the_proposal_is_the_key(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (proposal_id)", emitted)
+
+    def test_the_state_is_constrained_to_the_protocols_own_spellings(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertIn(
+            "CHECK (state IN ('requested', 'approved', 'rejected', 'expired', "
+            "'superseded', 'executed'))",
+            emitted,
+        )
+
+    def test_both_clock_readings_keep_the_forms_they_were_read_in(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIRST_TO_SECOND)
+
+        # Assert
+        self.assertEqual(
+            (True, True),
+            (
+                "issued_wall VARCHAR(24) NOT NULL" in emitted,
+                "issued_monotonic_milliseconds BIGINT NOT NULL" in emitted,
+            ),
+        )
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, FIRST_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {APPROVAL_TABLE}" in emitted,
+                f"DROP TABLE {AUDIT_RECORD_TABLE}" in emitted,
+            ),
+        )
+
+
+class ThirdRevisionTests(unittest.TestCase):
+    """Rendered as the step from the second revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_second_revision_creates_the_claim_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+                f"CREATE TABLE {APPROVAL_TABLE}" in emitted,
+            ),
+        )
+
+    def test_the_key_is_the_claim_because_the_key_is_what_conflicts(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (idempotency_key)", emitted)
+
+    def test_the_kind_is_constrained_to_the_two_the_domain_names(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("CHECK (kind IN ('command', 'approval consumption'))", emitted)
+
+    def test_an_unanswered_claim_is_a_null_result_rather_than_an_absent_row(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, SECOND_TO_THIRD)
+
+        # Assert
+        self.assertIn("result BYTEA", emitted)
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, SECOND_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+                f"DROP TABLE {APPROVAL_TABLE}" in emitted,
+            ),
+        )
+
+
+class FourthRevisionTests(unittest.TestCase):
+    """Rendered as the step from the third revision, so what is asserted is the path."""
+
+    def test_the_step_from_the_third_revision_creates_the_outbox_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"CREATE TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+                f"CREATE TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+            ),
+        )
+
+    def test_one_command_holds_one_record_because_a_retry_republishes_it(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (command_id)", emitted)
+
+    def test_the_state_is_constrained_to_the_three_the_lifecycle_names(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("CHECK (state IN ('staged', 'reconciliation needed', 'confirmed'))", emitted)
+
+    def test_the_payload_keeps_the_canonical_bytes_it_was_accepted_as(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, THIRD_TO_FOURTH)
+
+        # Assert
+        self.assertIn("payload BYTEA NOT NULL", emitted)
+
+    def test_the_step_back_drops_only_the_table_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = downgrade_statements(config, THIRD_REVISION)
+
+        # Assert
+        self.assertEqual(
+            (True, False),
+            (
+                f"DROP TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+                f"DROP TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
+            ),
+        )
+
+
 class EnvironmentArgumentTests(unittest.TestCase):
     def test_no_connection_renders_statements_against_the_configured_url(self) -> None:
         # Arrange
@@ -201,6 +424,40 @@ class EnvironmentArgumentTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(rendered)
+
+
+class LiveConfigurationTests(unittest.TestCase):
+    def test_a_live_configuration_carries_the_connection_it_applies_through(self) -> None:
+        # Arrange
+        connection = cast("Connection", object())
+
+        # Act
+        config = live_config(connection)
+
+        # Assert
+        self.assertIs(connection, config.attributes[CONNECTION_ATTRIBUTE])
+
+    def test_a_live_configuration_reads_this_package_own_history(self) -> None:
+        # Arrange
+        offline = heads(migration_config(PROBE_URL))
+
+        # Act
+        live = heads(live_config(cast("Connection", object())))
+
+        # Assert
+        self.assertEqual(offline, live)
+
+    def test_a_live_configuration_applies_revisions_instead_of_rendering_them(self) -> None:
+        # Arrange
+        config = live_config(cast("Connection", object()))
+
+        # Act
+        arguments = environment_arguments(
+            config.attributes[CONNECTION_ATTRIBUTE], config.get_main_option(URL_OPTION)
+        )
+
+        # Assert
+        self.assertFalse(arguments.as_sql)
 
 
 if __name__ == "__main__":

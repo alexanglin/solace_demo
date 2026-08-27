@@ -36,6 +36,9 @@ Read the authority for the concern before editing it:
 | Least-privilege roles, grants, and broker projection | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
 | Delivery guarantee per topic family | [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md) |
 | Durable queue set, ownership, and the four written bounds | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| Lifecycle source families, scenario identity, grants, and queue delta | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
+| Recorder grant, combined lifecycle queue, and provisioning projections | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
+| Shared-project mission-control projection and lifecycle | [ADR-0123](../../docs/adr/0123-isolate-mission-control-state-and-broker-identities.md), [ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
 | Fixed Agent Mesh A2A namespace | [ADR-0064](../../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
 
 An Accepted ADR governs if code, tests, comments, or older evidence disagree. A change to a broker
@@ -120,9 +123,12 @@ exceptions. Preserve all of these properties:
   over-grants, but it is not the configured steady state and must never be reported as satisfying the
   Agent Mesh deployment.
 - Derive every profile's exceptions only from `grants()`, `may_use_a2a()`, and
-  `may_use_reply_channel()`. Keep the projection total across every `Principal`, `Access`, and
-  contracts `Family` value. The A2A exception is withheld until a namespace is supplied; the reply
-  channel is not, because it is a fixed topic that no configuration varies.
+  `may_use_reply_channel()`, then apply ADR-0120's one authorized narrowing: the recorder's
+  `DRONE_EVENT` subscribe exception is the exact `connectivity-changed` topic rather than the
+  family wildcard that would also reach salient detections. Keep the projection total across every
+  `Principal`, `Access`, and contracts `Family` value. The A2A exception is withheld until a
+  namespace is supplied; the reply channel is not, because it is a fixed topic that no
+  configuration varies.
 - Keep publish, subscribe, and shared-subscription defaults at deny. On the managed local broker, each
   deployed process must use an explicitly created identity bound to its role profile and generated
   credential. The current provisioner does not inventory arbitrary pre-existing usernames, so readback
@@ -172,12 +178,21 @@ unprovisioned broker, keep dependent clients unready, rerun the complete apply, 
 require both permitted positive controls and forbidden negative controls before claiming authorization
 is enforced.
 
-Queues are derived, never listed. The set is the subscribe grants intersected with the guaranteed
-families, so a queue exists only where the ACL already permits the subscription and a queue can
-narrow authority but never widen it. How each role's endpoints are realised is a table total over the
-nine roles, and `NONE` is provable rather than asserted: a `NONE` role must hold no guaranteed
-subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly one role carries it
-on ADR-0071's authority.
+Queues are derived, never listed. The global set follows subscribe grants and guaranteed families,
+except that ADR-0120 consolidates the recorder's three dashboard lifecycle subscriptions into one
+exclusive queue. The mission-control projection requires that queue and the dead-message queue. When it
+is applied to the shared broker, those endpoints are a required subset rather than an exclusive runtime
+inventory. A queue can narrow authority but never widen it. How each role's global endpoints are
+realised is a table total over the ten roles, and `NONE` is provable rather than asserted: a `NONE` role
+must hold no guaranteed subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly
+one role carries it on ADR-0071's authority.
+
+The same mission-control apply reconciles the fleet-simulator, scenario-service, and recorder ACL
+profiles and usernames because those are the broker clients among the seven dashboard extension
+targets. Other profiles, usernames, queues, and grants may be present for the shared runtime; production
+evidence asserts the required mission-control subset and must not treat unrelated inventory as a
+failure. The global projection remains total over all roles. Do not restore absent-service identities
+for symmetry.
 
 Every queue value is written rather than inherited. Five broker defaults are wrong here — redelivery
 retries forever, expiry is ignored, the per-queue spool exceeds the whole message VPN's, the
@@ -240,11 +255,10 @@ took. Preserve both. Client acknowledgement is asked for explicitly: auto-acknow
 message as soon as it is handed over, which would end the guarantee at the socket instead of at the
 durable outcome.
 
-Still absent: the bounded edge outbox, reconnect reconciliation, acknowledgement after a durable
-store commit, and exactly-once effects. No service consumes a queue yet, so "settle only after the
-owning durable outcome" is a rule with no implementation to check it against. When that lands, keep
-it here, contain the untyped vendor client behind the typed façade, and prove the official Solace
-client satisfies the need before adding a project-owned transport. Require Pydantic ingress,
+Still absent: the bounded edge outbox, reconnect reconciliation, and exactly-once effects. The recorder
+now consumes its combined lifecycle queue and settles only after the owning store transaction commits;
+that narrow consumer does not prove those broader claims. Keep the untyped vendor client behind the typed
+façade, and prove the official Solace client satisfies each need before adding a project-owned transport. Require Pydantic ingress,
 deterministic fakes, failure injection, and authorized live broker evidence before claiming
 reconnect, durability, or shutdown behavior. The offline suite proves what the adapter passes to the
 client, never that the broker accepted it — the first live apply refused two members the fake had
@@ -325,9 +339,10 @@ the canonical local-stack sequence in `CONTRIBUTING.md`, including the fixed nam
 uv run --frozen pytest -q tests/security/test_broker_authorization.py
 ```
 
-That suite proves its current publish and connect controls only. It does not prove subscription denial,
-A2A behavior, Cloud parity, or the live stale-exception delete path; test and record those separately
-when an affected change reaches them.
+That suite proves its current publish and connect controls plus the exact recorder and scenario-service
+direct-subscription controls it names. It does not prove every subscription grant, durable queue
+ownership or redelivery, A2A behavior, Cloud parity, TLS-downgrade closure, or the live stale-exception
+delete path; test and record those separately when an affected change reaches them.
 
 Inspect the complete diff and verify that grants, rendered subscriptions, SEMP state, secret redaction,
 configuration, and documentation agree. Report offline, live-container, and Cloud-showcase evidence as

@@ -28,11 +28,13 @@ Read the authority for the concern before editing it:
 | Closed, deny-by-default command authority | [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md) |
 | Approval time-to-live decision | [ADR-0042](../../docs/adr/0042-approval-time-to-live.md) |
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Scenario-service role and lifecycle-family grants | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Mission lifecycle states and transitions | [ADR-0072](../../docs/adr/0072-mission-lifecycle-states.md) |
 | Sector lifecycle states and the connectivity edges that drive them | [ADR-0073](../../docs/adr/0073-sector-lifecycle-states.md) |
 | Command dispatch states and the send budget that bounds them | [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) |
 | Evidence lifecycle states, and abstention as a state rather than a score | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 | Evidence score, ordinal bands, and the corroboration floor closing B31 and B32 | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
+| Outbox publication states, the central bound, and what an overflow does | [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) |
 
 An Accepted ADR governs if code, tests, tables, or prose disagree. Do not edit an Accepted record to
 change a decision. A new command kind, authority grant, approval rule, state transition, gating
@@ -64,10 +66,12 @@ and do not duplicate these policy rules in a service, broker callback, dashboard
 | `src/aerial_rescue_domain/idempotency.py` | Producer sequence and repeated-operation decisions |
 | `src/aerial_rescue_domain/mission.py` | Deny-by-default mission lifecycle table and terminal set |
 | `src/aerial_rescue_domain/operations.py` | Closed command-gateway operations and their actuation table |
+| `src/aerial_rescue_domain/outbox.py` | Outbox publication lifecycle: what the broker reported, kept apart from what a drone did ([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)) |
 | `src/aerial_rescue_domain/principals.py` | Closed broker roles, total publish/subscribe grant tables, and the A2A and reply-channel scopes |
 | `src/aerial_rescue_domain/sectors.py` | Deny-by-default sector lifecycle table and terminal set |
 | `src/aerial_rescue_domain/scoring.py` | Evidence score, ordinal bands, and the two escalation gates |
-| `tests/` | Unit, refusal, boundary, totality, and property evidence for the package |
+| `tests/` | Unit, refusal, boundary, and totality evidence for the package |
+| `tests/properties/` | The property class, decomposed here when the directory reached [ADR-0033](../../docs/adr/0033-bound-directory-fan-out.md)'s fan-out cap. Every module in it shares one constraint -- `derandomize` so a flapping example set cannot turn the mutation score into a moving number |
 
 Keep the public surface deliberate. New domain behavior belongs in a focused module with explicit
 types and tests, not in `__init__.py` as an unrelated convenience. Do not add a port or abstraction

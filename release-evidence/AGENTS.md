@@ -39,7 +39,7 @@ four distinct boundaries:
 | `event-mesh-gateway-first-run.md` | Live Event Mesh Gateway ingress: one salient CloudEvent becoming one structured A2A task |
 | `event-mesh-tool-first-run.md` | Live Event Mesh Tool egress: one request becoming one non-actuating command-gateway response |
 
-`phase-2/` and `phase-3/` carry the delivery and simulator records:
+`phase-2/` and `phase-3/` carry the delivery, simulator, and dashboard records:
 
 | Record | Observed boundary |
 | --- | --- |
@@ -47,6 +47,9 @@ four distinct boundaries:
 | `phase-2/backlog-recovery-first-run.md` | The first backlog-recovery measurement: 500 spooled commands drained by a paced consumer at the reference fleet size |
 | `phase-3/fleet-simulator-first-run.md` | Live direct telemetry and the mission, sector, and connectivity fold |
 | `phase-3/command-dispatch-first-run.md` | One command spooled, taken by a running consumer, answered, and settled |
+| `phase-3/durable-store-first-run.md` | The first Alembic revision this project applied to a cluster, on a database the run creates and drops, with both declared constraints enforced |
+| `phase-3/durable-transaction-first-run.md` | The four-revision history walked up and back down, the server-side bounds and isolation read back from a session, three live races, and ADR-0006's three writes committing and rolling back together |
+| `phase-3/wilderness-dashboard-production-first-run.md` | The first clean-source shared-project dashboard rebuild, fixture and production browser acceptance, bounded soak, and focused live store and broker controls |
 
 The record itself owns the dated observation. Current capability claims belong in `README.md`, phase
 status and unfinished delivery risks belong in the implementation plan, measured parameters belong in

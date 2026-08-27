@@ -1,9 +1,18 @@
 [project]
 name = "aerial-rescue-dashboard-api"
 version = "0.0.0"
-description = "FastAPI scenario control, approvals, health, readiness, and SSE."
+description = "FastAPI scenario control, replay, health, readiness, and SSE."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = [
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+    "aerial-rescue-observability",
+    "aerial-rescue-store",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "pydantic==2.13.4",
+    "uvicorn==0.52.3",
+]
 
 [build-system]
 requires = ["hatchling"]

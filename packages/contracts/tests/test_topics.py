@@ -1,4 +1,4 @@
-"""The eleven topic families, their level grammar, and the type binding.
+"""The thirteen topic families, their level grammar, and the type binding.
 
 Each refusal is asserted by its structured reason and, where a level is at fault, by the
 parameter it occupied, so a producer learns which value to fix rather than reading prose.
@@ -154,9 +154,62 @@ class FamilyFormattingTests(unittest.TestCase):
         # Assert
         self.assertEqual({namespace_prefix()}, prefixes)
 
+    def test_lifecycle_topics_format_parse_and_bind_to_their_concrete_types(self) -> None:
+        # Arrange
+        cases = (
+            (
+                "DRONE_EVENT",
+                "drone/{droneId}/event/{eventType}",
+                {"droneId": "drone-01", "eventType": "connectivity-changed"},
+                "aerial-rescue/v1/mission-01/drone/drone-01/event/connectivity-changed",
+                "aerial-rescue.v1.drone.event.connectivity-changed",
+            ),
+            (
+                "MISSION_EVENT",
+                "mission/event/{eventType}",
+                {"eventType": "lifecycle"},
+                "aerial-rescue/v1/mission-01/mission/event/lifecycle",
+                "aerial-rescue.v1.mission.event.lifecycle",
+            ),
+            (
+                "SECTOR_EVENT",
+                "sector/{sectorId}/event/{eventType}",
+                {"sectorId": "sector-01", "eventType": "lifecycle"},
+                "aerial-rescue/v1/mission-01/sector/sector-01/event/lifecycle",
+                "aerial-rescue.v1.sector.event.lifecycle",
+            ),
+        )
+
+        # Act
+        outcomes: list[tuple[str, str | None, str | None, str | None, tuple[str, str] | None]] = []
+        for name, _template, parameters, topic_text, type_text in cases:
+            family = Family.__members__.get(name)
+            if family is None:
+                outcomes.append((name, None, None, None, None))
+                continue
+            topic = Topic(family, "mission-01", parameters)
+            outcomes.append(
+                (
+                    name,
+                    family.value,
+                    format_topic(topic),
+                    event_type(topic),
+                    (parse_topic(topic_text).family.name, parse_event_type(type_text)[0].name),
+                )
+            )
+
+        # Assert
+        self.assertEqual(
+            [
+                (name, template, topic_text, type_text, (name, name))
+                for name, template, _, topic_text, type_text in cases
+            ],
+            outcomes,
+        )
+
 
 class FamilyInvariantTests(unittest.TestCase):
-    def test_the_eleven_templates_are_pairwise_distinguishable_by_literal_levels(self) -> None:
+    def test_the_thirteen_templates_are_pairwise_distinguishable_by_literal_levels(self) -> None:
         # Arrange
         signatures = tuple(
             (
@@ -170,7 +223,7 @@ class FamilyInvariantTests(unittest.TestCase):
         distinct = len(set(signatures))
 
         # Assert
-        self.assertEqual((11, 11), (len(Family), distinct))
+        self.assertEqual((13, 13), (len(Family), distinct))
 
     def test_parameters_and_type_suffix_are_read_from_the_template(self) -> None:
         # Arrange
@@ -638,6 +691,8 @@ class FamilyNameTests(unittest.TestCase):
             "agent.proposal",
             "agent.response",
             "audit",
+            "mission.event",
+            "sector.event",
         )
 
         # Act

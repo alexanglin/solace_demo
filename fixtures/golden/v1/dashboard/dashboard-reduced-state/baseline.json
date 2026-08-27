@@ -1,0 +1,36 @@
+{
+  "canonicalizationVersion": 1,
+  "stateVersion": 1,
+  "currentMission": {
+    "identifier": "mission-synthetic-0001",
+    "lifecycle": "PLANNED",
+    "predecessorIdentifier": null
+  },
+  "fleet": [
+    {
+      "identifier": "drone-comms-03",
+      "participation": "DECLARED_ONLY"
+    },
+    {
+      "identifier": "drone-sim-01",
+      "participation": "SIMULATED",
+      "connectivity": "CONNECTED",
+      "telemetry": {
+        "latitudeMicrodegrees": 44475000,
+        "longitudeMicrodegrees": -79245000,
+        "batteryPercent": 96,
+        "altitudeMetres": 83,
+        "headingDegrees": 45,
+        "groundSpeedCentimetresPerSecond": 950
+      }
+    }
+  ],
+  "latestAuditOrdinal": 4,
+  "sectors": [
+    {
+      "identifier": "sector-01",
+      "state": "ASSIGNED",
+      "assignedMemberId": "drone-sim-01"
+    }
+  ]
+}

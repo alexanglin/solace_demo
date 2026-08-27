@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
+  "description": "The versioned redacted error response shared by public dashboard routes.",
+  "type": "object",
+  "required": [
+    "errorVersion",
+    "errorCode",
+    "message"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "errorVersion": {
+      "const": "dashboard-error/v1"
+    },
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "ASSET_NOT_FOUND",
+        "AUTHENTICATION_FAILED",
+        "BODY_TOO_LARGE",
+        "CANCELLATION_NOT_ESTABLISHED",
+        "CANONICAL_JSON_INVALID",
+        "DEPENDENCY_UNAVAILABLE",
+        "HOST_INVALID",
+        "IDEMPOTENCY_CONFLICT",
+        "IDEMPOTENCY_KEY_INVALID",
+        "INTERNAL_FAILURE",
+        "METHOD_NOT_ALLOWED",
+        "OPERATION_CONFLICT",
+        "ORIGIN_INVALID",
+        "REPLAY_SESSION_NOT_FOUND",
+        "RUN_CONFLICT",
+        "SCENARIO_NOT_FOUND",
+        "SCENARIO_REVISION_MISMATCH",
+        "SCHEMA_INVALID",
+        "SSE_CAPACITY_EXCEEDED",
+        "UNSUPPORTED_MEDIA_TYPE"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  }
+}

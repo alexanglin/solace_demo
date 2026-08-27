@@ -15,11 +15,12 @@ numeric values into this file:
 | Broker substrate and non-gating Cloud showcase | [ADR-0043](../docs/adr/0043-docker-broker-with-solace-cloud-showcase.md) |
 | Runtime, images, services, profiles, and ports | [ADR-0044](../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
 | Executable Compose and Dockerfile policy | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md) |
-| Per-checkout certificate authority and secret layout | [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md) |
+| Per-checkout certificate authority and consumed secret inventory | [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0129](../docs/adr/0129-generate-only-consumed-local-secrets.md) |
 | Deploy scanning and actionable image-pin policy | [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
 | PostgreSQL major version and durable volume layout | [ADR-0060](../docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) |
-| Broker identities, grants, and A2A namespace | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0064](../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
+| Broker identities, grants, lifecycle sources, projections, and A2A namespace | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0064](../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md), [ADR-0120](../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
 | Web UI exposure boundary | [ADR-0065](../docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) |
+| Dashboard relay, shared-project mission-control extension, and host-publisher bridges | [ADR-0096](../docs/adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md), [ADR-0117](../docs/adr/0117-select-the-exact-mission-control-service-closure.md), [ADR-0131](../docs/adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md), [ADR-0139](../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
 | Current runtime measurements and limits | [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Supported commands, recovery, and current profile status | [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md) |
 
@@ -35,6 +36,7 @@ runtime boundary change requires the record and coordinated updates required by 
 | `agent-mesh/plugin-requirements.txt` | Hash-locked runtime plugins mirrored from `agent-mesh/uv.lock` |
 | `application/Dockerfile` | The locked root-workspace application image |
 | `application/uv-requirements.txt` | Hash-locked installer used while building that image |
+| `caddy/Caddyfile` | Header-preserving, unbuffered relay from loopback port 8080 to the private dashboard Unix socket |
 | ignored `certs/` | Public per-checkout trust material only |
 | ignored `secrets/` | Private keys, passwords, role environment, and other generated credentials |
 
@@ -51,6 +53,10 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
 - Publish ports on `127.0.0.1` only and never use host networking. Loopback binding is a compensating
   control for the Agent Mesh Web UI and its accepted upstream risk, not developer convenience that may
   be relaxed locally.
+- Give broker, PostgreSQL, and Caddy separate single-member host-publisher bridges. Each bridge disables
+  IP masquerade and defaults host binding to `127.0.0.1`; no other service may join one or use it as an
+  outbound path. Their application edges remain on the dedicated internal networks or, for Caddy, the
+  private Unix socket.
 - Keep Ollama on the host bridge and never expose it publicly. Keep broker management and plaintext
   messaging ports inside the Compose network unless an accepted decision changes the boundary.
 - Supply credentials through declared environment indirection or files under `/run/secrets/`. Never put
@@ -61,7 +67,9 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
   non-secret structural work and redact any runtime evidence.
 - Preserve one least-privilege broker identity per authorized role. Do not restore the factory fallback,
   share a convenience identity, or issue an identity to a component with no recorded broker role.
-- Keep a healthcheck on every service and readiness ordering on every dependent service. A static green
+- Keep a healthcheck on every long-running service and readiness ordering on every dependent service.
+  Only the enumerated migration and replay-validator one-shot jobs may omit one; they must use
+  `restart: "no"`, and dependants wait for `service_completed_successfully`. A static green
   gate proves file policy only; it does not prove that the probe exists in the image, TLS is served,
   data survives recreation, authorization was provisioned, or a profile starts.
 - Preserve non-root execution, numeric project-owned users, `no-new-privileges`, and read-only trust and
@@ -106,15 +114,41 @@ and positive and negative conformance tests together.
   and never place Cloud credentials in continuous integration or tracked files.
 - A bind-mounted Agent Mesh configuration does not restart the running process. Recreate the container
   before claiming a configuration or image change was exercised.
-- `just up *ARGS` places arguments before the `up` subcommand, so use it for global flags such as
-  `--profile`. For `up` options such as `--force-recreate` or `--build`, use the raw command with those
-  flags after `up`:
+- `just mission-control-up` is the supported dashboard extension entry point inside the existing
+  `aerial-rescue-mesh` project. It requires the shared broker and PostgreSQL containers to exist and be
+  healthy, records their IDs, selects seven dashboard-owned targets with `--no-deps`, and verifies both
+  IDs after startup. It never creates, starts, updates, or replaces either shared stateful service.
+- The seven selected targets are migration, fleet simulator, scenario service, recorder, replay
+  validator, dashboard API, and Caddy. The recipe applies the bounded mission-control broker projection,
+  starts fleet command intake in publication-only mode, and shares recorder freshness through a tmpfs
+  volume. Required queues and grants are a subset of the shared broker inventory; unrelated runtime
+  endpoints are neither an isolation failure nor something dashboard startup may delete.
+- `mission-control-up *ARGS` forwards Compose `up` flags only to those seven extension targets.
+  `--no-deps` and the post-start identity checks protect the shared broker and PostgreSQL containers.
+  Normal `just up` remains their lifecycle owner.
+- `mission-control-down` stops only the five long-running dashboard services: fleet simulator,
+  scenario service, recorder, dashboard API, and Caddy. It must never issue Compose `down`, stop broker
+  or PostgreSQL, remove project networks or volumes, or delete persisted dashboard history. The status
+  and log recipes may inspect all seven extension targets, including the two completed one-shot jobs.
+- Production and soak controls record the shared broker and PostgreSQL container IDs before startup and
+  after cleanup and require equality. Fault injection may target only dashboard-owned services in the
+  shared project.
+- `just up *ARGS` places arguments after the `up` subcommand, so `up` options such as
+  `--force-recreate` and `--build` pass through directly. Select an extra profile with the
+  `COMPOSE_PROFILES` environment variable, which Compose reads on its own:
 
 ```sh
-docker compose --env-file .env --env-file deploy/secrets/.env.roles \
-  -f deploy/compose.yaml --profile mesh \
-  up --detach --wait --force-recreate --build
+just up --force-recreate --build
+COMPOSE_PROFILES=services just up
+just mission-control-up --build
+just mission-control-ps
+just mission-control-logs
+just mission-control-down
 ```
+
+  `just up` is the supported entry point. A bare `docker compose up` reads only `.env`, where the six
+  Agent Mesh role credentials do not live, so the references expand to empty and the broker refuses
+  the connection as the shutdown factory `default` username, retrying without an error.
 
 ## 6. Required verification
 

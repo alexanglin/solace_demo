@@ -1,10 +1,13 @@
-"""The nesting relations ADR-0085 decides, checked where a bounds set is built.
+"""The nesting relations ADR-0090 decides, checked where a bounds set is built.
 
 The individual numbers are the record's; what this module proves is that a set violating the
-arithmetic behind them cannot be constructed at all. Three relations are load-bearing: every
+arithmetic behind them cannot be constructed at all. Four relations are load-bearing: every
 duration is positive, the lock wait exceeds the server's deadlock detection so a deadlock and a
-contended wait stay distinguishable, and the idle-in-transaction bound contains the longest
-legal transaction, which is one lock wait plus one statement.
+contended wait stay distinguishable, the lock wait stays strictly below the statement time so a
+contended wait and a stuck statement stay distinguishable
+([ADR-0090](../../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md)), and the
+idle-in-transaction bound contains the longest legal transaction, which is one lock wait plus
+one statement.
 
 The last test assembles the constants this module publishes and holds them to the same
 relations, so the values a composition root is expected to supply cannot drift out of the shape
@@ -145,6 +148,30 @@ class NestingTests(unittest.TestCase):
         # Assert
         self.assertIsNone(refusal)
 
+    def test_a_lock_wait_at_the_statement_time_is_refused(self) -> None:
+        # Arrange
+        equal = STATEMENT_TIMEOUT_MILLISECONDS
+
+        # Act
+        with pytest.raises(BoundsError) as captured:
+            replace(SUPPLIED, lock_timeout_milliseconds=equal)
+
+        # Assert
+        self.assertEqual(
+            (BoundsRefusal.LOCK_AT_OR_ABOVE_STATEMENT_TIME, equal),
+            (captured.value.refusal, captured.value.value),
+        )
+
+    def test_a_lock_wait_one_millisecond_below_the_statement_time_is_accepted(self) -> None:
+        # Arrange
+        below = STATEMENT_TIMEOUT_MILLISECONDS - 1
+
+        # Act
+        refusal = _refusal(lock_timeout_milliseconds=below)
+
+        # Assert
+        self.assertIsNone(refusal)
+
     def test_a_transaction_bound_below_a_lock_wait_plus_a_statement_is_refused(self) -> None:
         # Arrange
         parts = LOCK_TIMEOUT_MILLISECONDS + STATEMENT_TIMEOUT_MILLISECONDS
@@ -178,6 +205,7 @@ class SuppliedConstantTests(unittest.TestCase):
         # Act
         relations = (
             supplied.lock_timeout_milliseconds > SERVER_DEADLOCK_TIMEOUT_MILLISECONDS,
+            supplied.lock_timeout_milliseconds < supplied.statement_timeout_milliseconds,
             supplied.idle_in_transaction_timeout_milliseconds
             >= supplied.lock_timeout_milliseconds + supplied.statement_timeout_milliseconds,
             supplied.shutdown_grace_seconds * 1000
@@ -185,7 +213,17 @@ class SuppliedConstantTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((True, True, True), relations)
+        self.assertEqual((True, True, True, True), relations)
+
+    def test_the_lock_wait_is_the_target_the_checkout_bound_derives_from(self) -> None:
+        # Arrange
+        connected_command_path_milliseconds = CHECKOUT_TIMEOUT_SECONDS * 1000
+
+        # Act
+        lock_wait = LOCK_TIMEOUT_MILLISECONDS
+
+        # Assert
+        self.assertEqual(connected_command_path_milliseconds, lock_wait)
 
     def test_the_migration_wait_contains_the_clusters_own_healthcheck_envelope(self) -> None:
         # Arrange

@@ -1,0 +1,17 @@
+{
+  "frameVersion": "ordered-dashboard-event-frame/v1",
+  "cursor": "mission-cursor-b3Vm9sR6hL1c",
+  "digest": "a4eadb665ad81acdaccecc141b89d234efb79c62eecdef0087e0bf047f85f5ad",
+  "event": {
+    "auditOrdinal": 5,
+    "event": {
+      "kind": "missionLifecycle",
+      "eventClass": "MISSION",
+      "mission": "mission-synthetic-0001",
+      "time": "2026-08-24T12:00:05.000Z",
+      "data": {
+        "lifecycle": "SEARCHING"
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "healthVersion": "dashboard-health/v1",
+  "status": "alive",
+  "unexpected": true
+}

@@ -27,6 +27,7 @@ from aerial_rescue_contracts.envelope import (
     Envelope,
     EnvelopeError,
     EnvelopeRefusal,
+    _lifecycle_source_pattern,
     binding_for,
     check_topic_binding,
     decode_envelope,
@@ -123,6 +124,18 @@ COMMAND_RESULT_TOPIC = Topic(
     {"droneId": "drone-vision-01", "commandId": "cmd-2026-0001"},
 )
 
+LIFECYCLE_BASELINES = {
+    "drone-event-connectivity-changed": "drone_event_connectivity_changed_baseline.json",
+    "mission-event-lifecycle": "mission_event_lifecycle_baseline.json",
+    "sector-event-lifecycle": "sector_event_lifecycle_baseline.json",
+}
+"""Each accepted lifecycle source event, committed beside the other baselines.
+
+Naming the committed copy keeps this suite member-local. Mutation runs each Tier 1 member
+from a copied working directory (``docs/TESTING.md``), so a path resolved relative to the
+repository root does not survive the copy and resolves outside the repository instead.
+"""
+
 
 def _baseline() -> dict[str, object]:
     """Return a fresh copy of the baseline document."""
@@ -147,6 +160,14 @@ def _assign_sector_baseline() -> dict[str, object]:
 def _command_result_baseline() -> dict[str, object]:
     """Return a fresh copy of the drone's report on one command."""
     return deepcopy(COMMAND_RESULT_BASELINE)
+
+
+def _lifecycle_baseline(name: str) -> dict[str, object]:
+    """Return a fresh lifecycle source event from its committed baseline."""
+    return cast(
+        "dict[str, object]",
+        json.loads((BASELINES / LIFECYCLE_BASELINES[name]).read_text(encoding="utf-8")),
+    )
 
 
 def _with(**changes: object) -> dict[str, object]:
@@ -659,6 +680,105 @@ class BindingTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tuple((binding.family, True) for binding in bindings), facts)
+
+
+class LifecycleBindingTests(unittest.TestCase):
+    def test_the_three_lifecycle_types_bind_to_their_families_and_payload_schemas(self) -> None:
+        # Arrange
+        expected = {
+            "aerial-rescue.v1.drone.event.connectivity-changed": (
+                "DRONE_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/"
+                "drone-event-connectivity-changed.schema.json",
+            ),
+            "aerial-rescue.v1.mission.event.lifecycle": (
+                "MISSION_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/mission-event-lifecycle.schema.json",
+            ),
+            "aerial-rescue.v1.sector.event.lifecycle": (
+                "SECTOR_EVENT",
+                "https://aerial-rescue.invalid/schemas/v1/payload/sector-event-lifecycle.schema.json",
+            ),
+        }
+
+        # Act
+        actual = {
+            event_type_value: (binding.family.name, binding.dataschema)
+            for event_type_value in expected
+            if (binding := BINDINGS.get(event_type_value)) is not None
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
+
+    def test_each_accepted_lifecycle_source_parses_with_its_bound_run_identity(self) -> None:
+        # Arrange
+        names = (
+            "drone-event-connectivity-changed",
+            "mission-event-lifecycle",
+            "sector-event-lifecycle",
+        )
+
+        # Act
+        envelopes = tuple(parse_envelope(_lifecycle_baseline(name)) for name in names)
+
+        # Assert
+        self.assertEqual(
+            (
+                "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+                "urn:aerial-rescue:mission-lifecycle:run-synthetic-0001",
+                "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
+            ),
+            tuple(envelope.source for envelope in envelopes),
+        )
+
+    def test_the_lifecycle_source_pattern_wraps_one_identifier_in_the_urn_grammar(self) -> None:
+        """The pattern is built once at import, so its grammar is a compatibility surface."""
+        # Arrange
+        expected = (
+            "^urn:aerial-rescue:mission-lifecycle:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+        )
+
+        # Act
+        pattern = _lifecycle_source_pattern("mission-lifecycle")
+
+        # Assert
+        self.assertEqual(expected, pattern)
+        self.assertEqual(
+            pattern,
+            BINDINGS["aerial-rescue.v1.mission.event.lifecycle"].source_pattern,
+        )
+
+    def test_each_lifecycle_type_refuses_another_lifecycle_sources_run_identity(self) -> None:
+        # Arrange
+        cases = (
+            (
+                "drone-event-connectivity-changed",
+                "urn:aerial-rescue:mission-lifecycle:run-synthetic-0001",
+            ),
+            (
+                "mission-event-lifecycle",
+                "urn:aerial-rescue:sector-lifecycle:run-synthetic-0001",
+            ),
+            (
+                "sector-event-lifecycle",
+                "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+            ),
+        )
+
+        # Act
+        outcomes = []
+        for name, source in cases:
+            document = _lifecycle_baseline(name)
+            document["source"] = source
+            refusal, attribute, value = _refusal_of(document)
+            outcomes.append((refusal.name, attribute, value))
+
+        # Assert
+        self.assertEqual(
+            [("SOURCE_BINDING", "source", source) for _, source in cases],
+            outcomes,
+        )
 
 
 class SalientEventBindingTests(unittest.TestCase):

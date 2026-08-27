@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/mission-event-lifecycle.schema.json",
+  "description": "A scenario-owned mission lifecycle change.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "lifecycle"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "lifecycle": {
+      "enum": [
+        "PLANNED",
+        "SEARCHING",
+        "EXHAUSTED",
+        "ABORTED"
+      ]
+    }
+  }
+}

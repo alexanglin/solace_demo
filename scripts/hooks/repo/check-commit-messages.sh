@@ -38,12 +38,42 @@ git rev-parse --verify --quiet "$head^{commit}" >/dev/null || {
 	exit 2
 }
 
+# A shallow clone cannot answer "what does this range add": the endpoints resolve,
+# but the ancestry behind them does not, so `base..head` excludes nothing and walks
+# back to the repository's first commit. That reads as a pre-Conventional-Commits
+# message rather than as the truncated graph it is (docs/adr/0019 fails closed).
+if [ -n "$base" ] && [ "$base" != "$zero" ] &&
+	[ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+	# Same reasoning as the missing-remote-history case below, and the same answer.
+	# A shallow clone resolves both endpoints but not the ancestry behind them, so
+	# "$base..$head" excludes nothing and walks back to the first commit in the
+	# repository -- reporting history written before Conventional Commits as though
+	# this change introduced it. Validate the tip rather than that fiction, and say
+	# which range was not checked. CI validates the complete range in its
+	# commit-stage job, whose checkout no tooling has shallowed.
+	printf 'Shallow repository: validating %s only, not %s..%s\n' \
+		"$head" "$base" "$head" >&2
+	base=
+fi
+
 if [ -z "$base" ]; then
 	commits=$(git rev-list --max-count=1 "$head")
 elif [ "$base" = "$zero" ]; then
-	if [ -n "$remote" ] && git for-each-ref --format='%(refname)' "refs/remotes/$remote/" |
-		grep -q .; then
-		commits=$(git rev-list --reverse "$head" --not --remotes="$remote")
+	# Anchor on the target branch itself, not on "any ref this clone happens to
+	# hold". A CI checkout can carry remote refs that cover none of this branch's
+	# ancestry, and --remotes then excludes nothing: the walk reaches the root
+	# commit and fails on history written before Conventional Commits.
+	target=
+	if [ -n "$remote" ]; then
+		for candidate in "refs/remotes/$remote/HEAD" "refs/remotes/$remote/main"; do
+			if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+				target=$candidate
+				break
+			fi
+		done
+	fi
+	if [ -n "$target" ]; then
+		commits=$(git rev-list --reverse "$head" --not "$target")
 	else
 		# With no target-remote history there is no sound way to distinguish new
 		# commits from inherited local history. Validate HEAD rather than silently
@@ -57,6 +87,17 @@ else
 	}
 	commits=$(git rev-list --reverse "$base..$head")
 fi
+
+# Say which range was resolved and how large it is. A gate that validates the
+# wrong range reports "[Bad commit message] >> Initial commit" and nothing about
+# where that commit came from, which is indistinguishable from a genuinely bad
+# message until you can see the endpoints it used.
+printf 'commit-message range: base=%s head=%s remote=%s commits=%s\n' \
+	"${base:-<unset>}" "${head:-<unset>}" "${remote:-<unset>}" \
+	"$(printf '%s\n' "$commits" | grep -c .)" >&2
+printf 'commit-message graph: shallow=%s toplevel=%s base_ancestors=%s head_ancestors=%s\n' \
+	"$(git rev-parse --is-shallow-repository 2>&1)" "$(git rev-parse --show-toplevel 2>&1)" \
+	"$(git rev-list --count "$base" 2>&1)" "$(git rev-list --count "$head" 2>&1)" >&2
 
 message_dir=$(mktemp -d "${TMPDIR:-/tmp}/aerial-rescue-messages.XXXXXX")
 trap 'rm -rf "$message_dir"' 0 1 2 15

@@ -189,8 +189,8 @@ def _observe_while_publishing(
     )
     seen: list[str] = []
     built = receiver.build()
-    built.start()
     try:
+        built.start()
         _publish(payload, topic)
         for _ in range(seconds):
             message = built.receive_message(timeout=RECEIVE_POLL_MILLISECONDS)
@@ -226,7 +226,7 @@ class SalientEventIngressTests(unittest.TestCase):
 
         # Act
         observed = _observe_while_publishing(
-            Principal.RECORDER, AGENT_RESPONSE_TOPIC, RESPONSE_WINDOW_SECONDS, payload, topic
+            Principal.DASHBOARD_API, AGENT_RESPONSE_TOPIC, RESPONSE_WINDOW_SECONDS, payload, topic
         )
 
         # Assert

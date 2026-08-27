@@ -1,0 +1,6 @@
+{
+  "bootstrapVersion": "dashboard-bootstrap/v1",
+  "bearer": "synthetic-browser-bearer-do-not-persist",
+  "runtimeId": "runtime-synthetic-0001",
+  "unexpected": true
+}

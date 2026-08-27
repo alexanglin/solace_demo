@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/rpc/scenario-control-run-status.schema.json",
+  "description": "The scenario service's current mission-facing status for one private run.",
+  "type": "object",
+  "required": [
+    "controlVersion",
+    "scenarioId",
+    "scenarioRevision",
+    "missionId",
+    "runId",
+    "state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controlVersion": {
+      "const": 1
+    },
+    "scenarioId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "scenarioRevision": {
+      "const": 1
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "runId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "state": {
+      "enum": [
+        "PLANNED",
+        "SEARCHING",
+        "EXHAUSTED",
+        "ABORTED"
+      ]
+    }
+  }
+}

@@ -10,6 +10,460 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The fixed synthetic wilderness dashboard slice is production-qualified on a clean committed
+  revision.** Revision `db2b640` passed all 64 fixture cases in 42.0 seconds, all eight serial production
+  cases in 1.6 minutes, and the 61-sample soak in 30.3 minutes with the accepted RSS and file-descriptor
+  growth bounds, dashboard API process identity, and shared broker/PostgreSQL identities intact. The live
+  PostgreSQL suite passed 43 cases in 14.24 seconds and the expanded broker authorization suite passed 16
+  cases in 0.57 seconds. The final in-app replay reached ordinal 48 in `EXHAUSTED` state with its digest
+  shown as `Verified`. This closes A8, R7, and R9 for the twenty-simulated-plus-three-declared-only slice;
+  recorder telemetry receipt remains best-effort, and the broader evidence, approval, command, executable
+  edge-agent, and rescue workflows remain open
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **Related dashboard unit tests now have one scheduler at a time.** The commit hook still selects
+  tests with `vitest related`, but pre-commit filename partitions run serially so a large staged change
+  cannot launch several competing jsdom pools and turn valid five-second waits into resource-contention
+  failures. The complete coverage and integration suites remain unconditional pre-push gates
+  ([ADR-0144](docs/adr/0144-serialize-the-related-dashboard-test-hook.md)).
+
+- **Live fleet telemetry now survives a fleet-process restart without erasing retained history.**
+  [ADR-0140](docs/adr/0140-scope-live-telemetry-producers-to-one-mission.md) gives each simulated
+  drone/mission pair a deterministic bounded producer epoch. A restarted fleet may begin at sequence
+  zero without colliding with a predecessor source's durable recorder high-water, while publication and
+  best-effort recorder receipt remain independently measured.
+
+- **Pending resets now recover from recorder-owned terminal mission state.** Dashboard API startup skips
+  obsolete private cancellation for a durably `EXHAUSTED` or `ABORTED` predecessor, prepares the stored
+  successor identity, and retains the predecessor audit. A missing nonterminal run instead completes the
+  exact typed cancellation refusal without moving the pointer or crash-looping startup
+  ([ADR-0143](docs/adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+
+- **SSE pressure now stalls the downstream relay while the API remains live.**
+  [ADR-0138](docs/adr/0138-stall-the-publisher-not-the-api-for-sse-pressure.md) replaces the
+  producer-stopping API pause with a paused Caddy connection. The measured reference socket requires
+  [ADR-0141](docs/adr/0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md)'s two separately
+  acknowledged 512-event producers. Integration coverage separately proves that an active body drains
+  328 exact ordinals and that a started but stalled body emits one terminal overload after 257
+  non-droppable successors. [ADR-0142](docs/adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md)
+  retains those synthetic pressure rows in the shared PostgreSQL database instead of inventing a
+  destructive disposable-project cleanup path.
+
+- **Recovery and recorder internals now expose only values with consumers.**
+  [ADR-0137](docs/adr/0137-remove-unconsumed-recovery-and-recorder-results.md) removes the constant
+  `LOST_FLEET_RUN` recovery member and the discarded capture disposition, poll-count, and readiness
+  refresh returns. Stable identities still bind recovery, while durable store effects, guaranteed
+  receiver settlement, bounded reads, and the freshness file remain the tested operational evidence.
+
+- **Stream overload recovery is observable without holding authoritative state.** The browser applies
+  an immediate validated replacement snapshot while retaining a presentation-only live-region notice
+  for the one-second minimum selected by
+  [ADR-0135](docs/adr/0135-keep-overload-recovery-observable-without-delaying-state.md). Integration
+  coverage proves that the mission has already converged while the notice is visible and that its normal
+  lifecycle label returns after the bound.
+
+- **Accepted live operations now have a semantic snapshot consumer.** The production source session
+  selected by [ADR-0136](docs/adr/0136-bind-live-snapshots-to-accepted-run-identities.md) requires a
+  live snapshot's mission to match reduced state and requires the next post-mutation snapshot to match
+  both stable response identifiers. A crossed run retains the previous checkpoint instead of letting a
+  valid JSON shape confirm the wrong operation.
+
+- **Loopback publication is now a single-service ingress edge rather than a shared egress path.**
+  [ADR-0131](docs/adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md) gives broker,
+  PostgreSQL, and Caddy separate single-member bridges with IP masquerade disabled while retaining
+  explicit loopback host bindings. [ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)
+  supersedes ADR-0131's startup mechanics: broker and PostgreSQL must already be healthy, accepted
+  build/recreation flags apply only to the seven dashboard extensions, and the recipe verifies the two
+  shared container identities before and after startup. Static packaging tests hold the topology, while
+  the clean production and soak runs retained both shared identities
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **Frontend coverage now enforces its high-risk modules as strictly as backend Tier 1 coverage.**
+  [ADR-0130](docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md) keeps one complete Vitest
+  pass but requires 100% statements and branches independently for bootstrap decoding, the Ajv schema
+  registry, canonical digesting, ordered reduction, and mutation security. The typed report gate fails
+  on a missing named module or report entry, while every hand-written production file remains covered by
+  the global 95% statements, branches, functions, and lines gate.
+
+- **Production readiness and soak evidence now have active browser instruments.** The production runtime
+  validates both `200` and typed `503` readiness documents while keeping catalog responses `200`-only;
+  recorder loss renders its explicit blocker and recovery returns to `READY`. The restart case now clicks
+  the real reload control and proves a fresh bootstrap/snapshot, the validated runtime anchor is visible,
+  and replay runs last in the eight-case serial production inventory. A separate 61-sample Playwright
+  soak spans the accepted duration and fails on transport/readiness loss, process replacement, remote requests,
+  or dashboard API RSS/file-descriptor growth outside the ADR-0126 envelope without adding a production
+  probe route. On clean committed revision `db2b640`, the production inventory passed eight cases in 1.6
+  minutes and the soak passed its single case and all 61 samples in 30.3 minutes with process and shared
+  container identity stable
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **Per-checkout secret generation now emits only credentials with active consumers.**
+  [ADR-0129](docs/adr/0129-generate-only-consumed-local-secrets.md) removes the unreferenced SEMP
+  discovery password from generation, rotation, reporting, and inventory tests. The optional Event
+  Management Agent keeps its real environment boundary, but the repository now states plainly that it
+  neither provisions that read-only SEMP user nor generates its password.
+
+- **Production transport recovery is now a real browser path rather than a fixture-only state.** The
+  validated bootstrap runtime is anchored before live SSE starts, so an API restart before the first
+  snapshot locks mutations and requires a full reload. EventSource loss becomes offline after one
+  bounded six-second outage and reports recovery on the same API runtime. The browser-local source
+  schema no longer pretends transport can assert `runtimeChanged`; fake-clock, integration, and two
+  additional production Playwright cases cover the real behavior without adding a production test
+  route or changing the fixed 64-case fixture inventory.
+
+- **The normalized recording exporter now has one real, bounded production entrypoint.**
+  `python -m aerial_rescue_recorder.exporter` requires an exact synthetic mission and run, accepts only
+  the exhausted wilderness scenario at revision one, and uses the revision-0005 store repositories to
+  read its canonical prepared state plus at most 512 audit-ordered normalized events. It opens no broker
+  session, leaves capture as the default recorder process, and atomically creates one fixed NDJSON file
+  in an existing directory. Unknown, active, mismatched, malformed, incomplete, symlinked, nonregular,
+  raced, or pre-existing selections/targets refuse without leaking identifiers, overwriting bytes, or
+  leaving a partial file.
+
+- **The production dashboard build now has an active script-and-style byte gate.** One owner measures
+  every minified JavaScript chunk and CSS asset in Vite's `generateBundle` phase, fails an incomplete or
+  over-budget bundle before write, and derives Vite's chunk-warning value from the same bound. The
+  deterministic integration suite builds the actual production artifact and proves the refusal path;
+  [ADR-0122](docs/adr/0122-bound-production-dashboard-script-and-style-bytes.md) records the measured
+  decision and [`operating-parameters.md`](docs/operating-parameters.md#code-quality-gates) owns the
+  limit and instrument.
+
+- **R2/R4-R6/R8 and the A5-A7 dashboard are implemented without inert workflow
+  state.** The strict wilderness catalog preserves twenty-three declared members while projecting only
+  twenty simulations to authenticated private fleet control. The fleet and scenario runtimes provide
+  bounded idempotent start/status/cancel and lost-run recovery, and deterministic tests assert fourteen
+  ticks, 280 successful telemetry publications, and the guaranteed connectivity, sector, and mission
+  lifecycle paths.
+
+  Revision `0005_dashboard_runtime` persists the stable mission, run, and prepared state before scenario
+  HTTP. An uncertain start remains pending and reconciles that same run without repeating start. Reset
+  recovery skips obsolete private cancellation for a durably terminal predecessor, retains history, and
+  selects a fresh unstarted `PLANNED` successor; a missing nonterminal private run instead stores the
+  exact typed refusal without moving the pointer. A later Start activates the successor's stable
+  identity. Exact operation state/response bytes and audit ordinal are authority, so unused
+  mission/run/claim/completion timestamps and the application clock seam were removed. Focused
+  test-created PostgreSQL runs walk the five-revision history and prove start/reset/recovery, exact-byte
+  idempotency, predecessor retention, deduplication, and snapshot reads.
+
+  The strict FastAPI/Unix-socket API, bootstrap, bounded SSE, three validated browser sources, secure
+  mutation client, local MapLibre UI, semantic fleet/timeline surfaces, and replay controls are green in
+  their deterministic suites. On clean committed revision `db2b640`, all 64 fixed fixture cases passed in
+  42.0 seconds, the six masked screenshot cases were inspected, the four operator and four resilience
+  production cases passed in 1.6 minutes, and the 61-sample soak passed in 30.3 minutes. The final replay
+  reached ordinal 48 in `EXHAUSTED` state with its digest shown as `Verified`. A8 and R7 are complete for
+  this fixed synthetic slice; recorder telemetry receipt remains a separately observed best-effort value
+  rather than a completeness guarantee
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **R9 packages the exact production mission-control closure without changing normal Agent Mesh
+  startup.** `just mission-control-up` requires and identity-guards the healthy broker and PostgreSQL
+  containers already owned by the shared `aerial-rescue-mesh` project, then starts migration, fleet,
+  scenario, recorder, isolated replay validation, dashboard API, and Caddy as seven extension targets.
+  Matching stop, status, and log recipes never stop or replace the two shared stateful services. Caddy
+  alone publishes loopback port 8080 and relays unbuffered traffic to Uvicorn's UID/GID-10001 Unix socket
+  with same-origin security headers. Fleet and scenario control stay on dedicated internal networks
+  with distinct generated 256-bit secrets and no host ports.
+
+  The application image builds the dashboard through digest-pinned Node 26.7.0 and pnpm 11.23.0 with a
+  frozen lock, then copies only production Vite output into the non-root Python runtime. Migration and
+  replay validation are the two enumerated completion jobs; the validator has no network or secret,
+  reads the recording read-only, and writes to the shared project's named handoff volume before dashboard
+  startup. The artifact contracts keep the output bounded, and supported cleanup preserves that volume,
+  broker/PostgreSQL identities, and retained history.
+  Static policy, packaging, image-inventory, secret-generation, and exact-recipe tests cover the
+  topology. The clean production and soak runs retained the dashboard API process and both shared base
+  container identities, closing R9 for the fixed synthetic dashboard slice
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
+  implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
+  guaranteed, schema-bound mission, connectivity, and sector application events, gives each source an
+  independent run-scoped producer identity and sequence, and routes them through the receiver-only
+  recorder into durable audit order. The family, delivery, and ACL tables and their desired-state
+  provisioner include the scenario-service role. ADR-0120 subsequently narrows the recorder grant and
+  consolidates its lifecycle subscriptions; the current projection and measured boundaries are recorded
+  above.
+
+  [ADR-0112](docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) corrects the v1
+  snapshot and replay anchors with top-level `latestEventDigest`. The immutable reducer checkpoint
+  holds that witness outside digest-covered reduced mission state and hashes the exact ordered event
+  under `ordered-dashboard-event`, so exact duplicate handling is proved rather than inferred from an
+  ordinal. Snapshot and replay validators enforce that the witness is `null` exactly at ordinal zero;
+  it remains outside reduced state, event frames, replay integrity, and replay-state digests.
+
+  R3 and A4 now add frozen tuple-backed Python state and its asynchronous TypeScript twin. Both own
+  empty and prepared checkpoints, validate snapshot/replay anchors, apply ordered mission,
+  connectivity, telemetry, and sector events copy-on-write, and return structured applied, duplicate,
+  or refused outcomes without changing the prior checkpoint on refusal. Connectivity remains
+  explicit, sectors remain the sole assignment/lifecycle authority, and declared-only members never
+  gain telemetry or connectivity. Presentation timelines replace their validated snapshot baseline
+  and append only verified non-telemetry suffix events. The shared oracle compares canonical state
+  bytes, replay-state digests, ordered-event witnesses, fold outcomes, and timeline ordinals across ten
+  independent Python and TypeScript runs. A3, R3, and A4 are complete; the later A5-A7 and R6/R8 work is
+  recorded above without rewriting this increment's reducer evidence.
+
+- **The dashboard now has a production contract boundary generated from the schemas rather than from
+  its Playwright examples.** A2 commits one TypeScript module for each of the 18 dashboard schemas
+  plus a schema-ID mapping index. A strict Ajv 2020-12 registry statically registers the 11 schemas
+  that accept raw browser input, resolves their references offline, refuses unknown fields without
+  coercing or mutating the candidate, and returns a generated type only after validation.
+
+  Bootstrap input first crosses the canonical JSON profile, so malformed JSON, duplicate keys,
+  floating-point values, unpaired surrogates, and schema violations produce typed, redacted refusals
+  instead of carrying rejected credentials forward. A production Vite-build integration check proves
+  that the fixture-source selector and synthetic bearer sentinel are absent from emitted browser
+  assets. Deterministic generation is reviewable and fail-closed: explicit generation writes the
+  committed modules, while offline pre-commit and pre-push checks reject missing, changed, or extra
+  output without rewriting it. Generated types keep their separate byte-freshness proof; the
+  hand-written validator and bootstrap boundary remain in strict frontend coverage and deterministic
+  integration. The 64-case Playwright inventory remained intact. This increment made A3 next; A3-A7
+  are now implemented as recorded above.
+
+- **The dashboard browser boundary now has a normative contract instead of test-only TypeScript
+  shapes.** Eighteen closed Draft 2020-12 schemas cover bootstrap, health and readiness, scenario
+  discovery, normalized and ordered events, reduced state, SSE frames and source signals, start and
+  reset requests and responses, typed errors, and checksummed replay bundles. Every schema has one
+  manifest-owned accepted fixture and one one-reason negative, and the contract tests pin integer
+  scenario revision `1`, sector-only assignment authority, declared-only members without fabricated
+  connectivity or telemetry, normalized-event timelines, and mutation state outside the reducer.
+
+  [ADR-0106](docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) adds only
+  `minLength` and `maxItems` to the portable schema vocabulary, which makes nonempty capabilities and
+  exact scenario cardinalities expressible without admitting optional `format` behavior or the rest of
+  Draft 2020-12. The 64 Playwright cases remain intact while their serialized fixtures now match the
+  contract's integer geometry, discriminated roster, recovery sequence, replay integrity, and
+  snapshot-owned mission semantics. All browser collections are explicitly bounded, and snapshot
+  timelines reject telemetry at the schema boundary.
+
+  R1 now also has two strict scenario-file schemas and nine authenticated private-control RPC schemas,
+  each with one manifest-owned baseline and one one-reason negative. The scenario contract keeps catalog
+  identity and geometry outside the lossless 20-simulation `FleetScenario` projection; the private
+  contract reuses one status shape for start, status, and established cancellation, carries explicit
+  publication counters, and separates the dashboard-to-scenario and scenario-to-fleet hops under
+  [ADR-0107](docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md). In this R1
+  increment they were contract shapes and synthetic golden examples rather than a production catalog or
+  running control plane; the later R2/R5/R8 implementation is recorded above.
+
+  R1 is now complete. The dashboard API owns strict Pydantic twins for its seventeen server-facing
+  dashboard documents and four scenario-control caller documents; the scenario service owns its two
+  file models, four scenario-control server documents, and four fleet-control caller documents; and the
+  fleet simulator owns the four fleet-control server documents. The two browser-owned documents remain
+  explicitly browser-only. Canonical decoding precedes strict model validation, and framework-free
+  route registries pin the nine public routes and both three-route private surfaces for later runtime
+  and OpenAPI parity tests. [ADR-0108](docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md)
+  records that ownership and keeps the schemas normative.
+
+  Root strict mypy now uses Pydantic's pinned plugin so generated model constructors remain field-typed
+  without weakening the repository's explicit-`Any` prohibition; a conformance test holds the selected
+  policy ([ADR-0109](docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md)). These
+  model and route-expectation layers unblocked A2 without themselves creating a FastAPI application,
+  listener, generated OpenAPI document, production catalog, or live control plane. R2 owns the now
+  implemented production catalog files and loader, and R5/R8 own the now implemented HTTP runtimes.
+
+- **The dashboard has a real shell and frontend verification can no longer pass on incomplete
+  evidence.** A1 replaces the invalid `main` host with a neutral root and renders sibling banner and
+  main landmarks, explicit degraded-live mode text, a dashboard-state live region, and post-render
+  fixture revision acknowledgement. Unit and HTML-entry integration tests measure the hand-written
+  entry module instead of excluding it.
+
+  [ADR-0105](docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) gives the
+  frontend the same fail-closed coverage semantics as the Python workspace. The complete Vitest run
+  emits V8 JSON into a temporary directory; a typed gate rejects missing, empty, malformed,
+  duplicate-key, skipped, ignored, or inventory-incomplete evidence, recomputes every total with integer
+  arithmetic, and applies all four TypeScript coverage dimensions independently. A separate non-empty
+  integration suite blocks at pre-push and in continuous integration.
+
+  The existing 64 Playwright cases remain separate fixture-driven browser acceptance. They do not pad
+  the coverage percentage and are not relabeled as production end-to-end evidence. Four existing
+  workflow identities were preserved inside the separate eight-case production inventory after the live
+  API, replay, fleet-control, and exact Compose closure became green; all eight later passed from clean
+  committed revision `db2b640` without contributing to the fixture or package-coverage evidence
+  ([production evidence](release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+
+- **The dashboard build has one guide, and it defers to every canonical owner.**
+  [docs/FRONTEND_BUILD.md](docs/FRONTEND_BUILD.md) sequences the UI-first slice from the committed
+  red acceptance contract to a green product surface: eight browser increments, nine vertical
+  unblockers with named owners, the join that makes the committed schemas the one prerequisite for
+  the typed core, and a staleness register for the passages the UI-slice records supersede. A
+  generated diagram carries the two lanes, and the documentation canonical-owner table now names
+  the guide so the facts it holds have exactly one home.
+
+- **ADR-0006's atomic set exists, and the three writes it fixes now commit and roll back together.**
+  `packages/store` could open a session, bound a transaction, and append an audit record. It could not
+  consume an approval, claim an idempotency key, or stage a command -- and the reason was named in
+  three places at once: the durable concurrency mechanism "must yield exactly one commit and one hard
+  denial", and conditional updates, constraints, and row or advisory locking were all still open.
+
+  **Three records close it, and each was measured before it was written.**
+  [ADR-0091](docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) ran four candidates against
+  two consumers of one approval row on the pinned cluster. All four commit exactly once; they differ
+  in what the *denial* is, and ADR-0006 is a statement about the denial. `SKIP LOCKED` is the
+  dangerous one -- the second consumer receives **no row**, so "already consumed" and "no such
+  approval" become the same observation. A plain `SELECT ... FOR UPDATE` held across the caller's
+  decision is what makes the second consumer *wait* and then be refused by the protocol's own
+  `ALREADY_CONSUMED`. [ADR-0092](docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md)
+  claims a key with `ON CONFLICT DO NOTHING` and asks `packages/domain` what a repeat means rather
+  than branching on it; a claim abandoned before commit leaves the key claimable, measured, which is
+  what makes it safe to take before the work.
+  [ADR-0093](docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) gives the outbox three
+  states in the domain, a bound of 500 unconfirmed records, and an overflow that writes nothing.
+
+  **The race test has teeth, and that is checked rather than asserted.** With `.with_for_update()`
+  removed from the locking statement, the live case fails with `NOT_CONSUMABLE` where it expects
+  `ALREADY_CONSUMED` -- which is exactly the alternative ADR-0091 rejected. The second consumer's
+  *domain call succeeds* and only a row count stops it, so the gateway would have been told by the
+  protocol that it consumed an approval it did not.
+
+  **Staging the mechanism found a bound that could never fire.** ADR-0085 set the lock wait and the
+  statement time to the same five seconds and claimed, as a consequence, that "a deadlock and a
+  contended wait become distinguishable". Measured with the two equal, `lock_timeout` never fires: the
+  waiting session is told `canceling statement due to statement timeout`, the same class and message a
+  genuinely stuck statement raises. It is the collapse ADR-0085 argued against one level down, unmade
+  one level up. [ADR-0090](docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md) supersedes it
+  -- in full, because ADR-0085's own decision refuses to split these numbers -- with the lock wait at
+  2 s and a fourth relation `EngineBounds` refuses at construction.
+
+  **The schema has a path.** Three revisions arrived with the three repositories, so the history is
+  four long and is walked one step at a time in both directions against a live cluster: each revision
+  stamps itself and adds exactly its own tables, and each step back leaves the revision below it
+  intact. Neither was expressible against a history of length one.
+
+  Six rows of [the approval-bypass catalogue](docs/security/approval-bypass-catalogue.md) gain a
+  durable half, B07 among them -- "two concurrent consumptions of the same approval ... asserted under
+  real concurrency, not sequentially" -- which is now proven live rather than owed, and each row
+  carries the record that supports it ([durable-transaction-first-run.md](release-evidence/phase-3/durable-transaction-first-run.md)).
+
+  **What this does not do.** Nothing calls any of it: no workspace member declares `packages/store` as
+  a dependency, so the command gateway's half of the dispatch lifecycle is still owed and command
+  intake is still at-least-once with duplicates possible across a restart. Nothing about restart
+  durability or interrupted-process rollback -- every live case ends its transaction deliberately and
+  no process was killed. Nothing about the paid-call ledger, whose atomic pre-call cap mechanism no
+  record has selected. Nothing about the operator's own database, which still holds zero tables. And
+  nothing about catalogue case B24, a directly written `APPROVED` row, which ADR-0091 says in as many
+  words it does not close.
+
+- **The durable schema has a unit of work above it, and the ordinal is now proven under a real race.**
+  `packages/store` could open a pool and apply a revision; it could not open a session, bound a
+  transaction, or write a row. `session.py` and `audit.py` are those two things, and the second is the
+  first repository this project has.
+
+  The interesting half is not the code. `audit.py` issues a per-mission ordinal with the conditional
+  upsert [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)
+  selected, and that record rests the gap-free mission timeline -- and through ADR-0067 and ADR-0009
+  the replay determinism oracle -- on one sentence: a second appender for the same mission **waits**.
+  Nothing had ever run two. Now `tests/integration/test_durable_store_live.py` does: the first appender
+  takes ordinal 1 and holds its transaction open, the second is started and observed *still unfinished*
+  after a window far below the five-second lock wait, and only then is the first released, whereupon
+  the second takes 2. A transaction abandoned before commit leaves neither a record nor a gap, so the
+  next append is 1 again.
+
+  **Staging that race found a decision nobody had made.** ADR-0088's wait is only a wait at one
+  isolation level, and no record named one:
+  [ADR-0085](docs/adr/0085-bound-every-durable-store-wait.md) *measured* the cluster's
+  `read committed` default and put no isolation row in its table, and `engine.py` passed no
+  `isolation_level`, so the property arrived from a cluster setting rather than from this repository --
+  which `packages/store/AGENTS.md` forbids in as many words. Measured on the pinned cluster, the same
+  race under `REPEATABLE READ` does not order the second appender at all: it is refused with
+  `could not serialize access due to concurrent update`, and gets no ordinal.
+  [ADR-0089](docs/adr/0089-state-read-committed-rather-than-inherit-it.md) states `READ COMMITTED` on
+  the engine and records that measurement, along with the lost-update hazard the level hands to
+  everything here that is not one conditional statement.
+
+  A second thing became observed rather than configured. ADR-0085's three server-side bounds were
+  passed to the driver and never read back; `SHOW` on a live session now reports `5s`, `5s`, and `15s`,
+  and a statement past the first is cancelled by the server. `docs/operating-parameters.md` said
+  "nothing applies them yet", which stopped being true one increment ago and is corrected.
+
+  What this does **not** do. Nothing about the approval-consumption transaction, whose concurrency
+  mechanism [ADR-0006](docs/adr/0006-proposal-bound-single-use-approvals.md) requires and no record has
+  selected: that one must yield exactly one commit and one *hard denial*, and an ordinal race holds no
+  denial, so it is not a substitute. Nothing about restart durability or interrupted-process rollback --
+  no process was killed. Nothing about a migration path, because the history is still one revision long.
+  Nothing about the operator's own database, which still holds zero tables. The boundary's rollback on
+  cancellation is proven against a fake, which establishes intent and call order and, by
+  [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md), can never
+  establish more. The member stays at 100% of statements and branches, offline, by construction.
+
+- **PostgreSQL has accepted the schema, and the constraints turn out to be real.** Every claim this
+  repository could make about its durable schema was, until now, a claim about *emitted text*.
+  `packages/store`'s suite runs the revision bodies against a statement-emitting context and asserts
+  the data definition character by character -- which is what earns the member's Tier 2 gate, and
+  which [ADR-0086](docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) is
+  explicit establishes nothing whatsoever about PostgreSQL. Nothing in the tree had ever opened a
+  database connection.
+
+  `tests/integration/test_durable_store_live.py` is the live class that record specifies. It carries
+  `docker` and deliberately **not** `broker`, because a resource marker declares what a test needs;
+  all 30 tests under `tests/integration/` stay deselected from every blocking stage. Each case gets
+  a database named for the run, created before it and dropped after it -- never the operator's
+  `POSTGRES_DB`, and `run_database_name` **refuses** to derive a name equal to it, so "a probe never
+  touches persistent mission data" is executed rather than remembered. The comparison is against
+  `os.environ` rather than a constant, because a constant matching `.env.example` would silently
+  diverge from an edited `.env`.
+
+  **The finding that mattered is that both constraints are enforced, not merely written.** An
+  insert of `next_ordinal = 0` is refused by `ck_audit_sequence_ordinal_positive`, and a second
+  record at a mission ordinal already taken is refused by `pk_audit_record`.
+  [ADR-0088](docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) rests the
+  gap-free mission timeline on exactly those two objects, and the whole of the prior evidence for
+  them was that the right `CREATE TABLE` text had been produced. The cluster also stamps the
+  revision, is unchanged by a second application of the same head, and empties on the downgrade.
+  Three consecutive runs, PostgreSQL 18.6, zero leaked databases, and `aerial_rescue` still holding
+  zero tables ([durable-store-first-run.md](release-evidence/phase-3/durable-store-first-run.md)).
+
+  Getting there needed one piece of production code. `migrations/env.py` read
+  `config.attributes["connection"]` and **nothing in the repository had ever written that key**, so
+  the tree could render a revision and could not apply one. `live_config` is that single assignment,
+  and it lives in `migration.py` for the reason ADR-0087 gives for `env.py` carrying no branch: a
+  decision covered only by a live run is a decision in the wrong place. Both configurations are now
+  built by the same function, so the live and rendering paths cannot drift apart in which history
+  they read, and the member stays at 100% of statements and branches.
+
+  What this does **not** do, stated plainly because a green durable-store probe is the easiest thing
+  here to over-read: nothing about transaction visibility, isolation, restart durability, pool
+  cancellation, or concurrent races; nothing about a repository or session, because neither exists;
+  and no migration *path*, because a history of length one has none. It also leaves the operator's
+  own database untouched and unmigrated. At the time of this probe, applying the history there was a
+  separate operation with no runbook; the later dashboard increment now documents and exercises the
+  non-destructive shared-project migration path as described above.
+
+  This is also the first `async` code in the repository.
+
+- **The wilderness dashboard now has an executable browser acceptance contract before its UI is
+  implemented.** Sixty-four Playwright cases cover the map-first shell, honest 20 simulated plus 3
+  declared-only participation, real local MapLibre geometry, fleet/map synchronization, guarded HTTP
+  start and reset actions, ordered timeline behavior, checksummed replay validation, paced playback,
+  independently recomputed digests, source failure, resnapshot and recovery, malformed input at every
+  browser trust boundary, keyboard and axe checks, reduced motion, zero remote requests, deterministic
+  platform-qualified screenshots, both reference viewports, and effective 200% zoom. The test
+  adapter receives serialized
+  bootstrap, HTTP, snapshot, ordered-event, control-frame, and replay-bundle inputs and acknowledges each
+  rendered revision, so tests do not inject a finished view model or race React. It cannot be selected
+  through a production URL or browser storage, and traces, videos, HAR capture, and automatic screenshots
+  are disabled. An exact-runtime, no-download Playwright wrapper now verifies the 64-test discovery
+  inventory, makes the complete Chromium suite authoritative at pre-push and in CI, and scans retained
+  artifacts for the synthetic bearer sentinel.
+  Dependabot now watches the dashboard's exact npm pins as required when the package becomes active.
+
+  This is intentionally the red TDD increment, not a claim that the dashboard is operational. The
+  harness, independent replay digest oracle, strict TypeScript policy, lint, formatting, production
+  build, and Chromium discovery pass; the focused acceptance run fails because the production
+  `TestFixtureSource` has not yet acknowledged its first input revision.
+
+- **The demonstration has a Solace value spine.** [The positioning and evidence
+  guide](docs/SOLACE_VALUE.md) now connects each operational pressure in the rescue scenario to a Solace
+  mechanism, an audience-visible proof, and an honest evidence status. It makes agent discovery and
+  delegation, selective event-to-agent bridging, durable delivery, broker-enforced authority, and
+  cross-system observability the subject of the demo rather than infrastructure hidden behind its map
+  and model output.
+
+  The guide also keeps the attribution boundary explicit without replacing the architecture's canonical
+  responsibility map. A sequenced demo spine links the live local slices already recorded under
+  `release-evidence/` and labels the disconnect/reconnect, end-to-end approval, tracing, and Cloud
+  showcase scenes as release targets until their evidence exists. `README.md` now points presenters to
+  this narrative and distinguishes those slices from an end-to-end operational run; both documentation
+  maps make the guide discoverable to contributors.
+
 - **The schema has a history, and its first revision covers itself without a database.** The Alembic
   tree lives at `packages/store/src/aerial_rescue_store/migrations/` where
   [ADR-0087](docs/adr/0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) put it,
@@ -1277,6 +1731,107 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- Dashboard snapshot/recorder control flow and repeated test arrangements are factored into focused
+  helpers so the repository-wide cognitive-complexity and duplication authorities pass without changing
+  production behavior, test identities, Acts, or assertions.
+
+- Dashboard and private-control contracts no longer carry values without runtime consumers.
+  [ADR-0124](docs/adr/0124-remove-unconsumed-dashboard-wire-values.md) removes `runtimeId` from
+  health, removes roster and fleet-progress echoes from scenario run status, deletes the wire-level
+  mutation-outcome shape, narrows the production Ajv registry to raw browser inputs, and keeps replay
+  preparation to validated exact bytes while durable storage owns session identity.
+
+- Extend the shared `aerial-rescue-mesh` Compose project for mission control instead of creating a
+  second broker, PostgreSQL container, or durable-history boundary. The supported recipe identity-guards
+  the existing healthy stateful containers and stops only dashboard-owned long-running services
+  ([ADR-0139](docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
+
+- Recorder and mission-control provisioning now create only endpoints with active consumers.
+  [ADR-0120](docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) narrows the
+  recorder to direct telemetry, exact `connectivity-changed` drone events, and mission/sector lifecycle
+  inputs. Salient drone events are denied rather than admitted by the broader `DRONE_EVENT` wildcard.
+  Lifecycle traffic is consolidated onto one exclusive broker-ordered queue, and the selected
+  mission-control projection has two endpoints/20 MB. The global projection is now 34 endpoints/340
+  MB. Mission control starts fleet command intake in publication-only mode, reads the recorder broker
+  credential from a mounted secret, and gates Compose plus degraded-live dashboard readiness on the
+  same strict 2-second/10-second freshness lease. Recorder polling has one total bounded wait and a
+  64-message drain ceiling; accepted mission lifecycle events update the authoritative mission row in
+  the audit transaction. Replay validation is restart-idempotent only for an existing byte-identical
+  regular artifact and never overwrites divergence.
+
+- Mission-control production and pressure acceptance now retain shared broker/PostgreSQL identities,
+  volumes, mission history, and the bounded 1,024-row synthetic pressure suffix. Caddy remains fixed at
+  `127.0.0.1:8080`; supported cleanup never runs Compose `down`, deletes rows, or removes shared volumes
+  ([ADR-0142](docs/adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md)).
+
+- **The duplication gate now measures authored source, so the committed contract surface can grow
+  without tripping it**
+  ([ADR-0110](docs/adr/0110-scope-the-duplication-gate-to-authored-source.md)).
+  [ADR-0023](docs/adr/0023-executable-deep-quality-gates.md) set jscpd at 3% repository-wide. A2 then
+  committed 19 generated TypeScript modules and a schema-ID index, one module per browser schema as
+  [ADR-0058](docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) requires. Types
+  derived from JSON Schema repeat every nested shape at each use site, because each module is closed
+  over one schema and shares no declarations with its siblings — a 99-line region shared by
+  `dashboard-snapshot.ts` and `replay-bundle.ts`, 54-line, 49-line, and 45-line regions shared by
+  `dashboard-event-frame.ts` with three siblings, and two smaller ones. The scan read 2231 of 66524
+  lines duplicated (3.35%), over the limit, with TypeScript alone at 6.87%.
+
+  No authored change removes those clones: one module per schema is the standing decision, and
+  hand-editing the output is refused by the freshness gate. `duplication-full.sh` now passes
+  `--ignore 'apps/dashboard/src/contracts/generated/**'`; every other scanned path, the 3% limit, the
+  8-line and 50-token clone minimum, and strict mode are unchanged, and the generator itself stays
+  inside the scan.
+
+  **The exemption is bounded by a proof, not by trust.** `dashboard-contracts-check` regenerates that
+  directory from the manifest-owned schemas and refuses any missing, extra, or byte-different entry, so
+  no hand-written file can survive there to escape duplication review. It names one exact path rather
+  than `**/generated/**`, so a future generated directory is scanned until its own record says
+  otherwise. The remaining figure is 2.94% against the 3% limit — 41 duplicated lines of headroom, now
+  dominated by the authored Python tree.
+
+- **A push is now at least as strict as the commit it publishes**
+  ([ADR-0104](docs/adr/0104-run-every-commit-stage-hook-at-pre-push.md)).
+  [ADR-0012](docs/adr/0012-git-hooks-with-ci-as-authority.md) tiered the hooks by cost but never made
+  the push stage a superset of the commit stage, so forty-eight hooks — the hygiene checks, the secret
+  and workflow audits, format and lint, the staged-file type checks, the affected-test selections, and
+  the documentation gates — ran at `pre-commit` and nowhere else. A commit can reach a branch without
+  them: `--no-verify`, a named `SKIP`, a commit written before a hook existed, a rebase that rewrote
+  it, or a clone where `pre-commit install` was never run.
+
+  `default_stages` is now `[pre-commit, pre-push]`. Two hooks opt out and are the only two permitted
+  to: `no-commit-to-branch`, which at push time would refuse every push made from `main`, and the stock
+  `gitleaks` hook, which hardcodes `--staged --pre-commit` and would scan an empty diff — its push-stage
+  counterpart `gitleaks-history` scans the whole history instead. That set is asserted by
+  `test_hook_semantics.py`, resolving `default_stages` rather than reading each declaration, so a third
+  exception cannot appear without changing the test and the record.
+
+  **The cost is real and is not tuned away.** `pytest-unit-fast` now runs beside `pytest-full`,
+  `mypy-root` beside `mypy-full`, and the dashboard's staged-file gates beside their `-full`
+  counterparts. Deciding per hook which full-tree gate subsumes which staged-file gate is a judgement
+  with no gate behind it, so it would drift. The nearest constraint is the `push-stage` job's
+  20-minute CI budget, set when that stage measured 2m01s whole-tree — before the dashboard hooks and
+  the five-minute Chromium suite landed.
+
+- **The system Node runtime moves to 26.7.0, and the pin that caught the drift stays exact**
+  ([ADR-0103](docs/adr/0103-move-the-system-node-runtime-to-26.md)).
+  [ADR-0099](docs/adr/0099-pin-the-dashboard-runtime-and-stack.md) pinned Node `24.19.0` and made the
+  fail-closed dashboard wrappers compare the running runtime against `engines.node`. So when the
+  workstation's Homebrew `node` moved on, the pre-push Playwright gate refused to run instead of
+  verifying the browser suite on a runtime nobody had chosen. The refusal was the gate working; the
+  resolution is to choose again.
+
+  **The installed runtime was not the safe answer.** Node's published schedule ends v25 on
+  2026-06-01, so pinning whatever happened to be installed would have committed the project to a line
+  that receives no further security releases — and nothing here would have said so, because
+  pip-audit, Trivy, and Dependabot observe dependencies and images, not the host runtime. v26 becomes
+  long-term support on 2026-10-28 and is maintained until 2029-04-30.
+
+  `engines.node`, both `actions/setup-node` steps in `checks.yml`, the one in `security.yml`, and the
+  `CONTRIBUTING.md` setup sequence now name `26.7.0`, and `@types/node` follows the runtime major to
+  `26.2.0`. The two Node hooks pre-commit provisions through nodeenv — `markdownlint-cli2` and the
+  `jscpd` duplication gate — stay at `24.19.0`: their runtime is hermetic, and markdownlint's
+  dependency tree refuses a Current line.
+
 - **The no-loss claim is narrower, and honest**
   ([ADR-0071](docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
   `docs/CONTRACTS.md` said critical events use durable queues. The pinned gateway hardcodes
@@ -1287,10 +1842,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   Waiting for the four open queue parameters would buy nothing — the plugin would still bind a
   temporary queue afterwards. So the claim moves instead: it covers the application data plane and
-  excludes the A2A ingress hop. What carries the weight is stated with it — the application topic is
-  the authoritative record, the recorder and evidence service read it on their own identities, and no
-  command, approval, or audit record runs through the gateway. The gap it leaves is real and now
-  visible: a restart silently drops any salient event published during it.
+  excludes the A2A ingress hop. The evidence service reads salient events through its own durable
+  identity and queue, and no command, approval, or audit record runs through the gateway. ADR-0120
+  later narrows the dashboard recorder to connectivity events within that family, so it no longer
+  duplicates salient-event consumption. The gateway gap remains real and visible: a restart silently
+  drops any salient event from the Agent Mesh ingress path.
 
 - The durable store moves to `postgres:18.6-trixie`, the newest major, and the named volume mounts at
   `/var/lib/postgresql` rather than the 17-era `/var/lib/postgresql/data`. PostgreSQL 18 sets
@@ -1433,8 +1989,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   a persisted spend ledger and pre-call enforcement. The three edge agents stay on
   local Ollama, and local-only operation remains a supported, tested configuration
   so no release gate depends on a paid API.
+- The ordered dashboard reducer now converts validated wire events into typed state-event variants once
+  at the boundary, then applies the variant directly. This removes runtime-only casts and duplicate
+  interpretation while retaining exact refusal precedence and immutable checkpoint behavior.
 
 ### Fixed
+
+- The telemetry projection boundary test now reads its byte-identical member-local baseline, so Tier 1
+  mutation runs remain independent of the repository-root fixture layout.
 
 - Both gate stages were red on `main`. `typos` splits the W3C traceparent example's span identifier
   `00f067aa0ba902b7` into words and reads one of those words as a misspelling of `by` or `be`, so
@@ -1509,6 +2071,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   deselected. It does not; both blocking suites select by resource, not by test class.
 
 ### Security
+
+- **The `postgres` and `python` base images are refreshed to the builds their tags carry now**, the
+  first time the pin gate of
+  [ADR-0055](docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) has had something to
+  say. `postgres:18.6-trixie` moves to `sha256:1957b2ff…be8687` and `python:3.14.7-slim-trixie` to
+  `sha256:83ff1d24…01c8e83`. Both tags are unchanged, so neither Postgres 18.6 nor Python 3.14.7
+  moves; upstream rebuilt the Debian layers beneath them. That is exactly the lever ADR-0055 says the
+  project has over a third-party image, and the only one it blocks on — the advisories inside the new
+  images stay informational, and no waiver was added or touched.
 
 - `asteval` is overridden from the `1.0.6` that Agent Mesh 1.28.7 pins to `1.0.9`, closing
   CVE-2026-55244 / GHSA-9w56-46f6-3qhx, a sandbox escape in the default `Interpreter` that Agent

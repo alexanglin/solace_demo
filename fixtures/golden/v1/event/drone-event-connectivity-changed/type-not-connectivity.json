@@ -1,0 +1,18 @@
+{
+  "specversion": "1.0",
+  "id": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a71",
+  "source": "urn:aerial-rescue:connectivity-lifecycle:run-synthetic-0001",
+  "type": "aerial-rescue.v1.drone.event.salient",
+  "subject": "mission-01",
+  "time": "2026-08-25T14:00:02.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/drone-event-connectivity-changed.schema.json",
+  "data": {
+    "missionId": "mission-01",
+    "droneId": "drone-01",
+    "connectivity": "DEGRADED"
+  },
+  "sequence": "000000000000002",
+  "correlationid": "run-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01"
+}

@@ -1,0 +1,63 @@
+{
+  "bundleVersion": "dashboard-replay-bundle/v1",
+  "scenarioId": "wilderness-missing-person",
+  "scenarioRevision": 1,
+  "initialState": {
+    "canonicalizationVersion": 1,
+    "stateVersion": 1,
+    "currentMission": {
+      "identifier": "mission-synthetic-0001",
+      "lifecycle": "PLANNED",
+      "predecessorIdentifier": null
+    },
+    "fleet": [
+      {
+        "identifier": "drone-comms-03",
+        "participation": "DECLARED_ONLY"
+      },
+      {
+        "identifier": "drone-sim-01",
+        "participation": "SIMULATED",
+        "connectivity": "CONNECTED",
+        "telemetry": {
+          "latitudeMicrodegrees": 44475000,
+          "longitudeMicrodegrees": -79245000,
+          "batteryPercent": 96,
+          "altitudeMetres": 83,
+          "headingDegrees": 45,
+          "groundSpeedCentimetresPerSecond": 950
+        }
+      }
+    ],
+    "latestAuditOrdinal": 4,
+    "sectors": [
+      {
+        "identifier": "sector-01",
+        "state": "ASSIGNED",
+        "assignedMemberId": "drone-sim-01"
+      }
+    ]
+  },
+  "latestEventDigest": "d7fb71af32a292bf5533b6765b9a0039cb735a78bdc6e024f67327c819dc9cd1",
+  "events": [
+    {
+      "auditOrdinal": 5,
+      "event": {
+        "kind": "missionLifecycle",
+        "eventClass": "MISSION",
+        "mission": "mission-synthetic-0001",
+        "time": "2026-08-24T12:00:05.000Z",
+        "data": {
+          "lifecycle": "SEARCHING"
+        }
+      }
+    }
+  ],
+  "integrity": {
+    "integrityVersion": "dashboard-replay-integrity/v1",
+    "algorithm": "sha256",
+    "checksum": "159c1a67d8eafa27ad19def0138e0d82b366f4cf717c0b492094343e9ac00cfe",
+    "expectedFinalDigest": "a4eadb665ad81acdaccecc141b89d234efb79c62eecdef0087e0bf047f85f5ad"
+  },
+  "unexpected": true
+}

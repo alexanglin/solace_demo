@@ -63,6 +63,8 @@ Use the following topic families:
 ```text
 aerial-rescue/v1/{missionId}/operator/command/{commandType}
 aerial-rescue/v1/{missionId}/operator/approval/{decision}
+aerial-rescue/v1/{missionId}/mission/event/{eventType}
+aerial-rescue/v1/{missionId}/sector/{sectorId}/event/{eventType}
 aerial-rescue/v1/{missionId}/drone/{droneId}/telemetry
 aerial-rescue/v1/{missionId}/drone/{droneId}/event/{eventType}
 aerial-rescue/v1/{missionId}/drone/{droneId}/command/{commandType}
@@ -75,20 +77,22 @@ aerial-rescue/v1/{missionId}/audit/{recordType}
 ```
 
 Every variable level obeys one of four rules
-([ADR-0036](adr/0036-ascii-topic-grammar-bound-to-event-type.md)), and `packages/contracts` (`topics.py`)
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)), and `packages/contracts` (`topics.py`)
 is the only producer and parser of these topics:
 
 | Rule | Levels | Form |
 | --- | --- | --- |
-| IDENTIFIER | `missionId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
+| IDENTIFIER | `missionId`, `sectorId`, `droneId`, `commandId`, `requestId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
 | KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; `commandType` is closed by the command-authority table and `operation` by the gateway-operation table, both in `packages/domain` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)); `eventType`, `proposalType`, and `recordType` stay open until the domain modules that define them land |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
 The CloudEvents `type` of an event is derived from its topic: drop the IDENTIFIER and AGENT_NAME levels,
-join the rest with `.`, and prefix `aerial-rescue.v1.`. So `aerial-rescue/v1/m1/drone/d1/event/salient`
-has the type `aerial-rescue.v1.drone.event.salient`, and `aerial-rescue/v1/m1/drone/d1/command-result/c1`
-has `aerial-rescue.v1.drone.command-result`. A topic is recovered from its type together with the
+join the rest with `.`, and prefix `aerial-rescue.v1.`. So
+`aerial-rescue/v1/m1/sector/sector-01/event/lifecycle` has the type
+`aerial-rescue.v1.sector.event.lifecycle`, and
+`aerial-rescue/v1/m1/drone/d1/command-result/c1` has
+`aerial-rescue.v1.drone.command-result`. A topic is recovered from its type together with the
 identifiers a producer holds.
 
 Parsing refuses in a fixed order, which TypeScript reimplements: not a string; longer than the broker
@@ -99,11 +103,63 @@ or a trailing separator. Subscription strings, which do carry wildcards, belong 
 are never produced here. The golden case files under `fixtures/golden/v1/topics/` record accepted and
 refused topics with their refusal names, which are part of the contract.
 
-Which delivery guarantee each family is owed is a total table in `packages/contracts`, not a sentence to be read against the eleven families ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md)). Routine telemetry is direct because current position updates supersede stale ones. The gateway request and response are request-reply over a temporary queue a pinned upstream component owns and names, so this project provisions no endpoint for them. Every other family is guaranteed, and its endpoint is one durable queue per consuming role ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
+Which delivery guarantee each family is owed is a total table in `packages/contracts`, not a sentence
+to be read against the thirteen families
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)). Routine telemetry is direct because
+current position updates supersede stale ones. The gateway request and response are request-reply over
+a temporary queue a pinned upstream component owns and names, so this project provisions no endpoint
+for them. Every other family, including mission and sector lifecycle, is guaranteed, and its endpoint
+is one durable queue per consuming role
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)).
 
 Consumers must tolerate duplicates and out-of-order events. State changes reject stale sequence numbers within a producer's own stream, and command handlers return the prior result when they receive a known command ID. Approval consumption is excluded from that replay-as-success rule: a repeat is denied, not replayed.
 
+Production fleet telemetry scopes one producer stream to one simulated drone in one operational mission
+([ADR-0140](adr/0140-scope-live-telemetry-producers-to-one-mission.md)). Its source is
+`urn:aerial-rescue:drone-run:{producerId}`, where `producerId` is the lowercase SHA-256 of the ASCII
+context `aerial-rescue:drone-run:v1`, a NUL separator, `missionId`, a NUL separator, and `droneId`.
+This makes sequence zero valid after a fleet-process restart because a successor mission has a new
+source; it does not make the source an authentication credential. The topic and payload remain the
+readable authority for mission and drone identity, and the broker identity plus ACL remains the
+publisher authority.
+
 Agent Mesh owns its standard A2A namespace, including discovery, agent request, gateway status, and gateway response topics. Application code must use the upstream A2A APIs and gateway abstractions rather than publishing framework messages directly. Keep the A2A namespace distinct from `aerial-rescue/v1/...`, while carrying task, correlation, and causation identifiers across the SAR gateway boundary for traceability.
+
+## Dashboard lifecycle event sources
+
+Three guaranteed application events are the only source of the lifecycle projections that change
+reduced dashboard state
+([ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md)):
+
+| CloudEvents `type` | Topic | Closed payload | Publisher | Projection |
+| --- | --- | --- | --- | --- |
+| `aerial-rescue.v1.drone.event.connectivity-changed` | `aerial-rescue/v1/{missionId}/drone/{droneId}/event/connectivity-changed` | `{missionId, droneId, connectivity}` | fleet simulator | `connectivityChanged` |
+| `aerial-rescue.v1.mission.event.lifecycle` | `aerial-rescue/v1/{missionId}/mission/event/lifecycle` | `{missionId, lifecycle}` | scenario service | `missionLifecycle` |
+| `aerial-rescue.v1.sector.event.lifecycle` | `aerial-rescue/v1/{missionId}/sector/{sectorId}/event/lifecycle` | `{missionId, sectorId, state, assignedMemberId}` | fleet simulator | `sectorLifecycle` |
+
+The exact envelope sources are `urn:aerial-rescue:connectivity-lifecycle:{runId}`,
+`urn:aerial-rescue:mission-lifecycle:{runId}`, and
+`urn:aerial-rescue:sector-lifecycle:{runId}` respectively. Each source owns an independent producer
+sequence. The source provides uniqueness and sequence scope, not authentication; the publisher's broker
+credential and deny-by-default ACL grant are the authority.
+
+Connectivity, mission lifecycle, and sector lifecycle values remain the closed state sets selected by
+[ADR-0039](adr/0039-drone-connectivity-states-and-recovery.md),
+[ADR-0072](adr/0072-mission-lifecycle-states.md), and
+[ADR-0073](adr/0073-sector-lifecycle-states.md). Topic, envelope, and payload identifiers must agree.
+Projection preserves the source envelope's canonical `time`, removes transport-only envelope members,
+and produces the existing five-field `DashboardEvent` variant.
+
+The scenario role publishes only mission lifecycle. The fleet role publishes sector lifecycle and
+connectivity. The receiver-only recorder subscribes only to direct telemetry plus guaranteed
+connectivity, mission-lifecycle, and sector-lifecycle input. All three guaranteed subscriptions bind to
+the recorder's one exclusive `aerial-rescue/v1/recorder/dashboard.lifecycle` queue, so the broker's
+cross-family arrival order is preserved before audit ordinals are assigned; telemetry remains direct
+and supersedable. The recorder locks and advances the durable mission lifecycle in the same transaction
+that appends a validated mission event and stores its broker identity, and acknowledges guaranteed input
+only after that transaction commits ([ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
+Private run control remains HTTP, and no service may bypass this source boundary by manufacturing one
+of these normalized events directly.
 
 ## Command-gateway request and reply
 
@@ -175,54 +231,197 @@ audit timeline observe every answer without knowing anything about the Event Mes
 Solace request/reply. The record is the weaker of the two: losing it costs an audit line, never an
 answer or a command.
 
+## Scenario catalog files
+
+The scenario service's file boundary is the pair accepted by
+[ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md):
+`scenarios/catalog.v1.json` selects definitions by catalog identity, and
+`scenarios/v1/wilderness-missing-person.r1.json` is the revision-one wilderness definition. The
+normative file schemas are `schemas/v1/scenario/catalog.schema.json` and
+`schemas/v1/scenario/definition.schema.json`; the corresponding golden fixtures prove the shared
+structural contract but are not production catalog files.
+
+Both documents use integer version `1`, lie inside the canonical JSON profile, and are closed. The
+catalog binds scenario identifier `wilderness-missing-person` and revision `1` to a repository-owned
+definition path and the lowercase SHA-256 of that definition's bytes. A caller supplies the scenario
+identity, never a filesystem path. The loader must retain the source bytes long enough to reject
+duplicate keys and floating-point values, resolve only a regular file inside its injected catalog root,
+and verify the catalog digest before accepting a definition. The file, depth, collection, and prepared
+workload bounds live in
+[operating-parameters.md](operating-parameters.md#scenario-catalog-files).
+
+The definition separates three kinds of fact:
+
+- presentation and discovery metadata: title, summary, synthetic search-area size, last-known point,
+  search polygon, and twenty sector polygons, all coordinates expressed as integer microdegrees;
+- twenty explicit `SIMULATED_DRONE` members, each carrying every input required to construct one
+  `DroneStart`, plus the tick interval, connectivity thresholds, uniform sweep count, and explicit
+  heartbeat-loss schedule; and
+- three `DECLARED_ONLY` external descriptors, which are presentation metadata and can never be adapted
+  into `FleetScenario` or acquire connectivity or telemetry.
+
+Only the simulated members are projected into the fleet runtime. Geometry, catalog metadata,
+declared-only members, run mode, mission lifecycle, and a random seed are absent from that projection.
+Scenario identity selects a reusable definition; `missionId` and `runId` identify one execution and are
+created outside the scenario file.
+
+## Private run-control HTTP
+
+[ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
+private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use
+distinct exact Hosts and distinct bearer credentials; neither private listener publishes a host port.
+ADR-0114 extends only scenario control with catalog discovery and lost-run recovery.
+
+| Method and path | Request | Successful response |
+| --- | --- | --- |
+| `GET /internal/v1/scenarios` (scenario only) | none | browser-facing scenario catalog |
+| `POST /internal/v1/runs` | service-specific start request | service-specific run status |
+| `GET /internal/v1/runs/{runId}` | none | service-specific run status |
+| `POST /internal/v1/runs/{runId}/cancel` | service-specific cancel request | service-specific run status |
+| `POST /internal/v1/runs/{runId}/recover` (scenario only) | scenario recovery request | scenario run status |
+
+The nine closed RPC schemas under `schemas/v1/rpc/` are the five scenario documents and four fleet
+documents below. Every
+document carries integer `controlVersion: 1` and uses the canonical JSON profile. Start, status, and an
+established-cancel success deliberately share one run-status representation.
+
+| Document | Required contract members and meaning |
+| --- | --- |
+| scenario-control start request | `scenarioId`, integer `scenarioRevision`, stable `missionId`, and stable `runId` |
+| scenario-control run status | scenario, mission, and run identities; `PLANNED`, `SEARCHING`, `EXHAUSTED`, or `ABORTED` |
+| scenario-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
+| scenario-control recovery request | scenario, mission, and run identities; an unknown fleet run becomes one guaranteed `ABORTED` lifecycle fact |
+| scenario-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
+| fleet-control start request | stable `runId` and exactly one nested lossless `FleetScenario` projection |
+| fleet-control run status | mission and run identities; `ACCEPTED`, `RUNNING`, `EXHAUSTED`, `CANCELLED`, or `FAILED`; completed-tick and telemetry-publication counters |
+| fleet-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
+| fleet-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
+
+The nested fleet scenario contains the mission identifier, twenty explicit simulated starts, tick
+interval, connectivity thresholds, uniform sweep count, and a flat bounded list of `{droneId,
+tickOrdinal}` heartbeat absences. It contains no scenario identity, geometry, declared-only member,
+mode, lifecycle, or seed. The publication counter records successful fleet publication and is not a
+proxy for best-effort recorder receipt.
+
+Private requests with bodies are refused in this order: Host syntax and exact allowlist, bearer, JSON
+media type and raw-body bound, canonical duplicate-key or floating-point violation, strict schema,
+path/body run binding, then operation policy. Reads enforce Host and bearer before lookup. Refusals
+distinguish malformed admission, run conflict or absence, cancellation not established, and internal
+failure; scenario control additionally distinguishes scenario lookup/revision and fleet availability,
+while fleet control additionally distinguishes capacity and run failure. Exact body, connection,
+response, and shared cancellation bounds live in
+[operating-parameters.md](operating-parameters.md#private-run-control).
+
+The stable `runId` is the private idempotency identity. Repeating the same canonical start for the same
+run returns current status without launching another run; changing the body for an existing run is
+`RUN_CONFLICT`. A caller that cannot establish whether start succeeded queries that same run and never
+automatically repeats start. Cancel reports success only after the run is stopped or already terminal;
+otherwise it returns `CANCELLATION_NOT_ESTABLISHED` and does not claim reset.
+
+`/internal/v1/runs/{runId}/recover` is used only for uncertain-start reconciliation and is never a reset
+fallback. Reset resolves the operation-bound predecessor from the current pointer or retained history,
+then reads its recorder-persisted lifecycle. `EXHAUSTED` or `ABORTED` causes no private cancel, recover,
+or start request. A nonterminal predecessor requires an identity-matching terminal cancel response.
+`RUN_NOT_FOUND`, explicit `CANCELLATION_NOT_ESTABLISHED`, or an identity-matching nonterminal response
+completes the dashboard operation with exact HTTP `409 CANCELLATION_NOT_ESTABLISHED`; no successor is
+prepared and no mission, run, pointer, prepared-state, or audit mutation occurs. Only the operation is
+completed with exact stored refusal bytes, which a safe retry returns without another private call.
+Identity mismatch remains `RUN_CONFLICT`; transport failure remains dependency unavailable
+([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+
+The Python trust-boundary twins are now service-local as required by
+[ADR-0108](adr/0108-register-strict-python-wire-models-before-http-runtime.md). The scenario service owns
+the scenario-control server models, the private browser-facing catalog response, and separate
+fleet-control caller models; the fleet simulator owns the fleet-control server models; and the
+dashboard API owns separate scenario-control caller models.
+Each boundary applies the contracts-owned canonical decoder before closed, frozen, strict, alias-only
+Pydantic validation. The independently implemented twins are checked against the same manifest-owned
+accepted and one-reason-negative fixtures. Framework-free route registries pin the five scenario and
+three fleet routes, request and response schemas, and default refusals for runtime and OpenAPI parity.
+They create no listener, client, generated OpenAPI document, or runtime route.
+
 ## Local HTTP API
 
-The initial dashboard API is:
+The UI-first dashboard API is the closed surface accepted by
+[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md):
 
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/v1/health` | Process liveness only |
-| `GET /api/v1/readiness` | Whether the selected operating mode can start a scenario |
-| `GET /api/v1/scenarios` | Available synthetic scenarios and metadata |
-| `POST /api/v1/scenarios/{scenarioId}/start` | Start a deterministic live or replay run |
-| `POST /api/v1/scenarios/current/reset` | Return every local component to its initial state |
-| `GET /api/v1/events` | SSE stream for normalized dashboard events |
-| `POST /api/v1/missions/{missionId}/approvals` | Record an approve or reject decision bound to the proposal digest/version and exact action parameters |
+| `GET /api/v1/readiness?mode=degradedLive\|replay` | The readiness document at `200` when ready or the same typed document with explicit reasons at `503` when unavailable |
+| `GET /api/v1/scenarios` | Validated synthetic geometry, roster, and participation |
+| `POST /api/v1/scenarios/{scenarioId}/start` | Start live execution or create a replay session |
+| `POST /api/v1/scenarios/current/reset` | Bounded live reset or a fresh replay session |
+| `GET /api/v1/events` | Snapshot plus ordered SSE suffix |
+| `GET /api/v1/replays/{sessionId}` | One read-only validated replay bundle |
+| `GET /` and `GET /assets/{asset}` | Dynamic bootstrap shell and hashed local assets |
 
-Requests and responses are typed Pydantic models with generated OpenAPI documentation. Mutation endpoints require an idempotency key, and every idempotency record stores a hash of the canonicalized request body so a key replayed with a different body is refused rather than treated as a repeat.
+There is no approval route in this slice. Approval, evidence, command, model, rescue, and escalation
+workflows remain follow-on work and gain no placeholder endpoint. The committed schemas under
+`schemas/v1/dashboard/` are normative. The dashboard API now owns strict Pydantic twins for its
+seventeen server-facing shapes and a framework-free registry for the exact route table above. The
+`source-signal` document remains browser-owned and deliberately has no Python model. Mutation progress
+is an in-memory TypeScript union and has no wire schema ([ADR-0124](adr/0124-remove-unconsumed-dashboard-wire-values.md)).
+The implemented FastAPI application projects the server schemas into OpenAPI; generated
+TypeScript and the Ajv registry consume them at the browser boundary. OpenAPI, generated code, Pydantic,
+and Ajv remain freshness/parity-checked consumers rather than parallel authorities.
 
-The approvals endpoint is the one deliberate exception: approvals are single-use, so a second consumption is a hard denial and never an idempotent success. It is recorded in the audit trail as a denied bypass attempt and surfaced on the dashboard ([ADR-0006](adr/0006-proposal-bound-single-use-approvals.md)).
+Start is exactly `{mode, scenarioRevision}` with mode `degradedLive` or `replay` and integer revision
+`1`; reset is exactly `{}`. Accepted live responses carry stable mission and run identifiers; replay
+responses carry a stable session identifier. Start and reset responses also report the fixed roster as
+23 declared, 20 simulated, and three declared-only members. A `202` response updates mutation-operation
+state only: reducer-owned current mission state changes only after a validated snapshot or ordered event.
+The browser retains an accepted live mission/run identity as server-operation state and requires the
+next live snapshot to match both values. Every live snapshot also requires its `currentRun.missionId` to
+match `state.currentMission.identifier`; a mismatch retains the prior checkpoint and timeline.
 
-The service binds only to IPv4 or IPv6 loopback addresses, never to a wildcard or non-loopback interface.
-Every request must contain exactly one syntactically valid `Host` header whose parsed host and port exactly
-match an entry in the configured API allowlist. Wildcard, suffix, and substring matches are forbidden;
-missing, malformed, duplicated, and non-allowlisted Host values are rejected before route handling.
+Both mutations require a lowercase UUID version 4 idempotency key. The durable idempotency operation
+stores a digest of the canonical request body plus the exact response status and bytes, so a same-key,
+same-body repeat returns the prior result and a same-key, different-body repeat refuses without an
+effect. Stable mission/run identity and prepared state are persisted before the private live-start call;
+an uncertain call leaves that operation pending and is reconciled by status on the same run without
+repeating start. Reset and pending-reset reconciliation first read the recorder-persisted predecessor
+lifecycle. `EXHAUSTED` or `ABORTED` establishes cancellation without another private call. A nonterminal
+predecessor still requires an identity-matching terminal response inside the shared fifteen-second
+budget; a missing private run completes the exact stored
+`409 CANCELLATION_NOT_ESTABLISHED` while leaving the predecessor, current pointer, prepared state, and
+audit history unchanged. Only established cancellation selects the fresh `PLANNED` successor without
+starting its fleet ([ADR-0143](adr/0143-let-durable-terminal-state-establish-reset-cancellation.md)).
+Operation state and exact bytes are mutation authority, and audit ordinals are timeline authority;
+unused claim, completion, mission, and run wall-clock metadata is not persisted. Expected refusals use
+the closed versioned dashboard error schema.
 
-The three state-changing endpoints — scenario start, scenario reset, and mission approval — require the
-current API process's credential as `Authorization: Bearer <credential>`. The credential is generated anew
-for every API process lifetime, is never persisted or logged, and is not accepted from a cookie, query
-parameter, request body, or URL. For an approval, successful validation of that bearer is the sole source
-of the non-secret operator identity, carried as `operatorIdentity` under the canonical key rule below; a body
-field cannot supply or override it.
+The service binds only to its private Unix socket. Caddy is the sole loopback publisher. Every request
+must contain exactly one syntactically valid `Host` header whose parsed host and port exactly matches the
+configured allowlist. Wildcard, suffix, substring, missing, malformed, duplicated, and non-allowlisted
+values are rejected before route handling.
 
-Browser requests to those state-changing endpoints must also carry an `Origin` whose parsed scheme, host,
-and port exactly match the configured dashboard origin. Wildcard, `null`, suffix, and substring matches
-are forbidden, and the browser dashboard may not omit the header. The four read-only routes — health,
-readiness, scenario discovery, and the SSE event stream — deliberately do not require the bearer; their
-requests remain subject to Host validation. The complete rationale is in
-[ADR-0024](adr/0024-local-operator-api-boundary.md), and the credential entropy is in
+The two state-changing endpoints require the current API process's credential as
+`Authorization: Bearer <credential>`. The credential is generated anew for every API process lifetime,
+is never persisted or logged, and is not accepted from a cookie, query parameter, request body, or URL.
+The dynamic no-store shell transfers it once; bootstrap removes the source node and retains the value
+only in memory.
+
+Every mutation must also carry an `Origin` whose parsed scheme, host, and port exactly match the
+configured dashboard origin. Wildcard, `null`, suffix, substring, missing, repeated, and malformed values
+are forbidden; caller classification never weakens the rule. Read-only routes deliberately do not
+require the bearer; every route remains subject to Host validation. The refusal order is Host, Origin,
+bearer, media type and body size, idempotency key, canonical decode, strict request schema, then the route
+operation. The complete rationale is in
+[ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) and
+[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md); credential entropy is in
 [operating-parameters.md](operating-parameters.md#local-operator-credential).
 
 ## Dashboard event stream
 
-`GET /api/v1/events` streams **dashboard events**: the normalized projection of validated
-application envelopes ([ADR-0067](adr/0067-normalized-dashboard-events-and-reduced-state.md)). Both
-shapes below lie inside the canonical profile of the next section, so one canonicalizer, one
-decoder, and one fixture oracle serve them, and TypeScript reimplements them from this section
-alone. The bounds are in [operating-parameters.md](operating-parameters.md#dashboard-event-stream).
+`GET /api/v1/events` streams the snapshot and ordered suffix accepted by
+[ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md). Every data frame lies
+inside the canonical profile, so one canonicalizer, one decoder, and one shared fixture oracle serve
+Python and TypeScript. The bounds are in
+[operating-parameters.md](operating-parameters.md#dashboard-event-stream).
 
 A dashboard event has five members: `kind`, the projection's name; `eventClass`, one of `TELEMETRY`,
-`CONNECTIVITY`, `MISSION`, `COMMAND`, `EVIDENCE`, `APPROVAL`, `AUDIT`; `mission`, the mission
+`CONNECTIVITY`, or `MISSION` in this UI slice; `mission`, the mission
 identifier; `time`, the source envelope's canonical instant; and `data`, the projected fields
 repeating every identifier the source topic named except the mission, which `mission` already
 carries. **No transport member crosses this boundary** — `id`, `source`, `sequence`, `dataschema`,
@@ -230,25 +429,102 @@ carries. **No transport member crosses this boundary** — `id`, `source`, `sequ
 envelope profile or the topic grammar. An envelope whose `type` has no projection is refused as
 `UNPROJECTED`, in the same shape as the unbound-`type` refusal of the envelope profile.
 
-The **reduced dashboard state** is the fold of every dashboard event so far by a pure total
-function. It is the replay determinism oracle of
-[ADR-0009](adr/0009-isolated-side-effect-free-replay.md), and its determinism is structural: the
-state carries no wall-clock instant, no event identifier, and no trace context, because those
-legitimately differ between runs of one seeded scenario. Where the timeline needs an order, the
-state carries the append-only audit ordinal of
-[ADR-0003](adr/0003-postgres-durable-mission-store.md), which is an integer. Collections inside the
-state are arrays in ascending byte order of their identifier, never objects keyed by it, because a
-canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen.
-Array order is semantic, so that sort is part of the contract: two states differing only in
-insertion order must produce one digest.
+Durable order wraps, rather than changes, that projection:
+
+```text
+OrderedDashboardEvent = {auditOrdinal, event}
+```
+
+The audit ordinal is a positive integer. The immutable reducer checkpoint is
+`{state, latestEventDigest}`. Its witness lies outside reduced mission state and is the
+`ordered-dashboard-event` digest of
+`{canonicalizationVersion: 1, auditOrdinal, event}`. The wire wrapper itself remains
+`{auditOrdinal, event}`.
+
+A fold accepts only the next ordinal, updates both state and witness, and uses that witness to prove
+same-ordinal input. An equal ordered-event digest is an exact duplicate and leaves the checkpoint
+unchanged; an unequal digest is divergent content. A lower ordinal is a regression and a larger
+non-successor is a gap.
+
+The **reduced dashboard state** is the fold of ordered dashboard events by a pure total function. It is
+the replay determinism oracle of
+[ADR-0094](adr/0094-validate-replay-before-browser-playback.md), and its determinism is structural: the state
+carries no wall-clock instant, event identifier, trace context, run mode, connection state, operation,
+timeline, filter, selection, or playback state. It carries the current mission lifecycle, latest audit
+ordinal, sorted fleet members, explicit connectivity and latest telemetry for simulated members, and
+sorted sector lifecycle and assignment. Declared-only members carry neither connectivity nor telemetry.
+Sectors are the sole assignment and lifecycle authority; fleet members do not duplicate sector state.
+Collections are arrays in ascending byte order of their identifier, never objects keyed by it, because a
+canonical object key matches `^[a-z][a-zA-Z0-9]*$` and an identifier may carry an interior hyphen. Array
+order is semantic, so that sort is part of the contract.
+
+The non-telemetry timeline is not reconstructed from reduced state. A snapshot carries its full ordered
+timeline as normalized events; meaningful suffix events append to it, while telemetry never does. The
+snapshot schema narrows the ordered-event wrapper to connectivity, mission, and sector variants so a
+telemetry event cannot enter the timeline after otherwise-valid schema validation.
 
 The determinism hash is taken over the canonical state document under the `replay-state` context,
 so state bytes cannot be replayed as proposal bytes.
 
-Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses
-direct delivery that may already be dropped and a newer position supersedes a stale one. Every other
-class is never dropped: a buffer that is still full after discarding droppable events closes the
-stream with a typed reason, and the client re-synchronizes from a state snapshot.
+The API emits only `snapshot`, `dashboard-event`, and terminal `stream-overloaded` data frames;
+keepalives are comments. A snapshot carries the runtime identifier, an opaque run-bound cursor, current
+run, reduced state, replay-state digest, top-level `latestEventDigest`, and full non-telemetry timeline.
+A replay bundle carries the same top-level witness for its initial state. Its content is session-neutral:
+`sessionId` exists only in mutation responses, durable session lookup, and the replay route, never in the
+bundle or its checksum. The witness is `null` exactly when the corresponding latest audit ordinal is
+`0`; a positive ordinal requires a lowercase SHA-256 witness. A dashboard-event frame carries one
+ordered event, its suffix cursor, and the server digest
+after the fold; the receiver computes the successor witness from that event. An unknown, stale, or
+cross-run cursor receives a fresh snapshot.
+
+For snapshot and dashboard-event frames, EventSource's native `lastEventId` must match the validated
+cursor carried by the frame body. The live adapter forwards both witnesses; a mismatch fails closed
+before snapshot application or event folding. The browser does not retain a second unused cursor copy in
+server state.
+
+Under back-pressure a server may discard only `TELEMETRY` events, because routine telemetry uses direct
+delivery and a newer position supersedes a stale one. Each client retains 256 data frames plus one
+reserved terminal slot. If removing the oldest telemetry cannot retain a non-droppable frame, the API
+sends one terminal control frame and closes; the browser disposes that source and requests exactly one
+fresh snapshot. It validates every frame, recomputes the digest, and retains the last validated state on
+any contract, ordinal, or digest refusal.
+
+The dynamic bootstrap runtime identifier is validated and anchored before the browser opens its first
+EventSource. A first or later snapshot from another runtime closes that source, retains the last
+validated checkpoint, locks mutations, and requires a full document reload. Process replacement is
+therefore derived from two validated anchors rather than from health or a transport callback.
+
+Browser-local source signals are exactly `connecting`, `disconnected`, `offline`, and `recovered`.
+`runtimeChanged` is not a source-signal value. The live adapter emits `disconnected` on the first
+EventSource error, emits `offline` only if the stream has not reopened within six seconds, and emits
+`recovered` when that same-runtime transport reopens. It cancels the bounded timer on reopen and
+disposal. These signals describe the dashboard transport only; they never change or infer fleet-member
+connectivity ([ADR-0125](adr/0125-anchor-browser-runtime-and-bound-transport-outages.md)).
+
+## Normalized dashboard recording
+
+[ADR-0115](adr/0115-record-normalized-events-and-serve-session-neutral-replay.md) defines a bounded,
+synthetic NDJSON interchange between authoritative audit export and isolated replay validation. The
+first canonical line is `dashboard-recording/v1`; each following canonical line wraps one
+`OrderedDashboardEvent` as `dashboard-record/v1`. The document is UTF-8, LF-only, ends in one newline,
+and contains no blank lines, floating-point values, transport metadata, credentials, traces, or session
+identity. Its checksum covers the checksum-free canonical header and every canonical record in order.
+
+`python -m aerial_rescue_recorder.exporter` is the only production path that constructs that recording
+from revision-0005 storage. It requires an exact mission ID and live run ID, joins that run to its
+authoritative mission lifecycle, accepts only `wilderness-missing-person` revision `1` at
+`EXHAUSTED`, and reads its exact prepared-state bytes plus no more than 512 recorder-linked audit events
+through one captured watermark. Stored payloads cross canonical validation again before the existing
+exporter folds them. The command writes only `wilderness-missing-person.r1.ndjson` below an existing
+regular output directory; an existing path, symlink, nonregular directory, incomplete history, or
+selection mismatch refuses without overwrite or partial output. Capture remains the recorder's default
+entrypoint, and the exporter opens no broker session.
+
+The validator folds the recording from its witnessed initial state through the production reducer,
+verifies the event count, checksum, final replay-state digest, and all structural bounds, then writes one
+canonical `dashboard-replay-bundle/v1` document. Failure leaves no partial output. The dashboard API
+serves the validator's exact bytes for the durable session lookup; it never rewrites the bundle to add a
+session identifier.
 
 Adding an application event type is one change: a projection row, a state rule, golden fixtures, and
 a manifest entry land together, or the type is refused as unprojected.
@@ -292,8 +568,8 @@ lowercase.
 data. The payload carries `canonicalizationVersion` inside the hashed bytes, so a downgrade fails rather
 than passing. The hash input is the byte string `aerial-rescue/canonical/v1`, a newline, the consuming
 context, a newline, and the canonical bytes. The context is one of `proposal-digest`, `replay-state`,
-`evidence`, or `idempotency-body`, which stops bytes valid for one purpose being replayed as another. The
-digest is SHA-256 rendered as lowercase hexadecimal.
+`ordered-dashboard-event`, `evidence`, or `idempotency-body`, which stops bytes valid for one purpose
+being replayed as another. The digest is SHA-256 rendered as lowercase hexadecimal.
 
 ## Schema identity
 
@@ -304,8 +580,10 @@ validator can ever fetch it
 ([ADR-0038](adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md)). Every `$ref` is
 `#/$defs/...` inside one file or an absolute `$id` with an optional `#/$defs/...` fragment. Schemas use
 only `$schema`, `$id`, `$defs`, `$ref`, `description`, `type`, `const`, `enum`, `pattern`, `maxLength`,
-`minItems`, `minimum`, `maximum`, `required`, `properties`, `additionalProperties`, `propertyNames`,
-`anyOf`, `allOf`, and `items`, and never `format`, whose assertion behaviour is implementation-defined.
+`minLength`, `minItems`, `maxItems`, `minimum`, `maximum`, `required`, `properties`,
+`additionalProperties`, `propertyNames`, `anyOf`, `allOf`, and `items`, and never `format`, whose
+assertion behaviour is implementation-defined
+([ADR-0106](adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md)).
 Patterns are ASCII-only and use `[0-9]` rather than `\d`, so Python's `re` and ECMA-262 read them
 identically, and the pattern strings in the schemas are the constants in `packages/contracts`.
 
@@ -319,8 +597,8 @@ exactly one reason. `schemas/contract-manifest.toml` registers every schema and 
 
 ## Delivery and failure semantics
 
-- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. A queue is created only for a `(role, family)` pair the subscribe grant already permits, is bound only by its named owner, and sends what it cannot deliver to the dead-message queue rather than discarding it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)); the values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
-- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+- Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. The global projection derives queues from permitted consumers, with the recorder lifecycle consolidation and mission-control-specific projection selected by [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md); every queue is bound only by its named owner and sends what it cannot deliver to the dead-message queue rather than discarding it. The values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
+- The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected is not delivered into the mesh; delivery into the mesh is at-least-once only while the gateway holds its connection. The evidence service consumes salient events through its own durable identity and queue. ADR-0120 narrows the dashboard recorder to connectivity within `DRONE_EVENT`, so it is not a second salient-event consumer; no command, approval, or audit record depends on gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md), [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
 - Commands have a bounded acknowledgement timeout and retry policy with exponential backoff and jitter; the schedule has one interval and the jitter only adds ([ADR-0081](adr/0081-give-command-dispatch-one-interval.md)), and the values are in [operating-parameters.md](operating-parameters.md#command-dispatch).
 - Retries reuse the original command ID.

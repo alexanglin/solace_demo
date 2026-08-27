@@ -26,7 +26,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0006](0006-proposal-bound-single-use-approvals.md) | Approvals bind to a proposal digest, are single-use, and expire | Accepted |
 | [0007](0007-solace-first-implementation-policy.md) | Prefer supported Solace components over project-owned infrastructure | Accepted |
 | [0008](0008-abstention-over-recorded-substitution.md) | Degraded live simulation abstains rather than substituting recorded evidence | Accepted |
-| [0009](0009-isolated-side-effect-free-replay.md) | Replay is structurally isolated and side-effect free | Accepted |
+| [0009](0009-isolated-side-effect-free-replay.md) | Replay is structurally isolated and side-effect free | Superseded by ADR-0094 |
 | [0010](0010-uv-workspace-and-toolchain.md) | uv workspace with per-member packages | Accepted |
 | [0011](0011-no-exception-lint-typecheck-and-complexity-budgets.md) | Lint and typecheck all code with no escape hatches, and enforce complexity budgets | Accepted |
 | [0012](0012-git-hooks-with-ci-as-authority.md) | Staged git hooks for fast feedback, with CI as the authority | Accepted |
@@ -41,7 +41,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0021](0021-contract-artifact-manifest.md) | Validate contract artifacts through one offline manifest | Accepted |
 | [0022](0022-recursive-diagram-integrity.md) | Verify recursive diagram source and PNG integrity | Accepted |
 | [0023](0023-executable-deep-quality-gates.md) | Make complexity, duplication, and mutation gates executable | Accepted |
-| [0024](0024-local-operator-api-boundary.md) | Protect local mutations with loopback, Host, Origin, and a per-runtime bearer | Accepted |
+| [0024](0024-local-operator-api-boundary.md) | Protect local mutations with loopback, Host, Origin, and a per-runtime bearer | Superseded by ADR-0096 |
 | [0025](0025-narrow-ruff-subprocess-waivers.md) | Narrow Ruff subprocess waivers and record incompatible rule choices | Accepted |
 | [0026](0026-expiring-dependency-waivers.md) | Expiring, reviewed waivers for known upstream advisories | Accepted |
 | [0027](0027-integer-only-canonical-serialization.md) | Canonicalize digests over an integer-only JSON profile | Accepted |
@@ -61,7 +61,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0041](0041-deny-by-default-command-authority-table.md) | Close the command-type set with a deny-by-default command-authority table | Accepted |
 | [0042](0042-approval-time-to-live.md) | Approval time to live of 60 seconds | Accepted |
 | [0043](0043-docker-broker-with-solace-cloud-showcase.md) | Run the PubSub+ software event broker in Docker as the broker, with Solace Cloud as a non-gating showcase profile | Accepted |
-| [0044](0044-docker-compose-runtime-with-official-agent-mesh-image.md) | Run every component except Ollama in Docker Compose, with Agent Mesh from its official image | Accepted |
+| [0044](0044-docker-compose-runtime-with-official-agent-mesh-image.md) | Run every component except Ollama in Docker Compose, with Agent Mesh from its official image | Superseded by ADR-0096 |
 | [0045](0045-fail-closed-compose-policy-gate.md) | Enforce a fail-closed compose policy gate at both blocking stages | Accepted |
 | [0046](0046-generated-local-certificate-authority.md) | Secure the local broker with a generated per-checkout certificate authority | Accepted |
 | [0047](0047-override-the-asteval-pin-to-close-cve-2026-55244.md) | Override the asteval pin to 1.0.9 and close CVE-2026-55244 | Accepted |
@@ -84,7 +84,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0064](0064-fix-the-agent-mesh-a2a-namespace.md) | Fix the Agent Mesh A2A namespace at `aerial-rescue-mesh` | Accepted |
 | [0065](0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) | Validate the HTTP/SSE Web UI against its declared schema, and keep the Platform service out | Accepted |
 | [0066](0066-select-commit-stage-tests-from-an-import-graph.md) | Select commit-stage tests from a project-owned import graph | Accepted |
-| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Accepted |
+| [0067](0067-normalized-dashboard-events-and-reduced-state.md) | Project application events into normalized dashboard events and fold them into one reduced state | Superseded by ADR-0101 |
 | [0068](0068-command-gateway-request-reply-is-schema-bound-rpc.md) | The command-gateway request/reply channel is schema-bound RPC, recorded as a CloudEvent | Accepted |
 | [0069](0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md) | Close the gateway-operation set with a deny-by-default operation table | Accepted |
 | [0070](0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) | Reserve `reply` as the reply channel's mission level, and narrow the Event Mesh Tool's grant to it | Accepted |
@@ -102,10 +102,66 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0082](0082-bind-the-drone-command-and-its-result-to-payload-schemas.md) | Bind the drone command and its result to payload schemas, one schema per command type | Accepted |
 | [0083](0083-pace-the-tick-loop-at-a-fixed-rate.md) | Pace the tick loop at a fixed rate, and count what overruns | Accepted |
 | [0084](0084-give-backlog-recovery-an-instrument.md) | Give backlog recovery an instrument, and say what it does not measure | Accepted |
-| [0085](0085-bound-every-durable-store-wait.md) | Bound every durable-store wait, and derive each from a number the repository already carries | Accepted |
+| [0085](0085-bound-every-durable-store-wait.md) | Bound every durable-store wait, and derive each from a number the repository already carries | Superseded by ADR-0090 |
 | [0086](0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) | Prove the durable store on a database the run creates and drops, and keep its member suite offline | Accepted |
 | [0087](0087-put-the-migration-tree-inside-the-member-that-owns-the-schema.md) | Put the migration tree inside the member that owns the schema, and cover its revisions offline | Accepted |
 | [0088](0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md) | Order the mission timeline by a per-mission audit ordinal advanced inside the writing transaction | Accepted |
+| [0089](0089-state-read-committed-rather-than-inherit-it.md) | State `READ COMMITTED` on the engine rather than inherit it from the cluster | Accepted |
+| [0090](0090-bound-the-lock-wait-below-the-statement-time.md) | Bound the lock wait below the statement time, so a contended row is distinguishable | Accepted |
+| [0091](0091-consume-an-approval-under-its-own-row-lock.md) | Consume an approval under its own row lock, and let the domain's refusal be the denial | Accepted |
+| [0092](0092-claim-an-idempotency-key-with-one-conflicting-insert.md) | Claim an idempotency key with one conflicting insert, and let the domain say what a repeat means | Accepted |
+| [0093](0093-stage-the-command-outbox-under-a-counted-bound.md) | Give the command outbox three states, a counted bound, and an overflow that writes nothing | Accepted |
+| [0094](0094-validate-replay-before-browser-playback.md) | Validate replay in a zero-network one-shot container before browser playback | Accepted |
+| [0095](0095-persist-only-the-ui-slice-lifecycle.md) | Persist only the UI slice lifecycle, idempotency, and audit facts | Superseded by ADR-0113 |
+| [0096](0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) | Publish the dashboard through Caddy and keep FastAPI on a private Unix socket | Accepted |
+| [0097](0097-close-the-ui-slice-http-contract.md) | Close the UI slice HTTP contract and mutation refusal order | Accepted |
+| [0098](0098-make-the-wilderness-dashboard-ui-first.md) | Make the wilderness mission dashboard a UI-first real slice | Accepted |
+| [0099](0099-pin-the-dashboard-runtime-and-stack.md) | Pin the dashboard runtime and production stack | Accepted |
+| [0100](0100-commit-a-strict-wilderness-scenario-catalog.md) | Commit a strict wilderness scenario catalog with explicit 20 plus 3 participation | Accepted |
+| [0101](0101-order-dashboard-events-outside-the-five-field-projection.md) | Order dashboard events outside the five-field projection and resnapshot bounded SSE | Accepted |
+| [0102](0102-start-the-agent-mesh-with-the-default-profile.md) | Start the Agent Mesh with the default profile, behind an ordered startup | Accepted |
+| [0103](0103-move-the-system-node-runtime-to-26.md) | Move the system Node runtime to 26.7.0 and keep the provisioned hooks on 24 LTS | Accepted |
+| [0104](0104-run-every-commit-stage-hook-at-pre-push.md) | Run every commit-stage hook at pre-push as well | Accepted |
+| [0105](0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md) | Adjudicate dashboard coverage and require separate browser evidence | Accepted |
+| [0106](0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) | Bound dashboard schema strings and arrays explicitly | Accepted |
+| [0107](0107-authenticate-private-scenario-and-fleet-run-control.md) | Authenticate private scenario and fleet run control over bounded HTTP | Accepted |
+| [0108](0108-register-strict-python-wire-models-before-http-runtime.md) | Register strict Python wire models before the HTTP runtime | Accepted |
+| [0109](0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) | Enable the Pydantic mypy plugin with typed constructors | Accepted |
+| [0110](0110-scope-the-duplication-gate-to-authored-source.md) | Scope the duplication gate to authored source | Accepted |
+| [0111](0111-broker-dashboard-lifecycle-sources.md) | Broker dashboard lifecycle sources as schema-bound application events | Accepted |
+| [0112](0112-witness-ordered-dashboard-events-outside-reduced-state.md) | Witness ordered dashboard events outside reduced state and correct v1 anchors | Accepted |
+| [0113](0113-persist-dashboard-runtime-after-the-current-store-head.md) | Persist the dashboard runtime after the current store head | Accepted |
+| [0114](0114-extend-private-scenario-control-with-catalog-and-recovery.md) | Extend private scenario control with catalog and lost-run recovery | Accepted |
+| [0115](0115-record-normalized-events-and-serve-session-neutral-replay.md) | Record normalized events and serve session-neutral replay | Accepted |
+| [0116](0116-bound-dashboard-ingress-cursors-and-streams.md) | Bound dashboard ingress, cursors, and streams | Accepted |
+| [0117](0117-select-the-exact-mission-control-service-closure.md) | Select the exact mission-control service closure | Accepted |
+| [0118](0118-provision-command-queues-only-for-executable-members.md) | Provision command queues only for executable members | Accepted |
+| [0119](0119-parameterize-disposable-non-ui-host-ports.md) | Parameterize disposable non-UI host ports | Accepted |
+| [0120](0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) | Run only the recorder endpoints the dashboard consumes | Accepted |
+| [0121](0121-reconstruct-synthetic-mission-lifecycle-witnesses.md) | Reconstruct synthetic mission-lifecycle witnesses from stable run identity | Accepted |
+| [0122](0122-bound-production-dashboard-script-and-style-bytes.md) | Bound production dashboard script and style bytes | Accepted |
+| [0123](0123-isolate-mission-control-state-and-broker-identities.md) | Isolate mission-control state and broker identities | Accepted |
+| [0124](0124-remove-unconsumed-dashboard-wire-values.md) | Remove dashboard wire values with no producer-to-consumer effect | Accepted |
+| [0125](0125-anchor-browser-runtime-and-bound-transport-outages.md) | Anchor browser runtime identity and bound transport outages | Accepted |
+| [0126](0126-instrument-the-dashboard-soak-with-bounded-process-growth.md) | Instrument the dashboard soak with bounded process growth | Accepted |
+| [0127](0127-bind-live-runs-to-their-mission-scenario.md) | Bind live runs to their mission scenario | Accepted |
+| [0128](0128-prove-sse-overload-through-authenticated-pressure.md) | Prove SSE overload through bounded authenticated pressure | Accepted |
+| [0129](0129-generate-only-consumed-local-secrets.md) | Generate only local secrets with active consumers | Accepted |
+| [0130](0130-enforce-dashboard-tier-one-coverage-per-file.md) | Enforce dashboard Tier 1 coverage per file | Accepted |
+| [0131](0131-isolate-loopback-publishers-and-forward-startup-flags.md) | Isolate loopback publishers and forward startup flags | Accepted |
+| [0132](0132-precompile-dashboard-validators-for-the-production-csp.md) | Precompile dashboard validators for the production CSP | Accepted |
+| [0133](0133-persist-the-one-shot-replay-handoff.md) | Persist the one-shot replay handoff | Accepted |
+| [0134](0134-prove-fleet-publication-separately-from-recorder-receipt.md) | Prove fleet publication separately from recorder receipt | Accepted |
+| [0135](0135-keep-overload-recovery-observable-without-delaying-state.md) | Keep overload recovery observable without delaying state | Accepted |
+| [0136](0136-bind-live-snapshots-to-accepted-run-identities.md) | Bind live snapshots to accepted run identities | Accepted |
+| [0137](0137-remove-unconsumed-recovery-and-recorder-results.md) | Remove unconsumed recovery and recorder results | Accepted |
+| [0138](0138-stall-the-publisher-not-the-api-for-sse-pressure.md) | Stall the publisher, not the API, for SSE pressure | Accepted |
+| [0139](0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) | Reuse the aerial-rescue-mesh runtime for the dashboard | Accepted |
+| [0140](0140-scope-live-telemetry-producers-to-one-mission.md) | Scope live telemetry producers to one mission | Accepted |
+| [0141](0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md) | Exhaust deployed SSE buffers with two bounded producers | Accepted |
+| [0142](0142-retain-dashboard-pressure-history-in-the-shared-runtime.md) | Retain dashboard pressure history in the shared runtime | Accepted |
+| [0143](0143-let-durable-terminal-state-establish-reset-cancellation.md) | Let durable terminal state establish reset cancellation | Accepted |
+| [0144](0144-serialize-the-related-dashboard-test-hook.md) | Serialize the related dashboard test hook | Accepted |
 
 ## Decisions still open
 

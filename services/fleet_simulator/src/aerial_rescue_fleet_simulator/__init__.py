@@ -15,6 +15,7 @@ documents, so one handler audits every denied value.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Final
 
 from aerial_rescue_contracts import TOPIC_NAMESPACE_ROOT
@@ -23,6 +24,7 @@ from aerial_rescue_domain import DomainError
 URN_SCHEME: Final = "urn"
 URN_SEPARATOR: Final = ":"
 PRODUCER_KIND: Final = "drone"
+RUN_PRODUCER_KIND: Final = "drone-run"
 """The ``producerKind`` level of a simulated drone's CloudEvents ``source``.
 
 One process simulates many producers, so unlike the command gateway the identity in an
@@ -45,3 +47,17 @@ def event_source(drone_id: str) -> str:
     stream.
     """
     return URN_SEPARATOR.join((URN_SCHEME, TOPIC_NAMESPACE_ROOT, PRODUCER_KIND, drone_id))
+
+
+def run_event_source(drone_id: str, mission_id: str) -> str:
+    """Return one restart-safe producer stream for a drone's operational mission.
+
+    The envelope source profile permits one bounded identifier level. Hashing the validated
+    mission/drone pair keeps that level within its 64-character bound while making a new
+    mission a new producer epoch. A restarted fleet can therefore begin its process-local
+    sequence at zero without colliding with the durable high-water of an earlier mission.
+    """
+    material = b"aerial-rescue:drone-run:v1\x00" + mission_id.encode("ascii")
+    material += b"\x00" + drone_id.encode("ascii")
+    identity = hashlib.sha256(material).hexdigest()
+    return URN_SEPARATOR.join((URN_SCHEME, TOPIC_NAMESPACE_ROOT, RUN_PRODUCER_KIND, identity))

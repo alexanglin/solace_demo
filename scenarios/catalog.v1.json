@@ -1,0 +1,11 @@
+{
+  "catalogVersion": 1,
+  "scenarios": [
+    {
+      "identifier": "wilderness-missing-person",
+      "revision": 1,
+      "definitionPath": "v1/wilderness-missing-person.r1.json",
+      "definitionSha256": "916a5898b68cdd8d4552ef41313f87c6762f69e6ad8b95cad0a6f4665d0aae79"
+    }
+  ]
+}

@@ -2,7 +2,8 @@
 
 ``docs/adr/0044`` fixes what the stack must look like and ``docs/adr/0045`` records this gate:
 every pulled image pinned by tag and digest, every published port bound to loopback, secrets
-as files or environment indirection rather than literals, a healthcheck on every service, the
+as files or environment indirection rather than literals, a healthcheck on every long-running
+service, an enumerated completion policy for one-shot jobs, the
 broker and Agent Mesh services shaped as the records require, and every Dockerfile built from
 a digest-pinned base with hashed ``pip`` installs.
 
@@ -44,7 +45,8 @@ PINNED_IMAGE_PATTERN: Final = re.compile(
     r"^[a-z0-9][a-z0-9._/-]*:([A-Za-z0-9._-]+)@sha256:[0-9a-f]{64}$"
 )
 LOOPBACK_SHORT_PORT_PATTERN: Final = re.compile(
-    r"^127\.0\.0\.1:(\d{1,5}):(\d{1,5})(?:/(?:tcp|udp))?$"
+    r"^127\.0\.0\.1:(?:\d{1,5}|\$\{[A-Za-z_][A-Za-z0-9_]*:-\d{1,5}\})"
+    r":(?P<container>\d{1,5})(?:/(?:tcp|udp))?$"
 )
 PIP_INSTALL_PATTERN: Final = re.compile(
     r"(?:^|[\s/])(?:pip3?|python3?(?:\.\d+)?\s+-m\s+pip|uv\s+pip)\s+install(?:\s|$)"
@@ -62,7 +64,8 @@ BROKER_FORBIDDEN_PORTS: Final = frozenset({55555, 8080})
 PLATFORM_ALLOWLIST: Final[Mapping[str, str]] = {"event-management-agent": "linux/amd64"}
 """The one image published for amd64 only; everything else runs native arm64."""
 
-KNOWN_PROFILES: Final = frozenset({"mesh", "services", "event-portal"})
+KNOWN_PROFILES: Final = frozenset({"mesh", "services", "event-portal", "mission-control"})
+ONE_SHOT_SERVICES: Final = frozenset({"migration", "replay-validator"})
 COMPOSE_FILE_SOURCE_ROOT: Final = "./secrets/"
 CONTAINER_MOUNT_PREFIX: Final = "/run/secrets/"
 LOOPBACK: Final = "127.0.0.1"
@@ -289,7 +292,7 @@ def _port_entries(service: Mapping[str, object]) -> list[object]:
 def _container_port(entry: object) -> int | None:
     if isinstance(entry, str):
         match = LOOPBACK_SHORT_PORT_PATTERN.fullmatch(entry)
-        return int(match.group(2)) if match else None
+        return int(match.group("container")) if match else None
     if isinstance(entry, Mapping):
         return _long_form_container_port(entry)
     return None
@@ -365,6 +368,8 @@ def _build_args_issues(name: str, service: Mapping[str, object]) -> list[str]:
 
 
 def _healthcheck_issues(name: str, service: Mapping[str, object]) -> list[str]:
+    if name in ONE_SHOT_SERVICES:
+        return []
     healthcheck = service.get("healthcheck")
     if (
         isinstance(healthcheck, Mapping)
@@ -373,6 +378,17 @@ def _healthcheck_issues(name: str, service: Mapping[str, object]) -> list[str]:
     ):
         return []
     return [f"services.{name} lacks a healthcheck.test"]
+
+
+def _one_shot_issues(name: str, service: Mapping[str, object]) -> list[str]:
+    if name not in ONE_SHOT_SERVICES:
+        return []
+    issues: list[str] = []
+    if service.get("restart") != "no":
+        issues.append(f'services.{name}.restart must be "no" for a one-shot service')
+    if "healthcheck" in service:
+        issues.append(f"services.{name} is one-shot and must not declare a healthcheck")
+    return issues
 
 
 def _platform_issues(name: str, service: Mapping[str, object]) -> list[str]:
@@ -473,6 +489,7 @@ SERVICE_RULES: Final[tuple[ServiceRule, ...]] = (
     _environment_issues,
     _build_args_issues,
     _healthcheck_issues,
+    _one_shot_issues,
     _platform_issues,
     _profile_issues,
     _indirection_issues,

@@ -25,8 +25,12 @@ values in this guide:
 | Topic grammar and event-type derivation | [ADR-0036](../docs/adr/0036-ascii-topic-grammar-bound-to-event-type.md) |
 | Closed CloudEvents envelope and refusal order | [ADR-0037](../docs/adr/0037-cloudevents-envelope-profile.md) |
 | Reserved-host identity, absolute references, fixture layout, and one-reason negatives | [ADR-0038](../docs/adr/0038-reserved-host-schema-identity-and-one-reason-fixtures.md) |
+| Explicit string and array cardinality assertions | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Generated dashboard types and runtime validation | [ADR-0058](../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
-| Normalized dashboard events and reduced state | [ADR-0067](../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
+| Ordered dashboard events, reduced state, and SSE frames | [ADR-0101](../docs/adr/0101-order-dashboard-events-outside-the-five-field-projection.md) |
+| Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
+| Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Schema-bound dashboard lifecycle sources and composed events | [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 
 An Accepted architecture decision record (ADR) governs whenever a schema, fixture, implementation, or
 document disagrees with it. Never rewrite Accepted ADR prose. Create a new or superseding record before
@@ -42,7 +46,8 @@ verification mechanism.
 | `v1/envelope.schema.json` | Structural closed-member CloudEvents envelope profile |
 | `v1/payload/` | Application-event payload shapes |
 | `v1/event/` | Composed schemas binding an envelope's `type`, `dataschema`, and `data` |
-| `v1/rpc/` | Request/reply bodies that are not application events ([ADR-0068](../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)) |
+| `v1/rpc/` | Request/reply bodies that are not application events, including command-gateway and private scenario/fleet control RPC ([ADR-0068](../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md)) |
+| `v1/scenario/` | Strict catalog and scenario-definition file shapes ([ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md)) |
 | `v1/topic-cases.schema.json` | Common shape of accepted and refused topic case files |
 
 Keep reusable wire definitions in `canonical.schema.json` and reference them instead of copying patterns

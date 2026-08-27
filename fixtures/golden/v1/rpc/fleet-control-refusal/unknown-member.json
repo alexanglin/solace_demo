@@ -1,0 +1,6 @@
+{
+  "controlVersion": 1,
+  "errorCode": "CAPACITY_EXCEEDED",
+  "message": "the bounded fleet worker capacity is already occupied",
+  "unexpected": true
+}

@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/scenario/definition.schema.json",
+  "description": "One version-one synthetic scenario definition carrying presentation geometry and every explicit deterministic fleet input.",
+  "type": "object",
+  "required": [
+    "definitionVersion",
+    "identifier",
+    "revision",
+    "title",
+    "summary",
+    "searchAreaSquareMetres",
+    "lastKnownLocation",
+    "searchPolygon",
+    "sectors",
+    "members",
+    "tickIntervalMilliseconds",
+    "connectivityThresholds",
+    "ticksToSweep",
+    "absentHeartbeats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "definitionVersion": {
+      "const": 1
+    },
+    "identifier": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "searchAreaSquareMetres": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "lastKnownLocation": {
+      "$ref": "#/$defs/lastKnownLocation"
+    },
+    "searchPolygon": {
+      "$ref": "#/$defs/polygon"
+    },
+    "sectors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/sector"
+      }
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/simulatedMember"
+          },
+          {
+            "$ref": "#/$defs/declaredOnlyMember"
+          }
+        ]
+      }
+    },
+    "tickIntervalMilliseconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "connectivityThresholds": {
+      "$ref": "#/$defs/connectivityThresholds"
+    },
+    "ticksToSweep": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "absentHeartbeats": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/absentHeartbeat"
+      }
+    }
+  },
+  "$defs": {
+    "lastKnownLocation": {
+      "type": "object",
+      "required": [
+        "label",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        }
+      }
+    },
+    "vertex": {
+      "type": "object",
+      "required": [
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        }
+      }
+    },
+    "polygon": {
+      "type": "object",
+      "required": [
+        "vertices"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vertices": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/vertex"
+          }
+        }
+      }
+    },
+    "sector": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "vertices"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "vertices": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/vertex"
+          }
+        }
+      }
+    },
+    "simulatedMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation",
+        "sectorId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "altitudeMetres",
+        "headingDegrees",
+        "groundSpeedCentimetresPerSecond",
+        "batteryPermille",
+        "northMicrodegreesPerTick",
+        "eastMicrodegreesPerTick",
+        "batteryDrainPermillePerTick"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "SIMULATED_DRONE"
+        },
+        "sectorId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        },
+        "altitudeMetres": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/altitudeMetres"
+        },
+        "headingDegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/headingDegrees"
+        },
+        "groundSpeedCentimetresPerSecond": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/groundSpeedCentimetresPerSecond"
+        },
+        "batteryPermille": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "northMicrodegreesPerTick": {
+          "type": "integer",
+          "minimum": -90000000,
+          "maximum": 90000000
+        },
+        "eastMicrodegreesPerTick": {
+          "type": "integer",
+          "minimum": -180000000,
+          "maximum": 180000000
+        },
+        "batteryDrainPermillePerTick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "declaredOnlyMember": {
+      "type": "object",
+      "required": [
+        "identifier",
+        "participation",
+        "role",
+        "executionLabel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "participation": {
+          "const": "DECLARED_ONLY"
+        },
+        "role": {
+          "enum": [
+            "vision",
+            "navigation",
+            "communications"
+          ]
+        },
+        "executionLabel": {
+          "const": "DECLARED ONLY — NOT EXECUTED"
+        }
+      }
+    },
+    "connectivityThresholds": {
+      "type": "object",
+      "required": [
+        "missesToDegraded",
+        "missesToOffline",
+        "heartbeatsToRecover"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "missesToDegraded": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "missesToOffline": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "heartbeatsToRecover": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "absentHeartbeat": {
+      "type": "object",
+      "required": [
+        "droneId",
+        "tickOrdinal"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "tickOrdinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}
