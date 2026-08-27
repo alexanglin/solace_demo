@@ -428,7 +428,12 @@ supersedable, and the endpoints that carry the guaranteed families are the secti
 total per-principal table. `GS` and `GR` are Guaranteed send and receive; `EC` is dynamic endpoint
 creation; `C` is each of the total, SMF, and Web/WSS connection ceilings per username; `E/I` are egress
 consumer and ingress publisher flows per client; `EP` is endpoints owned by the username; and `S` is
-direct client subscriptions. `G1` is the explicit Guaranteed-1 minimum message burst derived by
+direct client subscriptions; the broker also counts the reply-inbox subscription the pinned SDK
+installs on every session, so the provisioned `maxSubscriptionCount` is `S + 1` for each profile that
+permits a connection and zero for `discovery`
+([ADR-0191](adr/0191-reserve-one-subscription-for-the-sdk-reply-inbox.md)); the total provisioning
+test and the live authorization suite are the instruments. `G1` is the explicit Guaranteed-1 minimum
+message burst derived by
 [ADR-0165](adr/0165-size-g1-bursts-to-the-complete-flow-set.md) from the complete allowed flow set. The
 endpoint ceiling includes SEMP-created queues assigned to an owner even when that owner cannot create an
 endpoint.

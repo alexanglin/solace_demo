@@ -395,6 +395,16 @@ _CLIENT_PROFILE_VALUES: Final[
     Principal.DISCOVERY: (False, False, False, 0, 0, 0, 0, 0, False, None),
 }
 
+REPLY_INBOX_SUBSCRIPTIONS: Final = 1
+"""The one subscription every SMF session installs at connect, before any application one.
+
+The pinned SDK subscribes its reply inbox, ``#P2P/v:broker/<id>/<client>/>``, on every session
+and offers no property that withholds it, and the broker counts that subscription against
+``maxSubscriptionCount``. A ceiling equal to the role's application subscriptions therefore
+refuses the connect when that count is zero and the last application subscription otherwise
+(ADR-0191). The reservation belongs to every profile that permits a connection.
+"""
+
 _BIND_THRESHOLD: Final[Mapping[str, int]] = {"clearPercent": 60, "setPercent": 80}
 _SPOOL_THRESHOLD: Final[Mapping[str, int]] = {"clearPercent": 18, "setPercent": 25}
 _REJECT_THRESHOLD: Final[Mapping[str, int]] = {"clearPercent": 60, "setPercent": 80}
@@ -799,7 +809,8 @@ def _client_profile_request(vpn: str, profile: ClientProfileState) -> Request:
             ),
             "maxIngressFlowCount": profile.max_ingress_flows,
             "maxEndpointCountPerClientUsername": profile.max_endpoints,
-            "maxSubscriptionCount": profile.max_subscriptions,
+            "maxSubscriptionCount": profile.max_subscriptions
+            + (REPLY_INBOX_SUBSCRIPTIONS if profile.max_connections else 0),
             "maxTransactedSessionCount": 0,
             "maxTransactionCount": 0,
             "serviceSmfMinKeepaliveEnabled": True,

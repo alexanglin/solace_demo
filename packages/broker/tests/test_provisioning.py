@@ -1252,6 +1252,33 @@ class ApplyTests(unittest.TestCase):
         # Assert
         self.assertIs(ProvisioningRefusal.READBACK_MISMATCH, captured.refusal)
 
+    def test_every_connectable_profile_reserves_one_subscription_for_the_sdk_reply_inbox(
+        self,
+    ) -> None:
+        # Arrange
+        broker = FakeBroker()
+        expected = {
+            "fleet-simulator": 1,
+            "command-gateway": 3,
+            "dashboard-api": 4,
+            "evidence-service": 1,
+            "recorder": 4,
+            "event-mesh-gateway": 1,
+            "event-mesh-tool": 1,
+            "agent-mesh-agent": 1,
+            "discovery": 0,
+        }
+
+        # Act
+        apply(broker, _desired_state())
+
+        # Assert
+        actual = {
+            role: broker.objects[f"msgVpns/{VPN}/clientProfiles/{role}"]["maxSubscriptionCount"]
+            for role in expected
+        }
+        self.assertEqual(expected, actual)
+
 
 class MessageCountTests(unittest.TestCase):
     """How many messages a queue is holding, read from the monitor plane."""

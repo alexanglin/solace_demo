@@ -2022,6 +2022,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Every owned client profile now reserves one subscription for the SDK reply inbox.** The first
+  live apply of the ADR-0153 profile table refused every connection from a profile with zero direct
+  subscriptions and refused the command gateway's second application subscription, because the
+  broker counts the `#P2P` reply-inbox subscription the pinned SDK installs on every session against
+  `maxSubscriptionCount`. The rendered ceiling is now the table's application subscriptions plus one
+  for each connectable profile
+  ([ADR-0191](docs/adr/0191-reserve-one-subscription-for-the-sdk-reply-inbox.md)).
+
 - The telemetry projection boundary test now reads its byte-identical member-local baseline, so Tier 1
   mutation runs remain independent of the repository-root fixture layout.
 

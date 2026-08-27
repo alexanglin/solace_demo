@@ -209,6 +209,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0188](0188-route-root-mypy-through-discovered-source-bases.md) | Route root mypy through discovered source bases | Accepted |
 | [0189](0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md) | Reconcile the accepted dashboard runtime with the Solace application data plane | Accepted |
 | [0190](0190-count-active-queue-binds-through-transmit-flow-aggregates.md) | Count active queue binds through transmit-flow aggregates | Accepted |
+| [0191](0191-reserve-one-subscription-for-the-sdk-reply-inbox.md) | Reserve one subscription per session for the SDK reply inbox | Accepted |
 
 ## Decisions still open
 
