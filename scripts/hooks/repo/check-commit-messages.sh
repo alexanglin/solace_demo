@@ -46,6 +46,10 @@ if [ -n "$base" ] && [ "$base" != "$zero" ] &&
 	[ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
 	printf 'Refusing a commit-message range in a shallow repository: %s\n' \
 		'unshallow it before validating, or the range reaches history it cannot see' >&2
+	printf '  git-dir=%s toplevel=%s cwd=%s shallow-file=%s base_ancestors=%s\n' \
+		"$(git rev-parse --absolute-git-dir 2>&1)" "$(git rev-parse --show-toplevel 2>&1)" \
+		"$PWD" "$(ls "$(git rev-parse --absolute-git-dir)/shallow" 2>&1)" \
+		"$(git rev-list --count "$base" 2>&1)" >&2
 	exit 2
 fi
 
