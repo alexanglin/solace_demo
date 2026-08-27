@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import runpy
 import tempfile
 import unittest
@@ -16,31 +17,23 @@ from aerial_rescue_scenario_service.main import (
     ScenarioConfigurationError,
     configuration,
     main,
-    open_lifecycle_session,
 )
 
 pytestmark = [pytest.mark.unit]
 
 SCENARIO_VALUE: Final = "b" * 64
 FLEET_VALUE: Final = "c" * 64
-BROKER_VALUE: Final = "not-a-real-scenario-broker-password"
 
 
 def _environment(root: Path) -> dict[str, str]:
     """Write bounded synthetic secrets and return the production environment shape."""
-    broker = root / "broker"
     scenario = root / "scenario"
     fleet = root / "fleet"
     scenario_root = root / "scenarios"
-    broker.write_text(BROKER_VALUE, encoding="ascii")
     scenario.write_text(SCENARIO_VALUE, encoding="ascii")
     fleet.write_text(FLEET_VALUE, encoding="ascii")
     scenario_root.mkdir()
     return {
-        "SOLACE_BROKER_URL": "tcps://broker:55443",
-        "SOLACE_BROKER_VPN": "default",
-        "TRUST_STORE": "/etc/aerial-rescue/certs",
-        "SOLACE_BROKER_PASSWORD_FILE": str(broker),
         "SCENARIO_CONTROL_SECRET_FILE": str(scenario),
         "FLEET_CONTROL_SECRET_FILE": str(fleet),
         "SCENARIO_ROOT": str(scenario_root),
@@ -89,7 +82,6 @@ class ScenarioConfigurationTests(unittest.TestCase):
         self.assertEqual(FLEET_VALUE, configured.fleet_control_secret)
         self.assertNotIn(SCENARIO_VALUE, rendered)
         self.assertNotIn(FLEET_VALUE, rendered)
-        self.assertNotIn(BROKER_VALUE, rendered)
 
     def test_configuration_refuses_shared_hop_secrets_and_non_directory_scenario_root(self) -> None:
         # Arrange
@@ -97,7 +89,10 @@ class ScenarioConfigurationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         environment = _environment(Path(temporary.name))
         Path(environment["FLEET_CONTROL_SECRET_FILE"]).write_text(SCENARIO_VALUE, encoding="ascii")
-        not_directory = {**environment, "SCENARIO_ROOT": environment["TRUST_STORE"]}
+        not_directory = {
+            **environment,
+            "SCENARIO_ROOT": environment["SCENARIO_CONTROL_SECRET_FILE"],
+        }
 
         # Act
         with pytest.raises(ScenarioConfigurationError) as shared:
@@ -111,7 +106,7 @@ class ScenarioConfigurationTests(unittest.TestCase):
         self.assertEqual("SCENARIO_ROOT", root.value.value)
         self.assertNotIn(SCENARIO_VALUE, str(shared.value))
 
-    def test_main_closes_http_and_guaranteed_broker_resources_after_listener_exit(self) -> None:
+    def test_main_closes_http_resources_after_brokerless_listener_exit(self) -> None:
         # Arrange
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -119,7 +114,6 @@ class ScenarioConfigurationTests(unittest.TestCase):
 
         # Act
         with (
-            patch("aerial_rescue_scenario_service.main.open_lifecycle_session") as opened,
             patch("aerial_rescue_scenario_service.main.httpx.Client") as http_client,
             patch("aerial_rescue_scenario_service.main.serve") as listener,
         ):
@@ -128,10 +122,9 @@ class ScenarioConfigurationTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, status)
         self.assertEqual(1, listener.call_count)
-        opened.return_value.close.assert_called_once_with()
         http_client.return_value.close.assert_called_once_with()
 
-    def test_main_closes_guaranteed_broker_when_http_construction_fails(self) -> None:
+    def test_main_opens_no_broker_when_http_construction_fails(self) -> None:
         # Arrange
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -139,7 +132,6 @@ class ScenarioConfigurationTests(unittest.TestCase):
 
         # Act
         with (
-            patch("aerial_rescue_scenario_service.main.open_lifecycle_session") as opened,
             patch(
                 "aerial_rescue_scenario_service.main.httpx.Client",
                 side_effect=RuntimeError("synthetic HTTP construction failure"),
@@ -149,7 +141,7 @@ class ScenarioConfigurationTests(unittest.TestCase):
             main(environment=environment)
 
         # Assert
-        opened.return_value.close.assert_called_once_with()
+        self.assertNotIn("SOLACE_BROKER_URL", environment)
 
     def test_missing_insecure_and_unreadable_configuration_fail_with_setting_names_only(
         self,
@@ -158,46 +150,41 @@ class ScenarioConfigurationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         environment = _environment(Path(temporary.name))
-        missing = {name: value for name, value in environment.items() if name != "TRUST_STORE"}
-        insecure = {**environment, "SOLACE_BROKER_URL": "http://broker:55555"}
+        missing = {
+            name: value
+            for name, value in environment.items()
+            if name != "SCENARIO_CONTROL_SECRET_FILE"
+        }
         absent_file = {
             **environment,
-            "SOLACE_BROKER_PASSWORD_FILE": str(Path(temporary.name) / "absent"),
+            "SCENARIO_CONTROL_SECRET_FILE": str(Path(temporary.name) / "absent"),
         }
 
         # Act
         with pytest.raises(ScenarioConfigurationError) as absent:
             configuration(missing)
-        with pytest.raises(ScenarioConfigurationError) as transport:
-            configuration(insecure)
         with pytest.raises(ScenarioConfigurationError) as material:
             configuration(absent_file)
         error = StringIO()
         status = main(environment={}, error=error)
 
         # Assert
-        self.assertEqual("TRUST_STORE", absent.value.value)
-        self.assertEqual("SOLACE_BROKER_URL", transport.value.value)
-        self.assertEqual("SOLACE_BROKER_PASSWORD_FILE", material.value.value)
+        self.assertEqual("SCENARIO_CONTROL_SECRET_FILE", absent.value.value)
+        self.assertEqual("SCENARIO_CONTROL_SECRET_FILE", material.value.value)
         self.assertEqual(1, status)
         self.assertEqual("FAILED: scenario service unavailable\n", error.getvalue())
 
-    def test_lifecycle_opener_uses_the_scenario_publish_only_identity(self) -> None:
+    def test_production_module_exposes_no_broker_opener_or_principal(self) -> None:
         # Arrange
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        configured = configuration(_environment(Path(temporary.name)))
+        module = importlib.import_module("aerial_rescue_scenario_service.main")
 
         # Act
-        with patch(
-            "aerial_rescue_scenario_service.main.open_guaranteed_publishing_session"
-        ) as opened:
-            session = open_lifecycle_session(configured)
+        exported = vars(module)
 
         # Assert
-        self.assertIs(opened.return_value, session)
-        self.assertEqual("scenario-service", opened.call_args.args[1].value)
-        self.assertIs(configured.broker_endpoint, opened.call_args.args[0])
+        self.assertNotIn("open_lifecycle_session", exported)
+        self.assertNotIn("open_guaranteed_publishing_session", exported)
+        self.assertNotIn("Principal", exported)
 
     def test_configuration_refuses_non_regular_non_ascii_and_weak_material(self) -> None:
         # Arrange
@@ -206,16 +193,18 @@ class ScenarioConfigurationTests(unittest.TestCase):
         environment = _environment(Path(temporary.name))
         directory_secret = {
             **environment,
-            "SOLACE_BROKER_PASSWORD_FILE": environment["SCENARIO_ROOT"],
+            "SCENARIO_CONTROL_SECRET_FILE": environment["SCENARIO_ROOT"],
         }
-        Path(environment["SOLACE_BROKER_PASSWORD_FILE"]).write_bytes(b"\xff")
+        Path(environment["SCENARIO_CONTROL_SECRET_FILE"]).write_bytes(b"\xff")
 
         # Act
         with pytest.raises(ScenarioConfigurationError) as regular:
             configuration(directory_secret)
         with pytest.raises(ScenarioConfigurationError) as ascii_only:
             configuration(environment)
-        Path(environment["SOLACE_BROKER_PASSWORD_FILE"]).write_text(BROKER_VALUE, encoding="ascii")
+        Path(environment["SCENARIO_CONTROL_SECRET_FILE"]).write_text(
+            SCENARIO_VALUE, encoding="ascii"
+        )
         Path(environment["SCENARIO_CONTROL_SECRET_FILE"]).write_text("weak", encoding="ascii")
         with pytest.raises(ScenarioConfigurationError) as weak:
             configuration(environment)
@@ -228,7 +217,7 @@ class ScenarioConfigurationTests(unittest.TestCase):
             configuration({**environment, "SCENARIO_ROOT": str(root_file)})
 
         # Assert
-        self.assertEqual("SOLACE_BROKER_PASSWORD_FILE", regular.value.value)
-        self.assertEqual("SOLACE_BROKER_PASSWORD_FILE", ascii_only.value.value)
+        self.assertEqual("SCENARIO_CONTROL_SECRET_FILE", regular.value.value)
+        self.assertEqual("SCENARIO_CONTROL_SECRET_FILE", ascii_only.value.value)
         self.assertEqual("SCENARIO_CONTROL_SECRET_FILE", weak.value.value)
         self.assertEqual("SCENARIO_ROOT", root.value.value)

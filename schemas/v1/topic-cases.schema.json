@@ -48,8 +48,10 @@
             "DRONE_COMMAND_RESULT",
             "GATEWAY_REQUEST",
             "GATEWAY_RESPONSE",
+            "GATEWAY_RECORD",
             "AGENT_PROPOSAL",
             "AGENT_RESPONSE",
+            "EVIDENCE_DECISION",
             "AUDIT",
             "MISSION_EVENT",
             "SECTOR_EVENT"

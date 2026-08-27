@@ -9,7 +9,7 @@ pattern that reaches into a second family hands that family's authority to whoev
 the first.
 
 The load-bearing test is therefore the negative one: every pattern is put to a topic of
-each of the other twelve families and must refuse it.
+each of the other fourteen families and must refuse it.
 """
 
 from __future__ import annotations
@@ -42,9 +42,11 @@ PATTERNS = {
     "DRONE_COMMAND": "aerial-rescue/v1/*/drone/*/command/*",
     "DRONE_COMMAND_RESULT": "aerial-rescue/v1/*/drone/*/command-result/*",
     "GATEWAY_REQUEST": "aerial-rescue/v1/*/gateway/request/*",
-    "GATEWAY_RESPONSE": "aerial-rescue/v1/*/gateway/response/*",
+    "GATEWAY_RESPONSE": "aerial-rescue/v1/reply/gateway/response/*",
+    "GATEWAY_RECORD": "aerial-rescue/v1/*/gateway/record/*",
     "AGENT_PROPOSAL": "aerial-rescue/v1/*/agent/proposal/*/*",
     "AGENT_RESPONSE": "aerial-rescue/v1/*/agent/response/*",
+    "EVIDENCE_DECISION": "aerial-rescue/v1/*/evidence/decision/*",
     "AUDIT": "aerial-rescue/v1/*/audit/*",
     "MISSION_EVENT": "aerial-rescue/v1/*/mission/event/*",
     "SECTOR_EVENT": "aerial-rescue/v1/*/sector/*/event/*",
@@ -58,6 +60,8 @@ COLLIDING = {
     "sectorId": "sector",
     "commandId": "command",
     "requestId": "response",
+    "requestorId": "response",
+    "proposalId": "1",
     "commandType": "event",
     "eventType": "command-result",
     "proposalType": "proposal",
@@ -73,7 +77,10 @@ MALFORMED_NAMESPACES = ("", "/", "acme/", "/acme", "acme//dev", "acme/*", "acme/
 def _colliding_topic(family: Family) -> str:
     """Return one topic of ``family`` whose every variable level shadows a literal level."""
     parameters = {name: COLLIDING[name] for name in family.parameters}
-    return format_topic(Topic(family, COLLIDING["missionId"], parameters))
+    mission_id = (
+        RESERVED_REPLY_MISSION if family is Family.GATEWAY_RESPONSE else COLLIDING["missionId"]
+    )
+    return format_topic(Topic(family, mission_id, parameters))
 
 
 def _matches(pattern: str, topic: str) -> bool:
@@ -152,7 +159,27 @@ class SubscriptionForTests(unittest.TestCase):
         counts = tuple(subscription_for(family).count("*") for family in families)
 
         # Assert
-        self.assertEqual(tuple(len(family.parameters) + 1 for family in families), counts)
+        self.assertEqual(
+            tuple(
+                len(family.parameters)
+                if family is Family.GATEWAY_RESPONSE
+                else len(family.parameters) + 1
+                for family in families
+            ),
+            counts,
+        )
+
+    def test_the_gateway_response_publish_pattern_is_narrower_than_the_tool_reply_bind(
+        self,
+    ) -> None:
+        # Arrange
+        family = Family.GATEWAY_RESPONSE
+
+        # Act
+        pattern = subscription_for(family)
+
+        # Assert
+        self.assertEqual("aerial-rescue/v1/reply/gateway/response/*", pattern)
 
     def test_every_pattern_is_within_the_broker_topic_bound(self) -> None:
         # Arrange
@@ -222,11 +249,9 @@ class ReplySubscriptionTests(unittest.TestCase):
         # Assert
         self.assertEqual((True, True), covered)
 
-    def test_the_reply_subscription_reaches_no_mission_s_gateway_responses(self) -> None:
+    def test_the_reply_subscription_reaches_no_mission_gateway_record(self) -> None:
         # Arrange
-        published = format_topic(
-            Topic(Family.GATEWAY_RESPONSE, "m-2026-0001", {"requestId": "r-1"})
-        )
+        published = format_topic(Topic(Family.GATEWAY_RECORD, "m-2026-0001", {"requestId": "r-1"}))
 
         # Act
         covered = published.startswith(reply_subscription()[:-1])

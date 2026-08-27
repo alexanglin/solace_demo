@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 import { createRoot } from "react-dom/client";
-import "maplibre-gl/dist/maplibre-gl.css";
 
 import { DashboardApplication } from "./dashboard-app";
 import { readProductionBootstrap } from "./sources/production-runtime";

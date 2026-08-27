@@ -1,0 +1,7 @@
+{
+  "operationVersion": "dashboard-command-response/v1",
+  "missionId": "mission-synthetic-0001",
+  "commandId": "command-synthetic-0001",
+  "eventId": "event-operator-command-0001",
+  "unexpected": true
+}

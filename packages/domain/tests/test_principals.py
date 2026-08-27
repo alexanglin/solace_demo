@@ -1,12 +1,12 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The ten roles and their grants are the decision in
-``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``. The threat
+The nine roles and their grants are the effective decisions through
+``docs/adr/0158-keep-scenario-control-brokerless.md``. The threat
 model calls this matrix load-bearing, so the tests here assert it from the family's side as
 well as the role's: the publisher set of every family is named, and every role is put to
 the drone-command topic so that catalogue cases B17, B18, and B19 are checked against all
-ten roles rather than against the three the catalogue happens to name. The key space is
-ten roles by two directions by thirteen families, which is small enough to enumerate
+nine roles rather than against the three the catalogue happens to name. The key space is
+nine roles by two directions by fifteen families, which is small enough to enumerate
 exhaustively; nothing here samples.
 """
 
@@ -33,6 +33,7 @@ from aerial_rescue_domain.principals import (
 )
 
 UNLISTED = (
+    "scenario-service",
     "scenario_service",
     "Command-Gateway",
     "command_gateway",
@@ -51,11 +52,33 @@ PUBLISHER_NAMES = {
     "DRONE_COMMAND_RESULT": frozenset({"FLEET_SIMULATOR"}),
     "GATEWAY_REQUEST": frozenset({"EVENT_MESH_TOOL"}),
     "GATEWAY_RESPONSE": frozenset({"COMMAND_GATEWAY"}),
-    "AGENT_PROPOSAL": frozenset({"AGENT_MESH_AGENT"}),
-    "AGENT_RESPONSE": frozenset({"AGENT_MESH_AGENT", "EVENT_MESH_GATEWAY"}),
+    "GATEWAY_RECORD": frozenset({"COMMAND_GATEWAY"}),
+    "AGENT_PROPOSAL": frozenset({"COMMAND_GATEWAY"}),
+    "AGENT_RESPONSE": frozenset({"EVENT_MESH_GATEWAY"}),
+    "EVIDENCE_DECISION": frozenset({"EVIDENCE_SERVICE"}),
     "AUDIT": frozenset({"COMMAND_GATEWAY", "EVIDENCE_SERVICE"}),
-    "MISSION_EVENT": frozenset({"SCENARIO_SERVICE"}),
+    "MISSION_EVENT": frozenset({"DASHBOARD_API"}),
     "SECTOR_EVENT": frozenset({"FLEET_SIMULATOR"}),
+}
+
+SUBSCRIBER_NAMES = {
+    "OPERATOR_COMMAND": frozenset({"COMMAND_GATEWAY", "RECORDER"}),
+    "OPERATOR_APPROVAL": frozenset({"COMMAND_GATEWAY", "RECORDER"}),
+    "DRONE_TELEMETRY": frozenset({"DASHBOARD_API", "RECORDER"}),
+    "DRONE_EVENT": frozenset(
+        {"DASHBOARD_API", "EVIDENCE_SERVICE", "RECORDER", "EVENT_MESH_GATEWAY"}
+    ),
+    "DRONE_COMMAND": frozenset({"FLEET_SIMULATOR", "DASHBOARD_API", "RECORDER"}),
+    "DRONE_COMMAND_RESULT": frozenset({"COMMAND_GATEWAY", "DASHBOARD_API", "RECORDER"}),
+    "GATEWAY_REQUEST": frozenset({"COMMAND_GATEWAY"}),
+    "GATEWAY_RESPONSE": frozenset(),
+    "GATEWAY_RECORD": frozenset({"DASHBOARD_API", "RECORDER"}),
+    "AGENT_PROPOSAL": frozenset({"DASHBOARD_API", "EVIDENCE_SERVICE", "RECORDER"}),
+    "AGENT_RESPONSE": frozenset({"COMMAND_GATEWAY", "DASHBOARD_API", "RECORDER"}),
+    "EVIDENCE_DECISION": frozenset({"DASHBOARD_API", "RECORDER"}),
+    "AUDIT": frozenset({"DASHBOARD_API", "RECORDER"}),
+    "MISSION_EVENT": frozenset({"RECORDER"}),
+    "SECTOR_EVENT": frozenset({"RECORDER"}),
 }
 
 
@@ -84,14 +107,18 @@ def _publishers_of(family: Family) -> frozenset[Principal]:
     return frozenset(role for role in Principal if may_use(role, Access.PUBLISH, family))
 
 
+def _subscribers_of(family: Family) -> frozenset[Principal]:
+    """Return every role the subscribe table lets reach ``family``."""
+    return frozenset(role for role in Principal if may_use(role, Access.SUBSCRIBE, family))
+
+
 class PrincipalTests(unittest.TestCase):
-    def test_the_roles_are_the_ten_documented_names(self) -> None:
+    def test_the_roles_are_the_nine_documented_names(self) -> None:
         # Arrange
         expected = {
             "fleet-simulator",
             "command-gateway",
             "dashboard-api",
-            "scenario-service",
             "evidence-service",
             "recorder",
             "event-mesh-gateway",
@@ -147,14 +174,13 @@ class GrantTests(unittest.TestCase):
         # Arrange
         expected = {
             "FLEET_SIMULATOR": (4, 1),
-            "COMMAND_GATEWAY": (3, 5),
-            "DASHBOARD_API": (2, 7),
-            "SCENARIO_SERVICE": (1, 0),
-            "EVIDENCE_SERVICE": (1, 2),
-            "RECORDER": (0, 4),
+            "COMMAND_GATEWAY": (5, 5),
+            "DASHBOARD_API": (3, 9),
+            "EVIDENCE_SERVICE": (2, 2),
+            "RECORDER": (0, 13),
             "EVENT_MESH_GATEWAY": (1, 1),
             "EVENT_MESH_TOOL": (1, 0),
-            "AGENT_MESH_AGENT": (2, 0),
+            "AGENT_MESH_AGENT": (0, 0),
             "DISCOVERY": (0, 0),
         }
 
@@ -170,6 +196,16 @@ class GrantTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, sizes)
 
+    def test_the_application_grants_total_sixteen_publish_and_thirty_one_subscribe(self) -> None:
+        # Arrange
+        roles = tuple(Principal)
+
+        # Act
+        totals = tuple(sum(len(grants(role, access)) for role in roles) for access in Access)
+
+        # Assert
+        self.assertEqual((16, 31), totals)
+
     def test_each_family_has_exactly_the_documented_publishers(self) -> None:
         # Arrange
         families = tuple(Family)
@@ -183,12 +219,40 @@ class GrantTests(unittest.TestCase):
         # Assert
         self.assertEqual(PUBLISHER_NAMES, publishers)
 
+    def test_each_family_has_exactly_the_documented_subscribers(self) -> None:
+        # Arrange
+        families = tuple(Family)
+
+        # Act
+        subscribers = {
+            family.name: frozenset(role.name for role in _subscribers_of(family))
+            for family in families
+        }
+
+        # Assert
+        self.assertEqual(SUBSCRIBER_NAMES, subscribers)
+
     def test_lifecycle_publish_and_subscribe_grants_are_exact_for_the_three_runtime_roles(
         self,
     ) -> None:
         # Arrange
         expected = {
-            "SCENARIO_SERVICE": (frozenset({"MISSION_EVENT"}), frozenset()),
+            "DASHBOARD_API": (
+                frozenset({"OPERATOR_COMMAND", "OPERATOR_APPROVAL", "MISSION_EVENT"}),
+                frozenset(
+                    {
+                        "DRONE_TELEMETRY",
+                        "DRONE_EVENT",
+                        "DRONE_COMMAND",
+                        "DRONE_COMMAND_RESULT",
+                        "GATEWAY_RECORD",
+                        "AGENT_PROPOSAL",
+                        "AGENT_RESPONSE",
+                        "EVIDENCE_DECISION",
+                        "AUDIT",
+                    }
+                ),
+            ),
             "FLEET_SIMULATOR": (
                 frozenset(
                     {
@@ -202,14 +266,7 @@ class GrantTests(unittest.TestCase):
             ),
             "RECORDER": (
                 frozenset(),
-                frozenset(
-                    {
-                        "DRONE_TELEMETRY",
-                        "DRONE_EVENT",
-                        "MISSION_EVENT",
-                        "SECTOR_EVENT",
-                    }
-                ),
+                frozenset(PUBLISHER_NAMES) - {"GATEWAY_REQUEST", "GATEWAY_RESPONSE"},
             ),
         }
 
@@ -258,7 +315,7 @@ class GrantTests(unittest.TestCase):
         # Assert
         self.assertEqual(frozenset({Family.GATEWAY_REQUEST}), published)
 
-    def test_b19_the_recorder_publishes_nothing_and_the_dashboard_only_operator_families(
+    def test_b19_the_recorder_publishes_nothing_and_the_dashboard_only_owned_families(
         self,
     ) -> None:
         # Arrange
@@ -271,12 +328,14 @@ class GrantTests(unittest.TestCase):
         self.assertEqual(
             (
                 frozenset(),
-                frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
+                frozenset(
+                    {Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL, Family.MISSION_EVENT}
+                ),
             ),
             published,
         )
 
-    def test_the_recorder_subscribes_only_to_dashboard_capture_sources(self) -> None:
+    def test_the_recorder_subscribes_to_every_non_rpc_family(self) -> None:
         # Arrange
         role = Principal.RECORDER
 
@@ -285,16 +344,19 @@ class GrantTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            frozenset(
-                {
-                    Family.DRONE_TELEMETRY,
-                    Family.DRONE_EVENT,
-                    Family.MISSION_EVENT,
-                    Family.SECTOR_EVENT,
-                }
-            ),
+            frozenset(Family) - {Family.GATEWAY_REQUEST, Family.GATEWAY_RESPONSE},
             subscribed,
         )
+
+    def test_only_dashboard_and_recorder_consume_the_mission_gateway_record(self) -> None:
+        # Arrange
+        family = Family.GATEWAY_RECORD
+
+        # Act
+        subscribers = _subscribers_of(family)
+
+        # Assert
+        self.assertEqual(frozenset({Principal.DASHBOARD_API, Principal.RECORDER}), subscribers)
 
     def test_the_discovery_role_holds_no_grant_in_either_direction(self) -> None:
         # Arrange
@@ -357,7 +419,7 @@ class GrantTests(unittest.TestCase):
 
 
 class AuthorizeTests(unittest.TestCase):
-    def test_lifecycle_families_allow_four_exact_role_directions_and_deny_the_other_36(
+    def test_lifecycle_families_allow_four_exact_role_directions_and_deny_the_other_32(
         self,
     ) -> None:
         # Arrange
@@ -366,7 +428,7 @@ class AuthorizeTests(unittest.TestCase):
             Family.__members__[name] for name in family_names if name in Family.__members__
         )
         expected_allowed = {
-            ("SCENARIO_SERVICE", "PUBLISH", "MISSION_EVENT"),
+            ("DASHBOARD_API", "PUBLISH", "MISSION_EVENT"),
             ("FLEET_SIMULATOR", "PUBLISH", "SECTOR_EVENT"),
             ("RECORDER", "SUBSCRIBE", "MISSION_EVENT"),
             ("RECORDER", "SUBSCRIBE", "SECTOR_EVENT"),
@@ -390,7 +452,7 @@ class AuthorizeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            (expected_allowed, 36, 2),
+            (expected_allowed, 32, 2),
             (allowed, denied.count(PrincipalRefusal.DENIED), len(families)),
         )
 

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/integration/agent-response.schema.json",
+  "description": "The sole direct non-CloudEvent Agent Mesh integration body.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/candidate"
+    },
+    {
+      "$ref": "#/$defs/abstained"
+    }
+  ],
+  "$defs": {
+    "candidateResult": {
+      "type": "object",
+      "required": [
+        "proposalType",
+        "sourceEventId",
+        "sourceEventDigest",
+        "droneId",
+        "latitudeMicrodegrees",
+        "longitudeMicrodegrees",
+        "commandType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "proposalType": {
+          "const": "candidate-location"
+        },
+        "sourceEventId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "sourceEventDigest": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        },
+        "droneId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "latitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+        },
+        "longitudeMicrodegrees": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+        },
+        "commandType": {
+          "const": "escalate-rescue"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": [
+        "agentResponseVersion",
+        "missionId",
+        "agentName",
+        "invocationId",
+        "correlationId",
+        "outcome",
+        "result"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agentResponseVersion": {
+          "const": 1
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "agentName": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+        },
+        "invocationId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "correlationId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "outcome": {
+          "const": "candidate"
+        },
+        "result": {
+          "$ref": "#/$defs/candidateResult"
+        }
+      }
+    },
+    "abstained": {
+      "type": "object",
+      "required": [
+        "agentResponseVersion",
+        "missionId",
+        "agentName",
+        "invocationId",
+        "correlationId",
+        "outcome",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agentResponseVersion": {
+          "const": 1
+        },
+        "missionId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "agentName": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/agentName"
+        },
+        "invocationId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "correlationId": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+        },
+        "outcome": {
+          "const": "abstained"
+        },
+        "reason": {
+          "enum": [
+            "timeout",
+            "transport-error",
+            "model-error",
+            "invalid-output",
+            "identity-mismatch"
+          ]
+        }
+      }
+    }
+  }
+}

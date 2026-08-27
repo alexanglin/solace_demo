@@ -30,6 +30,7 @@ from aerial_rescue_scenario_service.lifecycle import (
     MissionLifecycleRefusal,
 )
 from aerial_rescue_scenario_service.wire import (
+    MAX_WIRE_DOCUMENT_BYTES,
     FleetControlCancelRequest,
     FleetControlRunStatus,
     FleetControlStartRequest,
@@ -109,6 +110,31 @@ def _fleet_status(
             "telemetryPublicationCount": publications,
         }
     )
+
+
+def _fleet_client(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    maximum_response_bytes: int = MAX_WIRE_DOCUMENT_BYTES,
+) -> tuple[FleetControlClient, httpx.Client]:
+    """Build one deterministic synchronous private-hop client and its owned transport."""
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    config = FleetClientConfig(
+        base_url="http://fleet-simulator:8082",
+        expected_host="fleet-simulator:8082",
+        bearer_secret=FLEET_AUTH_VALUE,
+        maximum_response_bytes=maximum_response_bytes,
+    )
+    return (FleetControlClient(config, http), http)
+
+
+def _static_response(response: httpx.Response) -> Callable[[httpx.Request], httpx.Response]:
+    """Return one typed mock-transport handler for a fixed response."""
+
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return response
+
+    return handle
 
 
 class _ScriptedFleet:
@@ -964,15 +990,7 @@ class FleetHttpClientTests(unittest.TestCase):
                 raise httpx.ReadTimeout(message, request=request)
             return httpx.Response(200, content=FLEET_STATUS_PATH.read_bytes())
 
-        http = httpx.Client(transport=httpx.MockTransport(handler))
-        client = FleetControlClient(
-            FleetClientConfig(
-                base_url="http://fleet-simulator:8082",
-                expected_host="fleet-simulator:8082",
-                bearer_secret=FLEET_AUTH_VALUE,
-            ),
-            http,
-        )
+        client, http = _fleet_client(handler)
 
         # Act
         status = client.start(_fleet_start())
@@ -1022,15 +1040,7 @@ class FleetHttpClientTests(unittest.TestCase):
                 },
             )
 
-        http = httpx.Client(transport=httpx.MockTransport(handler))
-        client = FleetControlClient(
-            FleetClientConfig(
-                base_url="http://fleet-simulator:8082",
-                expected_host="fleet-simulator:8082",
-                bearer_secret=FLEET_AUTH_VALUE,
-            ),
-            http,
-        )
+        client, http = _fleet_client(handler)
         cancel = FleetControlCancelRequest(
             controlVersion=1,
             missionId="mission-synthetic-0001",
@@ -1091,15 +1101,9 @@ class FleetHttpClientTests(unittest.TestCase):
             config_errors.append(raised.value)
         outcomes: list[FleetClientCode] = []
         for response, maximum_bytes in responses:
-            http = httpx.Client(transport=httpx.MockTransport(lambda _request, item=response: item))
-            client = FleetControlClient(
-                FleetClientConfig(
-                    base_url="http://fleet-simulator:8082",
-                    expected_host="fleet-simulator:8082",
-                    bearer_secret=FLEET_AUTH_VALUE,
-                    maximum_response_bytes=maximum_bytes,
-                ),
-                http,
+            client, _http = _fleet_client(
+                _static_response(response),
+                maximum_response_bytes=maximum_bytes,
             )
             with pytest.raises(FleetClientError) as raised:
                 client.status("run-synthetic-0001", expected_mission_id="mission-synthetic-0001")
@@ -1128,15 +1132,7 @@ class FleetHttpClientTests(unittest.TestCase):
             message = "unavailable"
             raise httpx.ConnectError(message, request=request)
 
-        http = httpx.Client(transport=httpx.MockTransport(handler))
-        client = FleetControlClient(
-            FleetClientConfig(
-                base_url="http://fleet-simulator:8082",
-                expected_host="fleet-simulator:8082",
-                bearer_secret=FLEET_AUTH_VALUE,
-            ),
-            http,
-        )
+        client, _http = _fleet_client(handler)
         cancel = FleetControlCancelRequest(
             controlVersion=1,
             missionId="mission-synthetic-0001",

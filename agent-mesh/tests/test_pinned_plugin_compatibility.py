@@ -30,6 +30,8 @@ pytestmark = [pytest.mark.phase0, pytest.mark.compatibility]
 AGENT_MESH_VERSION: Final = "1.28.7"
 GATEWAY_VERSION: Final = "1.1.0"
 TOOL_VERSION: Final = "0.1.1"
+CONNECTOR_VERSION: Final = "3.3.12"
+PUBSUB_VERSION: Final = "1.11.0"
 
 PLUGIN_GROUP: Final = "solace_agent_mesh.plugins"
 GATEWAY_ENTRY_POINT: Final = "sam_event_mesh_gateway"
@@ -51,6 +53,68 @@ GATEWAY_RUNTIME_SYMBOLS: Final = (
     ("solace_agent_mesh.gateway.base.component", "BaseGatewayComponent"),
 )
 
+# The project-owned gateway component calls this exact public SDK surface. Resolving only
+# the classes would miss a same-name class whose methods no longer support the pinned seam.
+DIRECT_OUTPUT_METHODS: Final = (
+    (
+        "solace.messaging.messaging_service",
+        "MessagingService",
+        "create_direct_message_publisher_builder",
+    ),
+    (
+        "solace.messaging.builder.direct_message_publisher_builder",
+        "DirectMessagePublisherBuilder",
+        "on_back_pressure_reject",
+    ),
+    (
+        "solace.messaging.builder.direct_message_publisher_builder",
+        "DirectMessagePublisherBuilder",
+        "build",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "set_publish_failure_listener",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "set_publisher_readiness_listener",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "start",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "is_ready",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "notify_when_ready",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "publish",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "terminate",
+    ),
+    (
+        "solace.messaging.publisher.persistent_message_publisher",
+        "PersistentMessagePublisher",
+        "set_message_publish_receipt_listener",
+    ),
+    ("solace.messaging.resources.topic", "Topic", "of"),
+)
+PUBLISH_RECEIPT_PROPERTIES: Final = ("exception", "is_persisted", "user_context")
+
 
 def _attribute(module_name: str, attribute: str) -> object:
     """Return one named attribute of an importable module."""
@@ -58,15 +122,25 @@ def _attribute(module_name: str, attribute: str) -> object:
 
 
 class PinnedVersionTests(unittest.TestCase):
-    def test_the_three_pinned_distributions_are_installed_together(self) -> None:
+    def test_the_five_runtime_distributions_are_installed_at_the_attested_versions(self) -> None:
         # Arrange
-        expected = (AGENT_MESH_VERSION, GATEWAY_VERSION, TOOL_VERSION)
+        distributions = (
+            "solace-agent-mesh",
+            "sam-event-mesh-gateway",
+            "sam-event-mesh-tool",
+            "solace-ai-connector",
+            "solace-pubsubplus",
+        )
+        expected = (
+            AGENT_MESH_VERSION,
+            GATEWAY_VERSION,
+            TOOL_VERSION,
+            CONNECTOR_VERSION,
+            PUBSUB_VERSION,
+        )
 
         # Act
-        installed = tuple(
-            importlib.metadata.version(name)
-            for name in ("solace-agent-mesh", "sam-event-mesh-gateway", "sam-event-mesh-tool")
-        )
+        installed = tuple(importlib.metadata.version(name) for name in distributions)
 
         # Assert
         self.assertEqual(expected, installed)
@@ -108,6 +182,26 @@ class GatewayPluginTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, sum(1 for item in resolved if isinstance(item, type)))
+
+    def test_the_owned_direct_output_sdk_surface_exists_on_the_exact_pin(self) -> None:
+        # Arrange
+        receipt_class = _attribute(
+            "solace.messaging.publisher.persistent_message_publisher",
+            "PublishReceipt",
+        )
+
+        # Act
+        methods = tuple(
+            getattr(_attribute(module, class_name), method_name)
+            for module, class_name, method_name in DIRECT_OUTPUT_METHODS
+        )
+        receipt_properties = tuple(
+            getattr(receipt_class, property_name) for property_name in PUBLISH_RECEIPT_PROPERTIES
+        )
+
+        # Assert
+        self.assertTrue(all(callable(method) for method in methods))
+        self.assertTrue(all(isinstance(value, property) for value in receipt_properties))
 
 
 class ToolPluginTests(unittest.TestCase):

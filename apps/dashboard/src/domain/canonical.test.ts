@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { CanonicalizationError, canonicalBytes } from "./canonical";
 
@@ -248,38 +248,32 @@ test("emits NFC-normalized, minimally escaped UTF-8 bytes in canonical key order
   expect(new TextDecoder().decode(encoded)).toBe(expectedText);
 });
 
-test("keeps the canonical key comparator reflexive while sorting distinct members", () => {
+test("keeps identical sort operands equal at the defensive object-key boundary", () => {
   // Arrange
   const nativeSort = Array.prototype.sort;
-  const sortDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "sort");
-  if (sortDescriptor === undefined) throw new Error("Array.sort descriptor is unavailable");
-  const reflexiveResults: number[] = [];
-  const probingSort = function (
+  const identicalComparisons: number[] = [];
+  const sort = vi.spyOn(Array.prototype, "sort").mockImplementation(function (
     this: unknown[],
-    compareFunction?: (left: unknown, right: unknown) => number,
+    compare: ((left: unknown, right: unknown) => number) | undefined,
   ): unknown[] {
     const first = this[0];
-    if (compareFunction !== undefined && first !== undefined) {
-      reflexiveResults.push(compareFunction(first, first));
+    if (compare !== undefined && first !== undefined) {
+      identicalComparisons.push(compare(first, first));
     }
-    return nativeSort.call(this, compareFunction) as unknown[];
-  };
-  let encoded: Uint8Array | undefined;
+    return nativeSort.call(this, compare);
+  });
+  let encoded: Uint8Array;
 
   // Act
-  Object.defineProperty(Array.prototype, "sort", {
-    ...sortDescriptor,
-    value: probingSort,
-  });
   try {
-    encoded = canonicalBytes({ bravo: 2, alpha: 1 });
+    encoded = canonicalBytes({ alpha: 1, beta: 2 });
   } finally {
-    Object.defineProperty(Array.prototype, "sort", sortDescriptor);
+    sort.mockRestore();
   }
 
   // Assert
-  expect(reflexiveResults).toContain(0);
-  expect(new TextDecoder().decode(encoded)).toBe('{"alpha":1,"bravo":2}');
+  expect(identicalComparisons).toContain(0);
+  expect(new TextDecoder().decode(encoded)).toBe('{"alpha":1,"beta":2}');
 });
 
 test("emits exact lowercase canonical bytes for both booleans", () => {

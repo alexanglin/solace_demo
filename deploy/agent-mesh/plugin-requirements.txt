@@ -1,6 +1,10 @@
-# The two Event Mesh plugins the official Agent Mesh image omits (docs/adr/0044). Versions
-# and hashes are copied from agent-mesh/uv.lock; pip refuses any wheel that does not match.
+# The two Event Mesh plugins the official Agent Mesh image omits (ADR-0044), plus the
+# reviewed Solace SDK leaf override (ADR-0177). Versions and hashes are copied from
+# agent-mesh/uv.lock; pip refuses any wheel that does not match either supported target.
 sam-event-mesh-gateway==1.1.0 \
     --hash=sha256:a19d173d8b897d64189b1bf9fd423d5607fdd6aefb3848e7dbfde0c78eb7aa86
 sam-event-mesh-tool==0.1.1 \
     --hash=sha256:2c5730e2dc0ff309995b6e4e98c9480b18ff178f7ca9542f5b5c2c4ff328629d
+solace-pubsubplus==1.11.0 \
+    --hash=sha256:f9b58a3bc2c2780744399c63db7d5c062e23effa52665c4c6dc56b838311a254 \
+    --hash=sha256:114768fe365bc79abee90852dc483e9fa5bc3fb9a4bf218e85029f8d050d0de3

@@ -27,14 +27,14 @@ dependencies = [
 ]
 
 [tool.aerial-rescue]
-# The semantic configuration validator is owned repository tooling. It carries the same
-# tier as the root tooling package, while its full-suite gate deliberately enforces 100%
-# statement and branch coverage because the module is a safety-relevant policy boundary.
+# The semantic validator and the Direct Event Mesh Gateway output extension are owned
+# code. They carry the same tier as the root tooling package, while the full-suite gate
+# deliberately enforces 100% statement and branch coverage over both safety boundaries.
 risk-tier = 2
 
 [tool.uv]
-# Owned tooling is executed directly from this tree; runtime plugins arrive later and no
-# distributable Agent Mesh package is built yet.
+# Owned code is executed directly from this tree. The runtime image copies the gateway
+# extension into its virtual environment; this project deliberately builds no wheel.
 package = false
 required-version = "==0.12.5"
 # The same two targets the root workspace resolves for, per ADR-0010. Without this, uv
@@ -51,7 +51,12 @@ environments = [
 # ADR-0031's rule admits; tests/test_pinned_runtime_overrides.py proves the overridden wheel
 # against the pinned runtime and fails the day upstream raises its own pin, which is when
 # this line is deleted (docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md).
-override-dependencies = ["asteval==1.0.9"]
+#
+# solace-ai-connector 3.3.12 pins solace-pubsubplus==1.9.0, whose default minimum is
+# TLS 1.2 and which predates the SDK's TLS-minimum property. ADR-0177 admits the exact
+# leaf override whose source-shape-attested compatibility layer forces TLS 1.3 and the
+# bounded transport policy on every Connector-created service.
+override-dependencies = ["asteval==1.0.9", "solace-pubsubplus==1.11.0"]
 
 [dependency-groups]
 # The runtime-dependent hooks invoke these through `uv run --project agent-mesh --frozen`,
@@ -85,6 +90,9 @@ target-version = "py313"
 [tool.mypy]
 python_version = "3.13"
 strict = true
+# Keep module-name derivation identical to the root workspace. Explicit bases prevent
+# independent namespace-package tests from becoming duplicate top-level modules.
+explicit_package_bases = true
 warn_unused_ignores = true
 warn_unreachable = true
 # None of the four below is implied by `strict`, which in mypy 1.19 expands to fifteen
@@ -141,7 +149,7 @@ addopts = [
 ]
 xfail_strict = true
 # Every warning is an error. The measured exemptions are restricted by originating module
-# to the exact pinned upstream packages, so they cannot conceal warnings from owned tools
+# to the exact pinned upstream packages, so they cannot conceal warnings from owned code
 # or future plugins
 # (docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md).
 filterwarnings = [

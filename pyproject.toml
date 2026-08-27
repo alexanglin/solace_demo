@@ -81,8 +81,8 @@ no-ignore = true
 aerial-rescue-domain = { workspace = true }
 aerial-rescue-contracts = { workspace = true }
 aerial-rescue-broker = { workspace = true }
-aerial-rescue-store = { workspace = true }
 aerial-rescue-observability = { workspace = true }
+aerial-rescue-store = { workspace = true }
 
 # --------------------------------------------------------------------------- ruff ---
 # Carries the complexity ceilings docs/adr/0011 requires "set at their intended values
@@ -154,6 +154,10 @@ convention = "google"
 [tool.mypy]
 python_version = "3.14"
 strict = true
+# Workspace member tests intentionally reuse behavior-focused basenames. Map every
+# namespace-package path from the repository root so mypy does not collapse those
+# independent modules into one top-level name.
+explicit_package_bases = true
 plugins = ["pydantic.mypy"]
 warn_unused_ignores = true
 warn_unreachable = true
@@ -205,7 +209,7 @@ warn_required_dynamic_aliases = true
 # the client returns is Any, which is why it must stay behind a typed adapter rather than
 # being called from domain code.
 [[tool.mypy.overrides]]
-module = ["solace.*"]
+module = ["solace.*", "solace_otel.*"]
 ignore_missing_imports = true
 
 # ------------------------------------------------------------------------ pytest ---

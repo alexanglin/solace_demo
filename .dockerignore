@@ -3,10 +3,20 @@
 .git
 .venv
 **/.venv
-agent-mesh
-apps/dashboard/node_modules
-apps/dashboard/dist
+# The application image excludes Agent Mesh. The Agent Mesh image's repository-root build
+# context re-includes only its two owned runtime packages; locks, configs, tests, and venvs
+# remain outside both image contexts.
+agent-mesh/*
+!agent-mesh/aerial_rescue_event_mesh_gateway
+!agent-mesh/aerial_rescue_event_mesh_gateway/**
+!agent-mesh/aerial_rescue_runtime_compat
+!agent-mesh/aerial_rescue_runtime_compat/**
+# The application image owns one production dashboard build. Keep generated output and
+# dependency/test artifacts outside the context; its Dockerfile copies only the authored
+# package, lock, build configuration, source, and committed schemas it needs.
 apps/dashboard/coverage
+apps/dashboard/dist
+apps/dashboard/node_modules
 apps/dashboard/playwright-report
 apps/dashboard/test-results
 dist

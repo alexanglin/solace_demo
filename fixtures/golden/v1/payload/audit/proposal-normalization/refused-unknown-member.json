@@ -1,0 +1,12 @@
+{
+  "auditVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "recordId": "audit-proposal-refused-0001",
+  "recordType": "proposal-normalization",
+  "agentName": "VisionAgent",
+  "invocationId": "invocation-synthetic-0003",
+  "correlationId": "correlation-synthetic-0003",
+  "outcome": "refused",
+  "reason": "digest-mismatch",
+  "unexpected": true
+}

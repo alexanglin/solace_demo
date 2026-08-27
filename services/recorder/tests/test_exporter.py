@@ -37,7 +37,7 @@ from aerial_rescue_recorder.recording import (
     NORMALIZED_RECORDING_FILENAME,
     export_normalized_recording,
 )
-from aerial_rescue_store.dashboard_events import StoredDashboardEvent
+from aerial_rescue_store.dashboard.events import StoredDashboardEvent
 from aerial_rescue_store.settings import DatabaseSettings
 from sqlalchemy.exc import OperationalError
 

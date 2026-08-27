@@ -22,7 +22,7 @@ Use the sources below according to their role instead of copying current pins or
 | Executable runner version | Workflow value synchronized with the project manifest, lock, and structural tests |
 | Contributor and toolchain reference | [`TESTING.md`](../docs/TESTING.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | Workflow security audit and checkout credentials | [ADR-0049](../docs/adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md) |
-| Image and deploy-configuration scans | [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
+| Image and deploy-configuration scans, SBOM generation | [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md), [ADR-0162](../docs/adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md) |
 | CodeQL scope, triggers, and permissions | [ADR-0050](../docs/adr/0050-scan-python-with-codeql-in-continuous-integration-only.md) |
 | Scheduled scans and dependency-update automation | [ADR-0051](../docs/adr/0051-rescan-daily-and-let-dependabot-raise-pinned-updates.md), [ADR-0052](../docs/adr/0052-hold-dependabot-to-a-seven-day-cooldown.md) |
 | Required checks and branch-protection semantics | [ADR-0054](../docs/adr/0054-enforce-the-verification-authority-with-branch-protection.md) |
@@ -38,7 +38,7 @@ by the root instructions.
 | Path | Responsibility |
 | --- | --- |
 | `workflows/checks.yml` | Unconditional pull-request verification: the commit stage, push stage, and credential-absence assertion |
-| `workflows/security.yml` | Scheduled and explicit security work: dependency and deploy audits, image scanning and pin checks, and CodeQL |
+| `workflows/security.yml` | Scheduled and explicit security work: dependency and deploy audits, image scanning, SBOM generation, pin checks, and CodeQL |
 | `dependabot.yml` | Bounded update pull requests for every dependency ecosystem the repository actually owns |
 
 Executable structural tests recognize the workflow inventory and selected security, runtime, timeout,

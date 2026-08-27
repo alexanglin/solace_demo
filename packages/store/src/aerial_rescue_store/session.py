@@ -48,6 +48,9 @@ EXPIRE_ON_COMMIT: Final = False
 AUTOFLUSH: Final = False
 """This member issues Core statements deliberately; an implicit flush is an unasked-for write."""
 
+type StoreSessionFactory = Callable[[], AsyncSession]
+"""The store-owned lazy session-factory type exposed to application composition roots."""
+
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     """Return the factory that opens sessions on ``engine``, opening no connection.

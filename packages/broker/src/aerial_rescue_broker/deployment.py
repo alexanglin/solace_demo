@@ -11,10 +11,9 @@ Material that was never generated fails closed, naming the file and the command 
 it, because the alternative -- a partial apply that leaves some roles authorized and others
 not -- is worse than not starting.
 
-An unset A2A namespace withholds the grant instead of guessing one. ``.env.example`` still
-leaves ``NAMESPACE`` blank, since ADR-0035 fixes it with the first Agent Mesh configuration.
-Without it the three Agent Mesh roles get no A2A exception at all, which under-grants rather
-than over-grants, and the run says so in as many words rather than reporting a clean apply.
+The CLI defaults to ADR-0064's fixed `aerial-rescue-mesh` A2A namespace. The lower-level
+provision function still accepts an explicit unset value for recovery tooling; that path
+withholds every A2A exception and reports the under-grant rather than guessing another value.
 """
 
 from __future__ import annotations
@@ -22,14 +21,13 @@ from __future__ import annotations
 import argparse
 import ssl
 import sys
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Final, TextIO
 
 from aerial_rescue_contracts.topics import TopicError
-from aerial_rescue_domain.principals import Principal, may_use_a2a
+from aerial_rescue_domain.principals import Principal
 
 from aerial_rescue_broker.provisioning import (
     FACTORY_CLIENT_USERNAME,
@@ -38,9 +36,7 @@ from aerial_rescue_broker.provisioning import (
     SempTransport,
     apply,
     desired_state,
-    principals_for_projection,
 )
-from aerial_rescue_broker.queues import QueueProjection
 from aerial_rescue_broker.semp import SempEndpoint, SempError, SempSession, connect
 from aerial_rescue_broker.subscriptions import SubscriptionError
 
@@ -59,12 +55,15 @@ DEFAULT_DEPLOY_DIRECTORY: Final = "deploy"
 DEFAULT_HOST: Final = "localhost"
 DEFAULT_PORT: Final = 1943
 DEFAULT_VPN: Final = "default"
+DEFAULT_NAMESPACE: Final = "aerial-rescue-mesh"
 
 
 class DeploymentRefusal(Enum):
     """Why the deployment material cannot be used."""
 
     MISSING_MATERIAL = "generated material is absent; run " + GENERATOR_COMMAND
+    BLANK_MATERIAL = "generated material is blank; rerun " + GENERATOR_COMMAND
+    UNSUPPORTED_NAMESPACE = "A2A namespace differs from ADR-0064"
 
 
 class DeploymentError(ValueError):
@@ -86,11 +85,14 @@ def credential_path(deploy: Path, role: Principal) -> Path:
 
 
 def _read(path: Path) -> str:
-    """Return the file's stripped text, refusing a path the generator has not written."""
+    """Return nonblank generated text, refusing absent, unreadable, or empty material."""
     try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError as error:
+        value = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError) as error:
         raise DeploymentError(DeploymentRefusal.MISSING_MATERIAL, str(path)) from error
+    if not value:
+        raise DeploymentError(DeploymentRefusal.BLANK_MATERIAL, str(path))
+    return value
 
 
 def read_credential(deploy: Path, role: Principal) -> str:
@@ -102,12 +104,11 @@ def read_credential(deploy: Path, role: Principal) -> str:
     return _read(credential_path(deploy, role))
 
 
-def read_credentials(
-    deploy: Path,
-    principals: Iterable[Principal] = tuple(Principal),
-) -> dict[Principal, str]:
-    """Return one credential per selected runtime role, refusing if any is absent."""
-    return {role: read_credential(deploy, role) for role in principals}
+def read_credentials(deploy: Path) -> dict[Principal, str]:
+    """Return one credential per enabled SMF role, refusing if any is absent."""
+    return {
+        role: read_credential(deploy, role) for role in Principal if role is not Principal.DISCOVERY
+    }
 
 
 def endpoint(deploy: Path, host: str, port: int) -> SempEndpoint:
@@ -133,15 +134,13 @@ def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     """Return the summary lines for an applied state, naming what was withheld."""
     exceptions = sum(len(profile.publish) + len(profile.subscribe) for profile in state.profiles)
     subscriptions = sum(len(queue.subscriptions) for queue in state.queues)
+    enabled_usernames = sum(username.enabled for username in state.usernames)
     fleet = sum(1 for queue in state.queues if queue.owner == Principal.FLEET_SIMULATOR.value)
-    projected_roles = {profile.name for profile in state.profiles}
-    projected_a2a = any(role.value in projected_roles and may_use_a2a(role) for role in Principal)
-    if not projected_a2a:
-        a2a = "no Agent Mesh identities in this projection"
-    elif namespace is not None:
-        a2a = f"A2A namespace {namespace!r} granted to the Agent Mesh roles"
-    else:
-        a2a = "A2A namespace unset: the Agent Mesh roles hold no A2A grant"
+    a2a = (
+        f"A2A namespace {namespace!r} granted to the Agent Mesh roles"
+        if namespace is not None
+        else "A2A namespace unset: the Agent Mesh roles hold no A2A grant"
+    )
     drones = (
         f"{fleet} drone command queues"
         if fleet
@@ -149,7 +148,9 @@ def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     )
     return (
         f"{len(state.profiles)} acl profiles to msgVpns/{state.vpn}",
-        f"{len(state.usernames)} client usernames",
+        f"{len(state.client_profiles)} client profiles",
+        f"{enabled_usernames} enabled client usernames; discovery omitted",
+        f"{len(state.queue_templates)} upstream queue templates",
         f"{exceptions} topic exceptions",
         f"{len(state.queues)} durable queues, {subscriptions} subscriptions",
         f"factory client username {FACTORY_CLIENT_USERNAME!r} disabled",
@@ -158,20 +159,12 @@ def _report(state: DesiredState, namespace: object | None) -> tuple[str, ...]:
     )
 
 
-@dataclass(frozen=True)
-class QueueSelection:
-    """The executable-drone inventory and endpoint projection to provision."""
-
-    drones: tuple[str, ...]
-    projection: QueueProjection = QueueProjection.GLOBAL
-
-
 def provision(
     transport: SempTransport,
     deploy: Path,
     vpn: str,
     namespace: object | None,
-    queues: QueueSelection,
+    drones: Sequence[str],
 ) -> tuple[str, ...]:
     """Apply the authorization matrix and the queue set to ``vpn``, and return the summary.
 
@@ -180,7 +173,7 @@ def provision(
         deploy: The deploy directory holding the generated authority and credentials.
         vpn: The message VPN to write to.
         namespace: The A2A namespace, or ``None`` when it is not yet fixed.
-        queues: The drone identifiers and explicit endpoint projection. An empty fleet provisions no
+        drones: The drone identifiers. An empty fleet provisions no
             command queue, and the summary says so rather than leaving it to be inferred:
             a command published for a drone with no queue is discarded and not refused
             (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).
@@ -195,13 +188,7 @@ def provision(
         TopicError: When a drone identifier is outside the identifier rule.
         SempError: When the broker refuses a call or cannot be reached.
     """
-    state = desired_state(
-        vpn,
-        read_credentials(deploy, principals_for_projection(queues.projection)),
-        namespace,
-        queues.drones,
-        queues.projection,
-    )
+    state = desired_state(vpn, read_credentials(deploy), namespace, drones)
     apply(transport, state)
     return _report(state, namespace)
 
@@ -215,15 +202,19 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--vpn", default=DEFAULT_VPN)
-    parser.add_argument("--namespace", default=None)
+    parser.add_argument("--namespace", default=DEFAULT_NAMESPACE)
     parser.add_argument("--deploy-directory", default=DEFAULT_DEPLOY_DIRECTORY)
     parser.add_argument("--drone", action="append", default=[])
-    parser.add_argument(
-        "--queue-projection",
-        choices=tuple(projection.value for projection in QueueProjection),
-        default=QueueProjection.GLOBAL.value,
-    )
     return parser.parse_args(argv)
+
+
+def _require_namespace(namespace: object) -> None:
+    """Refuse a CLI namespace other than the one fixed by ADR-0064."""
+    if namespace != DEFAULT_NAMESPACE:
+        raise DeploymentError(
+            DeploymentRefusal.UNSUPPORTED_NAMESPACE,
+            DEFAULT_NAMESPACE,
+        )
 
 
 def main(
@@ -247,16 +238,10 @@ def main(
     arguments = _parse(argv)
     deploy = Path(arguments.deploy_directory)
     try:
+        _require_namespace(arguments.namespace)
         transport = session(endpoint(deploy, arguments.host, arguments.port))
         lines = provision(
-            transport,
-            deploy,
-            arguments.vpn,
-            arguments.namespace,
-            QueueSelection(
-                tuple(arguments.drone),
-                QueueProjection(arguments.queue_projection),
-            ),
+            transport, deploy, arguments.vpn, arguments.namespace, tuple(arguments.drone)
         )
     except (
         DeploymentError,

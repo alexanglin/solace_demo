@@ -5,6 +5,7 @@ import type {
   DashboardSnapshot,
   OrderedDashboardEvent,
 } from "../contracts/generated";
+import { createDashboardSchemaRegistry } from "../contracts/schema-registry";
 import {
   digestMatches,
   orderedDashboardEventDigest,
@@ -24,7 +25,20 @@ const DASHBOARD_EVENT_KINDS = new Set([
   "connectivityChanged",
   "missionLifecycle",
   "sectorLifecycle",
+  "operatorCommand",
+  "operatorApproval",
+  "agentProposal",
+  "evidenceDecision",
+  "salientObservation",
+  "droneCommand",
+  "commandResult",
+  "gatewayResponse",
+  "auditRecord",
 ]);
+const DASHBOARD_EVENT_FRAME_SCHEMA_ID =
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json";
+const CLOSED_EVENT_DIGEST = "0".repeat(64);
+const eventBoundaryRegistry = createDashboardSchemaRegistry();
 const textEncoder = new TextEncoder();
 
 type FleetMember = DashboardReducedState["fleet"][number];
@@ -386,6 +400,18 @@ function sectorDataFailure(data: Record<string, unknown>): ReducerFailure | null
   return null;
 }
 
+function closedTimelineEventFailure(event: DashboardEvent): ReducerFailure | null {
+  const candidate = {
+    cursor: "reducer-event-boundary",
+    digest: CLOSED_EVENT_DIGEST,
+    event: { auditOrdinal: 1, event },
+    frameVersion: "ordered-dashboard-event-frame/v1",
+  };
+  return eventBoundaryRegistry.validate(DASHBOARD_EVENT_FRAME_SCHEMA_ID, candidate).ok
+    ? null
+    : failure("EVENT_DATA", "data", event.data);
+}
+
 function eventDataFailure(event: unknown): ReducerFailure | null {
   const eventDocument = dataRecord(event);
   if (eventDocument === null) {
@@ -429,6 +455,16 @@ function eventDataFailure(event: unknown): ReducerFailure | null {
       return eventClass === "MISSION"
         ? sectorDataFailure(data)
         : failure("EVENT_DATA", "data", validatedEvent.data);
+    case "operatorCommand":
+    case "operatorApproval":
+    case "agentProposal":
+    case "evidenceDecision":
+    case "salientObservation":
+    case "droneCommand":
+    case "commandResult":
+    case "gatewayResponse":
+    case "auditRecord":
+      return closedTimelineEventFailure(validatedEvent);
   }
 }
 
@@ -578,6 +614,16 @@ function applyEvent(
       return applyMission(state, currentMission, event);
     case "sectorLifecycle":
       return applySector(state, event);
+    case "operatorCommand":
+    case "operatorApproval":
+    case "agentProposal":
+    case "evidenceDecision":
+    case "salientObservation":
+    case "droneCommand":
+    case "commandResult":
+    case "gatewayResponse":
+    case "auditRecord":
+      return state;
   }
 }
 

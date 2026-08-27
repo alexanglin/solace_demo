@@ -1,8 +1,8 @@
 {
   "specversion": "1.0",
   "id": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6d",
-  "source": "urn:aerial-rescue:service:command-gateway",
-  "type": "aerial-rescue.v1.gateway.response",
+  "source": "urn:aerial-rescue:command-gateway:command-gateway",
+  "type": "aerial-rescue.v1.gateway.record",
   "subject": "m-2026-0001",
   "time": "2026-08-22T09:14:52.310Z",
   "datacontenttype": "application/json",

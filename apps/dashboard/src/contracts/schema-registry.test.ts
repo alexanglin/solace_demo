@@ -3,6 +3,11 @@ import { resolve } from "node:path";
 
 import { expect, test, vi } from "vitest";
 
+import { fixtureForState } from "../../tests/e2e/support/dashboard-fixtures";
+import { checkpointFromSnapshot } from "../domain/reducer";
+import { decodeCanonicalJson } from "./bootstrap";
+import type { DashboardSnapshot } from "./generated";
+import * as standaloneValidators from "./generated/runtime/validators.mjs";
 import { DASHBOARD_SCHEMA_IDS, createDashboardSchemaRegistry } from "./schema-registry";
 
 const expectedDashboardSchemaIds = [
@@ -10,6 +15,8 @@ const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-response.schema.json",
@@ -72,7 +79,7 @@ test("builds the dashboard schema registry and resolves every reference without 
   );
 
   // Assert
-  expect(results).toHaveLength(11);
+  expect(results).toHaveLength(13);
   expect(results.every((result) => result.ok)).toBe(true);
   expect(fetchSpy).not.toHaveBeenCalled();
 });
@@ -153,3 +160,54 @@ test.each([
     });
   },
 );
+
+test("refuses a non-object snapshot before accepting an ordinal witness", () => {
+  // Arrange
+  const schemaId =
+    "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json";
+  const registry = createDashboardSchemaRegistry();
+
+  // Act
+  const result = registry.validate(schemaId, null);
+
+  // Assert
+  expect(result).toEqual({
+    failure: { code: "SCHEMA_VALIDATION_FAILED", schemaId },
+    ok: false,
+  });
+});
+
+test("accepts and anchors the complete serialized running snapshot used by the browser", async () => {
+  // Arrange
+  const source = fixtureForState("running");
+  const snapshot = source.inputs.find(
+    ({ channel, name }) => channel === "sse-frame" && name === "snapshot",
+  );
+  const decoded = snapshot === undefined ? null : decodeCanonicalJson(snapshot.raw);
+  const snapshotDocument = decoded?.ok ? decoded.value : null;
+  const validate =
+    standaloneValidators.validateDashboardSnapshot as typeof standaloneValidators.validateDashboardSnapshot & {
+      readonly errors: unknown;
+    };
+
+  // Act
+  const accepted = snapshotDocument !== null && validate(snapshotDocument);
+  const anchored = accepted
+    ? await checkpointFromSnapshot(snapshotDocument as DashboardSnapshot)
+    : null;
+
+  // Assert
+  expect({
+    accepted,
+    anchored: anchored?.ok ?? false,
+    anchorFailure: anchored !== null && !anchored.ok ? anchored.failure : null,
+    decoded: snapshotDocument !== null,
+    errors: validate.errors,
+  }).toEqual({
+    accepted: true,
+    anchored: true,
+    anchorFailure: null,
+    decoded: true,
+    errors: null,
+  });
+});

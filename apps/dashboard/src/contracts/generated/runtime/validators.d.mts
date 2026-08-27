@@ -9,6 +9,8 @@ export declare const validateBootstrap: DashboardStandaloneValidator;
 export declare const validateDashboardEventFrame: DashboardStandaloneValidator;
 export declare const validateDashboardSnapshot: DashboardStandaloneValidator;
 export declare const validateError: DashboardStandaloneValidator;
+export declare const validateProposalDecisionRequest: DashboardStandaloneValidator;
+export declare const validateProposalDecisionResponse: DashboardStandaloneValidator;
 export declare const validateReadiness: DashboardStandaloneValidator;
 export declare const validateReplayBundle: DashboardStandaloneValidator;
 export declare const validateResetResponse: DashboardStandaloneValidator;

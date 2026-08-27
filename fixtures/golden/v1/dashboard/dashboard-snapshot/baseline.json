@@ -3,6 +3,7 @@
   "runtimeId": "runtime-synthetic-0001",
   "cursor": "mission-cursor-q7dKp4wN8xT2",
   "digest": "6dc970704498d43445023241c0dac7efdcf97cdaa3d28adae2d861cdd0764b34",
+  "latestEventDigest": "d7fb71af32a292bf5533b6765b9a0039cb735a78bdc6e024f67327c819dc9cd1",
   "currentRun": {
     "mode": "degradedLive",
     "missionId": "mission-synthetic-0001",
@@ -44,7 +45,6 @@
       }
     ]
   },
-  "latestEventDigest": "d7fb71af32a292bf5533b6765b9a0039cb735a78bdc6e024f67327c819dc9cd1",
   "timeline": [
     {
       "auditOrdinal": 1,

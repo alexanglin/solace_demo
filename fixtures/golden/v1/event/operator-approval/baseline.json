@@ -1,0 +1,34 @@
+{
+  "specversion": "1.0",
+  "id": "event-operator-approval-approve-0001",
+  "source": "urn:aerial-rescue:dashboard-api:dashboard-synthetic-01",
+  "type": "aerial-rescue.v1.operator.approval.approve",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:01:00.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json",
+  "data": {
+    "operatorApprovalVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "approvalId": "approval-synthetic-0001",
+    "operatorId": "operator-synthetic-0001",
+    "decision": "approve",
+    "issuedAt": "2026-08-25T12:01:00.000Z",
+    "expiresAt": "2026-08-25T12:06:00.000Z",
+    "proposalId": "proposal-synthetic-0001",
+    "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+    "proposalVersion": 1,
+    "evidenceDecisionId": "decision-synthetic-0001",
+    "evidenceDecisionDigest": "3c3775801fc324695e0f1eca64cf8fa91d6f213eec7968c71ffe8db61ce6abe3",
+    "evidenceDecisionVersion": 1,
+    "action": {
+      "commandType": "escalate-rescue",
+      "droneId": "drone-synthetic-01",
+      "latitudeMicrodegrees": 45123456,
+      "longitudeMicrodegrees": -75123456
+    }
+  },
+  "sequence": "000000000000003",
+  "correlationid": "correlation-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

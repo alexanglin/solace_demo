@@ -44,6 +44,9 @@ if TYPE_CHECKING:
     from aerial_rescue_store.bounds import EngineBounds
     from aerial_rescue_store.settings import DatabaseSettings
 
+type StoreEngine = AsyncEngine
+"""The concrete lazy engine type application composition roots receive from the store."""
+
 CONNECT_TIMEOUT: Final = "timeout"
 SERVER_SETTINGS: Final = "server_settings"
 
@@ -125,7 +128,7 @@ def engine_arguments(settings: DatabaseSettings, bounds: EngineBounds) -> Engine
     )
 
 
-def create_engine(settings: DatabaseSettings, bounds: EngineBounds) -> AsyncEngine:
+def create_engine(settings: DatabaseSettings, bounds: EngineBounds) -> StoreEngine:
     """Return a lazily constructed engine for this target, opening no connection.
 
     Args:

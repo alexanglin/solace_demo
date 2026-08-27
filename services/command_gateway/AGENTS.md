@@ -7,8 +7,10 @@ These instructions apply to every file under `services/command_gateway/`. Read t
 still apply.
 
 The command gateway is the deterministic boundary between proposals and executable commands. Its
-request-and-reply half is implemented and proven live; its dispatch half is not. Read the authority for
-each concern before changing this member:
+request-and-reply half is implemented and proven live. Its application-dispatch use cases and concrete
+long-running process composition are implemented behind typed ports and proven offline, but the complete
+application data plane is not yet proven live.
+Read the authority for each concern before changing this member:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -33,6 +35,10 @@ each concern before changing this member:
 | Closed command types and deny-by-default authority | [ADR-0041](../../docs/adr/0041-deny-by-default-command-authority-table.md) |
 | Honest scaffold classification | [ADR-0053](../../docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md) |
 | Least-privilege broker roles and grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
+| Durable application processing and settlement order | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Complete Alembic and typed SQLAlchemy Core boundary | [ADR-0151](../../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Durable malformed-ingress refusal | [ADR-0159](../../docs/adr/0159-gate-applicable-solace-best-practices.md) |
+| Gateway-owned approval clock authority | [ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 A command kind, approval rule, transaction boundary, broker grant, queue, retry policy, operating
@@ -43,13 +49,22 @@ Do not settle safety behavior in a service-local constant or comment.
 
 | Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | The package shell, the Python range, Tier 1, the three workspace dependencies, and the console script |
+| `pyproject.toml` | The package shell, the Python range, Tier 1, declared workspace/third-party dependencies, and the console script |
 | `src/aerial_rescue_command_gateway/__init__.py` | `CommandGatewayError`, the structured refusal base every module here raises, and `event_source()` |
 | `src/aerial_rescue_command_gateway/policy.py` | The pure deterministic answer, joining the two deny-by-default domain tables ([ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md)) |
 | `src/aerial_rescue_command_gateway/reply.py` | The injection guard that decides where an answer may be sent ([ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md)) |
 | `src/aerial_rescue_command_gateway/record.py` | The CloudEvent copy published for every answer ([ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md)) |
 | `src/aerial_rescue_command_gateway/exchange.py` | Where the three pure modules meet a broker: one request in, one reply and one record out |
-| `src/aerial_rescue_command_gateway/service.py` | The composition root: the environment, the endpoint, the ports, `serve`, and shutdown |
+| `src/aerial_rescue_command_gateway/ingress.py` | Closed Pydantic broker-ingress payloads and topic-first authorization; broker `AGENT_PROPOSAL` is explicitly refused |
+| `src/aerial_rescue_command_gateway/normalization.py`, `agent_response.py` | Closed transport-property admission, atomic pending-context recording and reload, and Direct structured Agent Response normalization into the canonical persisted proposal and audit, with no broker settlement claim |
+| `src/aerial_rescue_command_gateway/command_artifacts.py`, `authorization.py` | Exact command/audit artifacts and ADR-0146's atomic operator-command authorization transaction |
+| `src/aerial_rescue_command_gateway/operator_approval.py` | Exact verification of the dashboard-persisted approval and atomic once-only binding to the gateway clock before guaranteed settlement; it does not create the operator decision or consume it |
+| `src/aerial_rescue_command_gateway/publication.py`, `progression.py` | Bounded command-outbox publication, explicit ambiguity reconciliation, five-send progression, timeout/abandonment, and transactional command-result handling |
+| `src/aerial_rescue_command_gateway/refusal.py` | Body-free malformed-ingress candidates whose durable commit precedes Guaranteed rejection or Direct drop |
+| `src/aerial_rescue_command_gateway/ports.py` | Narrow injected transaction, settlement, publication, and authoritative-binding capabilities; it deliberately supplies no process-local adapter |
+| `src/aerial_rescue_command_gateway/store_adapter.py` | Complete fail-closed mapping over store-owned SQLAlchemy transaction factories for authorization, approval verification, normalization, results, bounded outbox recovery, and command progress; construction is lazy and opens no connection |
+| `src/aerial_rescue_command_gateway/service.py` | Typed Direct and Guaranteed dispatch, bounded fair scheduling, durable outbox recovery before readiness, and an explicitly injected legacy request/reply compatibility seam |
+| `src/aerial_rescue_command_gateway/console.py` | The concrete long-running root: one mixed broker session, the SQLAlchemy engine/session factory, every store adapter, cooperative signals, terminal-exhaustion exit status, and reverse-order shutdown |
 | `tests/` | Member-local unit, refusal, boundary, and property evidence |
 
 The member is **active**: [`tools/member_scaffold.py`](../../tools/member_scaffold.py) classifies it as
@@ -58,25 +73,23 @@ such, and
 pins that. The Tier 1 coverage and mutation gates apply here now, to every statement, every branch, and
 every mutated module.
 
-Still absent, and each blocked by something named rather than by effort:
+Still absent from the completed system evidence, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| Approval consumption and the dispatch transaction | `packages/store`. Process memory is authority for no approval, idempotency decision, audit ordinal, or prior command result, so a durable single-use consumption cannot be claimed from it |
-| Publishing an executable command | The same durable boundary. `ACCEPTED` in [ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md) means validated **and persisted**, and nothing here persists |
-| The acknowledgement timer, backoff, jitter, and the send-budget fold | The command send budget, an open row in [`docs/operating-parameters.md`](../../docs/operating-parameters.md), and the state to fold it over, which is the row above |
-| Operator command and approval ingress | No payload or event schema binds either family, and a subscribe grant is not a wire contract |
+| Deployed shared-stack evidence | Compose invokes the concrete console after Alembic, but a static definition and deterministic tests do not prove the process remains ready through live PubSub+ and PostgreSQL interruption |
+| Live dispatch evidence | Offline fakes prove composition, decisions, ordering, cancellation, exhaustion, and recovery scheduling only; PostgreSQL isolation, PubSub+ settlement/reconnect, crash recovery, queue draining, and duplicate side-effect suppression remain integration obligations |
 
 Never add a dummy statement, placeholder test, empty abstraction, or fake entry point to make an absent
 capability look started. Each lands through red-green-refactor with member-local unit, property,
 failure-injection, and mutation evidence.
 
-The `command-gateway` definition in `deploy/compose.yaml` is still a shell: its command imports this
-package and exits rather than calling the console script the manifest declares, and its inherited
-healthcheck imports the contracts package. The wired broker identity and a green Compose policy check
-prove configuration shape only. They do not prove this service starts under Compose, stays ready,
-consumes an approval, commits a transaction, publishes a command, or shuts down cleanly. What has been
-proven live is one Event Mesh Tool request answered by this member running on the host, recorded in
+The `command-gateway` definition in `deploy/compose.yaml` calls the concrete console after the one-shot
+Alembic service completes. Its wired broker identity, process-liveness healthcheck, and a green Compose
+policy check prove configuration shape only. Until the authorized application-data-plane probe runs,
+they do not prove this service stays ready, consumes an approval, commits a transaction, publishes a
+command, or shuts down cleanly under the shared stack. What has already been proven live is one Event
+Mesh Tool request answered by this member running on the host, recorded in
 [`event-mesh-tool-first-run.md`](../../release-evidence/phase-0/event-mesh-tool-first-run.md).
 
 `AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and are not member source.
@@ -96,9 +109,8 @@ transaction, and drives typed adapters. It does not become a second owner for lo
   package now carries the application data plane, including durable-queue consumption and settlement;
   reach it only through that boundary and never with a second client.
 - Put durable repository and transaction adapters in `packages/store`. Process memory is not authority
-  for approvals, idempotency, audit order, inbox or outbox state, or prior command results. The store is
-  also a scaffold today, so sequence the real dependency through TDD instead of hiding temporary state in
-  the gateway.
+  for approvals, idempotency, audit order, inbox or outbox state, or prior command results. Do not hide a
+  missing joined adapter behind a partial row, a default, or temporary gateway state.
 - Declare every imported workspace member and third-party distribution in this member's manifest. The
   root environment installs all workspace members together and can mask a missing dependency declaration.
   Synchronize the shared lock and prove the member wheel rather than relying on that masking effect.
@@ -150,14 +162,19 @@ mutation evidence before relying on it for dispatch.
 
 ## 5. Consume approval and persist dispatch atomically
 
-The load-bearing transaction consumes one approved proposal, claims idempotency, and stages the outbox
-command together. Preserve all parts of that set:
+The load-bearing transaction consumes one approved proposal, claims broker inbox and command
+idempotency, appends its authorization audit, stages the outbox command, and initializes command
+progress together ([ADR-0146](../../docs/adr/0146-define-durable-application-processing.md)). Preserve all
+parts of that set:
 
 1. Read the durable proposal and approval state under concurrency control.
-2. Invoke domain consumption with the exact candidate action parameters, an aware UTC wall-clock reading,
-   and a monotonic reading. The domain recomputes and verifies the proposal digest.
-3. Claim the operation's durable idempotency key and stage the exact command in the outbox in the same
-   transaction as approval consumption.
+2. Require the approval's once-bound authority epoch to equal the current gateway epoch, then invoke
+   domain consumption with the exact candidate action parameters, the original issue wall instant, the
+   gateway-bound monotonic issue reading, and current readings from both gateway clocks. The domain
+   recomputes and verifies the proposal digest.
+3. Claim the operation's durable idempotency key, append the typed authorization audit, stage the exact
+   command in the outbox, and initialize its accepted progress in the same transaction as approval
+   consumption.
 4. Commit before publication or inbound broker acknowledgement.
 5. Publish the committed outbox record through the broker adapter. Mark it published and confirmed, or use
    the adapter's transport-specific sent state, only after publisher confirmation. That confirmation proves
@@ -169,9 +186,9 @@ command together. Preserve all parts of that set:
 Refuse in the domain-defined order: record state, including repeated consumption; candidate mission;
 candidate proposal; parameter canonicalization and digest; then clocks, with regression before expiry.
 
-Do not silently enlarge or shrink the atomic set. In particular, do not claim that an audit append is in
-ADR-0006's atomic set without a decision that adds it. The append-only audit ordinal remains the mission
-timeline's ordering authority, while a producer sequence is scoped only to that producer.
+Do not silently enlarge or shrink the atomic set. ADR-0146 explicitly adds the audit append to ADR-0006's
+authorization transaction. The append-only audit ordinal remains the mission timeline's ordering
+authority, while a producer sequence is scoped only to that producer.
 
 Approval consumption is deliberately not replay-as-success. Two concurrent consumptions yield one
 success and one hard denial. A second attempt after consumption remains a denial even with a new
@@ -179,9 +196,11 @@ idempotency key. In contrast, redelivery of a normal command with a known comman
 previously persisted result and does not dispatch twice.
 
 Read both clocks inside the consuming transaction. A delta at the expiry boundary is expired, either
-clock moving backward is a denial, and either clock reaching the time to live expires the approval. A
-gateway restart changes the monotonic origin, so an open approval cannot remain consumable; require a new
-operator approval instead of repairing, rebasing, or extending the reading.
+clock moving backward is a denial, and either clock reaching the time to live expires the approval.
+Verified approval ingress performs ADR-0183's one allowed rebase from the original issue wall instant
+into the then-current gateway monotonic origin; the dashboard reading is never command authority. A
+gateway restart changes the epoch, so an open approval cannot remain consumable. Require a new operator
+approval instead of rebinding, repairing, or extending the stored gateway authority.
 
 Do not publish before commit, acknowledge inbound critical work before commit, or blindly retry an
 ambiguous non-idempotent operation. Preserve the original identifiers across bounded retries and expose a
@@ -194,10 +213,12 @@ publish only its recorded output families. Use that table rather than duplicatin
 borrow another service's credential, restore the factory identity, or widen a wildcard to make a consumer
 connect.
 
-No durable application queue exists yet, and the queue, redelivery, message-expiry, dead-message, and
-outbox bounds are not all decided. Do not claim guaranteed delivery, no loss, or backlog recovery from the
-current ACL tests or Compose definition. Set the governing parameters and add broker, persistence,
-failure-injection, and recovery evidence before activating those semantics.
+The concrete root constructs only the role's typed Direct receiver, three durable Guaranteed receivers,
+Direct and Guaranteed publication capabilities, and the store graph over one broker client and one lazy
+SQLAlchemy pool. It requires both application and command outboxes to drain without refusal or ambiguity
+before restoring readiness for a connected epoch. Do not claim guaranteed delivery, no loss, or backlog
+recovery from typed use-case tests, ACL tests, or Compose shape: broker, persistence, failure-injection,
+and recovery evidence is still required before those semantics are reported live.
 
 Bound every connection, receive loop, acknowledgement wait, retry count, backoff, queue, outbox,
 concurrency fan-out, transaction wait, and shutdown deadline with values owned by

@@ -20,13 +20,13 @@ from aerial_rescue_contracts.view import (
 )
 from aerial_rescue_store import STORE_BOUNDARY_ERRORS, StoreError
 from aerial_rescue_store.bounds import SHUTDOWN_GRACE_SECONDS
-from aerial_rescue_store.dashboard_events import (
+from aerial_rescue_store.dashboard.events import (
     EventSession,
     StoredDashboardEvent,
     read_event_page,
     recording_watermark,
 )
-from aerial_rescue_store.dashboard_runs import RunSession, recording_run
+from aerial_rescue_store.dashboard.runs import RunSession, recording_run
 from aerial_rescue_store.engine import create_engine
 from aerial_rescue_store.session import DurableSession, close, create_session_factory, transaction
 from aerial_rescue_store.settings import CONTAINER_HOST, DatabaseSettings, database_settings

@@ -12,8 +12,8 @@ from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from aerial_rescue_store import migrate
-from aerial_rescue_store.migrate import (
+from aerial_rescue_store.migrations import runtime as migrate
+from aerial_rescue_store.migrations.runtime import (
     MigrationConfigError,
     MigrationConfigRefusal,
     MigrationConfiguration,
@@ -169,7 +169,7 @@ class MigrationEntrypointTests(unittest.TestCase):
         with (
             patch.object(migrate, "configuration", return_value=configured) as configure,
             patch.object(migrate, "migrate_to_head", new=upgrade),
-            patch("aerial_rescue_store.migrate.asyncio.run") as runner,
+            patch("aerial_rescue_store.migrations.runtime.asyncio.run") as runner,
         ):
             migrate.main()
 

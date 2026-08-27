@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final, Literal
 
-from aerial_rescue_dashboard_api.documents import (
+from aerial_rescue_dashboard_api.boundary.documents import (
     find_scenario,
     prepare_live_state,
     validated_document,

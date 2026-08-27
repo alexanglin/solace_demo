@@ -18,7 +18,11 @@ quality_root_python_source_present() {
 }
 
 quality_agent_python_source_present() {
-	for root in agent-mesh/plugins agent-mesh/tools; do
+	for root in \
+		agent-mesh/aerial_rescue_event_mesh_gateway \
+		agent-mesh/aerial_rescue_runtime_compat \
+		agent-mesh/plugins \
+		agent-mesh/tools; do
 		if quality_tree_has_files "$root" -name '*.py' -o -name '*.pyi'; then
 			return 0
 		fi
@@ -43,6 +47,18 @@ quality_root_python_paths() {
 		sort -u
 }
 
+# Emit every workspace source-layout root that mypy must treat as an import base. With
+# explicit_package_bases enabled, leaving these implicit makes one file visible both as
+# packages.member.src.package.module and as package.module through the editable install.
+# The listing is derived from the same tracked-or-unignored authority as the owned roots,
+# so activating another src-layout member cannot leave the type gate stale.
+quality_root_python_import_paths() {
+	git ls-files --cached --others --exclude-standard -- '*.py' '*.pyi' |
+		grep -v '^agent-mesh/' |
+		sed -n 's|^\(.*\/src\)/.*|\1|p' |
+		sort -u
+}
+
 quality_root_python_active() {
 	[ -f pyproject.toml ] || quality_root_python_source_present
 }
@@ -53,6 +69,42 @@ quality_agent_python_active() {
 
 quality_dashboard_active() {
 	[ -f apps/dashboard/package.json ] || quality_dashboard_source_present
+}
+
+# Print a component's activation state after enforcing ADR-0019's required manifest.
+# The activation predicate and diagnostic are arguments so the three component families
+# share one fail-closed implementation without changing a caller's variables or shell state.
+quality_required_manifest_state() {
+	if "$1"; then
+		[ -f "$2" ] || {
+			printf '%s\n' "$3" >&2
+			exit 1
+		}
+		printf 'true\n'
+		return 0
+	fi
+	printf 'false\n'
+}
+
+quality_root_python_manifest_state() {
+	quality_required_manifest_state \
+		quality_root_python_active \
+		pyproject.toml \
+		'MISSING: pyproject.toml is required by owned root Python source'
+}
+
+quality_agent_python_manifest_state() {
+	quality_required_manifest_state \
+		quality_agent_python_active \
+		agent-mesh/pyproject.toml \
+		'MISSING: agent-mesh/pyproject.toml is required by owned Agent Mesh source'
+}
+
+quality_dashboard_manifest_state() {
+	quality_required_manifest_state \
+		quality_dashboard_active \
+		apps/dashboard/package.json \
+		'MISSING: apps/dashboard/package.json is required by owned dashboard source'
 }
 
 # Fail closed once the dashboard is active. ADR-0019 makes a missing manifest, lockfile, or

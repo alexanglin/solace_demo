@@ -30,6 +30,14 @@ SCENARIO_SERVICE = "scenario-service"
 AGENT_MESH_SERVICE = "agent-mesh"
 AGENT_MESH_CONFIGS = REPOSITORY_ROOT / "agent-mesh" / "configs"
 REFERENCE = re.compile(r"\$\{(SOLACE_[A-Z0-9_]+)\}")
+MESSAGING_ROLES = tuple(role for role in Principal if role is not Principal.DISCOVERY)
+APPLICATION_ROLE_SERVICES = {
+    Principal.DASHBOARD_API: "dashboard-api",
+    Principal.FLEET_SIMULATOR: "fleet-simulator",
+    Principal.COMMAND_GATEWAY: "command-gateway",
+    Principal.EVIDENCE_SERVICE: "evidence-service",
+    Principal.RECORDER: "recorder",
+}
 
 
 def _declarations() -> dict[str, str]:
@@ -78,25 +86,43 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
         self.assertEqual("aerial-rescue-mesh", declared)
         self.assertEqual("aerial-rescue-mesh/>", subscription)
 
-    def test_every_role_declares_a_username_holding_its_own_name(self) -> None:
+    def test_every_enabled_messaging_role_declares_a_username_holding_its_own_name(self) -> None:
         # Arrange
         declarations = _declarations()
 
         # Act
-        usernames = {role: declarations.get(_variable(role, "USERNAME")) for role in Principal}
+        usernames = {
+            role: declarations.get(_variable(role, "USERNAME")) for role in MESSAGING_ROLES
+        }
 
         # Assert
-        self.assertEqual({role: role.value for role in Principal}, usernames)
+        self.assertEqual({role: role.value for role in MESSAGING_ROLES}, usernames)
 
-    def test_every_role_declares_a_password_placeholder_and_never_a_value(self) -> None:
+    def test_every_enabled_messaging_role_declares_only_a_password_placeholder(self) -> None:
         # Arrange
         declarations = _declarations()
 
         # Act
-        passwords = {role: declarations.get(_variable(role, "PASSWORD")) for role in Principal}
+        passwords = {
+            role: declarations.get(_variable(role, "PASSWORD")) for role in MESSAGING_ROLES
+        }
 
         # Assert
-        self.assertEqual({role: "<required>" for role in Principal}, passwords)
+        self.assertEqual({role: "<required>" for role in MESSAGING_ROLES}, passwords)
+
+    def test_the_retired_discovery_messaging_identity_is_absent_from_the_template(self) -> None:
+        # Arrange
+        declarations = _declarations()
+
+        # Act
+        present = tuple(
+            name
+            for name in ("SOLACE_DISCOVERY_USERNAME", "SOLACE_DISCOVERY_PASSWORD")
+            if name in declarations
+        )
+
+        # Assert
+        self.assertEqual((), present)
 
     def test_no_two_services_share_a_broker_identity(self) -> None:
         # Arrange
@@ -114,7 +140,7 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
 
     def test_every_service_identity_names_a_role_variable(self) -> None:
         # Arrange
-        allowed = {f"${{{_variable(role, 'USERNAME')}}}" for role in Principal}
+        allowed = {f"${{{_variable(role, 'USERNAME')}}}" for role in MESSAGING_ROLES}
 
         # Act
         referenced = {
@@ -140,27 +166,18 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
         # Assert
         self.assertEqual((), mismatched)
 
-    def test_the_scenario_service_carries_its_dedicated_role_identity(self) -> None:
+    def test_the_scenario_service_has_no_broker_identity_or_credential(self) -> None:
         # Arrange
         declarations = _declarations()
         environment = _services()[SCENARIO_SERVICE]
-        expected = (
-            "scenario-service",
-            "<required>",
-            "/run/secrets/scenario-broker-password",
-            "./secrets/broker-scenario-service-password",
-        )
+        names = ("SOLACE_SCENARIO_SERVICE_USERNAME", "SOLACE_SCENARIO_SERVICE_PASSWORD")
 
         # Act
-        held = (
-            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
-            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
-            environment.get("SOLACE_BROKER_PASSWORD_FILE"),
-            _secret_files().get("scenario-broker-password"),
-        )
+        held = tuple(name for name in names if name in declarations)
+        capabilities = tuple(name for name in (USERNAME_KEY, CREDENTIAL_KEY) if name in environment)
 
         # Assert
-        self.assertEqual(expected, held)
+        self.assertEqual(((), ()), (held, capabilities))
 
     def test_no_service_falls_back_to_one_shared_broker_credential(self) -> None:
         # Arrange
@@ -171,6 +188,28 @@ class BrokerIdentityWiringTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual((), tuple(name for name in retired if name in text))
+
+    def test_application_roles_receive_one_matching_secret_instead_of_password_environment(
+        self,
+    ) -> None:
+        # Arrange
+        document = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+        services = document["services"]
+
+        # Act
+        held = {
+            role: (
+                services[name].get("environment", {}),
+                services[name].get("secrets", []),
+            )
+            for role, name in APPLICATION_ROLE_SERVICES.items()
+        }
+
+        # Assert
+        for role, (environment, secrets) in held.items():
+            self.assertNotIn(USERNAME_KEY, environment)
+            self.assertNotIn(CREDENTIAL_KEY, environment)
+            self.assertIn(f"broker-{role.value}-password", secrets)
 
 
 class AgentMeshContainerScopeTests(QualityGateTestCase):

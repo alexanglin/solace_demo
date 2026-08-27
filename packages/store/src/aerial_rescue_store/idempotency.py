@@ -37,11 +37,11 @@ from aerial_rescue_domain.idempotency import (
     IdempotencyKind,
     idempotency_decision,
 )
-from sqlalchemy import LargeBinary, String, column, select, table, update
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 
 from aerial_rescue_store import StoreError
-from aerial_rescue_store.migration import IDEMPOTENCY_CLAIM_TABLE
+from aerial_rescue_store.database.schema import IDEMPOTENCY_CLAIM
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -54,16 +54,13 @@ KIND_COLUMN: Final = "kind"
 DIGEST_COLUMN: Final = "body_digest"
 RESULT_COLUMN: Final = "result"
 
-_KEY: Final = column(KEY_COLUMN, String)
-_KIND: Final = column(KIND_COLUMN, String)
-_DIGEST: Final = column(DIGEST_COLUMN, String)
-_MISSION: Final = column("mission_id", String)
-_RESULT: Final = column(RESULT_COLUMN, LargeBinary)
-_CLAIMED_AT: Final = column("claimed_at", String)
-
-_CLAIM_ROWS: Final = table(
-    IDEMPOTENCY_CLAIM_TABLE, _KEY, _KIND, _DIGEST, _MISSION, _RESULT, _CLAIMED_AT
-)
+_CLAIM_ROWS: Final = IDEMPOTENCY_CLAIM
+_KEY: Final = IDEMPOTENCY_CLAIM.c[KEY_COLUMN]
+_KIND: Final = IDEMPOTENCY_CLAIM.c[KIND_COLUMN]
+_DIGEST: Final = IDEMPOTENCY_CLAIM.c[DIGEST_COLUMN]
+_MISSION: Final = IDEMPOTENCY_CLAIM.c.mission_id
+_RESULT: Final = IDEMPOTENCY_CLAIM.c[RESULT_COLUMN]
+_CLAIMED_AT: Final = IDEMPOTENCY_CLAIM.c.claimed_at
 
 type ClaimSelection = Select[tuple[str, str, bytes]]
 """The stored members a repeat reads, in the order :func:`claim` maps them positionally."""
@@ -84,16 +81,15 @@ class StoredClaimRefusal(Enum):
         "mapped onto the nearest kind that is"
     )
     KIND_MISMATCH = (
-        "the key is claimed for the other operation; a command and an approval consumption "
-        "have different repeat outcomes and one may never answer for the other"
+        "the key is claimed for another operation, so one operation may never answer for the other"
     )
     BODY_MISMATCH = (
         "the key is claimed for a different request body, so this is not a repeat and is "
         "refused rather than answered from another request's record"
     )
     RESULT_NOT_RECORDED = (
-        "the command holding this key has not recorded a result yet, so there is nothing to "
-        "return and dispatching again would be the duplicate the key exists to prevent"
+        "the repeatable operation holding this key has not recorded a result yet, so there is "
+        "nothing to return and dispatching again would be the duplicate the key exists to prevent"
     )
     UNREADABLE_RESULT = (
         "the stored result is not the bytes it was written as, so it is refused rather than "

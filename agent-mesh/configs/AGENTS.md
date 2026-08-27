@@ -20,6 +20,7 @@ Read the canonical owner before changing a represented concern:
 | Web UI schema and loopback compensating control | [ADR-0065](../../docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) and [`TECH_DEBT.md`](../../TECH_DEBT.md) |
 | Event Mesh request/reply and closed operation set | [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), and [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
 | Event Mesh settlement and delivery limits | [ADR-0071](../../docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md), [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), and [`CONTRACTS.md`](../../docs/CONTRACTS.md) |
+| Closed Agent Response and trusted source binding | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md), [ADR-0152](../../docs/adr/0152-bind-proposals-to-the-complete-source-event.md), and [`CONTRACTS.md`](../../docs/CONTRACTS.md) |
 | Milestone scope, runtime design, and live proof boundaries | [`IMPLEMENTATION_PLAN.md`](../../docs/IMPLEMENTATION_PLAN.md), [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md), and [`tests/phase0/AGENTS.md`](../../tests/phase0/AGENTS.md) |
 
 An Accepted ADR governs if configuration comments, tests, historical evidence, or this guide disagree
@@ -38,7 +39,7 @@ Event Mesh Tool.
 | `mission-coordinator.yaml` | The proposal-only sector agent, its locked local model and card, deny-by-default outbound A2A posture, and the embedded read-only Event Mesh Tool |
 | `mission-response-workflow.yaml` | The minimal versioned, typed Phase 0 workflow that invokes `MissionCoordinator`; it is not the complete later-phase mission sequence |
 | `web-ui.yaml` | The local engineering HTTP/SSE surface, session-secret indirection, shared artifacts, and explicit loopback-only browser origins; it does not add the Platform service |
-| `event-mesh-gateway.yaml` | Salient-event ingress, structured A2A invocation, deferred rejection, mission-context forwarding, and non-authoritative success and failure outputs |
+| `event-mesh-gateway.yaml` | Salient-event ingress, structured A2A invocation/output, deferred rejection, trusted source-context forwarding, and closed non-authoritative candidate or abstention output |
 
 A rename, split, merge, new app, new card, new tool, or new workflow changes runtime composition. Update
 the real-checkout inventory assertions, deployment wiring, canonical architecture, and the relevant
@@ -90,7 +91,9 @@ action occurred.
   acknowledgement, exactly one target per handler, and references to declared output handlers.
 - Gateway output remains non-authoritative agent-response traffic. It is not an agent-proposal event, a
   command, an approval, an authoritative event record, or proof that its triggering input was durably
-  retained.
+  retained. The model owns only schema-bounded coordinates; the owned gateway extension supplies every
+  identity and source binding from `forward_context`, redacts every failure, and delegates the final
+  closed-body schema check and Direct publication to the pinned official output handler.
 - The Event Mesh Tool stays the exact pinned Python symbol, uses JSON request/reply, publishes only to
   the schema-bound gateway-request topic, and receives on the reserved reply prefix. Its operation
   default is model-overridable; the deterministic gateway's closed operation table, not the YAML
@@ -148,10 +151,10 @@ A green result does not establish:
 
 The validator intentionally has narrower checks than several architectural statements. In particular,
 it rejects `model_provider` only at the top level of agent, workflow, and Web UI `app_config`; it does
-not search nested structures or apply that rule to the Event Mesh Gateway arm. It also does not prove
-the fixed namespace value or broker ACLs, or enforce the versioned application namespace on every
-gateway subscription and output expression. Do not broaden a claim to fill those gaps. Close a gap
-through the approved TDD and ADR workflow, or report it as unverified.
+not search nested structures or apply that rule to the Event Mesh Gateway arm. Its specialized gateway
+rule does require the exact salient-event subscription and closed Agent Response output boundary, but
+it does not prove the fixed namespace value for other apps or any broker ACL. Do not broaden a claim to
+fill those gaps. Close a gap through the approved TDD and ADR workflow, or report it as unverified.
 
 ## 7. Coordinate cross-tree changes
 

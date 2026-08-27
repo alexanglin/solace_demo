@@ -29,6 +29,9 @@ from aerial_rescue_scenario_service.wire import (
 )
 from fastapi import FastAPI
 
+from tests.http_support import PrivateRequestHeaders, asgi_exchange_for
+from tests.http_support import error_code as _error_code
+
 pytestmark = [pytest.mark.unit]
 
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[3]
@@ -44,6 +47,8 @@ CATALOG_ID: Final = (
 AUTH_VALUE: Final = "scenario-secret-000000000000000000000000000000000"
 OTHER_HOP_AUTH_VALUE: Final = "fleet-secret-000000000000000000000000000000000000"
 HOST: Final = "scenario-service:8081"
+_exchange: Final = asgi_exchange_for("http://scenario-service:8081")
+_headers: Final = PrivateRequestHeaders(HOST, AUTH_VALUE)
 
 
 def _status(state: str = "SEARCHING") -> ScenarioControlRunStatus:
@@ -100,41 +105,6 @@ def _app(operations: _Operations | None = None) -> tuple[FastAPI, _Operations]:
     selected = _Operations() if operations is None else operations
     config = ScenarioHttpConfig(expected_host=HOST, bearer_secret=AUTH_VALUE)
     return (create_app(selected, config), selected)
-
-
-async def _exchange(
-    app: FastAPI,
-    method: str,
-    path: str,
-    *,
-    headers: httpx.Headers | dict[str, str],
-    content: bytes | str | None = None,
-) -> httpx.Response:
-    """Send one request directly through the ASGI boundary."""
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://scenario-service:8081"
-    ) as client:
-        return await client.request(method, path, headers=headers, content=content)
-
-
-def _headers(
-    *,
-    host: str = HOST,
-    authorization_value: str = AUTH_VALUE,
-    media_type: str = "application/json",
-) -> dict[str, str]:
-    """Return one private request's admission headers."""
-    return {
-        "host": host,
-        "authorization": f"Bearer {authorization_value}",
-        "content-type": media_type,
-    }
-
-
-def _error_code(content: bytes) -> str:
-    """Return the refusal code from canonical response bytes."""
-    return cast("str", json.loads(content)["errorCode"])
 
 
 class ScenarioHttpAdmissionTests(unittest.TestCase):

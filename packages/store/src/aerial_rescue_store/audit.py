@@ -22,25 +22,28 @@ re-encoding through a native column type would let the database decide them. Thi
 no validator of its own for the same reason `packages/contracts` owns the identifier grammar:
 a second home for a rule is a second answer to it.
 
-Every statement is a typed expression over the two lightweight table clauses below, so no
-identifier is interpolated into SQL text and no metadata object exists that could create a
-production table by accident.
+Every statement is a typed expression over the complete package-owned table metadata. Importing
+that metadata emits no DDL; Alembic remains the only schema authority.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Final, Protocol
+from itertools import pairwise
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
-from sqlalchemy import BigInteger, LargeBinary, String, column, insert, table
+from sqlalchemy import insert, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 
 from aerial_rescue_store import StoreError
-from aerial_rescue_store.migration import AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE
+from aerial_rescue_store.database.schema import AUDIT_RECORD, AUDIT_SEQUENCE
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.sql.dml import Insert
+    from sqlalchemy.sql.selectable import Select
 
 FIRST_ORDINAL: Final = 1
 """What the upsert proposes, so a mission's first record needs no separate initialisation."""
@@ -50,22 +53,10 @@ ORDINAL_STEP: Final = 1
 MISSION_COLUMN: Final = "mission_id"
 NEXT_ORDINAL_COLUMN: Final = "next_ordinal"
 
-_SEQUENCE_ROWS: Final = table(
-    AUDIT_SEQUENCE_TABLE,
-    column(MISSION_COLUMN, String),
-    column(NEXT_ORDINAL_COLUMN, BigInteger),
-)
-_RECORD_ROWS: Final = table(
-    AUDIT_RECORD_TABLE,
-    column(MISSION_COLUMN, String),
-    column("ordinal", BigInteger),
-    column("kind", String),
-    column("occurred_at", String),
-    column("payload", LargeBinary),
-    column("correlation_id", String),
-    column("causation_id", String),
-    column("traceparent", String),
-)
+_SEQUENCE_ROWS: Final = AUDIT_SEQUENCE
+_RECORD_ROWS: Final = AUDIT_RECORD
+AUDIT_MEMBER_COUNT: Final = 8
+type AuditSelection = Select[tuple[object, ...]]
 
 
 class AuditRefusal(Enum):
@@ -75,6 +66,11 @@ class AuditRefusal(Enum):
         "the counter returned no ordinal, so the timeline's ordering authority did not answer "
         "and no record is written on an ordinal this process chose for itself"
     )
+    INVALID_READ_LIMIT = "the ordered audit read limit must be a positive integer"
+    INVALID_AFTER_ORDINAL = "the audit recovery checkpoint must be a nonnegative integer"
+    READ_LIMIT_EXCEEDED = "the database returned more audit rows than the requested bound"
+    UNREADABLE_ROW = "the stored audit row does not match its migrated typed shape"
+    ORDER_VIOLATION = "the stored audit rows are not strictly ascending by ordinal"
 
 
 class AuditError(StoreError):
@@ -86,6 +82,20 @@ class AuditRecord:
     """One entry in the mission timeline, without the ordinal the counter has yet to issue."""
 
     mission_id: str
+    kind: str
+    occurred_at: str
+    payload: bytes
+    correlation_id: str
+    causation_id: str | None
+    traceparent: str
+
+
+@dataclass(frozen=True)
+class StoredAuditRecord:
+    """One complete authoritative audit row including its durable mission ordinal."""
+
+    mission_id: str
+    ordinal: int
     kind: str
     occurred_at: str
     payload: bytes
@@ -176,3 +186,107 @@ async def append(session: OrdinalSession, record: AuditRecord) -> int:
         raise AuditError(AuditRefusal.NO_ORDINAL_ISSUED, record.mission_id)
     await session.execute(record_statement(record, ordinal))
     return ordinal
+
+
+def ordered_statement(mission_id: str, limit: int) -> AuditSelection:
+    """Return a mission-bounded audit read ordered only by its authoritative ordinal."""
+    statement = (
+        select(*AUDIT_RECORD.c)
+        .where(AUDIT_RECORD.c.mission_id == mission_id)
+        .order_by(AUDIT_RECORD.c.ordinal)
+        .limit(limit)
+    )
+    return cast("AuditSelection", statement)
+
+
+def ordered_after_statement(mission_id: str, after_ordinal: int, limit: int) -> AuditSelection:
+    """Return one keyset-paginated audit suffix with no offset race."""
+    statement = (
+        select(*AUDIT_RECORD.c)
+        .where(
+            AUDIT_RECORD.c.mission_id == mission_id,
+            AUDIT_RECORD.c.ordinal > after_ordinal,
+        )
+        .order_by(AUDIT_RECORD.c.ordinal)
+        .limit(limit)
+    )
+    return cast("AuditSelection", statement)
+
+
+class AuditRows(Protocol):
+    """The bounded ordered rows returned by SQLAlchemy."""
+
+    def all(self) -> Sequence[Sequence[object]]:
+        """Return rows in the statement's ordinal order."""
+
+
+class AuditReadSession(Protocol):
+    """The read-only SQLAlchemy operation required for audit export."""
+
+    async def execute(self, statement: AuditSelection, /) -> AuditRows:
+        """Execute one bounded read."""
+
+
+async def read_ordered(
+    session: AuditReadSession, mission_id: str, limit: int
+) -> tuple[StoredAuditRecord, ...]:
+    """Return no more than ``limit`` complete audit rows in strict ordinal order."""
+    if type(limit) is not int or limit <= 0:
+        raise AuditError(AuditRefusal.INVALID_READ_LIMIT, "redacted-limit")
+    selected = await session.execute(ordered_statement(mission_id, limit))
+    rows = selected.all()
+    if len(rows) > limit:
+        raise AuditError(AuditRefusal.READ_LIMIT_EXCEEDED, mission_id)
+    records = tuple(_stored_record(row, mission_id) for row in rows)
+    if any(current.ordinal <= previous.ordinal for previous, current in pairwise(records)):
+        raise AuditError(AuditRefusal.ORDER_VIOLATION, mission_id)
+    return records
+
+
+async def read_ordered_after(
+    session: AuditReadSession,
+    mission_id: str,
+    after_ordinal: int,
+    limit: int,
+) -> tuple[StoredAuditRecord, ...]:
+    """Return one bounded suffix strictly after a durable dashboard checkpoint."""
+    if type(after_ordinal) is not int or after_ordinal < 0:
+        raise AuditError(AuditRefusal.INVALID_AFTER_ORDINAL, "redacted-ordinal")
+    if type(limit) is not int or limit <= 0:
+        raise AuditError(AuditRefusal.INVALID_READ_LIMIT, "redacted-limit")
+    selected = await session.execute(ordered_after_statement(mission_id, after_ordinal, limit))
+    rows = selected.all()
+    if len(rows) > limit:
+        raise AuditError(AuditRefusal.READ_LIMIT_EXCEEDED, mission_id)
+    records = tuple(_stored_record(row, mission_id) for row in rows)
+    if records and records[0].ordinal <= after_ordinal:
+        raise AuditError(AuditRefusal.ORDER_VIOLATION, mission_id)
+    if any(current.ordinal <= previous.ordinal for previous, current in pairwise(records)):
+        raise AuditError(AuditRefusal.ORDER_VIOLATION, mission_id)
+    return records
+
+
+def _stored_record(row: Sequence[object], mission_id: str) -> StoredAuditRecord:
+    """Map one complete row without coercing canonical bytes or durable identity."""
+    if len(row) != AUDIT_MEMBER_COUNT:
+        raise AuditError(AuditRefusal.UNREADABLE_ROW, mission_id)
+    valid = (
+        all(isinstance(row[index], str) for index in (0, 2, 3, 5, 7))
+        and type(row[1]) is int
+        and row[1] > 0
+        and isinstance(row[4], bytes)
+        and (row[6] is None or isinstance(row[6], str))
+        and row[0] == mission_id
+    )
+    if not valid:
+        raise AuditError(AuditRefusal.UNREADABLE_ROW, mission_id)
+    return StoredAuditRecord(
+        mission_id=cast("str", row[0]),
+        ordinal=cast("int", row[1]),
+        kind=cast("str", row[2]),
+        occurred_at=cast("str", row[3]),
+        payload=cast("bytes", row[4]),
+        correlation_id=cast("str", row[5]),
+        causation_id=cast("str | None", row[6]),
+        traceparent=cast("str", row[7]),
+    )

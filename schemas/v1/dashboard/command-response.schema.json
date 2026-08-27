@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
+  "description": "The stable committed identity returned for an accepted operator-command mutation.",
+  "type": "object",
+  "required": [
+    "operationVersion",
+    "missionId",
+    "commandId",
+    "eventId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "operationVersion": {
+      "const": "dashboard-command-response/v1"
+    },
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "commandId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "eventId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { DashboardMutationClient, type DashboardMutationResult } from "./api/mutation-client";
 import { decodeCanonicalJson, parseDashboardBootstrap } from "./contracts/bootstrap";
@@ -22,6 +22,15 @@ import {
 import { appendMeaningfulTimelineEvent, type MissionTimeline } from "./domain/timeline";
 import { FleetTable, type FleetFilter } from "./components/fleet-table";
 import { SearchMap } from "./components/search-map";
+import {
+  createProposalDecisionSubmitter,
+  type ProposalDecisionSubmitter,
+} from "./operator/mutation-client";
+import { currentProposalBinding } from "./operator/proposal-binding";
+import {
+  ProposalDecisionPanel,
+  type DashboardSourceState as ProposalDecisionSourceState,
+} from "./operator/proposal-decision-panel";
 import type { DashboardSourceInput } from "./sources/event-source";
 import {
   ProductionDashboardRuntime,
@@ -41,6 +50,7 @@ const registry = createDashboardSchemaRegistry();
 
 export interface DashboardApplicationProps {
   readonly productionBootstrap?: DashboardSourceInput;
+  readonly proposalDecisionSubmitterFactory?: (bearer: string) => ProposalDecisionSubmitter;
   readonly productionRuntimeFactory?: (
     options: ProductionDashboardRuntimeOptions,
   ) => ProductionRuntimePort;
@@ -50,6 +60,14 @@ function defaultProductionRuntime(
   options: ProductionDashboardRuntimeOptions,
 ): ProductionRuntimePort {
   return new ProductionDashboardRuntime(options);
+}
+
+function defaultProposalDecisionSubmitter(bearer: string): ProposalDecisionSubmitter {
+  return createProposalDecisionSubmitter({
+    bearer,
+    fetcher: globalThis.fetch.bind(globalThis),
+    newIdempotencyKey: () => globalThis.crypto.randomUUID(),
+  });
 }
 
 interface ServerOwnerState {
@@ -311,16 +329,61 @@ function connectionLabel(source: DashboardSourceSessionState, replayReady: boole
     : "CONNECTED";
 }
 
-function timelineLabel(ordered: OrderedDashboardEvent): string {
-  const event = ordered.event as Exclude<
-    OrderedDashboardEvent["event"],
-    { kind: "droneTelemetry" }
-  >;
-  if (event.kind === "missionLifecycle") return `Mission · ${event.data.lifecycle}`;
-  if (event.kind === "connectivityChanged") {
-    return `${event.data.droneId} · ${event.data.connectivity}`;
+function proposalDecisionSourceState(
+  source: DashboardSourceSessionState,
+  lifecycle: NonNullable<DashboardReducedState["currentMission"]>["lifecycle"] | undefined,
+): ProposalDecisionSourceState {
+  if (lifecycle === "EXHAUSTED") return "exhausted";
+  switch (source.server.status) {
+    case "connected":
+      return "connected";
+    case "recovered":
+      return "recovered";
+    case "disconnected":
+      return "retrying";
+    case "offline":
+      return "offline";
+    case "idle":
+    case "connecting":
+      return "loading";
+    case "disposed":
+    case "modeMismatch":
+    case "resynchronizing":
+    case "runtimeChanged":
+      return "degraded";
   }
-  return `${event.data.sectorId} · ${event.data.state.replace("_", " ")}`;
+}
+
+function timelineLabel(ordered: OrderedDashboardEvent): string {
+  const event = ordered.event;
+  switch (event.kind) {
+    case "droneTelemetry":
+      return `${event.data.droneId} · telemetry`;
+    case "connectivityChanged":
+      return `${event.data.droneId} · ${event.data.connectivity}`;
+    case "missionLifecycle":
+      return `Mission · ${event.data.lifecycle}`;
+    case "sectorLifecycle":
+      return `${event.data.sectorId} · ${event.data.state.replace("_", " ")}`;
+    case "operatorCommand":
+      return `Operator command · ${event.data.commandId}`;
+    case "operatorApproval":
+      return `${event.data.decision === "approve" ? "Approval" : "Rejection"} · ${event.data.proposalId}`;
+    case "agentProposal":
+      return `Proposal · ${event.data.proposalId}`;
+    case "evidenceDecision":
+      return `Evidence · ${event.data.evidenceDecisionId} · ${event.data.outcome}`;
+    case "salientObservation":
+      return `${event.data.droneId} · ${event.data.observation}`;
+    case "droneCommand":
+      return `Drone command · ${event.data.commandId}`;
+    case "commandResult":
+      return `Command result · ${event.data.commandId} · ${event.data.outcome}`;
+    case "gatewayResponse":
+      return `Gateway · ${event.data.requestId} · ${event.data.outcome}`;
+    case "auditRecord":
+      return `Audit · ${event.data.recordType} · ${event.data.recordId}`;
+  }
 }
 
 function applyReplayCursor(replay: ReplayOwnerState, cursor: number): ReplayOwnerState {
@@ -411,6 +474,7 @@ function ResetDialog({
 
 export function DashboardApplication({
   productionBootstrap,
+  proposalDecisionSubmitterFactory = defaultProposalDecisionSubmitter,
   productionRuntimeFactory = defaultProductionRuntime,
 }: DashboardApplicationProps = {}): React.JSX.Element {
   const [server, setServer] = useState<ServerOwnerState>(initialServerState);
@@ -424,6 +488,7 @@ export function DashboardApplication({
   const [liveDigest, setLiveDigest] = useState("");
   const [mutationClient, setMutationClient] = useState<DashboardMutationClient | null>(null);
   const [mutationLocked, setMutationLocked] = useState(false);
+  const [proposalBearer, setProposalBearer] = useState<string | null>(null);
   const [overloadNoticeActive, setOverloadNoticeActive] = useState(false);
   const [overloadNoticeController] = useState(
     () => new OverloadNoticeController(setOverloadNoticeActive),
@@ -439,6 +504,7 @@ export function DashboardApplication({
       if (input.channel === "bootstrap" && input.name === "bootstrap") {
         const parsed = parseDashboardBootstrap(input.raw);
         if (!parsed.ok) {
+          setProposalBearer(null);
           setMutationClient((current) => {
             current?.lockStaleRuntime();
             return null;
@@ -447,6 +513,7 @@ export function DashboardApplication({
           setServer((current) => ({ ...current, alert: contractAlert("bootstrap") }));
           return;
         }
+        setProposalBearer(parsed.value.bearer);
         setMutationClient(new DashboardMutationClient({ bearer: parsed.value.bearer }));
         setMutationLocked(false);
         setServer(initialServerState());
@@ -537,6 +604,7 @@ export function DashboardApplication({
         onState: (state) => {
           overloadNoticeController.observe(state.server.status);
           if (state.server.status === "runtimeChanged") {
+            setProposalBearer(null);
             setMutationClient((current) => {
               current?.lockStaleRuntime();
               return current;
@@ -638,6 +706,13 @@ export function DashboardApplication({
       source.server.status === "connecting") ||
     mutationLocked;
   const operationPending = server.operationPending !== null;
+  const proposalDecisionSubmitter = useMemo(
+    () =>
+      server.readiness?.mode === "degradedLive" && proposalBearer !== null
+        ? proposalDecisionSubmitterFactory(proposalBearer)
+        : undefined,
+    [proposalBearer, proposalDecisionSubmitterFactory, server.readiness?.mode],
+  );
 
   useEffect(() => {
     if (mode === "replay") return;
@@ -767,6 +842,7 @@ export function DashboardApplication({
       return;
     }
     if (result.kind === "stale-runtime" || result.kind === "locked") {
+      setProposalBearer(null);
       setMutationLocked(true);
       setServer((current) => ({
         ...current,
@@ -807,6 +883,8 @@ export function DashboardApplication({
     (window as Partial<Pick<Window, "matchMedia">>).matchMedia?.("(prefers-reduced-motion: reduce)")
       .matches ?? false;
   const productionMode = productionBootstrap !== undefined;
+  const proposalBinding = currentProposalBinding(timeline);
+  const decisionSourceState = proposalDecisionSourceState(source, state.currentMission?.lifecycle);
 
   function selectProductionMode(selectedMode: "degradedLive" | "replay"): void {
     if (!productionMode) return;
@@ -1167,6 +1245,18 @@ export function DashboardApplication({
                 </p>
               </div>
             </section>
+          )}
+          {proposalBinding === undefined ? null : (
+            <ProposalDecisionPanel
+              decisionRecorded={proposalBinding.decisionRecorded}
+              evidence={proposalBinding.evidence}
+              mode={mode}
+              proposal={proposalBinding.proposal}
+              sourceState={decisionSourceState}
+              {...(proposalDecisionSubmitter === undefined
+                ? {}
+                : { submit: proposalDecisionSubmitter })}
+            />
           )}
         </div>
         <section aria-label="Fleet status" className="fleet-rail">

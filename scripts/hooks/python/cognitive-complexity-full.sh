@@ -33,7 +33,15 @@ command -v uv >/dev/null 2>&1 || {
 }
 
 set --
-for path in tools packages services tests agent-mesh/plugins agent-mesh/tools; do
+for path in \
+	tools \
+	packages \
+	services \
+	tests \
+	agent-mesh/aerial_rescue_event_mesh_gateway \
+	agent-mesh/aerial_rescue_runtime_compat \
+	agent-mesh/plugins \
+	agent-mesh/tools; do
 	if [ -d "$path" ] && find "$path" -type f \( -name '*.py' -o -name '*.pyi' \) \
 		-print -quit | grep -q .; then
 		set -- "$@" "$path"

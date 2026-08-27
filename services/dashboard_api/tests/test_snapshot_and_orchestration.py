@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 from aerial_rescue_contracts import canonical
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.cursor import CursorCodec
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.orchestration import (
     CANCELLATION_BUDGET_SECONDS,
     OperationCoordinator,

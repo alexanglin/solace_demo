@@ -31,14 +31,14 @@ from aerial_rescue_contracts.view import (
     state_document,
 )
 
-from aerial_rescue_dashboard_api.cursor import CursorCodec
-from aerial_rescue_dashboard_api.documents import (
+from aerial_rescue_dashboard_api.boundary.documents import (
     ORDERED_EVENT_SCHEMA,
     REDUCED_STATE_SCHEMA,
     SCHEMA_PREFIX,
     validated_document,
 )
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.cursor import CursorCodec
 from aerial_rescue_dashboard_api.ports import CurrentRun, SnapshotBasis, StoredEvent, StorePort
 
 DASHBOARD_EVENT_SCHEMA: Final = f"{SCHEMA_PREFIX}dashboard-event.schema.json"

@@ -10,6 +10,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Solace PubSub+ now carries the continuously running application data plane end to end.** Typed
+  delivery routing derives Direct, Guaranteed, or request/reply behavior from the closed topic family
+  before broker I/O; bounded TLS sessions publish, receive, settle, reconnect, and expose readiness
+  without caller-selected delivery. The command gateway, fleet simulator, evidence service, recorder,
+  and dashboard API now run as broker-connected services with durable inbox/outbox, idempotency,
+  proposal, evidence, command-progress, and per-drone receipt state. The private scenario-control
+  service remains deliberately brokerless, and replay constructs no publisher or outbound connection.
+
+  The existing `0005_dashboard_runtime` migration remains immutable. Five additive Alembic revisions
+  extend the chain through revision `0010`, and the complete 25-table application schema is declared by
+  SQLAlchemy metadata and exercised through upgrade, downgrade, restart, concurrency, and transaction
+  tests. Dashboard start/reset idempotency stays in `dashboard_operation`; the generic idempotency table
+  owns only operator commands, approval consumption, dashboard commands, and proposal decisions
+  ([ADR-0189](docs/adr/0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md)).
+
+  Deployment preserves the shared broker and PostgreSQL volumes while adding real service entrypoints,
+  migrations, least-privilege identities, receiver-only compositions, bounded outbox workers, queue
+  reconciliation, broker-event monitoring, and an opt-in read-only SEMP monitor. Contract, unit,
+  integration, security-policy, image, and live application-data-plane gates cover malformed ingress,
+  duplicate and conflicting identities, ambiguous publication, reconnect recovery, approval bypasses,
+  exact-once logical command effects, and writer-free replay.
+
+  Queue health now uses the pinned broker's supported literal `queueName,msgs.count` parent selection
+  and obtains active binds from count-only per-queue transmit-flow reads. Depth-only operations make no
+  child request; routine bind checks are stable, sequential, fail closed, and bounded to the exact
+  89-queue reference topology ([ADR-0190](docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)).
+
 - **The fixed synthetic wilderness dashboard slice is production-qualified on a clean committed
   revision.** Revision `db2b640` passed all 64 fixture cases in 42.0 seconds, all eight serial production
   cases in 1.6 minutes, and the 61-sample soak in 30.3 minutes with the accepted RSS and file-descriptor

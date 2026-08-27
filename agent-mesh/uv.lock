@@ -11,7 +11,10 @@ supported-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "asteval", specifier = "==1.0.9" }]
+overrides = [
+    { name = "asteval", specifier = "==1.0.9" },
+    { name = "solace-pubsubplus", specifier = "==1.11.0" },
+]
 
 [[package]]
 name = "a2a-sdk"
@@ -2962,11 +2965,11 @@ wheels = [
 
 [[package]]
 name = "solace-pubsubplus"
-version = "1.9.0"
+version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/ad/993040787f5830bf376f24393eb6da3e1ce10ba80a40e2a996a347508616/solace_pubsubplus-1.9.0-py36-none-macosx_11_0_universal2.whl", hash = "sha256:68b2893a876c41b0eeec8fa96a2edec0f556b6f8d992db322a44eb6516912f93", size = 11310730, upload-time = "2024-10-24T20:13:38.377Z" },
-    { url = "https://files.pythonhosted.org/packages/4a/b1/0974464f818f9384dd6129bfb07187d6c56a332c7c552a288cbf2474a202/solace_pubsubplus-1.9.0-py36-none-manylinux_2_17_aarch64.whl", hash = "sha256:7925960f6f4cc2abf09d9fd69791cafa36b8483bdaddd79a8573b02b322170d4", size = 2539142, upload-time = "2024-10-24T20:13:42.955Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/27/d9fd4378d75929b2002c5f536a58b3e7a8ced538fa40a048919d177dd53e/solace_pubsubplus-1.11.0-py36-none-macosx_11_0_universal2.whl", hash = "sha256:f9b58a3bc2c2780744399c63db7d5c062e23effa52665c4c6dc56b838311a254", size = 11345986, upload-time = "2025-12-05T18:19:30.286Z" },
+    { url = "https://files.pythonhosted.org/packages/89/ec/0bc2c4e1d3b80e406e9983c61b871a71db42d8d5b28f34e8edb4e0c6a82b/solace_pubsubplus-1.11.0-py36-none-manylinux_2_17_aarch64.whl", hash = "sha256:114768fe365bc79abee90852dc483e9fa5bc3fb9a4bf218e85029f8d050d0de3", size = 2663052, upload-time = "2025-12-05T18:19:33.406Z" },
 ]
 
 [[package]]

@@ -16,6 +16,7 @@ Use the canonical document for the fact being changed instead of copying it here
 | Owned configuration and its fail-closed validator | [ADR-0032](../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0035](../docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) |
 | Local-model identity and evidence boundary | [ADR-0063](../docs/adr/0063-lock-local-models-by-manifest-digest.md) |
 | Runtime layout and safety boundaries | [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md), [`SAFETY.md`](../docs/SAFETY.md) |
+| Owned Agent Mesh TLS, recovery, and lifecycle boundary | [ADR-0177](../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) |
 | Event and topic contracts | [`CONTRACTS.md`](../docs/CONTRACTS.md) |
 | Test classes, markers, coverage, and AAA rules | [`TESTING.md`](../docs/TESTING.md) |
 
@@ -25,6 +26,8 @@ Use the canonical document for the fact being changed instead of copying it here
 | --- | --- |
 | `.python-version`, `pyproject.toml`, `uv.lock` | The non-workspace Python verification project and its exact dependency graph |
 | `model-lock.toml` | Auditable Ollama model identifiers and measured manifest digests |
+| `aerial_rescue_event_mesh_gateway/` | Owned Direct-output, trusted-context, closed-response, and upstream-diagnostic-redaction extension for the pinned Event Mesh Gateway |
+| `aerial_rescue_runtime_compat/` | Source-shape-attested TLS 1.3, bounded retry, terminal recovery, and process lifecycle around the pinned Connector |
 | [`configs/`](configs/AGENTS.md) | Owned Solace AI Connector definitions for agents, workflows, gateways, tools, and the local Web UI |
 | `tools/` | Offline, fail-closed semantic validation of every owned configuration |
 | `tests/` | Validator behavior, pinned-wheel compatibility, runtime overrides, and warning-policy evidence |
@@ -78,14 +81,15 @@ uv run --frozen ruff check .
 
 ## 5. Tooling, dependencies, and tests
 
-- Follow TDD and the repository's AAA structure for every validator behavior or defect. Cover the
-  accepted path, each rejected boundary, deterministic redacted diagnostics, and merged-file behavior.
+- Follow TDD and the repository's AAA structure for every owned behavior or defect. Cover the accepted
+  path, each rejected boundary, deterministic redacted diagnostics, and merged-file behavior where
+  configuration composition is involved.
 - Keep unexpected warnings as errors. Any warning filter must remain restricted to the exact upstream
   module and condition justified by the governing ADR; never add a category-wide filter for owned
   code.
 - A dependency or version decision requires an ADR. Keep exact pins and the override in
   `pyproject.toml` synchronized with `uv.lock`; use `uv lock --check` to detect drift.
-- When an Agent Mesh or Event Mesh plugin pin changes, also reconcile the official image and hashed
+- When Agent Mesh, its Connector, its SDK override, or an Event Mesh plugin pin changes, also reconcile the official image and hashed
   plugin wheels under [`deploy/agent-mesh/`](../deploy/agent-mesh/). Add or update black-box
   compatibility probes for the installed combination and for any dependency override.
 - Install released upstream packages. Do not vendor Agent Mesh source or add it as a submodule.
@@ -105,7 +109,8 @@ scripts/hooks/python/python-quality-full.sh
 scripts/hooks/deps/check-locks.sh
 ```
 
-The full Agent Mesh test wrapper is authoritative for its marker exclusions and validator coverage
-gate. Finish with every repository-wide commit- and push-stage gate required by the root
+The full Agent Mesh test wrapper is authoritative for its marker exclusions and 100% statement and
+branch coverage over the validator and owned gateway extension. Finish with every repository-wide
+commit- and push-stage gate required by the root
 `AGENTS.md`. Report any live, container, network, broker, Ollama, or paid check that was not run; an
 excluded check is not a pass.

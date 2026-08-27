@@ -18,22 +18,23 @@ import tempfile
 import unittest
 from collections.abc import Mapping
 from pathlib import Path
+from urllib.parse import unquote
 
+import pytest
 from aerial_rescue_broker.deployment import (
     ADMIN_CREDENTIAL,
     CERTIFICATE_AUTHORITY,
     DeploymentError,
     DeploymentRefusal,
-    QueueSelection,
     credential_path,
     endpoint,
     main,
     provision,
+    read_credential,
     read_credentials,
     session_for,
 )
 from aerial_rescue_broker.provisioning import Method, Request
-from aerial_rescue_broker.queues import QueueProjection
 from aerial_rescue_broker.semp import SempError, SempFailure, SempSession
 from aerial_rescue_domain.principals import Principal
 
@@ -48,13 +49,37 @@ class RecordingTransport:
         """Answer normally, or raise ``failure`` on the first request."""
         self.failure = failure
         self.issued: list[Request] = []
+        self.objects: dict[str, dict[str, object]] = {
+            "msgVpns/default/clientUsernames/default": {"enabled": True}
+        }
+        self.collections: dict[str, list[dict[str, object]]] = {}
+
+    def require_config_fields(self, required: Mapping[str, frozenset[str]]) -> None:
+        """Accept the deterministic fixture's synthetic pinned specification."""
 
     def send(self, request: Request) -> tuple[Mapping[str, object], ...]:
-        """Record the request and answer it with no rows."""
+        """Record the request and maintain enough SEMP state to prove readback."""
         self.issued.append(request)
         if self.failure is not None:
             raise self.failure
-        return ()
+        if request.method is Method.GET:
+            if request.path in self.objects:
+                return (self.objects[request.path],)
+            return tuple(self.collections.get(request.path, ()))
+        if request.method is Method.POST:
+            self.collections.setdefault(request.path, []).append(dict(request.body))
+        elif request.method is Method.PATCH:
+            self.objects.setdefault(request.path, {}).update(request.body)
+        elif request.method is Method.DELETE:
+            collection, _, encoded = request.path.rpartition("/")
+            _, separator, suffix = encoded.partition(",")
+            topic = unquote(suffix if separator else encoded)
+            self.collections[collection] = [
+                row for row in self.collections.get(collection, ()) if topic not in row.values()
+            ]
+        else:
+            self.objects[request.path] = dict(request.body)
+        return (dict(request.body),)
 
     def read_all(self, path: str) -> tuple[Mapping[str, object], ...]:
         """Record the read and answer it as an empty collection."""
@@ -75,7 +100,7 @@ def _material(case: unittest.TestCase, *, complete: bool = True) -> Path:
 
 
 class ReadCredentialsTests(unittest.TestCase):
-    def test_every_role_credential_is_read_and_stripped(self) -> None:
+    def test_every_enabled_smf_role_credential_is_read_and_stripped(self) -> None:
         # Arrange
         deploy = _material(self)
 
@@ -83,7 +108,25 @@ class ReadCredentialsTests(unittest.TestCase):
         credentials = read_credentials(deploy)
 
         # Assert
-        self.assertEqual({role: f"{CREDENTIAL}-{role.value}" for role in Principal}, credentials)
+        self.assertEqual(
+            {
+                role: f"{CREDENTIAL}-{role.value}"
+                for role in Principal
+                if role is not Principal.DISCOVERY
+            },
+            credentials,
+        )
+
+    def test_disabled_discovery_needs_no_generated_smf_credential(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        credential_path(deploy, Principal.DISCOVERY).unlink()
+
+        # Act
+        credentials = read_credentials(deploy)
+
+        # Assert
+        self.assertNotIn(Principal.DISCOVERY, credentials)
 
     def test_material_that_was_never_generated_fails_closed(self) -> None:
         # Arrange
@@ -104,6 +147,46 @@ class ReadCredentialsTests(unittest.TestCase):
             (DeploymentRefusal.MISSING_MATERIAL, str(credential_path(deploy, missing))),
             (captured.refusal, captured.value),
         )
+
+    def test_blank_role_and_management_credentials_fail_before_transport_construction(self) -> None:
+        # Arrange
+        cases = (
+            (
+                lambda deploy: credential_path(deploy, Principal.FLEET_SIMULATOR),
+                lambda deploy: read_credential(deploy, Principal.FLEET_SIMULATOR),
+            ),
+            (
+                lambda deploy: deploy / ADMIN_CREDENTIAL,
+                lambda deploy: endpoint(deploy, "localhost", 1943),
+            ),
+        )
+
+        # Act
+        refusals = []
+        values = []
+        expected_paths = []
+        for path_for, operation in cases:
+            with self.subTest(path=path_for):
+                deploy = _material(self)
+                path = path_for(deploy)
+                path.write_text(" \n", encoding="utf-8")
+                expected_paths.append(str(path))
+                try:
+                    operation(deploy)
+                except DeploymentError as error:
+                    captured = error
+                else:
+                    message = "blank generated material was accepted"
+                    raise AssertionError(message)
+                refusals.append(captured.refusal)
+                values.append(captured.value)
+
+        # Assert
+        self.assertEqual(
+            [DeploymentRefusal.BLANK_MATERIAL, DeploymentRefusal.BLANK_MATERIAL],
+            refusals,
+        )
+        self.assertEqual(expected_paths, values)
 
 
 class EndpointTests(unittest.TestCase):
@@ -156,21 +239,25 @@ class ProvisionTests(unittest.TestCase):
             deploy,
             "default",
             "acme/dev",
-            QueueSelection(DRONES),
+            DRONES,
         )
 
         # Assert
         self.assertEqual(
             (
-                "10 acl profiles",
-                "10 client usernames",
-                "42 topic exceptions",
-                "16 durable queues, 17 subscriptions",
+                "9 acl profiles",
+                "9 client profiles",
+                "8 enabled client usernames; discovery omitted",
+                "3 upstream queue templates",
+                "55 topic exceptions",
+                "47 durable queues, 24 subscriptions",
                 True,
             ),
             (
                 next(part for part in lines if "acl profiles" in part).split(" to ")[0],
+                next(part for part in lines if "client profiles" in part),
                 next(part for part in lines if "client usernames" in part),
+                next(part for part in lines if "queue templates" in part),
                 next(part for part in lines if "topic exceptions" in part),
                 next(part for part in lines if "durable queues" in part),
                 any("'default'" in part and "disabled" in part for part in lines),
@@ -188,7 +275,7 @@ class ProvisionTests(unittest.TestCase):
             deploy,
             "default",
             "acme/dev",
-            QueueSelection(()),
+            (),
         )
 
         # Assert
@@ -205,7 +292,7 @@ class ProvisionTests(unittest.TestCase):
             deploy,
             "default",
             None,
-            QueueSelection(DRONES),
+            DRONES,
         )
 
         # Assert
@@ -222,7 +309,7 @@ class ProvisionTests(unittest.TestCase):
             deploy,
             "default",
             "acme/dev",
-            QueueSelection(DRONES),
+            DRONES,
         )
 
         # Assert
@@ -230,6 +317,43 @@ class ProvisionTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def test_the_cli_defaults_to_the_accepted_a2a_namespace(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        out = io.StringIO()
+
+        # Act
+        code = main(
+            ("--deploy-directory", str(deploy)),
+            session=lambda _: RecordingTransport(),
+            out=out,
+            error=io.StringIO(),
+        )
+
+        # Assert
+        self.assertEqual((0, True), (code, "aerial-rescue-mesh" in out.getvalue()))
+
+    def test_the_cli_refuses_an_alternate_a2a_namespace_before_constructing_a_session(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        sessions = []
+        error = io.StringIO()
+
+        def session(target: object) -> RecordingTransport:
+            sessions.append(target)
+            return RecordingTransport()
+
+        # Act
+        code = main(
+            ("--deploy-directory", str(deploy), "--namespace", "alternate/private"),
+            session=session,
+            out=io.StringIO(),
+            error=error,
+        )
+
+        # Assert
+        self.assertEqual((1, [], True), (code, sessions, "namespace" in error.getvalue()))
+
     def test_a_successful_run_reports_zero_and_prints_the_summary(self) -> None:
         # Arrange
         deploy = _material(self)
@@ -238,7 +362,7 @@ class MainTests(unittest.TestCase):
 
         # Act
         code = main(
-            ("--deploy-directory", str(deploy), "--namespace", "acme/dev"),
+            ("--deploy-directory", str(deploy), "--namespace", "aerial-rescue-mesh"),
             session=lambda _: transport,
             out=out,
             error=io.StringIO(),
@@ -259,7 +383,7 @@ class MainTests(unittest.TestCase):
                 "--deploy-directory",
                 str(deploy),
                 "--namespace",
-                "acme/dev",
+                "aerial-rescue-mesh",
                 "--drone",
                 DRONES[0],
                 "--drone",
@@ -271,33 +395,24 @@ class MainTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((0, True), (code, "16 durable queues" in out.getvalue()))
+        self.assertEqual((0, True), (code, "47 durable queues" in out.getvalue()))
 
-    def test_mission_control_cli_projects_no_inert_command_or_absent_service_queue(self) -> None:
+    def test_the_obsolete_mission_control_projection_argument_is_not_exposed(self) -> None:
         # Arrange
         deploy = _material(self)
-        transport = RecordingTransport()
-        out = io.StringIO()
-
-        # Act
-        code = main(
-            (
-                "--deploy-directory",
-                str(deploy),
-                "--namespace",
-                "acme/dev",
-                "--queue-projection",
-                QueueProjection.MISSION_CONTROL.value,
-            ),
-            session=lambda _: transport,
-            out=out,
-            error=io.StringIO(),
+        arguments = (
+            "--deploy-directory",
+            str(deploy),
+            "--queue-projection",
+            "mission-control",
         )
 
+        # Act
+        with pytest.raises(SystemExit) as raised:
+            main(arguments, session=lambda _: RecordingTransport())
+
         # Assert
-        self.assertEqual(0, code)
-        self.assertIn("2 durable queues, 3 subscriptions", out.getvalue())
-        self.assertIn("no drone command queues", out.getvalue())
+        self.assertEqual(2, raised.value.code)
 
     def test_a_drone_identifier_the_grammar_refuses_reports_one(self) -> None:
         # Arrange
@@ -359,7 +474,7 @@ class MainTests(unittest.TestCase):
         # Assert
         self.assertIsInstance(session, SempSession)
 
-    def test_a_run_issues_the_patch_that_disables_the_factory_identity(self) -> None:
+    def test_a_run_issues_only_the_mandatory_security_patches_in_order(self) -> None:
         # Arrange
         deploy = _material(self)
         transport = RecordingTransport()
@@ -374,7 +489,11 @@ class MainTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            ["msgVpns/default/clientUsernames/default"],
+            [
+                "msgVpns/default/clientUsernames/default",
+                "",
+                "msgVpns/default",
+            ],
             [r.path for r in transport.issued if r.method is Method.PATCH],
         )
 

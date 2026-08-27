@@ -33,6 +33,7 @@ MAX_BUFFERED_EVENTS: Final = 256
 """Dashboard events held per server-sent-event client; see ``docs/operating-parameters.md``."""
 
 MISSION_KEY: Final = "missionId"
+EVIDENCE_DECISION_DIGEST_KEY: Final = "evidenceDecisionDigest"
 MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 LOWERCASE_SHA256_PATTERN: Final = re.compile(r"^[0-9a-f]{64}$")
 
@@ -178,6 +179,9 @@ class Projection:
     kind: str
     event_class: EventClass
     _validate_payload: PayloadValidator = field(default=_accept_payload, repr=False, compare=False)
+    omitted_data_members: frozenset[str] = field(
+        default=frozenset({MISSION_KEY}), repr=False, compare=False
+    )
 
 
 PROJECTIONS: Final[Mapping[str, Projection]] = {
@@ -193,6 +197,36 @@ PROJECTIONS: Final[Mapping[str, Projection]] = {
     "aerial-rescue.v1.sector.event.lifecycle": Projection(
         "sectorLifecycle", EventClass.MISSION, _validate_sector_lifecycle
     ),
+    "aerial-rescue.v1.operator.command.assign-sector": Projection(
+        "operatorCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.operator.command.escalate-rescue": Projection(
+        "operatorCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.operator.approval.approve": Projection(
+        "operatorApproval", EventClass.APPROVAL
+    ),
+    "aerial-rescue.v1.operator.approval.reject": Projection(
+        "operatorApproval", EventClass.APPROVAL
+    ),
+    "aerial-rescue.v1.agent.proposal.candidate-location": Projection(
+        "agentProposal", EventClass.EVIDENCE
+    ),
+    "aerial-rescue.v1.evidence.decision": Projection(
+        "evidenceDecision",
+        EventClass.EVIDENCE,
+        omitted_data_members=frozenset({MISSION_KEY, EVIDENCE_DECISION_DIGEST_KEY}),
+    ),
+    "aerial-rescue.v1.drone.event.salient": Projection("salientObservation", EventClass.EVIDENCE),
+    "aerial-rescue.v1.gateway.record": Projection("gatewayResponse", EventClass.AUDIT),
+    "aerial-rescue.v1.drone.command.assign-sector": Projection("droneCommand", EventClass.COMMAND),
+    "aerial-rescue.v1.drone.command.escalate-rescue": Projection(
+        "droneCommand", EventClass.COMMAND
+    ),
+    "aerial-rescue.v1.drone.command-result": Projection("commandResult", EventClass.COMMAND),
+    "aerial-rescue.v1.audit.proposal-normalization": Projection("auditRecord", EventClass.AUDIT),
+    "aerial-rescue.v1.audit.evidence-decision": Projection("auditRecord", EventClass.AUDIT),
+    "aerial-rescue.v1.audit.command-authorization": Projection("auditRecord", EventClass.AUDIT),
 }
 """A new row lands together with its state rule, golden fixtures, and manifest entry."""
 
@@ -767,6 +801,19 @@ class _StateEvent(Protocol):
 
 
 @dataclass(frozen=True)
+class _TimelineEvent:
+    """A validated non-state event that advances only the durable audit witness."""
+
+    def reduce(
+        self,
+        state: DashboardReducedState,
+        _mission: Mission,
+    ) -> DashboardReducedState:
+        """Retain the exact reduced state; the fold owns ordinal advancement."""
+        return state
+
+
+@dataclass(frozen=True)
 class _MissionLifecycleEvent:
     lifecycle: MissionLifecycle
 
@@ -914,11 +961,32 @@ def _validate_sector_event(event: DashboardEvent) -> _StateEvent:
 
 type BoundaryValidator = Callable[[DashboardEvent], _StateEvent]
 
+TIMELINE_EVENT_CLASSES: Final[Mapping[str, EventClass]] = {
+    "operatorCommand": EventClass.COMMAND,
+    "operatorApproval": EventClass.APPROVAL,
+    "agentProposal": EventClass.EVIDENCE,
+    "evidenceDecision": EventClass.EVIDENCE,
+    "salientObservation": EventClass.EVIDENCE,
+    "gatewayResponse": EventClass.AUDIT,
+    "droneCommand": EventClass.COMMAND,
+    "commandResult": EventClass.COMMAND,
+    "auditRecord": EventClass.AUDIT,
+}
+
+
+def _validate_timeline_event(event: DashboardEvent) -> _StateEvent:
+    """Bind every recorded timeline kind to its exact non-droppable class."""
+    expected = TIMELINE_EVENT_CLASSES[event.kind]
+    _require_event_class(event, expected)
+    return _TimelineEvent()
+
+
 BOUNDARY_VALIDATORS: Final[Mapping[str, BoundaryValidator]] = {
     "missionLifecycle": _validate_mission_event,
     "connectivityChanged": _validate_connectivity_event,
     "droneTelemetry": _validate_telemetry_event,
     "sectorLifecycle": _validate_sector_event,
+    **{kind: _validate_timeline_event for kind in TIMELINE_EVENT_CLASSES},
 }
 
 
@@ -1179,7 +1247,11 @@ def project(envelope: Envelope) -> DashboardEvent:
     projection._validate_payload(envelope.data)
     if envelope.data.get(MISSION_KEY) != envelope.subject:
         _malformed(MISSION_KEY, envelope.data.get(MISSION_KEY))
-    data = {key: value for key, value in envelope.data.items() if key != MISSION_KEY}
+    data = {
+        key: value
+        for key, value in envelope.data.items()
+        if key not in projection.omitted_data_members
+    }
     return DashboardEvent(
         projection.kind,
         projection.event_class,

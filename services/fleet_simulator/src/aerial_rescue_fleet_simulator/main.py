@@ -22,13 +22,13 @@ from aerial_rescue_broker.messaging import (
 from aerial_rescue_domain.commands import SendBudget
 from fastapi import FastAPI
 
-from aerial_rescue_fleet_simulator.control import (
+from aerial_rescue_fleet_simulator.control_plane.control import (
     FleetControl,
     FleetControlError,
     FleetWorker,
     InterruptiblePacer,
 )
-from aerial_rescue_fleet_simulator.http import FleetHttpConfig, create_app, serve
+from aerial_rescue_fleet_simulator.control_plane.http import FleetHttpConfig, create_app, serve
 from aerial_rescue_fleet_simulator.service import CountingStamps, IntakeBounds
 
 _BROKER_SETTINGS: Final = (

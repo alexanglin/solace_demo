@@ -162,12 +162,14 @@ and review remain mandatory for those behaviors.
 
 ## Test classes
 
-- **Offline Agent Mesh configuration tests:** In the isolated Python 3.13 environment, the exact pinned
+- **Offline Agent Mesh owned-code tests:** In the isolated Python 3.13 environment, the exact pinned
   upstream configuration models, distribution-bound symbols, and Solace AI Connector merge primitive
   validate includes, environment references against `.env.example`, secret indirection, broker fields
   and transport, model policy, gateway settlement and routing policy, cross-file app-name uniqueness,
-  and Event Mesh Tool topic authority without starting a process or client. The validator module is
-  held at 100% statement and branch coverage by the Agent Mesh test stage
+  and Event Mesh Tool topic authority without starting a process or client. The same suite verifies the
+  owned Direct gateway-output extension against the pinned SDK seam, including bounded backpressure,
+  receipt truthfulness, refusal, and shutdown behavior. The validator and owned extension are held at
+  100% statement and branch coverage by the Agent Mesh test stage
   ([operating-parameters.md](operating-parameters.md)). The gate is inert before the first owned
   configuration and fails closed afterward.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
@@ -178,16 +180,32 @@ and review remain mandatory for those behaviors.
   delivery, queues, reconnects, acknowledgement, and ACL denial. At revision `db2b640`, the selected
   local authorization suite passed 16 of 16 cases in 0.57 seconds against the shared broker
   ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
-  That selector is not complete ACL, queue, TLS-downgrade, or Solace Cloud evidence. Admitting the class
-  to a blocking continuous-integration stage is a verification change that needs its own record.
+  That selector is not complete ACL, queue, TLS-downgrade, or Solace Cloud evidence. Blocking continuous
+  integration is selected by [ADR-0147](adr/0147-admit-pubsub-integration-to-blocking-ci.md): the job owns
+  an ephemeral broker, PostgreSQL database, generated CI-only credentials, exact reviewed live-file
+  allowlist, and unconditional project-scoped cleanup. Local execution of the identical harness is
+  evidence for the script, not a claim that the unpushed hosted job has run.
+  Offline broker tests separately prove the pinned SEMP queue contract: literal parent depth selection,
+  aligned message counts, count-only per-queue transmit-flow reads, bounded stable fan-out, malformed
+  count refusal, and delete-before-readback denial. Only an authorized live positive can prove that the
+  running broker exposes those fields ([ADR-0190](adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)).
+- **Application-data-plane live test:** `tests/integration/test_application_data_plane_live.py` joins the
+  authenticated scenario and fleet runtimes, Direct telemetry, Agent Mesh structured response, canonical
+  proposal, evidence decision, exact approval, one logical command effect/result, recorder audit, and
+  dashboard projection. Its broker-restart controller may restart only the resolved PubSub+ container;
+  the test then proves readiness degradation, durable spooling, consumer rebind, outbox drain, recovery,
+  zero missing critical identities, and zero duplicate command effects. It runs serially with the nine
+  pre-existing authorized live files and never broadens selection through a resource marker.
 - **Durable-store integration tests:** The PostgreSQL container from `deploy/compose.yaml`, against a
   database the run creates and drops
   ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only
   evidence for isolation, constraints, transaction visibility, Alembic behaviour, restart durability,
   pool cancellation, and concurrent races; the store's own member suite never opens a connection and
-  establishes none of them. The revision-0005 cases walk the five-revision history in both directions
-  and exercise prepared-before-start persistence, exact-byte start/reset replay, same-run pending
-  recovery, predecessor retention, broker deduplication, and snapshot reads. At revision `db2b640`, the
+  establishes none of them. The migration cases walk the ten-revision history through revision 0010 in
+  both directions and exercise prepared-before-start persistence, exact-byte start/reset replay,
+  same-run pending recovery, predecessor retention, broker deduplication, application inbox/outbox,
+  proposals, evidence, command progress, durable receipts, dashboard command/decision idempotency, and
+  snapshot reads. The complete schema contains 25 SQLAlchemy-owned tables. At revision `db2b640`, the
   exact selector passed 43 of 43 cases in 14.24 seconds: 41 PostgreSQL cases each created and dropped
   its own disposable database, while two local cases exercised target-name and refusal behavior
   ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
@@ -326,7 +344,11 @@ blocks unless an expiring waiver covers it; an advisory inside an image is print
 never blocks, because the project's only lever on a pinned third-party image is the digest it names.
 That lever has its own gate: `tools/image_pin_gate.py` fails when a pinned digest is no longer the
 newest its tag carries ([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
-[ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)). zizmor 1.29.0 audits the
+[ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)). The same image inventory
+also drives one CycloneDX 1.6 SBOM per image. `tools/sbom_gate.py` binds each document to its exact
+image and the pinned Trivy producer before CI accepts it; CI keeps the files temporary unless external
+publication is separately authorized ([ADR-0162](adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md)).
+zizmor 1.29.0 audits the
 workflow and Dependabot files offline at the commit stage, and any finding fails
 ([ADR-0049](adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md)); CodeQL analyses the Python
 tree in continuous integration only
@@ -360,7 +382,7 @@ provides the multi-language duplication scan. The cross-language AAA gate uses P
 modules plus pinned `tree-sitter` 0.26.0 and `tree-sitter-typescript` 0.23.2 parsers. Repository-level
 checks include the AAA conformance scan, domain import contracts, secret scanning, pushed-range commit
 message validation, pushed-range `git diff --check`, and the directory fan-out gate, which bounds how
-many files one directory holds as immediate children and adjudicates the two structural exemptions in
+many files one directory holds as immediate children and adjudicates the structural exemptions in
 `directory-fanout.toml` ([ADR-0033](adr/0033-bound-directory-fan-out.md)).
 Contract artifacts are inventoried through `schemas/contract-manifest.toml` and validated against an
 offline in-memory Draft 2020-12 registry at both blocking stages ([ADR-0021](adr/0021-contract-artifact-manifest.md)).

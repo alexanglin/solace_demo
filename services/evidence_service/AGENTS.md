@@ -6,10 +6,11 @@ These instructions apply to every file under `services/evidence_service/`. Read 
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the planned Tier 2 boundary for accepting untrusted evidence observations, attaching
-provenance and canonical hashes, coordinating the pure evidence lifecycle and score, and eventually
-publishing a versioned evidence decision. It is not implemented yet. Read the authority for each concern
-before changing it:
+This active Tier 2 member accepts untrusted evidence observations, independently verifies durable
+provenance and canonical hashes, coordinates the pure evidence lifecycle and score, and constructs the
+versioned evidence decision and audit publications. Its durable transaction adapters and long-running
+broker composition plus Compose entry-point wiring are implemented; live-stack qualification remains
+adoption work. Read the authority for each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -48,6 +49,10 @@ before changing it:
 | Event Mesh Gateway temporary-queue limitation | [ADR-0071](../../docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) |
 | Evidence lifecycle and explicit abstention | [ADR-0075](../../docs/adr/0075-evidence-lifecycle-states.md) |
 | Evidence score, bands, and corroboration floor | [ADR-0076](../../docs/adr/0076-evidence-score-bands.md) |
+| Durable application transaction and fixed simulation parameters | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Complete Alembic and typed SQLAlchemy Core boundary | [ADR-0151](../../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Complete source-event digest binding | [ADR-0152](../../docs/adr/0152-bind-proposals-to-the-complete-source-event.md) |
+| Durable malformed-Guaranteed-ingress refusal | [ADR-0159](../../docs/adr/0159-gate-applicable-solace-best-practices.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 Do not settle an evidence shape, provenance field, hash coverage, score weight, band boundary, source-
@@ -55,43 +60,29 @@ independence rule, broker grant, delivery guarantee, mode boundary, or verificat
 service-local constant or comment. Put each fact in its canonical authority and make the coordinated
 change required by the root guide.
 
-## 2. Preserve the current scaffold truth
+## 2. Preserve the current implementation truth
 
-Apart from this guide and its symlink, the member contains only:
+This member is active and measured at Tier 2. Its current production surface is:
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, build backend, description, and Tier 2 status |
-| `src/aerial_rescue_evidence_service/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_evidence_service/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | Declares broker, contracts, domain, store, Pydantic, console, Python, build, and Tier 2 dependencies |
+| `wire.py` | Independently validates the closed proposal CloudEvent and topic binding |
+| `source.py` | Recomputes complete source-event and provenance digests and refuses missing or mismatched authority |
+| `evaluation.py` | Derives lifecycle and fixed simulation weights, then delegates scoring to the Tier 1 domain |
+| `publication.py` | Builds and self-validates exact evidence-decision and audit events plus the authoritative audit row |
+| `processing.py` | Coordinates inbox dedupe, proposal/source reads, evidence, decision, audit, outbox, inbox completion, post-commit acceptance, and durable body-free refusal before malformed-message rejection |
+| `source_processing.py` | Validates and durably records salient drone events and their initial sensor provenance before settlement |
+| `store_adapter.py` | Maps the service transaction port onto the store-owned SQLAlchemy unit of work without importing SQLAlchemy here |
+| `outbox.py` | Bounds recovery work to 50 rows and preserves confirmation, refusal, and ambiguity semantics |
+| `runtime.py` | Owns the two durable input channels, schema admission, outbox recovery, readiness, fair bounded polling, and reconnect exhaustion |
+| `console.py` | Composes one least-privilege Solace session, lazy SQLAlchemy resources, cancellation, and broker-before-store shutdown |
+| `tests/evidence_service_tests/` | Member-local validation, provenance, scoring, transaction, publication, recovery, and refusal evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no model-observation validator, evidence record, provenance type,
-artifact-hash pipeline, score coordinator, weight assignment, persistence adapter, model client, broker
-consumer or publisher, composition root, liveness or readiness probe, or member-local test. No workspace
-member declares this package as a dependency or imports it.
-
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
-[`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
-
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
-
-An unreadable or syntactically invalid Python source is also non-scaffold. Any activating input restores
-normal fail-closed coverage behavior: executable Python is measured at the declared Tier 2; a tests-only
-or non-Python activation with no measurable Python fails as `no measurable source`. Never add a dummy
-observation, placeholder test, no-op publisher, empty abstraction, or import-only entry point to make the
-member look started. The first behavior lands through red-green-refactor with member-local tests.
-
-The `evidence-service` definition in `deploy/compose.yaml` is also a shell. Its command imports this
-package and exits, and the inherited healthcheck imports the contracts package rather than probing this
-service. The configured broker credential proves configuration shape only. The entire `services`
-profile remains inert because no application-service entry point exists. None of that proves startup,
-readiness, validation, persistence, scoring, publication, cancellation, or shutdown. `AGENTS.md` and
-its `CLAUDE.md` symlink live outside `src/` and do not activate the scaffold.
+The console entry point, broker loop, lifecycle/readiness handoff, SQLAlchemy composition, and Compose
+entry-point/dependency wiring are application code. Its Compose process probe is liveness rather than the
+service's application-readiness state, and no shared-stack run yet proves startup, live settlement,
+reconnect recovery, cancellation, or shutdown.
 
 ## 3. Keep validation, policy, representation, persistence, and effects separate
 
@@ -112,9 +103,9 @@ the evidence lifecycle, score, wire profile, broker authorization, or storage se
 - Keep evidence provenance, inbox/outbox state, idempotency results, and the append-only audit timeline
   behind `packages/store`. A process-local cache is not durable authority, and a log line is not an
   evidence or audit record.
-- Let the edge agents and Agent Mesh own prompts, model invocation, and agent proposals. Once the missing
-  input contract exists, this service accepts untrusted observations and proposals only through that
-  contract and independently validates every input at its own boundary; upstream validation is not
+- Let the edge agents and Agent Mesh own prompts, model invocation, and agent proposals. This service
+  accepts untrusted observations and proposals only through the committed closed contracts and
+  independently validates every input at its own boundary; upstream validation is not
   transitive trust. It does not import Agent Mesh internals, call an A2A topic, or acquire model authority
   merely because it validates model output.
 - Keep shared logging, metrics, trace helpers, and redaction primitives in `packages/observability` once
@@ -187,31 +178,29 @@ Provenance is an admission prerequisite and an operator-visible explanation, not
 - Record the model tag, Ollama version, prompt version, generation parameters, and resolved model digest
   required by the architecture. Preserve the authenticated drone and source-frame identities needed by
   the eventual T6 independence decision; do not accept any of these facts from model-authored output.
-- Store the accepted provenance and evidence record through the durable-store boundary once that schema
-  exists. The store member is currently a scaffold, so an in-memory record or fixture cannot support a
-  durability claim.
+- Store accepted source events, provenance, evidence items, decisions, audits, and publications through
+  the Alembic- and SQLAlchemy-owned durable-store boundary. An in-memory record or fixture cannot support
+  a durability claim.
 - Use `aerial_rescue_contracts.digest.digest` with `Context.EVIDENCE` and the contracts package's
   integer-only canonical profile. A digest-covered object declares `canonicalizationVersion`; never
   hash a floating-point score, default JSON bytes, object representation, or provider response directly.
-- Decide and document the exact evidence document, covered members, schema identity, digest placement,
-  and compatibility/version policy before producing it. The existence of `Context.EVIDENCE` reserves
-  domain separation; it does not define the missing evidence record.
+- Preserve the committed evidence document, covered members, schema identity, digest placement, and
+  version policy. A change to any of them is a contract and ADR change, not a service-local variation.
 - Treat the digest as integrity identity over canonical content. Context separation is not encryption,
   a signature, broker authorization, model attestation, source independence, or proof that an observation
   is true. Preserve full provenance and audit facts beside it.
-- If the eventual contract carries a supplied digest, recompute it with the contracts package and compare
-  it through `digest.matches`. Never trust a caller-supplied hash, use ordinary string equality, or
-  assume a digest member's placement before the evidence record defines it.
+- Recompute every supplied digest with the contracts package and compare it through `digest.matches`.
+  Never trust a caller-supplied hash or use ordinary string equality.
 
 Do not persist or log raw prompts, raw model completions, provider credentials, authorization headers,
 tenant configuration, or unrestricted model metadata. Expected validation and provenance failures become
 typed, redacted outcomes. Unexpected failures retain their stack traces in redacted structured logs.
 
-When durable critical ingress exists, acknowledge the broker message only after its related durable
-transaction commits. The exact evidence transaction and outbox set are not decided, so define them
-through their owning record and store contract before implementation. Use the store's append-only audit
-ordinal to order the mission timeline; a producer sequence orders only that producer's stream. Do not
-claim an atomic set or provenance transaction that no Accepted ADR has defined.
+For guaranteed proposal ingress, claim the inbox; read the immutable proposal and source provenance;
+persist every evidence item, the decision, and the authoritative audit row; stage both exact application
+events; and complete the inbox in one store-owned transaction. Settle only after that context commits.
+A rollback leaves the delivery unsettled. Use the store's append-only audit ordinal to order the mission
+timeline; a producer sequence orders only that producer's stream.
 
 ## 6. Delegate scoring without weakening B31 or B32
 
@@ -236,11 +225,9 @@ precondition and test it.
 - Surface a `ScoreError` as a typed, eventually auditable refusal. Do not turn it into `NONE`, catch
   and discard it, or emit a decision from a partial contribution set.
 
-The weak, supported, and corroborated band boundaries are open operating parameters with no defaults.
-No band above `NONE` is available until a composition root supplies a valid strictly increasing set.
-Weight assignment also has no authoritative home. Do not choose convenient production values, accept
-weights from the model, or hide either gap in fixtures or environment fallbacks. Set the owner,
-instrument, decision, configuration validation, and tests before activating the dependent behavior.
+ADR-0146 fixes the simulation-only boundaries at 25, 50, and 75 and the live sensor/model weights at 40
+and 35. Keep those values in their canonical operating-parameter owner, never accept them from a model,
+and do not represent them as calibrated field confidence.
 
 The score is a versioned demonstration heuristic, not a calibrated probability or confidence estimate.
 `CORROBORATED` makes a candidate eligible for rescue escalation, still subject to the separately owned
@@ -248,37 +235,22 @@ proposal, approval, and command-gateway controls. It does not approve, dispatch,
 service, or authorize a command. Preserve the full contribution and audit explanation instead of
 presenting the saturated number as certainty.
 
-## 7. Do not invent the missing wire and persistence contracts
+## 7. Preserve the closed wire, store, and broker boundaries
 
-The architecture's versioned evidence decision is a target responsibility, not a current capability:
+`AGENT_PROPOSAL`, `EVIDENCE_DECISION`, and the typed evidence-decision `AUDIT` record have closed schemas,
+topic/envelope bindings, fixtures, canonical digests, and complete Alembic/SQLAlchemy representations. Do
+not encode a decision as only an audit event, repurpose another family, hand-build an unknown CloudEvent,
+or write around the registered validators and package-store repositories.
 
-- `aerial_rescue_contracts.topics.Family` has no dedicated evidence family.
-- `aerial_rescue_contracts.envelope.BINDINGS` currently binds only drone telemetry, the `salient`
-  drone event, and gateway response.
-- `aerial_rescue_contracts.view.EventClass.EVIDENCE` is reserved and never droppable, but the current
-  projection table contains only drone telemetry.
-- The contract manifest has no evidence, agent-proposal, or audit payload/event schema or golden fixture.
-- No durable evidence/provenance table, inbox transaction, outbox record, or audit append exists.
-
-Do not encode an evidence decision as an audit event, repurpose an agent proposal, hand-build an unknown
-CloudEvent, or treat a reserved dashboard class or digest context as a contract. Adding an application
-event requires its governing decision, topic binding, payload schema, composed event schema, accepted and
-one-reason-negative fixtures, manifest entries, Python validator and tests, dashboard projection and
-reduced-state rule, generated TypeScript/runtime validation, and every affected consumer.
-
-The current broker authority is equally narrow. `Principal.EVIDENCE_SERVICE` may subscribe only to
-`DRONE_EVENT` and `AGENT_PROPOSAL`, may publish only `AUDIT`, and has no A2A grant. Resolve those
-permissions through the domain grant table and broker projection rather than duplicating or widening the
-matrix here. A new publish family requires an Accepted ADR, total domain-table tests, broker projection,
-credential and Compose coordination, and live allowed and forbidden controls.
+`Principal.EVIDENCE_SERVICE` subscribes only to `DRONE_EVENT` and `AGENT_PROPOSAL`, publishes only
+`EVIDENCE_DECISION` and `AUDIT`, and has no A2A grant. Resolve permissions through the total domain grant
+table and broker projection rather than duplicating or widening the matrix here.
 
 Consume authoritative application topics on the evidence service's own identity. Do not depend on the
 Event Mesh Gateway data-plane queue: it is temporary, is absent while disconnected, and cannot be the
-authoritative evidence path. This service has no receiver; `packages/broker` currently exposes only a
-direct receiver because no durable application queue exists. The repository has no complete evidence
-inbox/outbox, acknowledgement, redelivery, dead-message, or recovery path. Do not claim guaranteed
-delivery, zero loss, backlog recovery, or exactly-once effects from an ACL, direct receiver, persistent
-publisher, Compose definition, or in-memory fake.
+authoritative evidence path. `packages/broker` supplies the durable receivers, settlement capability,
+and confirmed publisher used by the service's long-running composition. Do not claim live delivery or
+recovery from the deterministic port tests alone; retain the shared-stack acceptance obligation.
 
 Validate the CloudEvents envelope against the concrete topic before it affects lifecycle or storage.
 Preserve mission, drone, proposal, source, correlation, causation, sequence, time, schema, and trace
@@ -320,10 +292,9 @@ their own stream, and never use arrival order or producer sequence as the missio
 
 ## 9. Build tests at the boundary that owns the claim
 
-For the first behavior, run the existing scaffold gate, add the smallest AAA test under
+For every behavior, run the existing focused suite, add the smallest AAA test under
 `services/evidence_service/tests/`, observe the intended red result, and then add the minimum production
-code. Do not activate the member with tests alone and leave no measurable source. Never weaken or alter an
-existing expected behavior merely to make implementation pass.
+code. Never weaken or alter an existing expected behavior merely to make implementation pass.
 
 Service-level tests should cover the orchestration this member owns:
 
@@ -338,9 +309,9 @@ Service-level tests should cover the orchestration this member owns:
 - duplicate source identifiers, two truly distinct live model sources, score saturation, invalid
   boundaries, and score-version propagation;
 - duplicate and out-of-order input, transaction rollback, commit-before-acknowledgement, redelivery, and
-  recovery once their durable contracts exist;
+  recovery through the durable contracts;
 - broker-port allowed/denied outcomes, topic/envelope mismatch, malformed payloads, and unknown event
-  types once the wire contract exists;
+  types;
 - model, broker, and store loss; bounded output, queues, retries, concurrency, cancellation, and shutdown;
 - live and degraded-live construction, plus proof that this service's replay composition seam constructs
   no side-effect port; and
@@ -386,7 +357,7 @@ uv run --frozen pytest -q \
 pre-commit run --files services/evidence_service/AGENTS.md services/evidence_service/CLAUDE.md --hook-stage pre-commit
 ```
 
-Once implementation exists, start with the focused member and every affected owner:
+For implementation changes, start with the focused member and every affected owner:
 
 ```sh
 uv run --frozen pytest -q services/evidence_service/tests
@@ -407,6 +378,6 @@ just check-push
 git diff --check
 ```
 
-Inspect the complete diff, verify the symlink target, and report every check that could not run. An absent
-event contract, unset parameter, scaffolded store, missing queue, unavailable model, or unproven live
-dependency is a blocking or unverified obligation, never evidence that the path passed.
+Inspect the complete diff, verify the symlink target, and report every check that could not run. An
+unactivated deployment, unavailable model, or unproven live dependency is a blocking or unverified
+obligation, never evidence that the path passed.

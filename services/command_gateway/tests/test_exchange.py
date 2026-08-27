@@ -34,7 +34,7 @@ REQUEST_ID: Final = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
 MISSION: Final = "m-2026-0001"
 REPLY_TOPIC: Final = f"aerial-rescue/v1/reply/gateway/response/{REQUESTOR}"
 REQUEST_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/gateway/request/command-authority"
-RECORD_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/gateway/response/{REQUEST_ID}"
+RECORD_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/gateway/record/{REQUEST_ID}"
 METADATA: Final = json.dumps([{"request_id": REQUEST_ID, "response_topic": REPLY_TOPIC}])
 STAMP: Final = RecordStamp(
     event_id="0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6d",
@@ -152,7 +152,7 @@ class AnsweredExchangeTests(unittest.TestCase):
         # Assert
         record = _body(publisher, 1)
         self.assertEqual(
-            ("aerial-rescue.v1.gateway.response", _body(publisher, 0)),
+            ("aerial-rescue.v1.gateway.record", _body(publisher, 0)),
             (record["type"], record["data"]),
         )
 

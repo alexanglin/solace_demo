@@ -6,11 +6,11 @@ import stat
 from pathlib import Path
 from typing import Final
 
-from aerial_rescue_dashboard_api.documents import (
+from aerial_rescue_dashboard_api.boundary.documents import (
     REPLAY_SCHEMA,
     validated_document,
 )
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import ReplayPreparation, StorePort
 
 MAXIMUM_REPLAY_BYTES: Final = 1024 * 1024

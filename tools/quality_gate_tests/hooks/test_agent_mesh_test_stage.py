@@ -15,7 +15,13 @@ from tools.quality_gate_tests.support import QualityGateTestCase
 HOOK = "agent-mesh-test-full.sh"
 
 
-def _agent_project(repository: Path, *, lockfile: bool, tests: bool) -> None:
+def _agent_project(
+    repository: Path,
+    *,
+    lockfile: bool,
+    tests: bool,
+    owned_package: bool = False,
+) -> None:
     """Create as much of an Agent Mesh project as a case needs."""
     project = repository / "agent-mesh"
     project.mkdir(parents=True, exist_ok=True)
@@ -24,6 +30,9 @@ def _agent_project(repository: Path, *, lockfile: bool, tests: bool) -> None:
         (project / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     if tests:
         (project / "tests").mkdir()
+    if owned_package:
+        (project / "aerial_rescue_event_mesh_gateway").mkdir()
+        (project / "aerial_rescue_runtime_compat").mkdir()
 
 
 class AgentMeshTestStageTests(QualityGateTestCase):
@@ -84,6 +93,21 @@ class AgentMeshTestStageTests(QualityGateTestCase):
         # Assert
         self.assert_hook_failed(result, "MISSING: agent-mesh/tests")
 
+    def test_a_project_without_the_owned_gateway_package_fails_the_stage(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        _agent_project(repository, lockfile=True, tests=True)
+        _, environment = self.install_argument_recorder(repository, "uv", "uv-arguments.txt")
+
+        # Act
+        result = self.run_hook(HOOK, repository, environment=environment)
+
+        # Assert
+        self.assert_hook_failed(
+            result,
+            "MISSING: agent-mesh/aerial_rescue_event_mesh_gateway",
+        )
+
     def test_the_suite_runs_inside_the_agent_mesh_project_rather_than_the_root(self) -> None:
         """`uv run --project` would leave pytest rooted at the repository root.
 
@@ -92,7 +116,7 @@ class AgentMeshTestStageTests(QualityGateTestCase):
         """
         # Arrange
         repository = self.temporary_repository()
-        _agent_project(repository, lockfile=True, tests=True)
+        _agent_project(repository, lockfile=True, tests=True, owned_package=True)
         recorded, environment = self.install_argument_recorder(repository, "uv", "uv-arguments.txt")
 
         # Act
@@ -101,6 +125,24 @@ class AgentMeshTestStageTests(QualityGateTestCase):
         # Assert
         arguments = recorded.read_text(encoding="utf-8")
         self.assertNotIn("--project", arguments)
+
+    def test_a_project_without_the_owned_runtime_compatibility_package_fails_the_stage(
+        self,
+    ) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        _agent_project(repository, lockfile=True, tests=True)
+        (repository / "agent-mesh" / "aerial_rescue_event_mesh_gateway").mkdir()
+        _, environment = self.install_argument_recorder(repository, "uv", "uv-arguments.txt")
+
+        # Act
+        result = self.run_hook(HOOK, repository, environment=environment)
+
+        # Assert
+        self.assert_hook_failed(
+            result,
+            "MISSING: agent-mesh/aerial_rescue_runtime_compat",
+        )
 
 
 if __name__ == "__main__":

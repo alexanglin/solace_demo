@@ -15,7 +15,8 @@ guide:
 | Semantic validator and fail-closed refusals | [ADR-0032](../../docs/adr/0032-agent-mesh-semantic-configuration-validator.md) and [ADR-0035](../../docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md) |
 | Local-model lock boundary | [ADR-0063](../../docs/adr/0063-lock-local-models-by-manifest-digest.md) |
 | Web UI, gateway, and Event Mesh Tool boundaries | [ADR-0065](../../docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md), [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), and [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
-| Official-image runtime and in-container evidence | [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) and [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) |
+| Closed Agent Response and trusted source binding | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md), [ADR-0152](../../docs/adr/0152-bind-proposals-to-the-complete-source-event.md), and [`CONTRACTS.md`](../../docs/CONTRACTS.md) |
+| Official-image runtime and in-container evidence | [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0177](../../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md), and [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) |
 | Test classes, claim ceilings, known debt, and numeric gates | [`TESTING.md`](../../docs/TESTING.md), [`TECH_DEBT.md`](../../TECH_DEBT.md), and [`operating-parameters.md`](../../docs/operating-parameters.md) |
 
 An Accepted ADR governs if an implementation, fixture, old evidence record, or this guide disagrees
@@ -72,6 +73,9 @@ native environment is useful diagnosis but is not in-container evidence.
 - Keep current rule scope honest. Broadening or narrowing model, topic, app, gateway, Web UI, or tool
   checks requires focused tests and review against the governing ADRs, current gaps, contracts, safety
   rules, and deployment configuration.
+- Require the owned Event Mesh Gateway arm to use the exact salient-event ingress, structured model
+  output, trusted source context, and closed schema-validated Agent Response handlers. Raw
+  `task_response:text`, open schemas, missing source identity, and validation-on-log paths fail closed.
 
 ## 5. Image probe rules
 

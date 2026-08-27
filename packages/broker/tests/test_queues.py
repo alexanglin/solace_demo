@@ -16,19 +16,26 @@ import unittest
 
 import pytest
 from aerial_rescue_broker.queues import (
+    APPLICATION_MAX_DELIVERED_UNACKED,
+    APPLICATION_MAX_MESSAGE_BYTES,
     DEAD_MESSAGE_QUEUE,
+    DMQ_SUFFIX,
     MAX_QUEUE_NAME_LENGTH,
     MAX_SPOOL_MEGABYTES,
     RECORDER_LIFECYCLE_QUEUE,
+    UPSTREAM_MAX_DELIVERED_UNACKED,
+    UPSTREAM_MAX_MESSAGE_BYTES,
     Endpoint,
     QueueError,
-    QueueProjection,
     QueueRefusal,
+    dead_message_queue_name,
     desired_queues,
     drone_queue_name,
     endpoint_for,
     family_queue_name,
     guaranteed_grants,
+    primary_queues,
+    queue_templates,
     queues_for,
 )
 from aerial_rescue_broker.subscriptions import (
@@ -55,7 +62,7 @@ from aerial_rescue_domain.principals import (
 DRONE = "drone-vision-01"
 OTHER_DRONE = "drone-thermal-02"
 DRONES = (DRONE, OTHER_DRONE)
-REFERENCE_DRONES = tuple(f"drone-sim-{ordinal:02d}" for ordinal in range(1, 21))
+REFERENCE_DRONES = tuple(f"drone-{ordinal:02d}" for ordinal in range(1, 24))
 
 
 class EndpointTableTests(unittest.TestCase):
@@ -113,13 +120,12 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual({Delivery.GUARANTEED}, guarantees)
 
-    def test_the_command_gateway_is_owed_the_four_families_the_record_names(self) -> None:
+    def test_the_command_gateway_is_owed_the_three_guaranteed_inputs_the_record_names(self) -> None:
         # Arrange
         expected = frozenset(
             {
                 Family.OPERATOR_COMMAND,
                 Family.OPERATOR_APPROVAL,
-                Family.AGENT_PROPOSAL,
                 Family.DRONE_COMMAND_RESULT,
             }
         )
@@ -130,7 +136,7 @@ class DerivationTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, owed)
 
-    def test_the_dashboard_api_is_owed_every_grant_but_droppable_telemetry(self) -> None:
+    def test_the_dashboard_api_has_no_queue_for_its_three_direct_inputs(self) -> None:
         # Arrange
         subscribed = grants(Principal.DASHBOARD_API, Access.SUBSCRIBE)
 
@@ -138,9 +144,12 @@ class DerivationTests(unittest.TestCase):
         owed = guaranteed_grants(Principal.DASHBOARD_API)
 
         # Assert
-        self.assertEqual(frozenset({Family.DRONE_TELEMETRY}), subscribed - owed)
+        self.assertEqual(
+            frozenset({Family.DRONE_TELEMETRY, Family.GATEWAY_RECORD, Family.AGENT_RESPONSE}),
+            subscribed - owed,
+        )
 
-    def test_the_recorder_is_owed_only_the_three_guaranteed_lifecycle_families(self) -> None:
+    def test_the_recorder_is_owed_the_ten_guaranteed_families(self) -> None:
         # Arrange
         expected = frozenset({Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT})
 
@@ -148,7 +157,8 @@ class DerivationTests(unittest.TestCase):
         owed = guaranteed_grants(Principal.RECORDER)
 
         # Assert
-        self.assertEqual((expected, 3), (owed, len(owed)))
+        self.assertEqual(10, len(owed))
+        self.assertTrue(expected <= owed)
 
     def test_the_recorder_combines_lifecycle_families_in_one_causally_ordered_queue(self) -> None:
         # Arrange
@@ -158,6 +168,7 @@ class DerivationTests(unittest.TestCase):
         queues = queues_for(role, ())
 
         # Assert
+        lifecycle = next(queue for queue in queues if queue.name == RECORDER_LIFECYCLE_QUEUE)
         self.assertEqual(
             (
                 RECORDER_LIFECYCLE_QUEUE,
@@ -170,9 +181,10 @@ class DerivationTests(unittest.TestCase):
                     }
                 ),
             ),
-            (queues[0].name, queues[0].owner, queues[0].subscriptions),
+            (lifecycle.name, lifecycle.owner, lifecycle.subscriptions),
         )
-        self.assertEqual(1, len(queues))
+        connectivity = connectivity_subscription()
+        self.assertEqual(1, sum(connectivity in queue.subscriptions for queue in queues))
 
 
 class FamilyQueueTests(unittest.TestCase):
@@ -320,27 +332,50 @@ class DroneQueueTests(unittest.TestCase):
 
 
 class DesiredSetTests(unittest.TestCase):
-    def test_the_dead_message_queue_comes_first_and_exactly_once(self) -> None:
+    def test_every_application_queue_has_its_own_adjacent_dead_message_queue(self) -> None:
         # Arrange
-        expected = 1
+        primary = primary_queues(DRONES)
 
         # Act
-        names = tuple(queue.name for queue in desired_queues(DRONES))
+        queues = desired_queues(DRONES)
+        by_name = {queue.name: queue for queue in queues}
 
         # Assert
         self.assertEqual(
-            (DEAD_MESSAGE_QUEUE, expected), (names[0], names.count(DEAD_MESSAGE_QUEUE))
+            {queue.name: dead_message_queue_name(queue.name) for queue in primary},
+            {queue.name: queue.dead_message_queue for queue in primary},
+        )
+        self.assertTrue(
+            all(
+                by_name[target].name.endswith(DMQ_SUFFIX)
+                for target in (queue.dead_message_queue for queue in primary)
+                if target is not None
+            )
         )
 
-    def test_the_dead_message_queue_is_owned_by_nobody_and_attracts_nothing(self) -> None:
+    def test_dead_message_queues_are_owned_by_nobody_and_attract_nothing(self) -> None:
         # Arrange
         queues = desired_queues(())
 
         # Act
-        dead = next(queue for queue in queues if queue.name == DEAD_MESSAGE_QUEUE)
+        dead = tuple(queue for queue in queues if queue.name.endswith(DMQ_SUFFIX))
 
         # Assert
-        self.assertEqual(("", frozenset()), (dead.owner, dead.subscriptions))
+        self.assertTrue(dead)
+        self.assertEqual(
+            {("", frozenset(), None)},
+            {(queue.owner, queue.subscriptions, queue.dead_message_queue) for queue in dead},
+        )
+
+    def test_the_shared_factory_dead_message_queue_is_never_in_the_owned_set(self) -> None:
+        # Arrange
+        shared = DEAD_MESSAGE_QUEUE
+
+        # Act
+        names = {queue.name for queue in desired_queues(DRONES)}
+
+        # Assert
+        self.assertNotIn(shared, names)
 
     def test_the_desired_set_names_every_queue_once(self) -> None:
         # Arrange
@@ -352,11 +387,12 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(len(names), len(set(names)))
 
-    def test_the_global_projection_has_thirteen_family_endpoints_a_drone_each_and_dead_letter(
+    def test_the_small_fixture_has_a_dmq_per_primary_and_three_upstream_dmqs(
         self,
     ) -> None:
         # Arrange
-        expected = 13 + len(DRONES) + 1
+        primary = 20 + len(DRONES)
+        expected = primary * 2 + 3
 
         # Act
         queues = desired_queues(DRONES)
@@ -364,11 +400,9 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, len(queues))
 
-    def test_the_global_reference_projection_reserves_thirty_four_queues_and_340_megabytes(
-        self,
-    ) -> None:
+    def test_the_reference_fleet_reserves_eighty_nine_queues_and_890_megabytes(self) -> None:
         # Arrange
-        expected = (34, 340)
+        expected = (89, 890)
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)
@@ -377,16 +411,68 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, inventory)
 
-    def test_mission_control_projects_only_lifecycle_capture_and_dead_letter_endpoints(
-        self,
-    ) -> None:
+    def test_application_queues_apply_the_contract_document_and_one_at_a_time_bounds(self) -> None:
         # Arrange
-        expected = (DEAD_MESSAGE_QUEUE, RECORDER_LIFECYCLE_QUEUE)
+        queues = primary_queues(DRONES)
 
         # Act
-        queues = desired_queues(REFERENCE_DRONES, QueueProjection.MISSION_CONTROL)
+        bounds = {(queue.max_message_bytes, queue.max_delivered_unacked) for queue in queues}
 
         # Assert
-        self.assertEqual(expected, tuple(queue.name for queue in queues))
-        self.assertEqual(20, len(queues) * MAX_SPOOL_MEGABYTES)
-        self.assertNotIn(Principal.FLEET_SIMULATOR.value, {queue.owner for queue in queues})
+        self.assertEqual(
+            {(APPLICATION_MAX_MESSAGE_BYTES, APPLICATION_MAX_DELIVERED_UNACKED)}, bounds
+        )
+
+
+class UpstreamQueueTemplateTests(unittest.TestCase):
+    def test_the_three_upstream_roles_get_distinct_non_durable_queue_templates(self) -> None:
+        # Arrange
+        expected = {
+            Principal.AGENT_MESH_AGENT: "aerial-rescue-agent-mesh-temp",
+            Principal.EVENT_MESH_GATEWAY: "aerial-rescue-event-mesh-gateway-temp",
+            Principal.EVENT_MESH_TOOL: "aerial-rescue-event-mesh-tool-temp",
+        }
+
+        # Act
+        templates = queue_templates()
+
+        # Assert
+        self.assertEqual(
+            expected,
+            {template.role: template.name for template in templates},
+        )
+        self.assertEqual(
+            {("non-durable", "", UPSTREAM_MAX_MESSAGE_BYTES, UPSTREAM_MAX_DELIVERED_UNACKED)},
+            {
+                (
+                    template.durability,
+                    template.name_filter,
+                    template.max_message_bytes,
+                    template.max_delivered_unacked,
+                )
+                for template in templates
+            },
+        )
+
+    def test_each_upstream_template_has_one_isolated_provisioned_dmq(self) -> None:
+        # Arrange
+        templates = queue_templates()
+
+        # Act
+        queues = {queue.name: queue for queue in desired_queues(())}
+
+        # Assert
+        self.assertEqual(
+            {template.dead_message_queue for template in templates},
+            {
+                name
+                for name in queues
+                if name in {template.dead_message_queue for template in templates}
+            },
+        )
+        self.assertTrue(
+            all(
+                queues[template.dead_message_queue].max_message_bytes == UPSTREAM_MAX_MESSAGE_BYTES
+                for template in templates
+            )
+        )

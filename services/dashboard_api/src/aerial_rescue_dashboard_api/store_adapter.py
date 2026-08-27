@@ -2,35 +2,36 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final, cast
 
-from aerial_rescue_store import StoreError
-from aerial_rescue_store.dashboard_events import (
+from aerial_rescue_store import STORE_BOUNDARY_ERRORS
+from aerial_rescue_store.dashboard.events import (
     EventSession,
     capture_snapshot_basis,
     read_event_page,
     read_suffix_page,
 )
-from aerial_rescue_store.dashboard_operations import (
+from aerial_rescue_store.dashboard.operations import (
     DashboardOperation,
     DashboardOperationError,
     DashboardOperationRefusal,
     OperationClaim,
     OperationMode,
     OperationResult,
+    OperationSession,
     accepted_start,
     claim,
     complete,
     pending,
 )
-from aerial_rescue_store.dashboard_operations import (
+from aerial_rescue_store.dashboard.operations import (
     OperationKind as StoreOperationKind,
 )
-from aerial_rescue_store.dashboard_runs import (
+from aerial_rescue_store.dashboard.runs import (
     DashboardMission,
     DashboardRun,
+    RunSession,
     create_mission,
     create_run,
     current_run,
@@ -39,14 +40,17 @@ from aerial_rescue_store.dashboard_runs import (
     run_by_identity,
     run_by_mission,
 )
-from aerial_rescue_store.dashboard_runs import (
+from aerial_rescue_store.dashboard.runs import (
     RunMode as StoreRunMode,
 )
-from aerial_rescue_store.session import close, transaction
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from aerial_rescue_store.session import (
+    Disposable,
+    StoreSessionFactory,
+    close,
+    transaction,
+)
 
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import (
     Activation,
     ClaimedOperation,
@@ -60,15 +64,15 @@ from aerial_rescue_dashboard_api.ports import (
     StoredResponse,
 )
 
-_STORE_FAILURES: Final = (StoreError, SQLAlchemyError)
+_STORE_FAILURES: Final = STORE_BOUNDARY_ERRORS
 
 
 @dataclass
 class SqlStore:
     """Own bounded transactions while leaving SQL representation inside packages/store."""
 
-    session_factory: Callable[[], AsyncSession]
-    pool: AsyncEngine
+    session_factory: StoreSessionFactory
+    pool: Disposable
     shutdown_grace_seconds: int
 
     async def close(self) -> None:
@@ -118,7 +122,7 @@ class SqlStore:
 
     async def _prepare(
         self,
-        session: AsyncSession,
+        session: RunSession,
         activation: Activation,
     ) -> CurrentRun:
         """Append history once, or verify the pointer already names the same prepared run."""
@@ -127,7 +131,10 @@ class SqlStore:
         if predecessor is not None and predecessor.run_identity == selected.identity:
             if not _matches_activation(predecessor, activation):
                 raise ApiError(ErrorCode.RUN_CONFLICT)
-            return _current_run(predecessor, started=await _started(session, predecessor))
+            return _current_run(
+                predecessor,
+                started=await _started(cast("OperationSession", session), predecessor),
+            )
         if selected.mode is RunMode.DEGRADED_LIVE:
             if selected.mission_id is None:
                 raise ApiError(ErrorCode.RUN_CONFLICT)
@@ -311,7 +318,7 @@ def _dashboard_run(selected: CurrentRun, activation: Activation) -> DashboardRun
     )
 
 
-async def _started(session: AsyncSession, stored: DashboardRun) -> bool:
+async def _started(session: OperationSession, stored: DashboardRun) -> bool:
     """Derive live start state from its completed 202 start operation."""
     if stored.mode is not StoreRunMode.DEGRADED_LIVE or stored.run_id is None:
         return False

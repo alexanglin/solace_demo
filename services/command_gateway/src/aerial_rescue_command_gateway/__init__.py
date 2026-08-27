@@ -21,8 +21,8 @@ from aerial_rescue_domain.principals import Principal
 
 URN_SCHEME: Final = "urn"
 URN_SEPARATOR: Final = ":"
-PRODUCER_KIND: Final = "service"
-"""The ``producerKind`` level of this service's CloudEvents ``source``."""
+PRODUCER_KIND: Final = Principal.COMMAND_GATEWAY.value
+"""The producer-kind level bound to this service's mission record event type."""
 
 
 class CommandGatewayError(DomainError):

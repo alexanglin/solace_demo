@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from aerial_rescue_dashboard_api import store_adapter as adapter
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import (
     Activation,
     CurrentRun,
@@ -20,11 +20,11 @@ from aerial_rescue_dashboard_api.ports import (
     StoredResponse,
 )
 from aerial_rescue_dashboard_api.store_adapter import SqlStore
-from aerial_rescue_store.dashboard_events import (
+from aerial_rescue_store.dashboard.events import (
     SnapshotBasis as StoredSnapshotBasis,
 )
-from aerial_rescue_store.dashboard_events import StoredDashboardEvent
-from aerial_rescue_store.dashboard_operations import (
+from aerial_rescue_store.dashboard.events import StoredDashboardEvent
+from aerial_rescue_store.dashboard.operations import (
     DashboardOperation,
     DashboardOperationError,
     DashboardOperationRefusal,
@@ -33,8 +33,8 @@ from aerial_rescue_store.dashboard_operations import (
     OperationResult,
     OperationState,
 )
-from aerial_rescue_store.dashboard_runs import DashboardRun
-from aerial_rescue_store.dashboard_runs import RunMode as StoredRunMode
+from aerial_rescue_store.dashboard.runs import DashboardRun
+from aerial_rescue_store.dashboard.runs import RunMode as StoredRunMode
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 

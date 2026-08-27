@@ -9,7 +9,7 @@ from typing import Final, TypeGuard
 from aerial_rescue_contracts import canonical
 from aerial_rescue_domain.mission import MissionState, is_terminal
 
-from aerial_rescue_dashboard_api.documents import (
+from aerial_rescue_dashboard_api.boundary.documents import (
     CATALOG_SCHEMA,
     REPLAY_SCHEMA,
     find_scenario,
@@ -17,7 +17,7 @@ from aerial_rescue_dashboard_api.documents import (
     replay_initial_state,
     validated_document,
 )
-from aerial_rescue_dashboard_api.errors import (
+from aerial_rescue_dashboard_api.boundary.errors import (
     MESSAGE_BY_CODE,
     STATUS_BY_CODE,
     ApiError,

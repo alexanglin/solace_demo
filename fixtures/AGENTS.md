@@ -32,6 +32,9 @@ editing it:
 | Explicit dashboard collection bounds | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
+| Durable application processing and representation classes | [ADR-0146](../docs/adr/0146-define-durable-application-processing.md) |
+| Closed application and dashboard documents | [ADR-0148](../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Dual Gateway Response representation | [ADR-0149](../docs/adr/0149-preserve-mission-scoped-gateway-response-records.md) |
 
 An Accepted architecture decision record (ADR) governs if a fixture, manifest entry, schema,
 implementation, test, or document disagrees. Changing accepted shape, polarity, refusal behavior,
@@ -53,6 +56,7 @@ The current version-one fixture families have distinct jobs:
 | `golden/v1/envelope/` | Accepted envelopes and one-rule missing, context, or extension refusals |
 | `golden/v1/payload/<event>/` | Accepted payload boundaries and payload-schema refusals |
 | `golden/v1/event/<event>/` | Composed envelope, type, dataschema, and payload binding cases |
+| `golden/v1/integration/<body>/` | Closed non-CloudEvent plugin-integration bodies, including structured Agent Response branches |
 | `golden/v1/topics/` | Schema-valid accepted/refused parser cases plus schema-invalid case documents |
 | `golden/v1/dashboard/<shape>/` | Browser-bound accepted documents and one-member schema refusals |
 | `golden/v1/rpc/<body>/` | Command-gateway and private scenario/fleet RPC baselines with one-member schema refusals |
@@ -71,6 +75,14 @@ The directory path makes the intended schema visible to a reviewer, but the mani
 Never infer ownership from a filename, register one physical file under two schemas, or symlink one case
 into several owners. When the same document must be exercised by two schemas, keep deliberate physical
 copies under the two schema-specific paths and register each copy once.
+
+The current manifest owns 68 schemas. Its application-data-plane increment adds twelve payload/event
+schemas, one standalone Agent Response integration schema, and four dashboard HTTP schemas; after the
+ADR-0124 minimal-wire reconciliation, the dashboard inventory is 22. The Agent Response fixtures
+deliberately have no composed CloudEvent copy. The raw
+Gateway Response RPC reply and its mission-scoped CloudEvent record retain different owning schemas and
+fixtures even though both parse under one topic family. A fixture proving either representation is valid
+does not prove a service routed it to the only legal topic or opened the right transport.
 
 The accepted envelope document currently has three byte-identical copies:
 
@@ -218,6 +230,12 @@ A fixture change may require a focused subset of these owners, determined by the
 Adding an application event is not complete with one payload example. Its binding, payload schema,
 composed event schema, projection row, reduced-state rule, accepted and rejected fixtures, manifest
 entries, and current language tests move together as required by the governing ADRs.
+
+The six ADR-0148 dashboard projections are timeline-only and non-droppable: operator command, operator
+approval, agent proposal, evidence decision, rescue-escalation drone command, and typed audit. Shared
+fixtures must preserve the projection rule that removes `missionId` from every payload and additionally
+removes `evidenceDecisionDigest` from evidence decisions. The direct Agent Response integration body has
+neither a CloudEvents time nor a durable audit ordinal and is never fabricated into that event union.
 
 Keep claims within the current instruments:
 
