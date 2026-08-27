@@ -18,10 +18,17 @@ STACK_PASSWORDS = (
     "secrets/broker-admin-password",
     "secrets/postgres-password",
     "secrets/semp-discovery-password",
+    "secrets/semp-monitor-password",
     "secrets/session-secret-key",
 )
-ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in Principal)
-"""One per broker authorization role (ADR-0061); the script's own list is held equal below."""
+PRIVATE_HTTP_BEARERS = (
+    "secrets/scenario-control-bearer",
+    "secrets/fleet-control-bearer",
+)
+"""Independent private-control credentials; neither value is a broker identity."""
+MESSAGING_ROLES = tuple(role for role in Principal if role is not Principal.DISCOVERY)
+ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in MESSAGING_ROLES)
+"""One per enabled messaging role; the SEMP discovery identity is separate (ADR-0153)."""
 PRIVATE_FILES = (
     "secrets/ca.key",
     "secrets/broker-server.key",
@@ -29,6 +36,7 @@ PRIVATE_FILES = (
     "secrets/broker-server.pem",
     *STACK_PASSWORDS,
     *ROLE_PASSWORDS,
+    *PRIVATE_HTTP_BEARERS,
 )
 
 
@@ -38,7 +46,7 @@ def _material(deploy: Path) -> dict[str, bytes]:
 
 
 ROLE_ENVIRONMENT = "secrets/.env.roles"
-"""The generated file Compose reads for the ten role identities; never tracked."""
+"""The generated file Compose reads for enabled role identities; never tracked."""
 SESSION_VARIABLE = "SESSION_SECRET_KEY"
 """The Web UI's session signing key. The image ships a placeholder and the upstream check is
 presence-only, so an unreplaced value signs real sessions (ADR-0102)."""
@@ -67,7 +75,7 @@ def _suffixed(declarations: dict[str, str], suffix: str) -> dict[str, str]:
 def _expected_passwords(deploy: Path) -> dict[str, str]:
     """Return the password each role's generated credential file holds, keyed by variable."""
     passwords: dict[str, str] = {}
-    for role in Principal:
+    for role in MESSAGING_ROLES:
         credential = deploy / f"secrets/broker-{role.value}-password"
         passwords[_variable(role, "PASSWORD")] = credential.read_text(encoding="utf-8")
     return passwords
@@ -83,7 +91,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_fourteen_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_twelve_passwords(self) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -95,7 +103,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         self.assertTrue(all((repository / "deploy" / name).is_file() for name in PRIVATE_FILES))
         self.assertTrue((repository / "deploy" / "certs" / "ca.pem").is_file())
 
-    def test_it_generates_the_scenario_service_credential_and_environment_pair(self) -> None:
+    def test_it_generates_no_scenario_service_credential_or_environment_pair(self) -> None:
         # Arrange
         repository = self.temporary_repository()
         credential_name = "secrets/broker-scenario-service-password"
@@ -106,15 +114,42 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue((repository / "deploy" / credential_name).is_file())
-        self.assertEqual(
-            "scenario-service",
-            declarations.get("SOLACE_SCENARIO_SERVICE_USERNAME"),
+        self.assertFalse((repository / "deploy" / credential_name).exists())
+        self.assertNotIn("SOLACE_SCENARIO_SERVICE_USERNAME", declarations)
+        self.assertNotIn("SOLACE_SCENARIO_SERVICE_PASSWORD", declarations)
+
+    def test_the_semp_monitor_password_is_generated_but_never_exported(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+        declarations = _role_environment(repository / "deploy")
+        password = (repository / "deploy" / "secrets" / "semp-monitor-password").read_text(
+            encoding="utf-8"
         )
-        self.assertEqual(
-            (repository / "deploy" / credential_name).read_text(encoding="utf-8"),
-            declarations.get("SOLACE_SCENARIO_SERVICE_PASSWORD"),
-        )
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(PASSWORD_HEX_LENGTH, len(password))
+        self.assertFalse(any("MONITOR" in name for name in declarations))
+        self.assertNotIn(password, result.stdout + result.stderr)
+
+    def test_it_creates_distinct_private_http_bearers_without_exporting_them(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        deploy = repository / "deploy"
+        bearers = {(deploy / name).read_text(encoding="utf-8") for name in PRIVATE_HTTP_BEARERS}
+        declarations = _role_environment(deploy)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(2, len(bearers))
+        self.assertTrue(all(len(bearer) == PASSWORD_HEX_LENGTH for bearer in bearers))
+        self.assertFalse(any("CONTROL" in name for name in declarations))
 
     def test_private_files_are_mode_0600_and_the_public_certificate_is_readable(self) -> None:
         # Arrange
@@ -165,7 +200,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         # Assert
         passwords = [
             (repository / "deploy" / name).read_text(encoding="utf-8").strip()
-            for name in (*STACK_PASSWORDS, *ROLE_PASSWORDS)
+            for name in (*STACK_PASSWORDS, *ROLE_PASSWORDS, *PRIVATE_HTTP_BEARERS)
         ]
         self.assertNotIn("PRIVATE KEY", result.stdout + result.stderr)
         self.assertTrue(
@@ -236,7 +271,27 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         )
         self.assertNotEqual(before[ROLE_PASSWORDS[0]], after[ROLE_PASSWORDS[0]])
 
-    def test_the_scripts_role_list_equals_the_authorization_roles(self) -> None:
+    def test_a_missing_private_http_bearer_is_filled_without_rotating_other_material(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        self.generate(repository)
+        before = _material(repository / "deploy")
+        missing = PRIVATE_HTTP_BEARERS[0]
+        (repository / "deploy" / missing).unlink()
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        after = _material(repository / "deploy")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            {name: before[name] for name in before if name != missing},
+            {name: after[name] for name in after if name != missing},
+        )
+        self.assertNotEqual(before[missing], after[missing])
+
+    def test_the_scripts_role_list_equals_the_enabled_messaging_roles(self) -> None:
         # Arrange
         declaration = SCRIPT.read_text(encoding="utf-8").partition('broker_roles="')[2]
 
@@ -244,7 +299,21 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         listed = tuple(declaration.partition('"')[0].split())
 
         # Assert
-        self.assertEqual(tuple(role.value for role in Principal), listed)
+        self.assertEqual(tuple(role.value for role in MESSAGING_ROLES), listed)
+
+    def test_it_generates_no_credential_or_environment_pair_for_retired_smf_discovery(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+        declarations = _role_environment(repository / "deploy")
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse((repository / "deploy" / "secrets" / "broker-discovery-password").exists())
+        self.assertNotIn("SOLACE_DISCOVERY_USERNAME", declarations)
+        self.assertNotIn("SOLACE_DISCOVERY_PASSWORD", declarations)
 
     def test_every_role_receives_its_own_distinct_credential(self) -> None:
         # Arrange
@@ -282,7 +351,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         declarations = _role_environment(repository / "deploy")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            {_variable(role, "USERNAME"): role.value for role in Principal},
+            {_variable(role, "USERNAME"): role.value for role in MESSAGING_ROLES},
             _suffixed(declarations, "_USERNAME"),
         )
 

@@ -21,11 +21,16 @@ through 0106.
 - Apply the canonical JSON profile before validating bootstrap input and keep rejected candidates,
   including bearer values, out of typed refusal details.
 - Hash only validated canonical values through platform Web Crypto. Keep the ordered-event witness
-  outside reduced mission state, compare lowercase SHA-256 values without a data-dependent early exit,
-  and do not claim browser/Python parity without the shared R3 oracle.
+  outside reduced mission state, compare lowercase SHA-256 values without a data-dependent early
+  exit, and do not claim browser/Python parity without the shared R3 oracle.
 - Keep MapLibre geometry, styles, glyphs, fonts, and attribution local. Browser tests must fail on
   any remote request.
-- Do not render approval, command, model, evidence, rescue, or escalation controls in this UI slice.
+- Render operational command and exact proposal-decision controls only through the protected live
+  simulation flow in ADR-0172. Replay may display recorded facts but must construct and render no
+  enabled approval, rejection, command, rescue, or escalation action.
+- Keep `evidenceDecisionDigest` out of the projected event. Recompute it only from the validated
+  projection plus its mission under the `evidence` digest context, as ADR-0174 requires; never trust
+  a server-supplied expected digest or let that defense-in-depth check replace server authorization.
 
 ## Verification
 

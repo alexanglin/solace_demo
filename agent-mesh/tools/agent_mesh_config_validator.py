@@ -21,12 +21,17 @@ from urllib.parse import urlsplit
 EXPECTED_VERSIONS: Mapping[str, str] = {
     "solace-agent-mesh": "1.28.7",
     "solace-ai-connector": "3.3.12",
+    "solace-pubsubplus": "1.11.0",
     "sam-event-mesh-gateway": "1.1.0",
     "sam-event-mesh-tool": "0.1.1",
 }
 AGENT_MODULE = "solace_agent_mesh.agent.sac.app"
 WORKFLOW_MODULE = "solace_agent_mesh.workflow.app"
-GATEWAY_MODULE = "sam_event_mesh_gateway.app"
+UPSTREAM_GATEWAY_MODULE = "sam_event_mesh_gateway.app"
+GATEWAY_MODULE = "aerial_rescue_event_mesh_gateway.app"
+GATEWAY_CLASS = "AerialRescueEventMeshGatewayApp"
+GATEWAY_COMPONENT_MODULE = "aerial_rescue_event_mesh_gateway.component"
+GATEWAY_COMPONENT_CLASS = "AerialRescueEventMeshGatewayComponent"
 WEBUI_MODULE = "solace_agent_mesh.gateway.http_sse.app"
 WEBUI_CLASS = "WebUIBackendApp"
 LOOPBACK_HOSTS = frozenset(("127.0.0.1", "localhost", "::1"))
@@ -89,8 +94,125 @@ GATEWAY_TARGET_FIELDS = (
     "target_workflow_name",
     "target_workflow_name_expression",
 )
+AGENT_RESPONSE_TOPIC_EXPRESSION = (
+    "template:aerial-rescue/v1/"
+    "{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator"
+)
+AGENT_RESPONSE_FORWARD_CONTEXT: Mapping[str, object] = {
+    "missionId": "input.topic_levels:2",
+    "droneId": "input.topic_levels:4",
+    "eventMissionId": "input.payload:data.missionId",
+    "eventDroneId": "input.payload:data.droneId",
+    "sourceEventId": "input.payload:id",
+    "sourceEventDigest": "input.user_properties:aerial-rescue-source-event-digest",
+    "correlationId": "input.payload:correlationid",
+    "agentName": "static:MissionCoordinator",
+}
+_IDENTIFIER_SCHEMA: Mapping[str, object] = {
+    "type": "string",
+    "pattern": r"^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$",
+}
+_LATITUDE_SCHEMA: Mapping[str, object] = {
+    "type": "integer",
+    "minimum": -90_000_000,
+    "maximum": 90_000_000,
+}
+_LONGITUDE_SCHEMA: Mapping[str, object] = {
+    "type": "integer",
+    "minimum": -180_000_000,
+    "maximum": 180_000_000,
+}
+AGENT_MODEL_OUTPUT_SCHEMA: Mapping[str, object] = {
+    "type": "object",
+    "required": ["latitudeMicrodegrees", "longitudeMicrodegrees"],
+    "additionalProperties": False,
+    "properties": {
+        "latitudeMicrodegrees": _LATITUDE_SCHEMA,
+        "longitudeMicrodegrees": _LONGITUDE_SCHEMA,
+    },
+}
+_COMMON_AGENT_RESPONSE_PROPERTIES: Mapping[str, object] = {
+    "agentResponseVersion": {"const": 1},
+    "missionId": _IDENTIFIER_SCHEMA,
+    "agentName": {"type": "string", "pattern": r"^[A-Za-z0-9_]{1,64}$"},
+    "invocationId": _IDENTIFIER_SCHEMA,
+    "correlationId": _IDENTIFIER_SCHEMA,
+}
+AGENT_RESPONSE_OUTPUT_SCHEMA: Mapping[str, object] = {
+    "anyOf": [
+        {
+            "type": "object",
+            "required": [
+                "agentResponseVersion",
+                "missionId",
+                "agentName",
+                "invocationId",
+                "correlationId",
+                "outcome",
+                "result",
+            ],
+            "additionalProperties": False,
+            "properties": {
+                **_COMMON_AGENT_RESPONSE_PROPERTIES,
+                "outcome": {"const": "candidate"},
+                "result": {
+                    "type": "object",
+                    "required": [
+                        "proposalType",
+                        "sourceEventId",
+                        "sourceEventDigest",
+                        "droneId",
+                        "latitudeMicrodegrees",
+                        "longitudeMicrodegrees",
+                        "commandType",
+                    ],
+                    "additionalProperties": False,
+                    "properties": {
+                        "proposalType": {"const": "candidate-location"},
+                        "sourceEventId": _IDENTIFIER_SCHEMA,
+                        "sourceEventDigest": {
+                            "type": "string",
+                            "pattern": r"^[0-9a-f]{64}$",
+                        },
+                        "droneId": _IDENTIFIER_SCHEMA,
+                        "latitudeMicrodegrees": _LATITUDE_SCHEMA,
+                        "longitudeMicrodegrees": _LONGITUDE_SCHEMA,
+                        "commandType": {"const": "escalate-rescue"},
+                    },
+                },
+            },
+        },
+        {
+            "type": "object",
+            "required": [
+                "agentResponseVersion",
+                "missionId",
+                "agentName",
+                "invocationId",
+                "correlationId",
+                "outcome",
+                "reason",
+            ],
+            "additionalProperties": False,
+            "properties": {
+                **_COMMON_AGENT_RESPONSE_PROPERTIES,
+                "outcome": {"const": "abstained"},
+                "reason": {
+                    "enum": [
+                        "timeout",
+                        "transport-error",
+                        "model-error",
+                        "invalid-output",
+                        "identity-mismatch",
+                    ]
+                },
+            },
+        },
+    ]
+}
 MINIMUM_CONFIGS_TO_MERGE = 2
 YAML_MAPPING_ENTRY_SIZE = 2
+AGENT_RESPONSE_OUTPUT_HANDLER_COUNT = 2
 
 
 @dataclass(frozen=True, order=True)
@@ -279,6 +401,26 @@ def _distribution_attribute(
     return value
 
 
+def _owned_attribute(module_name: str, attribute_name: str) -> object:
+    owned_root = Path(__file__).resolve().parents[1]
+    top_level_name = module_name.partition(".")[0]
+    top_level_spec = PathFinder.find_spec(top_level_name, sys.path)
+    top_level_origin = getattr(top_level_spec, "origin", None)
+    expected_module = owned_root.joinpath(*module_name.split(".")).with_suffix(".py")
+    if (
+        not isinstance(top_level_origin, str)
+        or not Path(top_level_origin).resolve().is_relative_to(owned_root)
+        or not expected_module.is_file()
+    ):
+        raise _RuntimeBoundaryError
+    value = _attribute(module_name, attribute_name)
+    module = sys.modules.get(module_name)
+    module_file = getattr(module, "__file__", None)
+    if not isinstance(module_file, str) or Path(module_file).resolve() != expected_module.resolve():
+        raise _RuntimeBoundaryError
+    return value
+
+
 def _app_schema(distribution: str, module: str, class_name: str) -> tuple[dict[str, object], ...]:
     """Return one upstream app class's declared configuration parameters.
 
@@ -297,7 +439,11 @@ def _app_schema(distribution: str, module: str, class_name: str) -> tuple[dict[s
 
 
 def _gateway_schema() -> tuple[dict[str, object], ...]:
-    return _app_schema("sam-event-mesh-gateway", GATEWAY_MODULE, "EventMeshGatewayApp")
+    return _app_schema(
+        "sam-event-mesh-gateway",
+        UPSTREAM_GATEWAY_MODULE,
+        "EventMeshGatewayApp",
+    )
 
 
 def _webui_schema() -> tuple[dict[str, object], ...]:
@@ -314,7 +460,7 @@ def _verify_gateway_entry_point() -> None:
         raise _RuntimeBoundaryError
     installed_info = _distribution_attribute(
         "sam-event-mesh-gateway",
-        GATEWAY_MODULE,
+        UPSTREAM_GATEWAY_MODULE,
         "info",
     )
     try:
@@ -329,6 +475,50 @@ def _verify_gateway_entry_point() -> None:
         raise _RuntimeBoundaryError
 
 
+def _verify_owned_gateway_extension() -> None:
+    owned_app = _owned_attribute(GATEWAY_MODULE, GATEWAY_CLASS)
+    owned_component = _owned_attribute(GATEWAY_COMPONENT_MODULE, GATEWAY_COMPONENT_CLASS)
+    owned_info = _owned_attribute(GATEWAY_MODULE, "info")
+    upstream_app = _distribution_attribute(
+        "sam-event-mesh-gateway",
+        UPSTREAM_GATEWAY_MODULE,
+        "EventMeshGatewayApp",
+    )
+    upstream_component = _distribution_attribute(
+        "sam-event-mesh-gateway",
+        "sam_event_mesh_gateway.component",
+        "EventMeshGatewayComponent",
+    )
+    if (
+        not isinstance(owned_app, type)
+        or not isinstance(owned_component, type)
+        or not isinstance(upstream_app, type)
+        or not isinstance(upstream_component, type)
+        or not isinstance(owned_info, dict)
+        or owned_info.get("class_name") != GATEWAY_CLASS
+        or owned_app.__module__ != GATEWAY_MODULE
+        or owned_component.__module__ != GATEWAY_COMPONENT_MODULE
+        or not issubclass(owned_app, upstream_app)
+        or not issubclass(owned_component, upstream_component)
+    ):
+        raise _RuntimeBoundaryError
+    authored_app_members = {
+        name for name in owned_app.__dict__ if not name.startswith("__") and name != "app_schema"
+    }
+    selector = getattr(owned_app, "_get_gateway_component_class", None)
+    if not callable(selector):
+        raise _RuntimeBoundaryError
+    try:
+        selected_component = selector(object.__new__(owned_app))
+    except Exception as error:
+        raise _RuntimeBoundaryError from error
+    if (
+        authored_app_members != {"_get_gateway_component_class"}
+        or selected_component is not owned_component
+    ):
+        raise _RuntimeBoundaryError
+
+
 def _load_runtime() -> _Runtime:
     for distribution, expected in EXPECTED_VERSIONS.items():
         try:
@@ -338,6 +528,7 @@ def _load_runtime() -> _Runtime:
         if installed != expected:
             raise _RuntimeBoundaryError
     _verify_gateway_entry_point()
+    _verify_owned_gateway_extension()
     tool_class = _distribution_attribute("sam-event-mesh-tool", TOOL_MODULE, TOOL_CLASS)
     load_config = _distribution_attribute(
         "solace-ai-connector",
@@ -955,6 +1146,61 @@ def _gateway_handler_policy_issues(
     return tuple(issues)
 
 
+def _closed_agent_response_output(output: Mapping[str, object]) -> bool:
+    return (
+        output.get("topic_expression") == AGENT_RESPONSE_TOPIC_EXPRESSION
+        and output.get("payload_expression") == "task_response:agent_response"
+        and output.get("payload_encoding", "utf-8") == "utf-8"
+        and output.get("payload_format", "json") == "json"
+        and output.get("output_transforms", []) == []
+        and output.get("output_schema") == AGENT_RESPONSE_OUTPUT_SCHEMA
+        and output.get("on_validation_error") == "drop"
+    )
+
+
+def _closed_agent_response_boundary(app_config: Mapping[str, object]) -> bool:
+    handlers = app_config.get("event_handlers")
+    outputs = app_config.get("output_handlers")
+    if (
+        not isinstance(handlers, list)
+        or len(handlers) != 1
+        or not isinstance(outputs, list)
+        or len(outputs) != AGENT_RESPONSE_OUTPUT_HANDLER_COUNT
+    ):
+        return False
+    handler = handlers[0]
+    if not isinstance(handler, dict):
+        return False
+    structured = handler.get("structured_invocation")
+    if not isinstance(structured, dict) or not isinstance(structured.get("input_schema"), dict):
+        return False
+    if (
+        handler.get("subscriptions")
+        != [{"topic": "aerial-rescue/v1/*/drone/*/event/salient", "qos": 1}]
+        or handler.get("payload_encoding", "utf-8") != "utf-8"
+        or handler.get("payload_format", "json") != "json"
+        or handler.get("input_expression") != "input.payload:data"
+        or handler.get("target_agent_name") != "MissionCoordinator"
+        or structured.get("output_schema") != AGENT_MODEL_OUTPUT_SCHEMA
+        or handler.get("forward_context") != AGENT_RESPONSE_FORWARD_CONTEXT
+    ):
+        return False
+    references = (handler.get("on_success"), handler.get("on_error"))
+    if (
+        not all(isinstance(reference, str) for reference in references)
+        or references[0] == references[1]
+    ):
+        return False
+    outputs_by_name = {
+        output.get("name"): output
+        for output in outputs
+        if isinstance(output, dict) and isinstance(output.get("name"), str)
+    }
+    return set(outputs_by_name) == set(references) and all(
+        _closed_agent_response_output(outputs_by_name[reference]) for reference in references
+    )
+
+
 def _loopback_origin(origin: object) -> bool:
     """Return whether ``origin`` is a browser origin on the loopback interface."""
     if not isinstance(origin, str):
@@ -1015,6 +1261,15 @@ def _gateway_issues(
         )
     issues.extend(_gateway_acknowledgment_issues(path, app_config, location))
     issues.extend(_gateway_handler_policy_issues(path, app_config, location))
+    if not _closed_agent_response_boundary(app_config):
+        issues.append(
+            _issue(
+                path,
+                f"{location}.output_handlers",
+                "GATEWAY_POLICY",
+                "gateway must use the closed trusted-context Agent Response boundary",
+            )
+        )
     return tuple(issues)
 
 

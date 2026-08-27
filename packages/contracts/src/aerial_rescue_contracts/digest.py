@@ -42,6 +42,7 @@ class Context(Enum):
     PROPOSAL = "proposal-digest"
     SOURCE_EVENT = "source-event"
     REPLAY_STATE = "replay-state"
+    ORDERED_DASHBOARD_EVENT = "ordered-dashboard-event"
     EVIDENCE = "evidence"
     IDEMPOTENCY_BODY = "idempotency-body"
 
@@ -83,7 +84,7 @@ def digest(context: Context, payload: object) -> str:
 
 
 def proposal_digest(payload: Mapping[str, object]) -> str:
-    """Return ADR-0116's digest of one accepted canonical proposal payload.
+    """Return ADR-0148's digest of one accepted canonical proposal payload.
 
     Exactly the top-level ``proposalDigest`` member is omitted. In particular, this
     typed helper does not inherit the generic ``digest`` member exclusion.
@@ -115,7 +116,7 @@ def proposal_digest_matches(payload: Mapping[str, object]) -> bool:
 
 
 def evidence_decision_digest(payload: Mapping[str, object]) -> str:
-    """Return ADR-0116's digest of one accepted evidence-decision payload.
+    """Return ADR-0148's digest of one accepted evidence-decision payload.
 
     Exactly the top-level ``evidenceDecisionDigest`` member is omitted.
     """
@@ -128,6 +129,21 @@ def evidence_decision_digest_matches(payload: Mapping[str, object]) -> bool:
     supplied = payload.get(EVIDENCE_DECISION_DIGEST_FIELD)
     computed = evidence_decision_digest(payload)
     return isinstance(supplied, str) and matches(supplied, computed)
+
+
+def ordered_dashboard_event_digest(audit_ordinal: int, event: Mapping[str, object]) -> str:
+    """Witness one complete normalized event at its durable audit ordinal.
+
+    The wire wrapper remains ``{auditOrdinal, event}``; this helper adds the
+    canonicalization version only inside the digest-covered document as required by
+    ADR-0112.
+    """
+    covered: Mapping[object, object] = {
+        VERSION_FIELD: CANONICALIZATION_VERSION,
+        "auditOrdinal": audit_ordinal,
+        "event": event,
+    }
+    return _digest_covered(Context.ORDERED_DASHBOARD_EVENT, covered)
 
 
 def _digest_covered(context: Context, covered: Mapping[object, object]) -> str:

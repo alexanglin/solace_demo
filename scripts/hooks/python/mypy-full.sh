@@ -48,7 +48,7 @@ if [ "$root_active" = true ]; then
 $(quality_root_python_paths)
 LISTING
 	if [ "$#" -gt 0 ]; then
-		uv run --frozen mypy --strict "$@" || status=1
+		"$script_directory/mypy-root.sh" "$@" || status=1
 	fi
 fi
 

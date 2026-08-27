@@ -34,12 +34,21 @@ command -v uv >/dev/null 2>&1 || {
 	printf 'MISSING: agent-mesh/tests is required by the Agent Mesh project\n' >&2
 	exit 1
 }
+[ -d agent-mesh/aerial_rescue_event_mesh_gateway ] || {
+	printf 'MISSING: agent-mesh/aerial_rescue_event_mesh_gateway is required by the Agent Mesh project\n' >&2
+	exit 1
+}
+[ -d agent-mesh/aerial_rescue_runtime_compat ] || {
+	printf 'MISSING: agent-mesh/aerial_rescue_runtime_compat is required by the Agent Mesh project\n' >&2
+	exit 1
+}
 
 cd agent-mesh
 exec uv run --frozen pytest \
 	-m 'not broker and not ollama and not paid and not docker and not net' \
 	-q --no-header \
 	--cov=tools.agent_mesh_config_validator \
+	--cov=aerial_rescue_event_mesh_gateway \
 	--cov-branch \
 	--cov-report=term-missing \
 	--cov-fail-under=100

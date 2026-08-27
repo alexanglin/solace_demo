@@ -12,13 +12,18 @@
 #   secrets/broker-admin-password   32 random bytes, hexadecimal
 #   secrets/postgres-password       32 random bytes, hexadecimal
 #   secrets/semp-discovery-password 32 random bytes, hexadecimal
+#   secrets/semp-monitor-password   32 random bytes, hexadecimal; operator-provisioned SEMP
 #   secrets/session-secret-key      32 random bytes, hexadecimal -- the Web UI session key
-#   secrets/broker-<role>-password  one per broker authorization role, same form
+#   secrets/broker-<role>-password  one per enabled messaging role, same form
+#   secrets/scenario-control-bearer private scenario HTTP credential, same form
+#   secrets/fleet-control-bearer    private fleet HTTP credential, same form
 #   secrets/.env.roles              the same role credentials as Compose variables
 #
-# The ten role names below are the second home of the Principal enum in packages/domain
-# (docs/adr/0061 and docs/adr/0111). A gate test
-# in tools/quality_gate_tests/deploy/ holds the two equal, so neither can drift alone.
+# The eight role names below are the enabled messaging subset of the Principal enum in
+# packages/domain (docs/adr/0121 and docs/adr/0126). The SEMP-only Event Management Agent
+# identity is separate, and the retired discovery SMF role receives no credential or
+# environment pair. Scenario control is brokerless and also receives none.
+# A gate test in tools/quality_gate_tests/deploy/ holds the subset equal.
 #
 # Every private file is created 0600. Existing material is left alone unless --rotate is
 # given. Nothing here prints a key or a password: only paths, fingerprints, and the
@@ -53,9 +58,11 @@ certs="$deploy_dir/certs"
 secrets="$deploy_dir/secrets"
 validity_days=365
 
-broker_roles="fleet-simulator command-gateway dashboard-api scenario-service evidence-service recorder
-event-mesh-gateway event-mesh-tool agent-mesh-agent discovery"
-passwords="broker-admin-password postgres-password semp-discovery-password session-secret-key"
+broker_roles="fleet-simulator command-gateway dashboard-api evidence-service recorder
+event-mesh-gateway event-mesh-tool agent-mesh-agent"
+private_http_bearers="scenario-control-bearer fleet-control-bearer"
+passwords="broker-admin-password postgres-password semp-discovery-password semp-monitor-password session-secret-key
+$private_http_bearers"
 for role in $broker_roles; do
 	passwords="$passwords broker-$role-password"
 done
@@ -67,14 +74,15 @@ report() {
 	openssl x509 -noout -fingerprint -sha256 -in "$secrets/broker-server.crt"
 	openssl x509 -noout -text -in "$secrets/broker-server.crt" |
 		grep -A1 'Subject Alternative Name' | tail -n 1 | sed 's/^[[:space:]]*//'
-	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery}-password\n' "$secrets"
+	printf 'passwords:  %s/{broker-admin,postgres,semp-discovery,semp-monitor}-password\n' "$secrets"
 	printf 'session:    %s/session-secret-key\n' "$secrets"
+	printf 'controls:   %s/{scenario,fleet}-control-bearer\n' "$secrets"
 	printf 'roles:      %s/broker-{%s}-password\n' "$secrets" \
 		"$(printf '%s' "$broker_roles" | tr '\n ' ',,')"
 	printf 'compose:    %s/.env.roles\n' "$secrets"
 }
 
-# Compose reads the ten role identities from this file as a second --env-file, so no
+# Compose reads the enabled role identities from this file as a second --env-file, so no
 # password is ever hand-copied into .env. It is derived from the password files above and
 # rewritten on every run, which keeps it correct after a rotation or a filled gap. The
 # name begins with .env so .gitignore's `.env.*` rule and the no-env-files hook both cover

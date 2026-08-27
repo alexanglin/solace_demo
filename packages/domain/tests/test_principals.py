@@ -1,12 +1,12 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The ten roles and their grants are the decision in
-``docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md``. The threat
+The nine roles and their grants are the effective decisions through
+``docs/adr/0158-keep-scenario-control-brokerless.md``. The threat
 model calls this matrix load-bearing, so the tests here assert it from the family's side as
 well as the role's: the publisher set of every family is named, and every role is put to
 the drone-command topic so that catalogue cases B17, B18, and B19 are checked against all
-ten roles rather than against the three the catalogue happens to name. The key space is
-ten roles by two directions by fifteen families, which is small enough to enumerate
+nine roles rather than against the three the catalogue happens to name. The key space is
+nine roles by two directions by fifteen families, which is small enough to enumerate
 exhaustively; nothing here samples.
 """
 
@@ -33,6 +33,7 @@ from aerial_rescue_domain.principals import (
 )
 
 UNLISTED = (
+    "scenario-service",
     "scenario_service",
     "Command-Gateway",
     "command_gateway",
@@ -56,7 +57,7 @@ PUBLISHER_NAMES = {
     "AGENT_RESPONSE": frozenset({"EVENT_MESH_GATEWAY"}),
     "EVIDENCE_DECISION": frozenset({"EVIDENCE_SERVICE"}),
     "AUDIT": frozenset({"COMMAND_GATEWAY", "EVIDENCE_SERVICE"}),
-    "MISSION_EVENT": frozenset({"SCENARIO_SERVICE"}),
+    "MISSION_EVENT": frozenset({"DASHBOARD_API"}),
     "SECTOR_EVENT": frozenset({"FLEET_SIMULATOR"}),
 }
 
@@ -112,13 +113,12 @@ def _subscribers_of(family: Family) -> frozenset[Principal]:
 
 
 class PrincipalTests(unittest.TestCase):
-    def test_the_roles_are_the_ten_documented_names(self) -> None:
+    def test_the_roles_are_the_nine_documented_names(self) -> None:
         # Arrange
         expected = {
             "fleet-simulator",
             "command-gateway",
             "dashboard-api",
-            "scenario-service",
             "evidence-service",
             "recorder",
             "event-mesh-gateway",
@@ -175,8 +175,7 @@ class GrantTests(unittest.TestCase):
         expected = {
             "FLEET_SIMULATOR": (4, 1),
             "COMMAND_GATEWAY": (5, 5),
-            "DASHBOARD_API": (2, 9),
-            "SCENARIO_SERVICE": (1, 0),
+            "DASHBOARD_API": (3, 9),
             "EVIDENCE_SERVICE": (2, 2),
             "RECORDER": (0, 13),
             "EVENT_MESH_GATEWAY": (1, 1),
@@ -238,7 +237,22 @@ class GrantTests(unittest.TestCase):
     ) -> None:
         # Arrange
         expected = {
-            "SCENARIO_SERVICE": (frozenset({"MISSION_EVENT"}), frozenset()),
+            "DASHBOARD_API": (
+                frozenset({"OPERATOR_COMMAND", "OPERATOR_APPROVAL", "MISSION_EVENT"}),
+                frozenset(
+                    {
+                        "DRONE_TELEMETRY",
+                        "DRONE_EVENT",
+                        "DRONE_COMMAND",
+                        "DRONE_COMMAND_RESULT",
+                        "GATEWAY_RECORD",
+                        "AGENT_PROPOSAL",
+                        "AGENT_RESPONSE",
+                        "EVIDENCE_DECISION",
+                        "AUDIT",
+                    }
+                ),
+            ),
             "FLEET_SIMULATOR": (
                 frozenset(
                     {
@@ -301,7 +315,7 @@ class GrantTests(unittest.TestCase):
         # Assert
         self.assertEqual(frozenset({Family.GATEWAY_REQUEST}), published)
 
-    def test_b19_the_recorder_publishes_nothing_and_the_dashboard_only_operator_families(
+    def test_b19_the_recorder_publishes_nothing_and_the_dashboard_only_owned_families(
         self,
     ) -> None:
         # Arrange
@@ -314,7 +328,9 @@ class GrantTests(unittest.TestCase):
         self.assertEqual(
             (
                 frozenset(),
-                frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
+                frozenset(
+                    {Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL, Family.MISSION_EVENT}
+                ),
             ),
             published,
         )
@@ -403,7 +419,7 @@ class GrantTests(unittest.TestCase):
 
 
 class AuthorizeTests(unittest.TestCase):
-    def test_lifecycle_families_allow_four_exact_role_directions_and_deny_the_other_36(
+    def test_lifecycle_families_allow_four_exact_role_directions_and_deny_the_other_32(
         self,
     ) -> None:
         # Arrange
@@ -412,7 +428,7 @@ class AuthorizeTests(unittest.TestCase):
             Family.__members__[name] for name in family_names if name in Family.__members__
         )
         expected_allowed = {
-            ("SCENARIO_SERVICE", "PUBLISH", "MISSION_EVENT"),
+            ("DASHBOARD_API", "PUBLISH", "MISSION_EVENT"),
             ("FLEET_SIMULATOR", "PUBLISH", "SECTOR_EVENT"),
             ("RECORDER", "SUBSCRIBE", "MISSION_EVENT"),
             ("RECORDER", "SUBSCRIBE", "SECTOR_EVENT"),
@@ -436,7 +452,7 @@ class AuthorizeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            (expected_allowed, 36, 2),
+            (expected_allowed, 32, 2),
             (allowed, denied.count(PrincipalRefusal.DENIED), len(families)),
         )
 

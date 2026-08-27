@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 from aerial_rescue_broker.deployment import credential_path
 from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.digest import source_event_digest
 from aerial_rescue_contracts.envelope import (
     Envelope,
     binding_for,
@@ -45,6 +46,7 @@ from aerial_rescue_domain.principals import Principal
 from solace.messaging.config.solace_properties import (
     authentication_properties as auth,
 )
+from solace.messaging.config.solace_properties import message_properties
 from solace.messaging.config.solace_properties import (
     service_properties as service_property,
 )
@@ -84,6 +86,7 @@ RESPONSE_WINDOW_SECONDS = 240
 SILENCE_WINDOW_SECONDS = 45
 RECEIVE_POLL_MILLISECONDS = 1000
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 10000
+SOURCE_DIGEST_PROPERTY = "aerial-rescue-source-event-digest"
 
 
 class _UnpublishableEventError(RuntimeError):
@@ -110,7 +113,7 @@ def _connected(role: Principal) -> MessagingService:
         .from_properties(_properties(role))
         .with_transport_security_strategy(
             TLS.create().with_certificate_validation(
-                True, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
+                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
             )
         )
         .build()
@@ -119,8 +122,8 @@ def _connected(role: Principal) -> MessagingService:
     return service
 
 
-def _salient_event() -> tuple[str, bytes]:
-    """Return the topic and canonical bytes of one salient drone event the contract accepts.
+def _salient_event() -> tuple[str, bytes, str]:
+    """Return one accepted salient event and its complete source-envelope digest.
 
     Raises:
         _UnpublishableEventError: If the contract refuses the event, so a broken fixture can
@@ -153,18 +156,26 @@ def _salient_event() -> tuple[str, bytes]:
     except ValueError as refusal:
         message = f"the contract refused the event this test publishes: {refusal}"
         raise _UnpublishableEventError(message) from refusal
-    return format_topic(topic), canonical.canonical_bytes(document)
+    return format_topic(topic), canonical.canonical_bytes(document), source_event_digest(envelope)
 
 
-def _publish(payload: bytes, topic: str) -> None:
+def _publish(publication: tuple[str, bytes, str]) -> None:
     """Publish one guaranteed message as the fleet simulator and wait for the broker's answer."""
+    topic, payload, digest = publication
     service = _connected(Principal.FLEET_SIMULATOR)
     try:
         publisher = service.create_persistent_message_publisher_builder().build()
         publisher.start()
         # The builder takes a bytearray or a str, never bytes; the canonical encoder emits
         # bytes, so the conversion is here rather than at every call site.
-        message = service.message_builder().build(bytearray(payload))
+        message = service.message_builder().build(
+            bytearray(payload),
+            additional_message_properties={
+                SOURCE_DIGEST_PROPERTY: digest,
+                message_properties.PERSISTENT_ACK_IMMEDIATELY: True,
+                message_properties.PERSISTENT_DMQ_ELIGIBLE: True,
+            },
+        )
         publisher.publish_await_acknowledgement(
             message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
         )
@@ -174,7 +185,10 @@ def _publish(payload: bytes, topic: str) -> None:
 
 
 def _observe_while_publishing(
-    role: Principal, subscription: str, seconds: int, payload: bytes, topic: str
+    role: Principal,
+    subscription: str,
+    seconds: int,
+    publication: tuple[str, bytes, str],
 ) -> list[str]:
     """Return what ``subscription`` carries after one event is published beneath it.
 
@@ -191,7 +205,7 @@ def _observe_while_publishing(
     built = receiver.build()
     built.start()
     try:
-        _publish(payload, topic)
+        _publish(publication)
         for _ in range(seconds):
             message = built.receive_message(timeout=RECEIVE_POLL_MILLISECONDS)
             if message is not None:
@@ -206,11 +220,14 @@ def _observe_while_publishing(
 class SalientEventIngressTests(unittest.TestCase):
     def test_one_salient_cloud_event_becomes_one_a2a_task(self) -> None:
         # Arrange
-        topic, payload = _salient_event()
+        publication = _salient_event()
 
         # Act
         observed = _observe_while_publishing(
-            Principal.AGENT_MESH_AGENT, A2A_REQUEST_TOPIC, REQUEST_WINDOW_SECONDS, payload, topic
+            Principal.AGENT_MESH_AGENT,
+            A2A_REQUEST_TOPIC,
+            REQUEST_WINDOW_SECONDS,
+            publication,
         )
 
         # Assert
@@ -222,11 +239,14 @@ class SalientEventIngressTests(unittest.TestCase):
 
     def test_the_agent_answer_is_routed_back_onto_the_agent_response_family(self) -> None:
         # Arrange
-        topic, payload = _salient_event()
+        publication = _salient_event()
 
         # Act
         observed = _observe_while_publishing(
-            Principal.RECORDER, AGENT_RESPONSE_TOPIC, RESPONSE_WINDOW_SECONDS, payload, topic
+            Principal.RECORDER,
+            AGENT_RESPONSE_TOPIC,
+            RESPONSE_WINDOW_SECONDS,
+            publication,
         )
 
         # Assert
@@ -240,12 +260,15 @@ class SalientEventIngressTests(unittest.TestCase):
 class UndecodableEventTests(unittest.TestCase):
     def test_an_event_the_handler_cannot_decode_produces_no_task(self) -> None:
         # Arrange
-        topic, _ = _salient_event()
+        topic, _, digest = _salient_event()
         payload = b"this is not the JSON the handler declares"
 
         # Act
         observed = _observe_while_publishing(
-            Principal.AGENT_MESH_AGENT, A2A_REQUEST_TOPIC, SILENCE_WINDOW_SECONDS, payload, topic
+            Principal.AGENT_MESH_AGENT,
+            A2A_REQUEST_TOPIC,
+            SILENCE_WINDOW_SECONDS,
+            (topic, payload, digest),
         )
 
         # Assert

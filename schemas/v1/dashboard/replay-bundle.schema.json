@@ -9,6 +9,7 @@
     "scenarioId",
     "scenarioRevision",
     "initialState",
+    "latestEventDigest",
     "events",
     "integrity"
   ],
@@ -29,6 +30,16 @@
     "initialState": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
     },
+    "latestEventDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      ]
+    },
     "events": {
       "type": "array",
       "maxItems": 512,
@@ -39,5 +50,44 @@
     "integrity": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json"
     }
-  }
+  },
+  "anyOf": [
+    {
+      "type": "object",
+      "required": ["initialState", "latestEventDigest"],
+      "properties": {
+        "initialState": {
+          "type": "object",
+          "required": ["latestAuditOrdinal"],
+          "properties": {
+            "latestAuditOrdinal": {
+              "const": 0
+            }
+          }
+        },
+        "latestEventDigest": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["initialState", "latestEventDigest"],
+      "properties": {
+        "initialState": {
+          "type": "object",
+          "required": ["latestAuditOrdinal"],
+          "properties": {
+            "latestAuditOrdinal": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "latestEventDigest": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      }
+    }
+  ]
 }

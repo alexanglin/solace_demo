@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 
 import type { DashboardSourceInput, DashboardSourceScript } from "./dashboard-fixtures";
 
@@ -8,6 +8,15 @@ export interface DashboardTestHarness {
   sourceDisposals: number;
   sourceRevision: number;
   sourceScript: DashboardSourceScript | null;
+}
+
+export interface ObservedMutation {
+  readonly authorization: string | undefined;
+  readonly body: unknown;
+  readonly contentType: string | undefined;
+  readonly idempotencyKey: string | undefined;
+  readonly method: string;
+  readonly origin: string | undefined;
 }
 
 declare global {
@@ -42,6 +51,27 @@ export async function openDashboard(
   }, sourceScript);
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await waitForAppliedRevision(page, 1);
+}
+
+export function volatileDashboardMasks(page: Page): Locator[] {
+  return [
+    page.getByTestId("runtime-id"),
+    page.getByTestId("mission-id"),
+    page.getByTestId("mutation-outcome"),
+    page.locator("time"),
+  ];
+}
+
+export async function captureObservedMutation(route: Route): Promise<ObservedMutation> {
+  const request = route.request();
+  return {
+    authorization: (await request.headerValue("authorization")) ?? undefined,
+    body: request.postDataJSON() as unknown,
+    contentType: (await request.headerValue("content-type")) ?? undefined,
+    idempotencyKey: (await request.headerValue("idempotency-key")) ?? undefined,
+    method: request.method(),
+    origin: (await request.headerValue("origin")) ?? undefined,
+  };
 }
 
 export async function replaceDashboardFixture(

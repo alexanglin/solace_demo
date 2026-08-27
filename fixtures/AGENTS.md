@@ -32,9 +32,9 @@ editing it:
 | Explicit dashboard collection bounds | [ADR-0106](../docs/adr/0106-bound-dashboard-schema-strings-and-arrays-explicitly.md) |
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
-| Durable application processing and representation classes | [ADR-0114](../docs/adr/0114-define-durable-application-processing.md) |
-| Closed application and dashboard documents | [ADR-0116](../docs/adr/0116-close-the-application-data-plane-wire-documents.md) |
-| Dual Gateway Response representation | [ADR-0117](../docs/adr/0117-preserve-mission-scoped-gateway-response-records.md) |
+| Durable application processing and representation classes | [ADR-0146](../docs/adr/0146-define-durable-application-processing.md) |
+| Closed application and dashboard documents | [ADR-0148](../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Dual Gateway Response representation | [ADR-0149](../docs/adr/0149-preserve-mission-scoped-gateway-response-records.md) |
 
 An Accepted architecture decision record (ADR) governs if a fixture, manifest entry, schema,
 implementation, test, or document disagrees. Changing accepted shape, polarity, refusal behavior,
@@ -230,7 +230,7 @@ Adding an application event is not complete with one payload example. Its bindin
 composed event schema, projection row, reduced-state rule, accepted and rejected fixtures, manifest
 entries, and current language tests move together as required by the governing ADRs.
 
-The six ADR-0116 dashboard projections are timeline-only and non-droppable: operator command, operator
+The six ADR-0148 dashboard projections are timeline-only and non-droppable: operator command, operator
 approval, agent proposal, evidence decision, rescue-escalation drone command, and typed audit. Shared
 fixtures must preserve the projection rule that removes `missionId` from every payload and additionally
 removes `evidenceDecisionDigest` from evidence decisions. The direct Agent Response integration body has

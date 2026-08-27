@@ -25,6 +25,7 @@ on:
       - "scripts/hooks/deploy/**"
       - "apps/dashboard/**"
       - "tools/image_inventory.py"
+      - "tools/sbom_gate.py"
       - "tools/dependency_waiver_gate.py"
       - ".github/workflows/security.yml"
 
@@ -125,6 +126,13 @@ jobs:
 
       - name: Scan every pulled and built image
         run: scripts/security/scan-images.sh
+
+      # The documents are validated in the job workspace. Publishing package metadata as
+      # an external workflow artifact needs a separate authorization (docs/adr/0130).
+      - name: Generate and validate every image SBOM
+        env:
+          SBOM_DIRECTORY: ${{ runner.temp }}/aerial-rescue-sboms
+        run: scripts/security/generate-sboms.sh "$SBOM_DIRECTORY"
 
       # An advisory inside a pinned image is reported, not enforced; the blocking control is
       # that the pin is still the newest digest its tag carries (docs/adr/0055).

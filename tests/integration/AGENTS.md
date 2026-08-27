@@ -25,6 +25,7 @@ Read the owner of a fact before changing a probe or interpreting its result:
 | Least-privilege broker identities and topic grants | [ADR-0061](../../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md) |
 | Delivery guarantee for each topic family | [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md) |
 | Durable queue derivation, ownership, redelivery, and dead-lettering | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
+| One-shot broker restart and project-authority isolation | [ADR-0186](../../docs/adr/0186-delegate-one-broker-restart-without-project-authority.md) |
 
 Accepted ADRs govern if a probe, comment, older evidence record, or broker observation disagrees.
 These tests are executable evidence for bounded claims; they are not a second home for delivery
@@ -48,6 +49,13 @@ Keep module import, marker evaluation, and collection deterministic and offline.
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
 explicitly selected live test executes. Resource deselection happens after import and collection, so
 an import-time side effect could escape the blocking suite's resource filter.
+
+The application-data-plane proof receives only ADR-0186's two private FIFO paths and fixed request
+marker during its blocking CI invocation. It must not import a process-owning Docker boundary, spawn a
+process, inspect workflow identity, discover a Compose project, or accept Compose and environment-file
+paths. The owning shell controller alone selects and restarts the exact broker service. A missing,
+malformed, repeated, failed, or unhealthy exchange is a test failure, never a skip or a reason for the
+test to invoke Docker itself.
 
 Use the typed `packages/broker` facade for application behavior. The narrow native Solace outcome and
 SEMP-monitor boundaries already present in the guaranteed-delivery probe are black-box test seams, not
@@ -122,13 +130,13 @@ What each file adds to that shared prerequisite:
 
 Two files drain broker state. The guaranteed-delivery file automatically accepts and removes every
 message already present in each `FILLED_QUEUES` entry before a case and after the class, and its reject
-and failed-settlement cases add persistent entries to the dead-message queue. The command-dispatch file
-accepts and removes everything on its own filled queues after each class: the probe drone's queue, the
+and failed-settlement cases add persistent entries to the probe source queue's isolated DMQ. The
+command-dispatch file accepts and removes everything on its own filled queues after each class: the probe drone's queue, the
 `command-gateway` result queue, and the four collateral `dashboard-api` and `recorder` family queues
 that a command and a result are each copied to. Its unreadable-command case adds one persistent
-dead-message entry. Name those destructive and cumulative effects when requesting exact-file
-authorization. Run these probes serially, without xdist, against a dedicated, quiescent authorized
-local broker whose matching queues may be drained and whose dead-message queue may accumulate entries.
+entry to that probe source queue's isolated DMQ. Name those destructive and cumulative effects when
+requesting exact-file authorization. Run these probes serially, without xdist, against a dedicated, quiescent authorized
+local broker whose matching queues may be drained and whose isolated DMQs may accumulate entries.
 Their fixed identifiers, broad subscriptions, drains, and depth deltas are unsafe in parallel with
 another probe, publisher, or consumer.
 
@@ -217,9 +225,9 @@ accounting that keeps repeated runs interpretable:
   family queues. One command is copied to every matching queue; cleaning only the probe queue makes a
   later run depend on this one. Because the drain accepts pre-existing matching messages, an idle,
   exclusively authorized test broker is a correctness and data-preservation prerequisite.
-- Never bind, drain, or reset the dead-message queue. It deliberately has no owner or consumer, so its
-  depth accumulates across runs. Read it before an operation and assert the expected delta, never an
-  absolute starting value.
+- Never bind, drain, or reset a source queue's isolated DMQ. It deliberately has no owner or consumer,
+  so its depth accumulates across runs. Read the exact paired DMQ before an operation and assert the
+  expected delta, never an absolute starting value or the factory DMQ.
 - Read current queue depth through `aerial_rescue_broker.provisioning.message_count`, which counts the
   queue's own message collection. `spooledMsgCount` is cumulative and `msgSpoolUsage` measures bytes, so
   neither is a message depth. The member follows the broker's cursor to the end of the collection and
@@ -267,8 +275,8 @@ than the project's intention.
 - Keep the cleanup helper distinct from the reading helper. The unreadable-command case publishes bytes
   that are not an envelope on purpose, and those bytes reach the collateral command queues too, so a
   cleanup that decoded what it took would fail on the very message that case is about.
-- Read the dead-message queue's depth and assert the delta; never bind, drain, or reset it. The
-  guaranteed-delivery rule holds here unchanged.
+- Read the probe source queue's isolated DMQ depth and assert the delta; never bind, drain, or reset it.
+  The guaranteed-delivery rule holds here unchanged.
 - Keep the acknowledgement and the resolution distinct, and require each result to name both its command
   and the drone that answered. A count of results is not evidence that the published command was the one
   answered.
@@ -293,7 +301,8 @@ machine-state precondition -- and this guide does not restate it.
 
 - **Keep the assertion on completeness and the number in the record.** The probe asserts that every
   published command was handled, that no other intake outcome occurred, that every drone queue ended
-  empty, and that the dead-message queue did not move. It does not assert the ten-second target: the
+  empty, and that none of those source queues' isolated DMQs moved. It does not assert the ten-second
+  target: the
   target was derived rather than measured, and `release-evidence/AGENTS.md` puts parameter selection
   outside an evidence record. Adding that assertion is a change to what the repository claims, not a
   tightening of a test.

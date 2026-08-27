@@ -15,7 +15,9 @@ export type DashboardEvent =
   | OperatorApproval
   | AgentProposal
   | EvidenceDecision
+  | SalientObservation
   | DroneCommand
+  | CommandResult
   | GatewayResponse
   | AuditRecord;
 
@@ -262,23 +264,53 @@ export interface EvidenceDecision {
           | "human-dismissal";
       };
 }
+export interface SalientObservation {
+  kind: "salientObservation";
+  eventClass: "EVIDENCE";
+  mission: string;
+  time: string;
+  data: {
+    droneId: string;
+    observation: string;
+    latitudeMicrodegrees: number;
+    longitudeMicrodegrees: number;
+    detail: string;
+  };
+}
 export interface DroneCommand {
   kind: "droneCommand";
+  eventClass: "COMMAND";
+  mission: string;
+  time: string;
+  data:
+    | {
+        droneId: string;
+        commandId: string;
+        sectorId: string;
+      }
+    | {
+        droneId: string;
+        commandId: string;
+        approvalId: string;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        evidenceDecisionVersion: 1;
+        latitudeMicrodegrees: number;
+        longitudeMicrodegrees: number;
+      };
+}
+export interface CommandResult {
+  kind: "commandResult";
   eventClass: "COMMAND";
   mission: string;
   time: string;
   data: {
     droneId: string;
     commandId: string;
-    approvalId: string;
-    proposalId: string;
-    proposalDigest: string;
-    proposalVersion: 1;
-    evidenceDecisionId: string;
-    evidenceDecisionDigest: string;
-    evidenceDecisionVersion: 1;
-    latitudeMicrodegrees: number;
-    longitudeMicrodegrees: number;
+    outcome: "acknowledged" | "succeeded" | "failed";
   };
 }
 export interface GatewayResponse {

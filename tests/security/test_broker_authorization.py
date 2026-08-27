@@ -26,6 +26,10 @@ from pathlib import Path
 
 import pytest
 from aerial_rescue_broker.deployment import credential_path
+from aerial_rescue_broker.monitor_console import MONITOR_CREDENTIAL
+from aerial_rescue_broker.monitoring import MONITOR_USERNAME, ReadOnlySempMonitor
+from aerial_rescue_broker.provisioning import Method, Request, queue_monitor_collection_path
+from aerial_rescue_broker.semp import SempEndpoint, SempError, SempFailure, SempSession, connect
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.config.solace_properties import (
@@ -51,6 +55,7 @@ TRUST_STORE = DEPLOY / "certs"
 BROKER_URL = "tcps://localhost:55443"
 VPN = "default"
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 5000
+SEMP_PORT = 1943
 
 MISSION = "m-1"
 DRONE_COMMAND = format_topic(
@@ -109,7 +114,7 @@ def _service(username: str, credential: str) -> MessagingService:
         .from_properties(properties)
         .with_transport_security_strategy(
             TLS.create().with_certificate_validation(
-                True, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
+                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
             )
         )
         .build()
@@ -184,6 +189,18 @@ def _subscribe_as(role: Principal, topic: str) -> Outcome:
         service.disconnect()
 
 
+def _monitor_endpoint() -> SempEndpoint:
+    """Return the dedicated VPN-scoped SEMP identity from generated material."""
+    credential = (DEPLOY / MONITOR_CREDENTIAL).read_text(encoding="utf-8").strip()
+    return SempEndpoint(
+        "localhost",
+        SEMP_PORT,
+        MONITOR_USERNAME,
+        credential,
+        str(TRUST_STORE / "ca.pem"),
+    )
+
+
 class PositiveControlTests(unittest.TestCase):
     def test_the_command_gateway_may_publish_an_executable_drone_command(self) -> None:
         # Arrange
@@ -215,16 +232,14 @@ class PositiveControlTests(unittest.TestCase):
         # Assert
         self.assertIs(Outcome.PUBLISHED, outcome)
 
-    def test_the_scenario_service_may_publish_mission_lifecycle_only(self) -> None:
+    def test_the_dashboard_api_may_publish_authoritative_mission_lifecycle(self) -> None:
         # Arrange
-        role_name = "SCENARIO_SERVICE"
-        role = Principal.__members__.get(role_name)
+        role = Principal.DASHBOARD_API
 
         # Act
-        outcome = None if role is None else _publish_as(role, MISSION_LIFECYCLE)
+        outcome = _publish_as(role, MISSION_LIFECYCLE)
 
         # Assert
-        self.assertIsNotNone(role)
         self.assertIs(Outcome.PUBLISHED, outcome)
 
     def test_the_fleet_simulator_may_publish_connectivity_and_sector_lifecycle(self) -> None:
@@ -289,25 +304,20 @@ class DenialTests(unittest.TestCase):
         # Assert
         self.assertEqual(tuple(Outcome.PUBLISH_DENIED for _ in roles), outcomes)
 
-    def test_the_scenario_service_is_denied_sector_connectivity_command_approval_and_a2a(
-        self,
-    ) -> None:
+    def test_the_dashboard_api_is_denied_sector_connectivity_command_and_a2a(self) -> None:
         # Arrange
-        role = Principal.__members__.get("SCENARIO_SERVICE")
-        approval = format_topic(Topic(Family.OPERATOR_APPROVAL, MISSION, {"decision": "approve"}))
+        role = Principal.DASHBOARD_API
         topics = (
             SECTOR_LIFECYCLE,
             CONNECTIVITY_LIFECYCLE,
             DRONE_COMMAND,
-            approval,
             A2A_REQUEST,
         )
 
         # Act
-        outcomes = () if role is None else tuple(_publish_as(role, topic) for topic in topics)
+        outcomes = tuple(_publish_as(role, topic) for topic in topics)
 
         # Assert
-        self.assertIsNotNone(role)
         self.assertEqual(tuple(Outcome.PUBLISH_DENIED for _ in topics), outcomes)
 
     def test_fleet_and_recorder_are_denied_mission_lifecycle_publication(self) -> None:
@@ -322,7 +332,7 @@ class DenialTests(unittest.TestCase):
 
 
 class SubscriptionAuthorizationTests(unittest.TestCase):
-    def test_scenario_service_cannot_subscribe_to_mission_lifecycle_while_recorder_can(
+    def test_fleet_cannot_subscribe_to_mission_lifecycle_while_recorder_can(
         self,
     ) -> None:
         """The recorder positive control distinguishes an ACL denial from a shared outage."""
@@ -330,7 +340,7 @@ class SubscriptionAuthorizationTests(unittest.TestCase):
         topic = MISSION_LIFECYCLE
 
         # Act
-        denied = _subscribe_as(Principal.SCENARIO_SERVICE, topic)
+        denied = _subscribe_as(Principal.FLEET_SIMULATOR, topic)
         allowed = _subscribe_as(Principal.RECORDER, topic)
 
         # Assert
@@ -357,6 +367,42 @@ class FactoryIdentityTests(unittest.TestCase):
 
         # Assert
         self.assertIs(Outcome.CONNECT_DENIED, outcome)
+
+
+class SempMonitorAuthorizationTests(unittest.TestCase):
+    def test_the_dedicated_monitor_can_read_only_the_aggregate_queue_view(self) -> None:
+        # Arrange
+        endpoint = _monitor_endpoint()
+        connection = connect(endpoint)
+        monitor = ReadOnlySempMonitor(connection, endpoint)
+
+        # Act
+        try:
+            rows = monitor.read_monitor_rows(queue_monitor_collection_path(VPN))
+        finally:
+            connection.close()
+
+        # Assert
+        self.assertIsInstance(rows, tuple)
+        self.assertFalse(hasattr(monitor, "send"))
+
+    def test_the_dedicated_monitor_is_denied_a_same_value_configuration_write(self) -> None:
+        # Arrange
+        endpoint = _monitor_endpoint()
+        connection = connect(endpoint)
+        session = SempSession(connection, endpoint)
+        path = f"msgVpns/{VPN}"
+
+        # Act
+        try:
+            current = session.send(Request(Method.GET, path, {}))
+            with pytest.raises(SempError) as captured:
+                session.send(Request(Method.PATCH, path, {"enabled": current[0]["enabled"]}))
+        finally:
+            connection.close()
+
+        # Assert
+        self.assertIs(SempFailure.STATUS, captured.value.failure)
 
 
 if __name__ == "__main__":

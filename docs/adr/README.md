@@ -130,14 +130,50 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0110](0110-scope-the-duplication-gate-to-authored-source.md) | Scope the duplication gate to authored source | Accepted |
 | [0111](0111-broker-dashboard-lifecycle-sources.md) | Broker dashboard lifecycle sources as schema-bound application events | Accepted |
 | [0112](0112-witness-ordered-dashboard-events-outside-reduced-state.md) | Witness ordered dashboard events outside reduced state and correct v1 anchors | Accepted |
-| [0113](0113-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
-| [0114](0114-define-durable-application-processing.md) | Define durable application processing | Accepted |
-| [0115](0115-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
-| [0116](0116-close-the-application-data-plane-wire-documents.md) | Close the application data-plane wire documents | Accepted |
-| [0117](0117-preserve-mission-scoped-gateway-response-records.md) | Preserve mission-scoped gateway response records | Superseded by ADR-0118 |
-| [0118](0118-separate-gateway-records-from-private-replies.md) | Separate mission gateway records from private replies | Accepted |
-| [0119](0119-require-migrated-sqlalchemy-durable-tables.md) | Require migrated SQLAlchemy durable tables | Accepted |
-| [0120](0120-bind-proposals-to-the-complete-source-event.md) | Bind proposals to the complete source event | Accepted |
+| [0145](0145-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
+| [0146](0146-define-durable-application-processing.md) | Define durable application processing | Accepted |
+| [0147](0147-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
+| [0148](0148-close-the-application-data-plane-wire-documents.md) | Close the application data-plane wire documents | Accepted |
+| [0149](0149-preserve-mission-scoped-gateway-response-records.md) | Preserve mission-scoped gateway response records | Superseded by ADR-0150 |
+| [0150](0150-separate-gateway-records-from-private-replies.md) | Separate mission gateway records from private replies | Accepted |
+| [0151](0151-require-migrated-sqlalchemy-durable-tables.md) | Require migrated SQLAlchemy durable tables | Accepted |
+| [0152](0152-bind-proposals-to-the-complete-source-event.md) | Bind proposals to the complete source event | Accepted |
+| [0153](0153-own-bounded-least-privilege-pubsub-clients.md) | Own bounded least-privilege PubSub+ clients | Accepted |
+| [0154](0154-isolate-dead-messages-and-monitor-queues-without-enumeration.md) | Isolate dead messages and monitor queues without enumeration | Superseded by ADR-0157 |
+| [0155](0155-propagate-solace-trace-context-and-scope-topology-practices.md) | Propagate Solace trace context and scope topology practices | Superseded by ADR-0156 |
+| [0156](0156-pin-solace-native-trace-propagation.md) | Pin Solace native trace propagation and bind it by TraceID | Accepted |
+| [0157](0157-pace-and-coalesce-read-only-semp-monitoring.md) | Pace and coalesce read-only SEMP monitoring | Accepted |
+| [0158](0158-keep-scenario-control-brokerless.md) | Keep scenario control brokerless | Accepted |
+| [0159](0159-gate-applicable-solace-best-practices.md) | Gate every applicable Solace best practice | Accepted |
+| [0160](0160-bound-public-dashboard-mutation-bodies.md) | Bound public dashboard mutation bodies before canonical decoding | Accepted |
+| [0161](0161-give-the-broker-a-twenty-minute-clean-stop.md) | Give the broker twenty minutes to stop cleanly | Accepted |
+| [0162](0162-generate-and-validate-per-image-cyclonedx-sboms.md) | Generate and validate per-image CycloneDX SBOMs | Accepted |
+| [0163](0163-retain-ci-volumes-until-hosted-runner-disposal.md) | Retain integration volumes until hosted-runner disposal | Accepted |
+| [0164](0164-require-tls13-for-pubsub-clients.md) | Require TLS 1.3 for PubSub+ clients | Accepted |
+| [0165](0165-size-g1-bursts-to-the-complete-flow-set.md) | Size G-1 bursts to the complete Guaranteed flow set | Accepted |
+| [0166](0166-disable-unused-pubsub-protocol-services.md) | Disable unused PubSub+ protocol services | Accepted |
+| [0167](0167-qualify-production-broker-hosts-separately.md) | Qualify production broker hosts separately | Accepted |
+| [0168](0168-bind-application-identities-to-one-connection.md) | Bind application identities to one long-lived connection | Accepted |
+| [0169](0169-request-immediate-acks-for-confirmed-publications.md) | Request immediate ACKs for individually confirmed publications | Accepted |
+| [0170](0170-force-dmq-eligibility-at-the-publisher.md) | Force DMQ eligibility at the Guaranteed publisher | Accepted |
+| [0171](0171-close-dashboard-idempotency-kinds.md) | Close durable idempotency over every public dashboard mutation | Accepted |
+| [0172](0172-complete-the-protected-dashboard-operator-flow.md) | Complete the protected dashboard operator flow | Accepted |
+| [0173](0173-follow-the-retained-broker-event-log-without-runtime-authority.md) | Follow the retained broker event log without runtime authority | Accepted |
+| [0174](0174-recompute-evidence-digests-at-the-dashboard-boundary.md) | Recompute evidence digests at the dashboard boundary | Accepted |
+| [0175](0175-project-every-recorded-event-into-the-dashboard.md) | Project every recorded event into the ordered dashboard stream | Accepted |
+| [0176](0176-bound-dashboard-sse-clients-and-keepalives.md) | Bound dashboard SSE clients and keepalives | Accepted |
+| [0177](0177-harden-the-pinned-agent-mesh-broker-runtime.md) | Harden the pinned Agent Mesh broker runtime | Accepted |
+| [0178](0178-qualify-production-agent-mesh-separately.md) | Qualify production Agent Mesh separately | Accepted |
+| [0179](0179-make-the-official-agent-mesh-checklist-the-production-gate.md) | Make the official Agent Mesh checklist the production gate | Accepted |
+| [0180](0180-persist-direct-ingress-refusals-without-stopping-consumers.md) | Persist Direct ingress refusals without stopping consumers | Accepted |
+| [0181](0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) | Gate continuous SEMP monitoring on VPN-scoped operator provisioning | Accepted |
+| [0182](0182-bind-agent-responses-to-transport-authenticated-context.md) | Bind Agent Responses to transport-authenticated context | Accepted |
+| [0183](0183-bind-approval-authority-to-the-command-gateway-clock.md) | Bind approval authority to the command-gateway clock | Accepted |
+| [0184](0184-package-the-dashboard-and-gate-relay-startup-on-readiness.md) | Package the dashboard and gate relay startup on application readiness | Accepted |
+| [0185](0185-pause-active-fleet-runs-during-broker-recovery.md) | Pause active Fleet runs during broker recovery | Accepted |
+| [0186](0186-delegate-one-broker-restart-without-project-authority.md) | Delegate one broker restart without project authority | Accepted |
+| [0187](0187-map-mypy-modules-from-explicit-project-bases.md) | Map mypy modules from explicit project bases | Accepted |
+| [0188](0188-route-root-mypy-through-discovered-source-bases.md) | Route root mypy through discovered source bases | Accepted |
 
 ## Decisions still open
 

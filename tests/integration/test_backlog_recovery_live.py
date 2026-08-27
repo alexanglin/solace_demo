@@ -64,7 +64,11 @@ from aerial_rescue_broker.messaging import (
     open_fleet_session,
 )
 from aerial_rescue_broker.provisioning import message_count
-from aerial_rescue_broker.queues import DEAD_MESSAGE_QUEUE, drone_queue_name, family_queue_name
+from aerial_rescue_broker.queues import (
+    dead_message_queue_name,
+    drone_queue_name,
+    family_queue_name,
+)
 from aerial_rescue_broker.semp import SempEndpoint, SempSession, connect
 from aerial_rescue_contracts.canonical import canonical_bytes
 from aerial_rescue_contracts.envelope import Envelope, envelope_document, sequence_text
@@ -132,6 +136,7 @@ GATEWAY_SOURCE: Final = "urn:aerial-rescue:service:command-gateway"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
 
 DRONE_QUEUES: Final = tuple(drone_queue_name(drone) for drone in DRONE_IDS)
+DRONE_DEAD_MESSAGE_QUEUES: Final = tuple(dead_message_queue_name(queue) for queue in DRONE_QUEUES)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
@@ -459,7 +464,7 @@ class BacklogRecoveryLiveTests(unittest.TestCase):
     def test_a_spooled_backlog_drains_completely_once_a_consumer_binds(self) -> None:
         """One warm-up run and three samples, under the ADR-0084 instrument."""
         # Arrange
-        dead_before = _depth(DEAD_MESSAGE_QUEUE)
+        dead_before = tuple(_depth(queue) for queue in DRONE_DEAD_MESSAGE_QUEUES)
         for _ in range(WARM_UP_RUNS):
             _measure_once()
             _clear()
@@ -482,7 +487,12 @@ class BacklogRecoveryLiveTests(unittest.TestCase):
         print(f"\nbacklog drain seconds={seconds} ticks={ticks} handled={handled}")
         self.assertEqual(
             ([COMMANDS] * SAMPLE_RUNS, [0] * SAMPLE_RUNS, 0, dead_before),
-            (handled, other, drained, _depth(DEAD_MESSAGE_QUEUE)),
+            (
+                handled,
+                other,
+                drained,
+                tuple(_depth(queue) for queue in DRONE_DEAD_MESSAGE_QUEUES),
+            ),
         )
 
 

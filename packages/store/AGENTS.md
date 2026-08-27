@@ -6,11 +6,11 @@ These instructions apply to every file under `packages/store/`. Read the reposit
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the PostgreSQL repository and transaction boundary. Its schema history is four
-revisions long and has been applied to a real cluster one revision at a time, and above it sit a
-session, a transaction boundary, and four repositories: the audit log, the approval record, the
-idempotency claim, and the command outbox. No paid-call ledger has been built yet, and no service
-calls any of them.
+This member is the PostgreSQL repository and transaction boundary. Its schema history is nine
+revisions long and has been applied to a real cluster through revision 0004 one revision at a time.
+Above it sit the shared SQLAlchemy table metadata, a session and transaction boundary, and
+purpose-specific repositories for the original command transaction and the application data plane.
+No paid-call ledger has been built yet.
 
 Read the authority for each concern before changing it:
 
@@ -47,6 +47,11 @@ Read the authority for each concern before changing it:
 | The mechanism that consumes an approval exactly once | [ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) |
 | The idempotency claim, and what fails comparison rather than repeating | [ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md) |
 | Outbox states, the central bound, and what an overflow does | [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) |
+| Durable application processing and settlement order | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Complete Alembic and typed SQLAlchemy Core boundary | [ADR-0151](../../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Durable malformed-Guaranteed-ingress refusal | [ADR-0159](../../docs/adr/0159-gate-applicable-solace-best-practices.md) |
+| Closed dashboard idempotency kinds | [ADR-0171](../../docs/adr/0171-close-dashboard-idempotency-kinds.md) |
+| Gateway-owned approval clock authority | [ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md) |
 
 An Accepted architecture decision record (ADR) governs if code, schema, tests, deployment, or prose
 disagrees. A persistent data shape, transaction boundary, reset scope, migration policy, technology or
@@ -58,7 +63,7 @@ method.
 
 | Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | The package shell, the Python range, Tier 2, and the one workspace dependency |
+| `pyproject.toml` | The package shell, Python range, Tier 2, and declared contracts/domain dependencies |
 | `src/aerial_rescue_store/__init__.py` | `StoreError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_store/settings.py` | Where the cluster is, who connects, and the credential held apart from the data source name |
 | `src/aerial_rescue_store/bounds.py` | Every wait an engine may make, refusing a set whose arithmetic is wrong ([ADR-0090](../../docs/adr/0090-bound-the-lock-wait-below-the-statement-time.md)) |
@@ -66,9 +71,15 @@ method.
 | `src/aerial_rescue_store/session.py` | The session factory, the transaction boundary that commits on a clean exit and rolls back on every other, and the bounded explicit shutdown |
 | `src/aerial_rescue_store/audit.py` | The append-only audit log and the per-mission ordinal ([ADR-0088](../../docs/adr/0088-order-the-mission-timeline-by-a-per-mission-audit-ordinal.md)). It opens no transaction: the caller's is what makes the guarantee |
 | `src/aerial_rescue_store/approvals.py` | The durable approval record, and the one guarded path by which it becomes executed ([ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md)) |
+| `src/aerial_rescue_store/approval_bindings.py` | Immutable dashboard decision provenance and the conditional, once-only command-gateway clock-authority bind ([ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md)) |
 | `src/aerial_rescue_store/idempotency.py` | The idempotency claim, and what a repeat means, asked of `packages/domain` rather than branched on here ([ADR-0092](../../docs/adr/0092-claim-an-idempotency-key-with-one-conflicting-insert.md)) |
+| `src/aerial_rescue_store/pending_invocations.py` | Immutable transport-authenticated Agent Response context, with exact duplicate reuse and conflicting identity refusal ([ADR-0182](../../docs/adr/0182-bind-agent-responses-to-transport-authenticated-context.md)) |
 | `src/aerial_rescue_store/outbox.py` | Staging under the counted bound, and moving a record along one edge ([ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md)) |
+| `src/aerial_rescue_store/broker_refusals.py` | Append-only body-free malformed-ingress facts, exact duplicate reuse, and fail-closed identity conflict |
+| `src/aerial_rescue_store/database/schema.py` | The complete shared SQLAlchemy Core metadata for the Alembic-owned schema; repositories import these tables instead of declaring private copies |
+| `src/aerial_rescue_store/processing/` | Immutable source-event/evidence persistence, evidence/recorder/fleet/command-gateway units of work, producer high-water admission, durable command effects, and bounded per-drone critical publications |
 | `src/aerial_rescue_store/migration.py` | Where the schema history is, how a rendering run and a live run are each configured, and how it renders without a database. It still opens nothing: a live run's connection is supplied by the caller |
+| `src/aerial_rescue_store/migrations/console.py` | The bounded production root that resolves the generated credential, supplies SQLAlchemy's synchronous bridge to Alembic, applies `head`, and always disposes the pool |
 | `src/aerial_rescue_store/migrations/` | The Alembic tree: a hand-written `env.py` carrying no decision, the revision template, and `versions/v1/` |
 | `tests/` | Member-local unit and refusal evidence |
 
@@ -77,9 +88,15 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**The schema is real, it has a path, and ADR-0006's three repositories sit above it.** Four
-revisions apply to a PostgreSQL 18.6 cluster one at a time, each stamping itself and adding exactly
-its own tables, and each step back leaves the revision below it intact. Above them, `session.py`
+**The schema is real, it has a path, and ADR-0006's repositories sit above it.** Nine
+revisions render in exact order, each stamping itself and adding exactly its own tables, and each
+step back leaves the revision below it intact. Revision 0005 adds the application-processing tables
+selected by ADR-0151; revision 0006 adds the drone stream and immutable command-effect authority
+required by ADR-0146; revision 0007 adds pending Agent Mesh invocation context and immutable complete
+operator-decision bindings, including their nullable paired gateway authority; revision 0008 adds the bounded body-free broker-refusal ledger required by
+ADR-0159; revision 0009 closes the dashboard start/reset idempotency-kind constraint required by
+ADR-0171. Revisions 0005 through 0009 await the separately authorized live migration.
+Above them, `session.py`
 opens sessions and bounds one transaction; `audit.py` appends at an ordinal issued inside it;
 `approvals.py` consumes an approval under its own row lock; `idempotency.py` claims a key with one
 conflicting insert; and `outbox.py` stages a command under a counted bound.
@@ -93,9 +110,13 @@ three writes ADR-0006 requires to move together do: one transaction commits all 
 transaction abandoned after all three leaves none of them, with the approval consumable again
 afterwards.
 
-There is still no paid-call ledger, no package-owned readiness or health check, and **no workspace
-member declares this package as a dependency**, so nothing calls any of it. **This member's own suite
-still opens no connection**, and under
+There is still no paid-call ledger and no package-owned readiness or health check. The evidence service
+now has a concrete adapter over the store-owned transaction joining inbox, proposal/provenance reads,
+evidence, decision, audit, application outbox, and inbox completion; its broker/runtime composition and
+the command-gateway broker/runtime composition remain under adoption. The command gateway now has
+store-owned transaction factories for authorization, approval verification, results, normalization,
+bounded outbox recovery, and progress. **This member's own suite still opens no
+connection**, and under
 [ADR-0086](../../docs/adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md) it never
 will; every live claim above lives in `tests/integration/test_durable_store_live.py`, and what one
 authorized run of it observed is recorded in [durable-transaction-first-run.md](../../release-evidence/phase-3/durable-transaction-first-run.md).
@@ -116,20 +137,19 @@ Still absent, and each blocked by something named rather than by effort:
 | Not here | What it waits on |
 | --- | --- |
 | The paid-call ledger | The atomic pre-call cap mechanism §6 requires, which [ADR-0002](../../docs/adr/0002-paid-orchestration-under-enforced-budget-cap.md) needs and no record has selected. Concurrent callers must not pass one remaining-budget check independently |
-| A caller | The command gateway's half of the dispatch lifecycle. Every repository here is exercised only by its own suite and by the live probe |
 | Restart durability and interrupted-process rollback | A probe that kills a process. Every live case here ends its transaction deliberately; none has ever been interrupted |
-| Applying the history to the operator's own database | A runbook, and the separate authorization section 7 requires |
-| A reader for `RECONCILIATION_NEEDED` | Nothing named. [ADR-0093](../../docs/adr/0093-stage-the-command-outbox-under-a-counted-bound.md) creates the state so an ambiguous publication has somewhere to be recorded; what reconciles it is owed |
+| Applying the history to the operator's own database | The migration console and Compose ordering now exist, but the authorized live application and revision readback have not yet run |
 
 Never add a dummy model, placeholder migration, empty test directory, fake repository, or no-op
 connection just to make an absent capability look started. Each lands through red-green-refactor with
 its member-local tests and affected integration evidence.
 
-The PostgreSQL container in `deploy/compose.yaml` is runnable and **the operator's `POSTGRES_DB` still
-has no project schema**: the live probe migrates a database it creates and drops, and never that one.
-Applying the history to the persistent database is a separate operation, separately authorized, that no
-runbook yet describes. Static Compose and image tests prove configuration policy, not authentication,
-transaction, restart, or durability behavior.
+The PostgreSQL container in `deploy/compose.yaml` is runnable and **the operator's `POSTGRES_DB` has not
+yet been proven at revision 0009**: the existing live probe migrates a database it creates and drops,
+and never that one. The `schema-migration` one-shot is ordered before every application process and is
+the only production path that applies Alembic `head`; running it against the persistent database remains
+a separately authorized operation. Static Compose and image tests prove configuration policy, not
+authentication, transaction, restart, or durability behavior.
 
 ## 3. Keep policy, representation, orchestration, and persistence separate
 
@@ -149,8 +169,8 @@ persisted paid-call ledger. It does not become a second owner for the rules atta
 - Keep broker clients, acknowledgement, publisher confirmation, queues, reconnect, and vendor types in
   `packages/broker`. A database row marked for publication is not broker settlement.
 - Keep PostgreSQL image pins, mounts, credentials, container lifecycle, and volume recovery in `deploy/`.
-  This package will manage application schema through Alembic after the migration layout is decided, but
-  it does not start the container or administer database-level users, credentials, images, or volumes.
+  This package manages application schema through its Alembic history, but it does not start the
+  container or administer database-level users, credentials, images, or volumes.
 - Keep fixture format, replay export, and sanitization in their recorder, contracts, and fixture owners.
   The store exposes typed audit records; it does not invent a second replay format.
 
@@ -171,20 +191,26 @@ The command gateway coordinates approval consumption and obtains both clock read
 transaction is open. The domain evaluates binding and clock-refusal rules over those caller-supplied
 readings; the store provides durable concurrency and commit. Preserve the accepted sequence:
 
+Before consumption is possible, verified approval ingress conditionally binds the dashboard decision's
+canonical issue wall instant to the current command-gateway epoch and monotonic origin in the same
+transaction as inbox completion ([ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md)).
+The dashboard cannot populate that authority pair, a same-epoch repeat cannot extend it, and a different
+epoch cannot replace it.
+
 1. Open the transaction and load the durable proposal and approval under a concurrency mechanism selected
    by an accepted decision.
 2. While that transaction remains open, let the gateway obtain new readings from both clocks and invoke
    guarded domain consumption with the exact candidate action parameters.
-3. Persist the consumed approval returned by the domain, claim the durable idempotency key, and stage the
-   exact outbox command in the same transaction.
+3. Persist the consumed approval returned by the domain, claim the durable inbox and idempotency
+   identities, append the audit fact, stage its application event and exact outbox command, initialize
+   command progress, and record the duplicate result in the same transaction.
 4. Commit before the command is published or the related critical broker ingress is acknowledged.
 5. On a refusal, cancellation, or persistence failure observed before commit, roll back the entire set and
    expose a typed, redacted outcome. A hard process interruption relies on PostgreSQL rollback; prove the
    resulting state after restart.
 
-ADR-0006 fixes that atomic set: approval consumption, idempotency claim, and outbox staging. Audit records
-are durable under ADR-0003, but no accepted decision currently adds the audit append to this atomic set.
-Do not silently enlarge or shrink it.
+ADR-0146 strengthens ADR-0006's original three-effect set to the complete transaction above. Do not
+silently enlarge or shrink it.
 
 The durable concurrency mechanism is settled and measured.
 [ADR-0091](../../docs/adr/0091-consume-an-approval-under-its-own-row-lock.md) takes the approval row
@@ -209,8 +235,9 @@ Preserve the different repeat outcomes:
 - reusing an idempotency key with a different canonical request-body hash is a refusal.
 
 Producer sequence remains producer-scoped and never orders another producer or the mission timeline.
-Persistence ownership and any transaction coupling between a high-water mark and the state change it
-guards require a decision before implementation.
+ADR-0146 assigns the simulated-drone high-water and critical state/outbox coupling here. Keep the
+stream row locked across sequence or dual-capacity admission, and keep effect, receipt, and exact result
+staging in one caller-owned transaction.
 
 ## 5. Keep outbox state distinct from transport and command results
 
@@ -238,7 +265,8 @@ The central command outbox is settled by
 members are already bounded, and an overflow that writes nothing. Its continuity-breach audit record
 is the **caller's**, in its own transaction, because adding it to the staging transaction would
 enlarge ADR-0006's atomic set and would roll back with the refusal it records. The **per-drone edge**
-outbox keeps its open records-and-bytes row and is Phase 6's. The command send budget and the
+outbox now serializes admission on its stream row and measures both open records and exact topic,
+header, and body octets. The command send budget and the
 acknowledgement, backoff, and
 jitter values are settled ([ADR-0081](../../docs/adr/0081-give-command-dispatch-one-interval.md)).
 Add the governing parameter and decision for anything still open before implementation. Do not claim guaranteed delivery, no
@@ -252,8 +280,9 @@ loss, or backlog recovery until every required bound and failure test exists.
   database credential, raw authorization header, or tenant-specific connection value. The non-secret
   operator identity arrives only after the API has derived it from the current runtime's validated bearer.
 - Durable approval records survive a process restart, but an open approval does not remain consumable
-  across a gateway restart because the monotonic clock origin changes. Never rebase, repair, or extend its
-  clock reading in storage; require a new approval.
+  across a gateway restart because the authority epoch changes. Bind the original issue wall instant once
+  into the receiving gateway's monotonic origin as ADR-0183 specifies; never rebind, repair, or extend that
+  stored authority, and require a new approval after restart.
 - The current public domain transition surface can manufacture `EXECUTED` without guarded consumption.
   Do not expose a generic repository update that turns a caller-supplied state into dispatch authority,
   and do not claim the store closes catalogue case B24. That direct-write detection path remains to build.
@@ -338,8 +367,7 @@ Cover behavior at the right level when its owner exists:
   recovery;
 - transaction commit, rollback, cancellation, process interruption, and restart recovery;
 - real concurrent approval consumption, idempotency claims, body-hash mismatch, and prior-result lookup;
-- monotonic audit ordinals under concurrent writers and, if assigned here, producer-scoped high-water
-  marks;
+- monotonic audit ordinals and producer-scoped high-water marks under concurrent writers;
 - outbox staging, publish-after-commit, confirmation, ambiguous publication, separately persisted command
   progress, and later command results;
 - concurrent pre-call cap enforcement using the mechanism selected by the governing decision, including

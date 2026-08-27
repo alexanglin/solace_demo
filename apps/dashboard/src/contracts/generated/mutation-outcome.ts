@@ -79,6 +79,36 @@ export interface Refused {
  */
 export interface DashboardError {
   errorVersion: "dashboard-error/v1";
-  errorCode: string;
+  errorCode:
+    | "ASSET_NOT_FOUND"
+    | "AUTHENTICATION_FAILED"
+    | "BODY_TOO_LARGE"
+    | "CANCELLATION_NOT_ESTABLISHED"
+    | "CANONICAL_JSON_INVALID"
+    | "DEPENDENCY_UNAVAILABLE"
+    | "HOST_INVALID"
+    | "IDEMPOTENCY_CONFLICT"
+    | "IDEMPOTENCY_KEY_INVALID"
+    | "INTERNAL_FAILURE"
+    | "METHOD_NOT_ALLOWED"
+    | "MODE_INVALID"
+    | "MODE_UNAVAILABLE"
+    | "MUTATION_REFUSED"
+    | "NOT_READY"
+    | "NO_CURRENT_RUN"
+    | "OPERATION_CONFLICT"
+    | "ORIGIN_INVALID"
+    | "PATH_BODY_MISMATCH"
+    | "PATH_INVALID"
+    | "REPLAY_READ_ONLY"
+    | "REPLAY_SESSION_NOT_FOUND"
+    | "REQUEST_INVALID"
+    | "ROUTE_NOT_FOUND"
+    | "RUN_CONFLICT"
+    | "SCENARIO_NOT_FOUND"
+    | "SCENARIO_REVISION_MISMATCH"
+    | "SCHEMA_INVALID"
+    | "SSE_CAPACITY_EXCEEDED"
+    | "UNSUPPORTED_MEDIA_TYPE";
   message: string;
 }

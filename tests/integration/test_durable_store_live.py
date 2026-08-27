@@ -88,14 +88,30 @@ from aerial_rescue_store.idempotency import (
     record_result,
 )
 from aerial_rescue_store.migration import (
+    APPLICATION_OUTBOX_TABLE,
+    APPROVAL_BINDING_TABLE,
     APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
+    BROKER_INBOX_TABLE,
+    BROKER_REFUSAL_TABLE,
     COMMAND_OUTBOX_TABLE,
+    COMMAND_PROGRESS_TABLE,
+    DRONE_COMMAND_EFFECT_TABLE,
+    DRONE_COMMAND_RECEIPT_TABLE,
+    DRONE_STREAM_STATE_TABLE,
+    EVIDENCE_DECISION_TABLE,
+    EVIDENCE_ITEM_TABLE,
     HEAD_REVISION,
     IDEMPOTENCY_CLAIM_TABLE,
+    PENDING_INVOCATION_TABLE,
+    PROPOSAL_TABLE,
+    SOURCE_EVENT_TABLE,
+    SOURCE_EVIDENCE_ITEM_TABLE,
     live_config,
+    migration_config,
+    revisions,
 )
 from aerial_rescue_store.outbox import (
     MAXIMUM_UNCONFIRMED_RECORDS,
@@ -142,25 +158,56 @@ FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
 FOURTH_REVISION: Final = "0004_command_outbox"
+FIFTH_REVISION: Final = "0005_application_processing"
+SIXTH_REVISION: Final = "0006_durable_fleet_processing"
+SEVENTH_REVISION: Final = "0007_command_gateway_authority"
+EIGHTH_REVISION: Final = "0008_broker_refusal"
 
 _FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
 _SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
 _THIRD_TABLES: Final = (*_SECOND_TABLES, IDEMPOTENCY_CLAIM_TABLE)
 _FOURTH_TABLES: Final = (*_THIRD_TABLES, COMMAND_OUTBOX_TABLE)
+_FIFTH_TABLES: Final = (
+    *_FOURTH_TABLES,
+    BROKER_INBOX_TABLE,
+    SOURCE_EVENT_TABLE,
+    SOURCE_EVIDENCE_ITEM_TABLE,
+    APPLICATION_OUTBOX_TABLE,
+    PROPOSAL_TABLE,
+    EVIDENCE_ITEM_TABLE,
+    EVIDENCE_DECISION_TABLE,
+    COMMAND_PROGRESS_TABLE,
+    DRONE_COMMAND_RECEIPT_TABLE,
+)
+_SIXTH_TABLES: Final = (
+    *_FIFTH_TABLES,
+    DRONE_STREAM_STATE_TABLE,
+    DRONE_COMMAND_EFFECT_TABLE,
+)
+_SEVENTH_TABLES: Final = (
+    *_SIXTH_TABLES,
+    PENDING_INVOCATION_TABLE,
+    APPROVAL_BINDING_TABLE,
+)
+_EIGHTH_TABLES: Final = (*_SEVENTH_TABLES, BROKER_REFUSAL_TABLE)
 
 HISTORY: Final = (
     (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
     (SECOND_REVISION, tuple(sorted(_SECOND_TABLES))),
     (THIRD_REVISION, tuple(sorted(_THIRD_TABLES))),
     (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
+    (FIFTH_REVISION, tuple(sorted(_FIFTH_TABLES))),
+    (SIXTH_REVISION, tuple(sorted(_SIXTH_TABLES))),
+    (SEVENTH_REVISION, tuple(sorted(_SEVENTH_TABLES))),
+    (EIGHTH_REVISION, tuple(sorted(_EIGHTH_TABLES))),
 )
 """Every step and what the database holds after it. Literals, so a new revision is noticed here
 too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
 express neither a path nor a step back along one."""
 
-HEAD_REVISION_ID: Final = FOURTH_REVISION
-APPLIED_TABLES: Final = tuple(sorted(_FOURTH_TABLES))
-"""Every table a migrated database holds: the history's five, and Alembic's own."""
+HEAD_REVISION_ID: Final = EIGHTH_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_EIGHTH_TABLES))
+"""Every table a migrated database holds, including Alembic's own version table."""
 
 BOUNDS: Final = EngineBounds(
     pool_size=POOL_SIZE,
@@ -359,6 +406,16 @@ async def _stamped_revision(engine: AsyncEngine) -> str | None:
 
 
 class RunDatabaseNameTests(unittest.TestCase):
+    def test_the_live_walk_inventory_covers_the_complete_package_history(self) -> None:
+        # Arrange
+        expected = revisions(migration_config("postgresql+asyncpg://offline"))
+
+        # Act
+        walked = tuple(revision for revision, _tables in reversed(HISTORY))
+
+        # Assert
+        self.assertEqual(expected, walked)
+
     def test_a_run_database_is_named_for_the_run_that_creates_it(self) -> None:
         # Arrange
         discriminator = "0123456789abcdef"

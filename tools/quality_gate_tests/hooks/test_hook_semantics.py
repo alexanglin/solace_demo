@@ -23,7 +23,7 @@ minutes before the runner killed it -- so the stage reported no verdict at all, 
 times, and nobody could tell a wedge from a slow suite.
 """
 
-_TYPE_CHECK_ENTRY = re.compile(r"(?<![\w-])(mypy|tsc|typecheck)(?![\w-])")
+_TYPE_CHECK_ENTRY = re.compile(r"(?<![\w-])(mypy(?:-[\w-]+\.sh)?|tsc|typecheck)(?![\w-])")
 _HOOK_STAGE_ARGUMENT = re.compile(r"--hook-stage\s+([\w-]+)")
 
 COMMIT_STAGE_ONLY_BY_DESIGN = frozenset({"no-commit-to-branch", "gitleaks"})
@@ -202,6 +202,16 @@ class HookSemanticsTests(QualityGateTestCase):
         # Assert
         self.assert_hook_succeeded(result)
         self.assertIn("mypy --strict tools", arguments_file.read_text(encoding="utf-8"))
+
+    def test_root_type_hook_uses_the_workspace_source_root_wrapper(self) -> None:
+        # Arrange
+        expected = "scripts/hooks/python/mypy-root.sh"
+
+        # Act
+        entries = {identifier: entry for identifier, entry, _stages in _hook_definitions()}
+
+        # Assert
+        self.assertEqual(expected, entries["mypy-root"])
 
     def test_ci_uses_the_exact_runtime_versions(self) -> None:
         # Arrange

@@ -155,12 +155,14 @@ and review remain mandatory for those behaviors.
 
 ## Test classes
 
-- **Offline Agent Mesh configuration tests:** In the isolated Python 3.13 environment, the exact pinned
+- **Offline Agent Mesh owned-code tests:** In the isolated Python 3.13 environment, the exact pinned
   upstream configuration models, distribution-bound symbols, and Solace AI Connector merge primitive
   validate includes, environment references against `.env.example`, secret indirection, broker fields
   and transport, model policy, gateway settlement and routing policy, cross-file app-name uniqueness,
-  and Event Mesh Tool topic authority without starting a process or client. The validator module is
-  held at 100% statement and branch coverage by the Agent Mesh test stage
+  and Event Mesh Tool topic authority without starting a process or client. The same suite verifies the
+  owned Direct gateway-output extension against the pinned SDK seam, including bounded backpressure,
+  receipt truthfulness, refusal, and shutdown behavior. The validator and owned extension are held at
+  100% statement and branch coverage by the Agent Mesh test stage
   ([operating-parameters.md](operating-parameters.md)). The gate is inert before the first owned
   configuration and fails closed afterward.
 - **Unit tests:** Pure domain rules, state machines, retry logic, validation, prompt-result parsing, reducers, and UI components.
@@ -261,7 +263,11 @@ blocks unless an expiring waiver covers it; an advisory inside an image is print
 never blocks, because the project's only lever on a pinned third-party image is the digest it names.
 That lever has its own gate: `tools/image_pin_gate.py` fails when a pinned digest is no longer the
 newest its tag carries ([ADR-0048](adr/0048-scan-images-and-deploy-configuration-with-trivy.md),
-[ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)). zizmor 1.29.0 audits the
+[ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)). The same image inventory
+also drives one CycloneDX 1.6 SBOM per image. `tools/sbom_gate.py` binds each document to its exact
+image and the pinned Trivy producer before CI accepts it; CI keeps the files temporary unless external
+publication is separately authorized ([ADR-0162](adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md)).
+zizmor 1.29.0 audits the
 workflow and Dependabot files offline at the commit stage, and any finding fails
 ([ADR-0049](adr/0049-audit-workflows-with-zizmor-at-the-commit-stage.md)); CodeQL analyses the Python
 tree in continuous integration only

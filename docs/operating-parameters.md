@@ -20,7 +20,7 @@ integer arithmetic; display rounding never changes a verdict.
 | Python Tier 1 branch coverage | 100% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
 | Python Tier 2 statement coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
 | Python Tier 2 branch coverage | 95% per workspace member | `coverage.py` JSON evaluated by `tools/coverage_gate.py` |
-| Agent Mesh owned-tooling coverage | 100% statements and 100% branches for `agent-mesh/tools/agent_mesh_config_validator.py` | `pytest-cov` with `--cov-fail-under=100` in `scripts/hooks/agent-mesh-test-full.sh` |
+| Agent Mesh owned-code coverage | 100% statements and 100% branches for `agent-mesh/tools/agent_mesh_config_validator.py` and `agent-mesh/aerial_rescue_event_mesh_gateway/` | `pytest-cov` with both explicit source inventories and `--cov-fail-under=100` in `scripts/hooks/agent-mesh-test-full.sh` |
 | Python Tier 3 test inventory | At least 1 smoke test and 1 failure-path test per module | Tier inventory gate; Tier 3 fails until this inventory is executable |
 | TypeScript coverage | 95% each for statements, branches, functions, and lines per production package | Vitest V8 JSON summary plus exact source inventory, recomputed with integer arithmetic by `tools/typescript_coverage_gate.py`; manifest thresholds held by `tools/typescript_policy_gate.py` |
 | TypeScript type errors | Zero, whole project | `tsc --noEmit` through `scripts/hooks/dashboard/dashboard-typecheck-full.sh` |
@@ -46,7 +46,7 @@ integer arithmetic; display rounding never changes a verdict.
 | Image advisory | Reported at every severity, enforced at none; printed as `INFO:` on stdout ([ADR-0055](adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md)) | `tools/dependency_waiver_gate.py --source trivy --domain image:<repository>` over `trivy image` JSON |
 | Image pin freshness | Every pulled image's pinned digest equals the digest its tag carries now; zero stale pins permitted | `tools/image_pin_gate.py` over the report `scripts/security/check-image-pins.sh` resolves |
 | Blocking deploy misconfiguration | HIGH or CRITICAL check in `FAIL` status, unwaived; zero permitted | `scripts/hooks/deploy/trivy-config-full.sh` over `trivy config deploy` JSON in the `deploy-config` domain |
-| Image scan timeout | 20 minutes per image | `trivy image --timeout 20m` in `scripts/security/scan-images.sh` |
+| Image inspection timeout | 20 minutes per image | `trivy image --timeout 20m` in `scripts/security/scan-images.sh` and `scripts/security/generate-sboms.sh` |
 | Workflow audit findings | Zero at any severity, offline | zizmor 1.29.0 pre-commit hook over `.github/workflows/` and `.github/dependabot.yml` |
 | Continuous-integration job budget | At most 20 minutes per job, every job bounded. Measured 2026-08-20: the complete pre-push stage 2m01s, the image scan 2m58s, CodeQL 1m13s, the commit stage 1m15s | `tools/quality_gate_tests/hooks/test_hook_semantics.py` over every `.github/workflows/*.yml` job |
 | Security re-scan cadence | Daily at 06:17 UTC, plus dispatch, every push to `main`, and pull requests touching the audited inputs | `.github/workflows/security.yml` |
@@ -136,14 +136,13 @@ Use a versioned acceptance workload so performance and delivery claims are repro
 | Safety | Zero authorized actions across all approval-bypass attempts |
 | Soak | 30 minutes with no unbounded process, queue, or SSE-client memory growth |
 
-The prepared wilderness dashboard workload adds two Phase 3 acceptance targets. They are planned, not
-measured evidence; R8 must update their status only after the committed scenario and fleet runtime produce
-the result.
+The prepared wilderness dashboard workload adds two Phase 3 acceptance targets. The catalog and fleet
+runtime that can produce them are implemented, but no complete shared-stack run has measured them.
 
 | Prepared dashboard measure | Acceptance target | Instrument and current status |
 | --- | --- | --- |
-| Scenario execution | Exactly 14 ticks | The R8 fleet-control integration test reads the completed-tick count for the committed scenario; not yet implemented or measured |
-| Fleet telemetry publication | Exactly 280 publications: 20 simulated members over 14 ticks | The R8 fleet publisher counter is asserted independently from best-effort recorder receipt; not yet implemented or measured |
+| Scenario execution | Exactly 14 ticks | The fleet-control runtime reports completed ticks; the committed-scenario shared-stack assertion remains unmeasured |
+| Fleet telemetry publication | Exactly 280 publications: 20 simulated members over 14 ticks | The fleet runtime reports Direct publication count independently from best-effort recorder receipt; the complete workload remains unmeasured |
 
 The fleet-telemetry rate is the one row with a partial instrument. The fleet simulator's tick loop
 keeps the interval its scenario declares, measured from the start of each tick, and tallies every
@@ -163,39 +162,39 @@ measurement; it does not move the target.
 The file contract is fixed by
 [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) and described in
 [CONTRACTS.md](CONTRACTS.md#scenario-catalog-files). Schema-expressible bounds are held by the scenario
-schemas and root contract tests. Byte, nesting, path, and raw-decoder bounds become executable at the R2
-loader boundary and are not yet runtime evidence.
+schemas and root contract tests. Byte, nesting, path, and raw-decoder bounds are executable at the R2
+loader boundary. They remain deterministic file evidence rather than live process evidence.
 
 | Parameter | Value | Instrument and current status |
 | --- | --- | --- |
-| Production scenario artifacts | One catalog at `scenarios/catalog.v1.json` and one revision-one definition at `scenarios/v1/wilderness-missing-person.r1.json` | R2 loader inventory and digest tests; production files are not yet committed |
-| Catalog and definition size | At most 256 KiB each | R2 raw-byte loader boundary test; not yet implemented |
-| Document nesting | At most 16 nested containers | R2 raw-document depth test before model construction; not yet implemented |
+| Production scenario artifacts | One catalog at `scenarios/catalog.v1.json` and one revision-one definition at `scenarios/v1/wilderness-missing-person.r1.json` | committed-catalog inventory and digest test through `FilesystemScenarioCatalog` |
+| Catalog and definition size | At most 256 KiB each | raw-byte loader boundary and oversized-file tests |
+| Document nesting | At most 16 nested containers | raw-document depth test before model construction |
 | Catalog entries | At most 20 | `catalog.schema.json` and root schema contract tests |
 | Declared members per definition | At most 64 | `definition.schema.json` and root schema contract tests |
 | Heartbeat-loss ordinals per definition | At most 4,096 | `definition.schema.json` and root schema contract tests |
-| Definition integrity | SHA-256 of the selected definition bytes, rendered as 64 lowercase hexadecimal characters | R2 catalog digest and file-replacement tests; not yet implemented |
-| Prepared declared roster | Exactly 23 members: 20 simulated and 3 declared-only | R2 committed-definition and lossless-projection tests; not yet implemented. The generic schema separately caps definitions at 64 members |
-| Prepared sector geometry | Exactly 20 sector polygons; each polygon has at most 256 integer-microdegree vertices | R2 committed-definition tests; not yet implemented. The generic schema separately caps definitions at 20 sectors and each polygon at 256 vertices |
-| Prepared tick interval | 1,000 ms | Committed definition in R2 and fleet-control projection test; not yet runtime evidence |
-| Prepared sweep requirement | 12 ticks | Committed definition in R2 and fleet-control projection test; not yet runtime evidence |
-| Prepared heartbeat loss | `drone-sim-07` is absent on tick ordinals 2 through 7 inclusive | Committed definition in R2 plus loader and R8 transition tests; not yet runtime evidence |
+| Definition integrity | SHA-256 of the selected definition bytes, rendered as 64 lowercase hexadecimal characters | catalog digest, file-replacement, and committed-definition tests |
+| Prepared declared roster | Exactly 23 members: 20 simulated and 3 declared-only | committed-definition and lossless-projection tests. The generic schema separately caps definitions at 64 members |
+| Prepared sector geometry | Exactly 20 sector polygons; each polygon has at most 256 integer-microdegree vertices | Committed-definition and lossless-projection tests. The generic schema separately caps definitions at 20 sectors and each polygon at 256 vertices |
+| Prepared tick interval | 1,000 ms | Committed definition and fleet-control projection tests; not yet live runtime evidence |
+| Prepared sweep requirement | 12 ticks | Committed definition and fleet-control projection tests; not yet live runtime evidence |
+| Prepared heartbeat loss | `drone-sim-07` is absent on tick ordinals 2 through 7 inclusive | Committed definition, loader, and deterministic fleet-fold tests; not yet live runtime evidence |
 
 ## Private run control
 
 The two authenticated private HTTP hops and their refusal order are fixed by
 [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) and described in
-[CONTRACTS.md](CONTRACTS.md#private-run-control-http). The schemas instrument representation now; R8
-must add the server/client timing, authentication, reconciliation, and cancellation evidence.
+[CONTRACTS.md](CONTRACTS.md#private-run-control-http). Deterministic server/client tests cover admission,
+timing, authentication, reconciliation, and cancellation; the container-network path remains unmeasured.
 
 | Parameter | Value | Instrument and current status |
 | --- | --- | --- |
-| Private request-body size | At most 256 KiB before decoding | R8 scenario/fleet HTTP boundary tests; not yet implemented |
-| Private-hop bearer entropy | 256 independent random bits per hop | R9 secret-generation and Compose-policy tests; not yet implemented |
-| Connection establishment timeout | 1 s per private call | R8 injected HTTPX timeout and boundary tests; not yet implemented |
-| Start or status response timeout | 5 s per call | R8 typed-client timeout tests; not yet implemented |
-| Reset cancellation budget | One shared 15 s monotonic budget from the dashboard operation through the scenario-to-fleet call | R5/R8 fake-clock and process-integration tests; not yet implemented |
-| Private listener host publications | Zero for ports 8081 and 8082 | R9 Compose-policy and exact-service-closure tests; not yet implemented |
+| Private request-body size | At most 256 KiB before decoding | Scenario/fleet raw-body boundary tests |
+| Private-hop bearer entropy | 256 independent random bits per hop | Secret-generation and Compose-policy tests; live secret readback remains pending |
+| Connection establishment timeout | 1 s per private call | Injected HTTPX settings and timeout tests |
+| Start or status response timeout | 5 s per call | Typed-client settings and timeout tests |
+| Reset cancellation budget | One shared 15 s monotonic budget from the dashboard operation through the scenario-to-fleet call | Dashboard/scenario fake-clock cancellation tests; container-process evidence remains pending |
+| Private listener host publications | Zero for ports 8081 and 8082 | Compose-policy and exact-service-closure tests; container port readback remains pending |
 
 ## Dashboard event stream
 
@@ -207,6 +206,8 @@ so these bounds are about back-pressure, not about the envelope.
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Per-client buffer | 256 dashboard events | `MAX_BUFFERED_EVENTS` in `packages/contracts`, asserted by its unit tests |
+| Concurrent local SSE clients | 8 | Production dashboard composition constants plus refusal-before-allocation tests at client 9 |
+| Idle SSE comment keepalive | Every 15 s | Production dashboard composition constant plus deterministic comment-frame tests |
 | Droppable classes | `TELEMETRY` only | `DROPPABLE_CLASSES` in `packages/contracts`; every other class is never dropped |
 | Buffer overflow behaviour | Discard droppable events oldest-first; if the buffer is still full, close the stream with a typed reason and let the client re-synchronize from a state snapshot | Failure-injection test against a client slower than the telemetry rate |
 | Reduced-state digest | SHA-256 over the canonical state document under the `replay-state` context | `digest.Context.REPLAY_STATE` in `packages/contracts` |
@@ -214,6 +215,16 @@ so these bounds are about back-pressure, not about the envelope.
 | Snapshot non-telemetry timeline | At most 256 ordered events | `dashboard-snapshot.schema.json` plus Python/Ajv contract tests |
 | Validated replay bundle | At most 512 ordered events | `replay-bundle.schema.json` plus replay-validator and browser contract tests |
 | Search or sector polygon | At most 256 vertices | `scenario-catalog.schema.json` plus scenario-loader contract tests |
+
+## Public dashboard HTTP
+
+The raw mutation boundary and refusal order are fixed by
+[ADR-0160](adr/0160-bound-public-dashboard-mutation-bodies.md). This bound applies before canonical
+decoding and before an injected route operation can observe a request.
+
+| Parameter | Value | Instrument and current status |
+| --- | --- | --- |
+| Public mutation request-body size | At most 262,144 bytes, inclusive | `MAX_MUTATION_BODY_BYTES` plus dashboard API exact-bound, one-byte-over, refusal-order, and no-effect tests |
 
 ## Connectivity detection
 
@@ -246,10 +257,17 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Postgres data directory | `/var/lib/postgresql/18/docker`, inside the `/var/lib/postgresql` volume the image declares ([ADR-0060](adr/0060-postgresql-18-and-its-data-directory-layout.md)) | `show data_directory` on the running cluster; the named volume holds `18/docker/PG_VERSION` |
 | Agent Mesh base image | `solace/solace-agent-mesh:1.28.7` at `sha256:25dc09b55e8a718e5a690e4abba039cbd032872cd6d4c402b7c69d1dead70255` | `deploy/agent-mesh/Dockerfile` |
 | Application base image | `python:3.14.7-slim-trixie` at `sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83` | `deploy/application/Dockerfile` |
+| Caddy image | `caddy:2.11.4-alpine` at `sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648` | `deploy/compose.yaml`, image inventory, and pin checks |
 | Event Management Agent image | `solace/event-management-agent:1.9.9` at `sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b`, `linux/amd64` | `deploy/compose.yaml` |
 | Broker shared memory | 1 GiB | `shm_size`, from Solace's single-node template |
 | Broker open-file limit | 2448 soft, 1048576 hard | `ulimits.nofile`, from Solace's single-node template |
 | Broker connection scaling | 100 connections, the same ceiling as the Developer-class showcase service | `system_scaling_maxconnectioncount` |
+| Broker event JSON line | 8192 bytes of broker-native JSON; each source read is bounded to 8194 bytes including a possible CRLF | `logging_maxjsonmessagesize` in `deploy/compose.yaml`; `MAX_JSON_EVENT_BYTES`, bounded-source and oversize-continuation tests in `packages/broker` |
+| Broker event monitor buffering | One line processed synchronously; no elastic queue | Sink-failure, oversize, malformed-input, continuation, and source-closure tests in `packages/broker/tests/test_event_monitor.py` |
+| Retained broker event source | `/jail/logs/event.log`, from only the read-only `jail/logs` subpath of `broker-storage` | `RETAINED_EVENT_LOG`, the exact long-syntax Compose mount, and deployment isolation tests selected by [ADR-0173](adr/0173-follow-the-retained-broker-event-log-without-runtime-authority.md) |
+| Retained event EOF poll | 1 s | `EVENT_LOG_POLL_SECONDS`; partial-append and exact-bound tests in `packages/broker/tests/test_event_source.py` |
+| Retained event rotation gap | 30 EOF polls (30 s at the fixed poll interval), then a redacted source failure and nonzero exit | `MAXIMUM_ROTATION_GAP_POLLS`; missing, unreadable, rename-rotation, copy-truncation, and gap-exhaustion tests in `packages/broker/tests/test_event_source.py` |
+| Broker event monitor restart and stop | At most 3 restarts after failure; 15 s graceful stop | `on-failure:3` and `stop_grace_period` on `broker-event-monitor`; graceful-shutdown and static deployment tests |
 | Agent Mesh start period | 60 s before the first healthcheck counts, then 20 probes at 15 s. Measured 2026-08-24: healthy 12 s after the final `up --wait` phase began, on a built image ([`default-profile-with-agent-mesh.md`](../release-evidence/phase-0/default-profile-with-agent-mesh.md)) | `healthcheck` in `deploy/compose.yaml` |
 | Broker start period | 90 s before the first healthcheck counts, then 30 probes at 10 s. Measured 2026-08-21: both services healthy 40.75 s after `up --wait`, including both image pulls | `healthcheck` in `deploy/compose.yaml`; [`release-evidence/phase-0/first-live-run.md`](../release-evidence/phase-0/first-live-run.md) |
 | Published ports, all on `127.0.0.1` | 55443 SMF over TLS, 1943 SEMP over TLS, 5432 Postgres, 8000 Agent Mesh Web UI, 8080 dashboard API, 8180 Event Management Agent | compose policy gate refuses any other binding |
@@ -284,18 +302,18 @@ The gateway acknowledgement timeout is derived from the row above it rather than
 
 ## Durable application processing
 
-[ADR-0114](adr/0114-define-durable-application-processing.md) fixes the bounds around the general
-application inbox/outbox and the centrally simulated edge. The contract and values are accepted; the
-new Alembic revisions, SQLAlchemy repositories, workers, and service integrations are not implemented
-yet, so the instruments below name the tests each increment must add rather than runtime evidence.
+[ADR-0146](adr/0146-define-durable-application-processing.md) fixes the bounds around the general
+application inbox/outbox and the centrally simulated edge. Alembic revisions, SQLAlchemy repositories,
+bounded workers, and service integrations implement those bounds with deterministic tests. The tests are
+not PostgreSQL/PubSub+ interruption evidence; the shared-stack run remains required.
 
 | Parameter | Value | Instrument and current status |
 | --- | --- | --- |
-| Application-outbox drain batch | At most 50 oldest eligible `STAGED` rows per connected epoch | ordered-claim, independent-outcome, crash, refusal, and ambiguity tests; pending |
-| Per-drone critical outbox records | At most 500 unconfirmed records, independently per simulated drone | SQLAlchemy repository capacity and concurrent-claim tests plus reconnect-drain integration; pending |
-| Per-drone critical outbox bytes | At most 2 MiB of exact canonical topic, headers, and body bytes, independently per simulated drone | SQLAlchemy repository byte-cap and rollback tests; pending |
-| Per-drone critical overflow | Refuse the new critical record without eviction and append a continuity-breach audit outcome | transaction rollback, saturation, and audit-order tests; pending |
-| Telemetry records buffered | 0 | fleet outbox tests prove `DRONE_TELEMETRY` never enters PostgreSQL and direct congestion increments the drop counter; pending |
+| Application-outbox drain batch | At most 50 oldest eligible `STAGED` rows per connected epoch | Ordered-claim, independent-outcome, crash, refusal, ambiguity, and service-recovery tests; live drain pending |
+| Per-drone critical outbox records | At most 500 unconfirmed records, independently per simulated drone | SQLAlchemy repository capacity/concurrency tests and fleet recovery tests; live reconnect drain pending |
+| Per-drone critical outbox bytes | At most 2 MiB of exact canonical topic, headers, and body bytes, independently per simulated drone | SQLAlchemy repository byte-cap and rollback tests; live saturation pending |
+| Per-drone critical overflow | Refuse the new critical record without eviction and append a continuity-breach audit outcome | Capacity rollback and redelivery are implemented; the separate continuity-breach audit remains incomplete |
+| Telemetry records buffered | 0 | Fleet outbox tests prove `DRONE_TELEMETRY` never enters PostgreSQL and Direct congestion increments the drop counter; live congestion pending |
 
 The record and byte limits apply simultaneously to staged and reconciliation-needed critical
 publications. Reaching either refuses the new critical transition without eviction. The general
@@ -304,7 +322,7 @@ one row's refusal or ambiguity cannot confirm another row.
 
 ## Evidence scoring
 
-The score is a deterministic simulation heuristic selected by ADR-0114, not a calibrated probability.
+The score is a deterministic simulation heuristic selected by ADR-0146, not a calibrated probability.
 Only `CONTRIBUTING` live evidence enters it; recorded-origin evidence is refused, and the corroborated
 band still requires at least two distinct live source identifiers.
 
@@ -332,11 +350,12 @@ over the roles and names every family's publisher set; this section carries only
 | Authorization roles | 10, one ACL profile per role | `Principal` in `packages/domain`; a totality test asserts the ten names |
 | Role name bound | at most 32 characters and inside the topic kind form, because the name is also the ACL profile name | `MAX_KIND_LENGTH` and `KIND_PATTERN` from `packages/contracts`, asserted per role |
 | ACL profile default actions | `disallow` for publish topic, subscribe topic, and subscribe share name; `allow` for client connect | `packages/broker/src/aerial_rescue_broker/provisioning.py`, asserted per profile |
-| Topic exceptions written | 18 publish and 35 subscribe across the ten profiles, including A2A and the reserved reply-channel exception | asserted by the desired-state apply test in `packages/broker/tests/test_provisioning.py`; live reprovisioning remains pending |
+| Topic exceptions written | 19 publish and 35 subscribe across the nine profiles, including A2A and the reserved reply-channel exception | asserted by the desired-state apply test in `packages/broker/tests/test_provisioning.py`; live reprovisioning remains pending |
 | SEMP request timeout | 10 s per call | `REQUEST_TIMEOUT_SECONDS` in `packages/broker/src/aerial_rescue_broker/semp.py` |
 | SEMP retry count | 0. A topic-exception `POST` is not idempotent, so re-running the whole convergent apply is the retry | `RETRY_COUNT` in the same module, asserted by a transport test |
 | SEMP collection page size | 100 rows asked for per read; the broker pages at ten unless asked for more | `PAGE_SIZE` in the same module, asserted by a transport test |
 | SEMP collection page bound | 20 pages per read, so at most 2,000 rows; a cursor still running at the bound is refused as `PAGING` rather than truncated | `MAX_PAGES` in the same module, asserted by a transport test |
+| Broker-wide SEMP polling ceiling | 10 requests/s across every SEMP connection | official Solace monitoring guidance; shared-stack acceptance counts every routine, discovery, provisioning, and operator client rather than extrapolating from one process |
 
 ## Broker data plane
 
@@ -350,18 +369,61 @@ supersedable, and the endpoints that carry the guaranteed families are the secti
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Guaranteed publication timeout | 10 s per publication | `PUBLISH_TIMEOUT_MILLISECONDS` in `packages/broker/src/aerial_rescue_broker/messaging.py`, asserted by a publisher test |
+| Guaranteed publication broker ACK | immediate for every individually confirmed application message | the Python 1.11 `PERSISTENT_ACK_IMMEDIATELY` message property, an exact builder test, and connected-path latency evidence ([ADR-0169](adr/0169-request-immediate-acks-for-confirmed-publications.md)) |
+| Guaranteed publication DMQ eligibility | `true` on every application message, owned by the publisher adapter | the Python 1.11 `PERSISTENT_DMQ_ELIGIBLE` message property, an override-resistant builder test, and the independent queue-side override required by [ADR-0170](adr/0170-force-dmq-eligibility-at-the-publisher.md) |
 | Direct publisher buffer capacity | 0, so a publication is refused when the transport is full rather than queued or buffered without bound | `DIRECT_BUFFER_CAPACITY` in the same module, asserted by a publisher test |
-| Connection-attempt timeout | 1,000 ms per attempt | selected by [ADR-0113](adr/0113-bound-solace-recovery-and-queue-retirement.md); exact SDK-property and failure-injection tests are pending |
-| Initial connection retries | 2 retries after the first attempt | selected by ADR-0113; exact SDK-property and exhaustion tests are pending |
-| Connection retries per host | 0 | selected by ADR-0113; exact SDK-property test is pending |
-| Active-session reconnection attempts | 30 | selected by ADR-0113; disconnect, exhaustion, and nonzero-exit tests are pending |
-| Wait between active reconnection attempts | 1,000 ms | selected by ADR-0113; deterministic reconnect-schedule test is pending |
+| Persistent publisher buffer capacity | 50 messages, reject on full | matches one generic application-outbox claim batch; exact builder and capacity-refusal tests |
+| Direct telemetry receiver capacity | 1 message, drop oldest | the newest position supersedes a stale buffered position; exact builder and discard-listener tests |
+| Other direct receiver capacity | 50 messages, supplied explicitly by composition | no receiver may inherit the elastic SDK default; composition and overflow-readiness tests |
+| Recorder fair per-channel receive window | 1,000 ms for each Direct or durable channel poll | `RECEIVE_WINDOW_MILLISECONDS` in `services/recorder/src/aerial_rescue_recorder/console.py`; fair-cycle, cancellation, lifecycle-recovery, and exact-composition tests |
+| Client keepalive | every 3,000 ms; fail after 3 unanswered probes | explicit SDK properties and lifecycle-listener tests; these own rather than tune the pinned SDK defaults |
+| SDK endpoint termination grace | 15,000 ms | exact terminate-call and cleanup-continuation tests; aligned with the process/store shutdown grace |
+| Broker container forced-stop grace | 1,200 s (`20m`) | `stop_grace_period` on the PubSub+ service plus the deployment conformance test selected by [ADR-0161](adr/0161-give-the-broker-a-twenty-minute-clean-stop.md) |
+| One-shot broker-restart controller bound | 30 s independently for the request read, restart command, healthy-service wait, and result write | `OPERATION_TIMEOUT_SECONDS` in `scripts/ci/broker-restart-controller.sh`; hermetic exact-command, timeout, refusal, failure-propagation, and cleanup tests selected by [ADR-0186](adr/0186-delegate-one-broker-restart-without-project-authority.md) |
+| Connection-attempt timeout | 1,000 ms per attempt | exact Python SDK-property and composition tests; live connection-refusal timing remains part of shared-stack acceptance ([ADR-0145](adr/0145-bound-solace-recovery-and-queue-retirement.md)) |
+| Initial connection retries | 2 retries after the first attempt | exact Python SDK-property and composition tests; live exhaustion timing remains part of shared-stack acceptance (ADR-0145) |
+| Connection retries per host | 0 | exact Python SDK-property test; the standalone topology intentionally has one host (ADR-0145) |
+| Active-session reconnection attempts | 30 | exact Python SDK-property, lifecycle-listener, endpoint-termination, and service nonzero-exit tests; one live broker restart remains part of shared-stack acceptance (ADR-0145) |
+| Wait between active reconnection attempts | 1,000 ms | exact Python SDK-property and lifecycle-state tests; live reconnect timing remains part of shared-stack acceptance (ADR-0145) |
+
+### PubSub+ client profiles
+
+[ADR-0153](adr/0153-own-bounded-least-privilege-pubsub-clients.md) replaces the factory profile with a
+total per-principal table. `GS` and `GR` are Guaranteed send and receive; `EC` is dynamic endpoint
+creation; `C` is each of the total, SMF, and Web/WSS connection ceilings per username; `E/I` are egress
+consumer and ingress publisher flows per client; `EP` is endpoints owned by the username; and `S` is
+direct client subscriptions. `G1` is the explicit Guaranteed-1 minimum message burst derived by
+[ADR-0165](adr/0165-size-g1-bursts-to-the-complete-flow-set.md) from the complete allowed flow set. The
+endpoint ceiling includes SEMP-created queues assigned to an owner even when that owner cannot create an
+endpoint.
+
+| Principal | GS / GR | EC / durability | C | E / I | EP | S | G1 | Instrument |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| fleet-simulator | yes / yes | no / non-durable guard | 1 | 23 / 1 | 23 | 0 | 23 | one shared fleet connection and 23 per-drone one-message durable flows; live high-water pending |
+| command-gateway | yes / yes | no / non-durable guard | 1 | 3 / 1 | 3 | 2 | 3 | one owned long-lived connection with three one-message application flows; construction-count and live readback instruments |
+| dashboard-api | yes / yes | no / non-durable guard | 1 | 6 / 1 | 6 | 3 | 6 | one owned long-lived connection with six one-message application flows; construction-count and live readback instruments |
+| evidence-service | yes / yes | no / non-durable guard | 1 | 2 / 1 | 2 | 0 | 2 | one owned long-lived connection with two one-message application flows; construction-count and live readback instruments |
+| recorder | no / yes | no / non-durable guard | 1 | 10 / 0 | 10 | 3 | 10 | one receiver-only connection with ten named flows; construction-count and live readback instruments |
+| event-mesh-gateway | yes / yes | yes / non-durable | 4 | 1 / 1 | 2 | 0 | 255 | one pinned upstream default-window flow; readback pending |
+| event-mesh-tool | yes / yes | yes / non-durable | 1 | 1 / 1 | 1 | 0 | 255 | one pinned upstream default-window flow; readback pending |
+| agent-mesh-agent | yes / yes | yes / non-durable | 9 | 1 / 1 | 4 | 0 | 255 | one pinned upstream default-window flow; readback pending |
+
+The retired `scenario-service` has neither a broker profile nor a username. The disabled `discovery`
+role retains deny-all ACL and zero-capability client profiles for fail-closed totality but has no
+username that can connect; its explicit G-1 minimum burst is zero. Every owned profile explicitly
+disables compression, eliding, transactions, bridges, shared subscriptions, endpoint-permission
+override, and TLS downgrade; the total provisioning tests and live SEMP readback are the instruments.
+Transaction counts are zero. SMF minimum keepalive is enabled at 30 seconds; explicit TCP keepalive uses
+5 probes, 3 seconds idle, and 1 second between probes. Project Guaranteed publishers reject a send with
+no matching Guaranteed subscription; the three pinned upstream profiles retain that option disabled
+until their broadcast and contract-Direct paths pass the compatibility probe.
 
 ## Guaranteed-delivery endpoints
 
 One durable queue per consuming role and guaranteed family, plus one command queue per simulated
-drone and one dead-message queue
-([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)). Every value below is
+drone, with one isolated DMQ per primary
+([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md),
+[ADR-0157](adr/0157-pace-and-coalesce-read-only-semp-monitoring.md)). Every value below is
 written explicitly into each queue rather than inherited, because each corresponding broker default
 is wrong for this system: redelivery retries forever, expiry is ignored, the per-queue spool exceeds
 the whole message VPN's, and the default dead-message target names a queue that does not exist.
@@ -369,19 +431,25 @@ the whole message VPN's, and the default dead-message target names a queue that 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
 | Queue maximum spool | 10 MB per queue | `MAX_SPOOL_MEGABYTES` in `packages/broker/src/aerial_rescue_broker/queues.py`, written into every queue and asserted by a provisioning test |
+| Queue maximum message size | 262,144 bytes for application primary/DMQ pairs; 10,000,000 bytes explicitly for pinned upstream temporary endpoints | the application boundary is the largest accepted service wire document; exact SEMP body/readback and oversized-publication tests |
+| Delivered but unacknowledged | 1 per flow on application primaries, aligned with receiver window 1 | exact source-queue body/readback and one-at-a-time commit-before-settlement test |
 | Queue maximum redelivery | 3 redeliveries after the first delivery, so at most 4 arrivals, then the dead-message queue | `MAX_REDELIVERY_COUNT` in the same module; the live probe reads `MAX_REDELIVERY_COUNT + 1` arrivals before the dead-message queue |
 | Queue message expiry | 300 s, with expiry respected rather than the factory `false` | `MAX_TTL_SECONDS` in the same module, written together with `respectTtlEnabled` |
-| Dead-message-queue target | `#DEAD_MSG_QUEUE`, provisioned, owned by nobody and consumed by nothing | `DEAD_MESSAGE_QUEUE` in the same module; its depth over SEMP is what an acceptance run reads, through `message_count` |
+| Dead-message-queue target | one unowned, unsubscribed `<complete-primary-name>_dmq` per primary; no recursive DMQ or expiry | desired-pair derivation and exact SEMP body/readback tests; acceptance reports each pair's delta |
 | Consumer flows per queue | 1, exclusive | `MAX_BIND_COUNT` in the same module, asserted per queue |
 | Queue permission for every identity but the owner | `no-access` | asserted per queue; the owner is the consuming role's client username |
 | Discard notification | `always`, so a discard is negatively acknowledged to the publisher even when the endpoint is administratively disabled | asserted per queue |
-| Endpoints the reference fleet needs | 45: 21 family queues, 23 per-drone command queues, and the dead-message queue | derived from the ADR-0114 subscribe grants and guaranteed-delivery table and asserted by the desired-state tests; live reprovisioning is pending. The message VPN's measured ceilings are 1,000 endpoints and 1,500 MB of spool, read over SEMP on 2026-08-23 |
+| Endpoints the reference fleet needs | 91 broker-managed queues: 44 application primaries (21 family and 23 per-drone), 44 paired application DMQs, and 3 upstream-template DMQs; up to 7 bounded upstream temporary primaries coexist | derived from the ADR-0146 grants and asserted by desired-state tests; live reprovisioning/readback is pending. The message VPN's measured ceilings are 1,000 endpoints and 1,500 MB of spool |
+| Routine queue monitor interval | 30 s between complete attempts, successful or failed | `MONITOR_POLL_INTERVAL_SECONDS`; cache/failure-coalescing tests prove calls inside the interval perform no read |
+| Routine monitor SEMP share | at most 5 requests/s with at least 200 ms between pages, reserving half of the broker-wide ceiling for other clients | `ROUTINE_MONITOR_REQUESTS_PER_SECOND` and `MONITOR_REQUEST_INTERVAL_SECONDS`; deterministic clock and page-pacing tests |
+| Routine queue inventory bound | 20 pages of 100 rows, so at most 2,000 expected and observed queue rows | `MAX_MONITORED_QUEUES` aligned to the SEMP transport page size and bound; duplicate, malformed, and over-bound inventories fail closed |
+| Continuous SEMP monitor restart and stop | At most 3 restarts after a read failure; 15 s graceful stop | `on-failure:3` and `stop_grace_period` on the opt-in `semp-monitor`; connection-close, redaction, refusal, and static isolation tests selected by [ADR-0181](adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) |
 
 The four rows ADR-0061 left open are derived from the service-level rows above rather than measured,
 in the same position as the gateway acknowledgement timeout. The **spool** follows from the two rows
 that bound a backlog: an event is at most 2 KiB and 500 critical messages must drain within 10 s, so
 a queue must hold at least 1 MB; 10 MB is 5,000 messages at that bound, ten times the drain envelope,
-and ADR-0114's 45 desired queues reserve a nominal 450 MB against the VPN's
+and ADR-0157's 91 desired queues reserve a nominal 910 MB against the VPN's
 measured 1500 MB. **Expiry** follows from the worst
 declared fault: a 60 s edge disconnect, a 30 s restart recovery, and a 10 s drain give a 100 s worst
 case, and 300 s is three times that. It is deliberately longer than the 60 s approval time-to-live,
@@ -395,7 +463,7 @@ put a command on the wire ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
 None of these gates safety: exceeding any one costs a delivery and leaves a counted dead-message
 entry, never a command published without an approval. The backlog-recovery row is measured by the
 500-message live instrument above. That measurement models an absent consumer; it does not prove the
-ADR-0113 broken-session reconnect, rebind, outbox-drain, or readiness-recovery behavior.
+ADR-0145 broken-session reconnect, rebind, outbox-drain, or readiness-recovery behavior.
 
 ## Model spend budget
 
@@ -525,7 +593,7 @@ poll adds no wall clock to a tick, and the per-drone cap is what bounds the work
 
 Neither gates safety, and neither is the measurement. The separate live backlog-recovery instrument
 measured the 500-message drain in 7.141 seconds at worst; it models an absent consumer rather than a
-broken transport session or an ADR-0113 reconnect.
+broken transport session or an ADR-0145 reconnect.
 
 ## Durable store
 
@@ -573,7 +641,7 @@ yet" was true when that record landed one increment ahead of its adapter.
 
 What the central command outbox may hold before staging refuses, and what a refusal does
 ([ADR-0093](adr/0093-stage-the-command-outbox-under-a-counted-bound.md)). This is the gateway's own
-command-specific outbox; ADR-0114's general application outbox and per-drone critical bounds are
+command-specific outbox; ADR-0146's general application outbox and per-drone critical bounds are
 separate rows under [Durable application processing](#durable-application-processing).
 
 | Parameter | Value | Instrument |
@@ -581,7 +649,7 @@ separate rows under [Durable application processing](#durable-application-proces
 | Central outbox maximum unconfirmed records | 500, the workload [ADR-0084](adr/0084-give-backlog-recovery-an-instrument.md)'s instrument uses and [backlog-recovery-first-run.md](../release-evidence/phase-2/backlog-recovery-first-run.md) measured draining in 7.141 s | `MAXIMUM_UNCONFIRMED_RECORDS` in `packages/store/src/aerial_rescue_store/outbox.py`, evaluated inside the staging statement |
 | Central outbox overshoot under concurrency | At most one record per concurrently staging session, which the pool bounds at 5 per process. The effective ceiling is 504 | A consequence of `READ COMMITTED` recorded in ADR-0093, not a configured value |
 | Central outbox byte ceiling | None, deliberately: a staged record is one command envelope, and every member of one is already bounded by the topic and envelope rows above | ADR-0093 records the reasoning; there is nothing to measure |
-| Central outbox overflow behaviour | Staging writes no command row and refuses. ADR-0114 enlarges an accepted command authorization to include its typed audit record in the same transaction; a refused overflow remains a separately durable refusal outcome rather than a partial accepted authorization | `OutboxRefusal.AT_CAPACITY` in the module above; command-gateway integration is pending |
+| Central outbox overflow behaviour | Staging writes no command row and refuses. ADR-0146 enlarges an accepted command authorization to include its typed audit record in the same transaction; a refused overflow remains a separately durable refusal outcome rather than a partial accepted authorization | `OutboxRefusal.AT_CAPACITY` in the module above; command-gateway integration is pending |
 
 ## Parameters still to be set
 

@@ -107,7 +107,7 @@ test("folds ordered replay events when stepping and seeking", async ({ page }) =
   await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText(
     finalCheckpoint.auditOrdinal.toString(),
   );
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
+  await expect(page.getByRole("status", { name: "Current mission", exact: true })).toContainText(
     finalCheckpoint.lifecycle,
   );
   await expect(page.getByRole("status", { name: "Expected final digest" })).toHaveText(
@@ -185,7 +185,9 @@ test("paces play and pause at every speed without putting playback in mission st
     initialCheckpoint.digest,
   );
   await expect(page.getByRole("status", { name: "Latest audit ordinal" })).toHaveText("0");
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText("PLANNED");
+  await expect(page.getByRole("status", { name: "Current mission", exact: true })).toContainText(
+    "PLANNED",
+  );
   await expect(
     page
       .getByRole("table", { name: "Mission fleet" })

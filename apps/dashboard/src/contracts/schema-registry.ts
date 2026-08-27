@@ -1,53 +1,18 @@
-import Ajv2020 from "ajv/dist/2020.js";
-
-import canonicalSchema from "../../../../schemas/v1/canonical.schema.json";
-import bootstrapSchema from "../../../../schemas/v1/dashboard/bootstrap.schema.json";
-import commandResponseSchema from "../../../../schemas/v1/dashboard/command-response.schema.json";
-import dashboardEventFrameSchema from "../../../../schemas/v1/dashboard/dashboard-event-frame.schema.json";
-import dashboardEventSchema from "../../../../schemas/v1/dashboard/dashboard-event.schema.json";
-import dashboardReducedStateSchema from "../../../../schemas/v1/dashboard/dashboard-reduced-state.schema.json";
-import dashboardSnapshotSchema from "../../../../schemas/v1/dashboard/dashboard-snapshot.schema.json";
-import errorSchema from "../../../../schemas/v1/dashboard/error.schema.json";
-import healthSchema from "../../../../schemas/v1/dashboard/health.schema.json";
-import mutationOutcomeSchema from "../../../../schemas/v1/dashboard/mutation-outcome.schema.json";
-import orderedDashboardEventSchema from "../../../../schemas/v1/dashboard/ordered-dashboard-event.schema.json";
-import operatorCommandRequestSchema from "../../../../schemas/v1/dashboard/operator-command-request.schema.json";
-import proposalDecisionRequestSchema from "../../../../schemas/v1/dashboard/proposal-decision-request.schema.json";
-import proposalDecisionResponseSchema from "../../../../schemas/v1/dashboard/proposal-decision-response.schema.json";
-import readinessSchema from "../../../../schemas/v1/dashboard/readiness.schema.json";
-import replayBundleSchema from "../../../../schemas/v1/dashboard/replay-bundle.schema.json";
-import replayIntegritySchema from "../../../../schemas/v1/dashboard/replay-integrity.schema.json";
-import resetRequestSchema from "../../../../schemas/v1/dashboard/reset-request.schema.json";
-import resetResponseSchema from "../../../../schemas/v1/dashboard/reset-response.schema.json";
-import scenarioCatalogSchema from "../../../../schemas/v1/dashboard/scenario-catalog.schema.json";
-import sourceSignalSchema from "../../../../schemas/v1/dashboard/source-signal.schema.json";
-import startRequestSchema from "../../../../schemas/v1/dashboard/start-request.schema.json";
-import startResponseSchema from "../../../../schemas/v1/dashboard/start-response.schema.json";
-import streamOverloadedSchema from "../../../../schemas/v1/dashboard/stream-overloaded.schema.json";
 import type { DashboardDocumentBySchemaId } from "./generated";
+import * as validators from "./generated/runtime/validators.mjs";
 
 export const DASHBOARD_SCHEMA_IDS = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/mutation-outcome.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/scenario-catalog.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/source-signal.schema.json",
-  "https://aerial-rescue.invalid/schemas/v1/dashboard/start-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/start-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/stream-overloaded.schema.json",
 ] as const satisfies readonly (keyof DashboardDocumentBySchemaId)[];
@@ -76,52 +41,45 @@ export interface DashboardSchemaRegistry {
   ): DashboardSchemaValidationResult<DashboardDocumentBySchemaId[SchemaId]>;
 }
 
-const dashboardSchemas = [
-  bootstrapSchema,
-  commandResponseSchema,
-  dashboardEventFrameSchema,
-  dashboardEventSchema,
-  dashboardReducedStateSchema,
-  dashboardSnapshotSchema,
-  errorSchema,
-  healthSchema,
-  mutationOutcomeSchema,
-  orderedDashboardEventSchema,
-  operatorCommandRequestSchema,
-  proposalDecisionRequestSchema,
-  proposalDecisionResponseSchema,
-  readinessSchema,
-  replayBundleSchema,
-  replayIntegritySchema,
-  resetRequestSchema,
-  resetResponseSchema,
-  scenarioCatalogSchema,
-  sourceSignalSchema,
-  startRequestSchema,
-  startResponseSchema,
-  streamOverloadedSchema,
-] as const;
+const validatorBySchemaId = {
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json":
+    validators.validateBootstrap,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json":
+    validators.validateDashboardEventFrame,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json":
+    validators.validateDashboardSnapshot,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json": validators.validateError,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json":
+    validators.validateProposalDecisionRequest,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json":
+    validators.validateProposalDecisionResponse,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json":
+    validators.validateReadiness,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json":
+    validators.validateReplayBundle,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/reset-response.schema.json":
+    validators.validateResetResponse,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/scenario-catalog.schema.json":
+    validators.validateScenarioCatalog,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/source-signal.schema.json":
+    validators.validateSourceSignal,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/start-response.schema.json":
+    validators.validateStartResponse,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/stream-overloaded.schema.json":
+    validators.validateStreamOverloaded,
+} as const satisfies Record<DashboardSchemaId, (candidate: unknown) => boolean>;
 
 export function createDashboardSchemaRegistry(): DashboardSchemaRegistry {
-  const ajv = new Ajv2020({
-    allErrors: true,
-    coerceTypes: false,
-    removeAdditional: false,
-    strict: true,
-    useDefaults: false,
-  });
-  ajv.addSchema(canonicalSchema);
-  for (const schema of dashboardSchemas) {
-    ajv.addSchema(schema);
-  }
-
   return {
     validate<SchemaId extends DashboardSchemaId>(
       schemaId: SchemaId,
       candidate: unknown,
     ): DashboardSchemaValidationResult<DashboardDocumentBySchemaId[SchemaId]> {
-      if (ajv.validate<DashboardDocumentBySchemaId[SchemaId]>(schemaId, candidate)) {
-        return { ok: true, value: candidate };
+      if (validatorBySchemaId[schemaId](candidate)) {
+        return {
+          ok: true,
+          value: candidate as DashboardDocumentBySchemaId[SchemaId],
+        };
       }
       return {
         failure: { code: "SCHEMA_VALIDATION_FAILED", schemaId },

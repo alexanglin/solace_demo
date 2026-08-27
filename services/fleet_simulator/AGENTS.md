@@ -8,8 +8,9 @@ still apply.
 
 This member is the deterministic adapter between an accepted scenario, the pure domain machines, and the
 application data plane. Its scenario boundary, its tick semantics, and its command intake are
-implemented; its evidence publication and its process entry point are not. Read the authority for each
-concern before changing it:
+implemented in a concrete private-control and broker/store runtime. Schema-bound fleet lifecycle and
+salient-event publication plus live-stack qualification remain. Read the authority for each concern
+before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -50,6 +51,10 @@ concern before changing it:
 | Authenticated private run control | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
 | Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
 | Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
+| Durable application processing and settlement order | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Complete Alembic and typed SQLAlchemy Core boundary | [ADR-0151](../../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Durable malformed-Guaranteed-ingress refusal | [ADR-0159](../../docs/adr/0159-gate-applicable-solace-best-practices.md) |
+| Active-run pause and exact resume during broker recovery | [ADR-0185](../../docs/adr/0185-pause-active-fleet-runs-during-broker-recovery.md) |
 
 An Accepted architecture decision record (ADR) governs if code, tests, deployment, or prose disagrees.
 Do not settle a state transition, simulation parameter, clock policy, broker grant, delivery claim,
@@ -61,15 +66,21 @@ guide.
 
 | Path | Responsibility |
 | --- | --- |
-| `pyproject.toml` | The package shell, Python 3.14, Tier 2, three workspace dependencies, and the exact FastAPI, Pydantic, and Uvicorn pins selected for later runtime work |
+| `pyproject.toml` | Python 3.14, Tier 2, four workspace dependencies, exact FastAPI, Pydantic, and Uvicorn pins, and the concrete console entry point |
 | `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
 | `src/aerial_rescue_fleet_simulator/control_wire.py` | The four strict fleet-control server models and canonical-first validation owned by this process |
 | `src/aerial_rescue_fleet_simulator/control_http_contract.py` | The framework-free three-route private request, response, and default-refusal expectations |
+| `src/aerial_rescue_fleet_simulator/http_runtime.py` | The authenticated private FastAPI boundary, exact refusal order, bounded lifecycle, liveness, and readiness |
+| `src/aerial_rescue_fleet_simulator/control.py` | Stable run reconciliation, bounded capacity and cancellation over the injected executable runtime |
+| `src/aerial_rescue_fleet_simulator/console.py` | Secret-file admission and the private Uvicorn listener composition seam; it deliberately requires an injected fleet runtime |
 | `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
 | `src/aerial_rescue_fleet_simulator/intake.py` | What a drone accepts off its own command queue, and the order it refuses in |
 | `src/aerial_rescue_fleet_simulator/protocol.py` | The drone's half of the dispatch lifecycle, folded through `packages/domain` ([ADR-0074](../../docs/adr/0074-command-dispatch-lifecycle.md)) |
 | `src/aerial_rescue_fleet_simulator/results.py` | One report becomes a schema-bound command-result CloudEvent ([ADR-0082](../../docs/adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md)) |
+| `src/aerial_rescue_fleet_simulator/durable_processing.py` | Commit-before-settlement command processing, durable duplicate results, stale-sequence refusal, atomic critical-result staging, and durable body-free refusal before malformed-message rejection |
+| `src/aerial_rescue_fleet_simulator/critical_outbox.py` | Connected-epoch draining, confirmation-only success, ambiguous-publication reconciliation, and recovery readiness over typed broker/store ports |
+| `src/aerial_rescue_fleet_simulator/store_adapter.py` | Concrete mapping onto store-owned fleet transactions and the independent malformed-ingress refusal recorder; it imports no SQLAlchemy |
 | `tests/` | Member-local unit, refusal, boundary, and property evidence |
 
 The member is **active**: `tools/member_scaffold.py` classifies it as such, and
@@ -80,10 +91,9 @@ Still absent, and each blocked by something named rather than by effort:
 
 | Not here | What it waits on |
 | --- | --- |
-| A console script and a runnable Compose command | The production catalog, scenario loader, and private run-control runtime. Strict control models and route expectations exist, but no FastAPI application, listener, or generated OpenAPI does; `deploy/compose.yaml` still keeps an import-and-exit shell |
-| Evidence publication and the evidence score | The evidence band boundaries, an open row in the same document. The evidence service owns the decision in any case |
-| Durable mission facts | `packages/store` is a scaffold. The fold's state is a process-local synthetic world and is authority for nothing |
-| Exactly-once command effects, backlog recovery, and reconnect reconciliation | The same scaffold. Intake settles after publisher confirmation, and its receipts die with the process, so the claim is at-least-once with duplicates possible across a restart |
+| Physical-edge offline persistence | The reference simulator deliberately uses central PostgreSQL for its bounded critical outbox and durable receipts; a real edge store and synchronization protocol remain outside this simulation boundary |
+| Evidence evaluation and decision publication | The Evidence Service owns provenance validation, score bands, durable decisions, and their audit events; Fleet never acquires that authority |
+| Operational exactly-once effects and reconnect reconciliation | Live broker/database interruption evidence. The concrete adapter and typed processor commit effects and durable results before settlement, and the outbox becomes ready only after connected-epoch drain; none is an operational claim without live proof |
 
 Never add a dummy drone, placeholder test, no-op publisher, empty abstraction, or import-only entry point
 to make an absent capability look started. Each lands through red-green-refactor with member-local tests.
@@ -110,8 +120,8 @@ and coordinates typed ports. It does not become a second owner for policy or wir
 - Accept only ADR-0107's validated fleet-control start document at the composition boundary. Its nested
   `FleetScenario` projection is explicit and carries no seed or random source. ADR-0100 leaves catalog
   loading and version validation with the scenario service; ADR-0107 defines the private start, status,
-  cancel, authentication, and reconciliation protocol. The strict server models and framework-free route
-  registry now exist locally, but no HTTP runtime implements them yet. Do not
+  cancel, authentication, and reconciliation protocol. The strict server models, framework-free route
+  registry, authenticated HTTP adapter, and stable coordinator now exist locally. Do not
   import another service's implementation, read a scenario file inside the simulator, or make the absent
   runtime grant this process a second broker role.
 - The evidence service owns model-output validation, provenance and hashes, and publication of a versioned
@@ -140,8 +150,9 @@ part of that input or fold.
 - Keep the tick loop's own timekeeping on the injected `Pacer`
   ([ADR-0083](../../docs/adr/0083-pace-the-tick-loop-at-a-fixed-rate.md)): the interval is measured from
   the start of each tick, an overrun is counted rather than absorbed, and a lost interval is never made
-  up. `MonotonicPacer` is the only sleep and the only monotonic read in this member; do not add a second
-  one, and do not pace from the stamp source's wall clock.
+  up. `MonotonicPacer` is the only simulation-time sleep and the only monotonic read in this member; the
+  separately injected broker-recovery pause advances no simulation time and never shortens a later
+  interval. Do not add another simulation pacer or pace from the stamp source's wall clock.
 - Inject a virtual or controlled clock. Do not call the ambient wall clock, monotonic clock, UUID
   generator, or scheduler from simulation logic. Inject event IDs, trace IDs, producer sequences, and any
   other nondeterministic values at the boundary that owns them.
@@ -243,32 +254,30 @@ Inject the trace source and use the contracts validator rather than inventing a 
 placeholder or copying untrusted context without validation. Trace context links work diagnostically and
 never authorizes a command or orders the mission timeline.
 
-The current contracts bind only drone telemetry, the `salient` drone event, and gateway responses to
-payload schemas. There is no bound command-result payload or event today even though the fleet-simulator
-broker role is permitted to publish that family. An ACL grant is not a wire contract: do not hand-build a
-command-result envelope or treat an unknown event type as accepted. Its implementation requires the
-coordinated contracts, payload and event schemas, golden fixtures, manifest, dashboard projection, and
-consumer work required by the contracts authority.
+The current contracts bind drone telemetry, salient and sector events, executable drone commands, and
+command results to closed payload/event schemas and topic families. The concrete durable processor builds
+command results through those contracts; an ACL grant alone is never a wire contract. Fleet lifecycle and
+salient-event production still require the owning schema-bound source integration rather than hand-built
+envelopes or acceptance of an unknown event type.
 
 Routine telemetry is direct and supersedable. Critical drone events and command results have stronger
 documented delivery intent, and the durable queues that carry them now exist and are proven live. The
-bounded outbox does not, and neither does the store, so do not claim zero loss, backlog recovery,
-reconnect reconciliation, or exactly-once effects from the current Compose service or an in-memory
-fake. Prove publisher confirmation, explicit acknowledgement after durable commit, idempotency,
-interruption, and recovery against the real boundaries, and read what
+simulator now owns a bounded outbox coordinator, a commit-before-settlement processor, and a concrete
+adapter over store-owned per-drone transactions. Live interruption proof remains absent, so do not claim
+zero loss, backlog recovery, reconnect reconciliation, or exactly-once effects from the current Compose
+service or an in-memory fake. Prove publisher confirmation, explicit acknowledgement after durable
+commit, idempotency, interruption, and recovery against the real boundaries, and read what
 [`release-evidence/phase-2/guaranteed-delivery-first-run.md`](../../release-evidence/phase-2/guaranteed-delivery-first-run.md)
 says it did **not** settle before citing it.
 
 The broker package provides both publishers, the direct receiver, and a queue-bound receiver that
 settles explicitly. Routine telemetry is contractually direct, so keep it on the direct publisher and
 do not route it through the persistent one. Command intake is on this drone's own durable queue,
-bound by the `fleet-simulator` identity that owns it, and settled only after both of its results are
-on the wire and acknowledged by the broker. For a simulated drone that publisher confirmation **is**
-the owning outcome, because the fold's state is authority for nothing durable and there is no
-committed effect for exactly-once to protect; what it costs is recorded in `TECH_DEBT.md` as
-at-least-once with duplicates possible across a restart, and it is not a licence to claim more. Do
-not hide a second Solace publisher or receiver in the simulator, and do not settle a command on
-receipt to make intake look finished.
+bound by the `fleet-simulator` identity that owns it, and settled only after the command effect,
+durable receipt, and result outbox rows commit atomically. Publication happens later from the outbox;
+confirmation is its terminal success, while ambiguity remains staged for reconciliation. Do not hide a
+second Solace publisher or receiver in the simulator, and do not settle a command on receipt to make
+intake look finished.
 
 Make process lifecycle ownership explicit:
 
@@ -278,6 +287,8 @@ Make process lifecycle ownership explicit:
   mode-specific readiness predicate, not process liveness;
 - every receive loop, timer, queue, retry, fan-out, outbox, and drain has a documented bound and explicit
   overflow or timeout outcome;
+- an active run pauses before the next tick fold, Direct publication, or command receive while broker
+  application readiness is recovering, then resumes the exact suspended operation without catch-up;
 - cancellation propagates through clocks, drone tasks, receivers, publishers, and persistence work; and
 - shutdown stops new ticks and intake, drains only within its bound, settles only after the owning durable
   outcome, closes resources, and leaves ambiguous critical work recoverable.

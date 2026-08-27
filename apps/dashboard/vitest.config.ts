@@ -1,7 +1,12 @@
 import { defineConfig } from "vitest/config";
 import type { ViteUserConfig } from "vitest/config";
 
+import { dashboardModuleAliases } from "./scripts/dashboard-module-aliases.ts";
+
 export const dashboardVitestConfiguration = {
+  resolve: {
+    alias: dashboardModuleAliases,
+  },
   test: {
     clearMocks: true,
     coverage: {

@@ -18,6 +18,7 @@ The recipe text is the subject because the ordering lives nowhere else: Compose 
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 
@@ -30,6 +31,8 @@ DATABASE_SERVICE = "postgres"
 PROVISION_MODULE = "aerial_rescue_broker"
 PREFLIGHT = "scripts/preflight-ollama.sh"
 NAMESPACE_FLAG = "--namespace"
+SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
+REFERENCE_DRONE_ARGUMENTS = "reference_drone_arguments"
 
 
 def _recipe(name: str) -> list[str]:
@@ -58,6 +61,16 @@ def _declared_namespace() -> str:
         if line and not line.startswith("#")
     )
     return {key: value for key, separator, value in pairs if separator}["NAMESPACE"]
+
+
+def _just_string(name: str) -> str:
+    """Return one quoted top-level Just string assignment."""
+    pattern = re.compile(rf'^{re.escape(name)}\s*:=\s*"([^"]*)"$', re.MULTILINE)
+    match = pattern.search(JUSTFILE.read_text(encoding="utf-8"))
+    if match is None:
+        message = f"missing Just assignment: {name}"
+        raise AssertionError(message)
+    return match.group(1)
 
 
 class StartupRecipeTests(QualityGateTestCase):
@@ -94,6 +107,22 @@ class StartupRecipeTests(QualityGateTestCase):
         # Assert
         self.assertIn(f"{NAMESPACE_FLAG} {_declared_namespace()}", provision)
 
+    def test_provisioning_names_every_twenty_plus_three_command_queue_owner(self) -> None:
+        # Arrange
+        body = _recipe("up")
+        scenario = json.loads(SCENARIO.read_text(encoding="utf-8"))
+        expected = tuple(member["identifier"] for member in scenario["members"])
+
+        # Act
+        provision = next(line for line in body if PROVISION_MODULE in line)
+        declared = tuple(
+            re.findall(r"--drone ([a-z0-9-]+)", _just_string(REFERENCE_DRONE_ARGUMENTS))
+        )
+
+        # Assert
+        self.assertEqual(expected, declared)
+        self.assertIn(f"{{{{{REFERENCE_DRONE_ARGUMENTS}}}}}", provision)
+
     def test_the_ollama_preflight_runs_before_the_mesh_is_started(self) -> None:
         # Arrange
         body = _recipe("up")
@@ -125,6 +154,31 @@ class StartupRecipeTests(QualityGateTestCase):
         # Assert
         self.assertEqual(1, len(started))
         self.assertTrue(started[0].rstrip().endswith(f"{BROKER_SERVICE} {DATABASE_SERVICE}"))
+
+    def test_mission_control_starts_the_explicit_subset_without_agent_mesh_or_ollama(self) -> None:
+        # Arrange
+        body = _recipe("mission-control")
+        required = {
+            "broker-event-monitor",
+            "schema-migration",
+            "fleet-simulator",
+            "scenario-service",
+            "recorder",
+            "dashboard-api",
+            "caddy",
+        }
+
+        # Act
+        final = body[-1]
+        provision = next(index for index, line in enumerate(body) if PROVISION_MODULE in line)
+
+        # Assert
+        self.assertIn("--profile mission-control", final)
+        self.assertTrue(all(service in final.split() for service in required))
+        self.assertNotIn("agent-mesh", " ".join(body))
+        self.assertNotIn(PREFLIGHT, " ".join(body))
+        self.assertLess(provision, len(body) - 1)
+        self.assertIn("{{ARGS}}", final)
 
 
 if __name__ == "__main__":

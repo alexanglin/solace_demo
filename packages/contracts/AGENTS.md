@@ -23,9 +23,9 @@ Read the authority for the concern before editing it:
 | Dashboard event projection and reduced state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Dashboard generated types and independent runtime validation | [ADR-0058](../../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
 | Schema-bound dashboard lifecycle sources, families, and projections | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
-| Durable application processing and application family representation | [ADR-0114](../../docs/adr/0114-define-durable-application-processing.md), [ADR-0118](../../docs/adr/0118-separate-gateway-records-from-private-replies.md) |
-| Closed application documents and timeline projections | [ADR-0116](../../docs/adr/0116-close-the-application-data-plane-wire-documents.md) |
-| Reserved-topic RPC versus mission-scoped Gateway Record | [ADR-0118](../../docs/adr/0118-separate-gateway-records-from-private-replies.md) |
+| Durable application processing and application family representation | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md), [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md) |
+| Closed application documents and timeline projections | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Reserved-topic RPC versus mission-scoped Gateway Record | [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md) |
 | Approval identity and consumption | [ADR-0006](../../docs/adr/0006-proposal-bound-single-use-approvals.md), [ADR-0040](../../docs/adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md) |
 
 An Accepted ADR governs if code, tests, fixtures, or prose disagree. A change to a wire shape,
@@ -46,7 +46,7 @@ that fold derives deterministic state but never authorizes or mutates a running 
 | `canonical.py` | Encode and decode the repository's exact canonical JSON profile |
 | `digest.py` | Build and verify versioned, domain-separated contract identities |
 | `instant.py` | Validate and convert the exact UTC millisecond instant profile |
-| `topics.py` | Validate the fifteen concrete topic families, derive event types, and expose the total family delivery baseline ([ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0118](../../docs/adr/0118-separate-gateway-records-from-private-replies.md)) |
+| `topics.py` | Validate the fifteen concrete topic families, derive event types, and expose the total family delivery baseline ([ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md), [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md)) |
 | `envelope.py` | Parse the envelope profile in the documented refusal order and enforce bindings |
 | `integration.py` | Decode the closed direct Agent Response body and bind its topic mission and agent identities without conferring CloudEvents semantics |
 | `view.py` | Project accepted application events and own the pure reduced-dashboard-state contract |
@@ -65,7 +65,7 @@ adapt the accepted value explicitly.
 The current vocabulary has fourteen unique topic families. Eleven are notification-only,
 `GATEWAY_REQUEST` and `GATEWAY_RESPONSE` carry request/reply RPC, `GATEWAY_RECORD` carries the direct
 mission CloudEvent, and `AGENT_RESPONSE` carries the direct non-CloudEvent integration body. The families
-are wire- and delivery-disjoint under ADR-0118. A delivery router derives the capability from the parsed
+are wire- and delivery-disjoint under ADR-0150. A delivery router derives the capability from the parsed
 family; a caller-supplied delivery enum is not contract authority.
 
 ## 3. Exactness and refusal discipline
@@ -94,7 +94,7 @@ Never silently normalize an invalid wire value to make it acceptable:
 - Dashboard projection derives presentation input from an already accepted application event. Strip
   transport-only members, then fold events through the pure total reduced-state function without wall
   clocks, trace context, or independent mission policy in `view.py`.
-- The ADR-0116 projections add timeline-only `operatorCommand`, `operatorApproval`, `agentProposal`,
+- The ADR-0148 projections add timeline-only `operatorCommand`, `operatorApproval`, `agentProposal`,
   `evidenceDecision`, `droneCommand`, and `auditRecord` variants. All are non-droppable. Projection
   removes `missionId` from every payload and additionally removes the self-integrity
   `evidenceDecisionDigest` from an evidence decision. A direct Agent Response is never projected as an
@@ -138,7 +138,7 @@ or claim a dashboard consumer exists before it is present in the tree.
 
 The manifest now owns 66 schemas, including 23 dashboard schemas. Twelve application payload/event
 documents, one standalone Agent Response integration document, and four dashboard HTTP documents are
-the ADR-0116 increment. The dashboard API has 21 server-facing schema twins and two browser-only
+the ADR-0148 increment. The dashboard API has 21 server-facing schema twins and two browser-only
 documents; those service-local Pydantic types do not belong here. These contract artifacts and pure
 oracles do not implement runtime JSON-Schema execution at broker ingress, broker I/O, FastAPI handlers,
 PostgreSQL transactions, or a continuously running data plane.

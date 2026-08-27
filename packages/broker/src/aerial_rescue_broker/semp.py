@@ -32,10 +32,17 @@ from base64 import b64encode
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final, Protocol
+from typing import Final, Protocol, override
 from urllib.parse import quote
 
-from aerial_rescue_broker.provisioning import SECRET_MEMBERS, Method, Request, describe
+from aerial_rescue_broker.provisioning import (
+    REDACTED,
+    SECRET_MEMBERS,
+    Method,
+    MonitorRow,
+    Request,
+    describe,
+)
 
 SEMP_CONFIG_PATH: Final = "/SEMP/v2/config"
 """The configuration API's root, below which every request path is relative."""
@@ -56,6 +63,7 @@ MAX_PAGES: Final = 20
 """Bound on one collection read. An unbounded cursor loop is a hang, not a read."""
 
 _SUCCESS_STATUS: Final = range(200, 300)
+_NO_CONTENT_STATUS: Final = 204
 
 
 class SempFailure(Enum):
@@ -65,6 +73,7 @@ class SempFailure(Enum):
     STATUS = "the broker refused the SEMP request"
     MALFORMED = "the broker's response is not a SEMP result object"
     PAGING = "the collection did not end within the page bound"
+    SPEC = "the pinned broker specification lacks a required configuration field"
 
 
 class SempError(RuntimeError):
@@ -90,6 +99,15 @@ class SempEndpoint:
     password: str
     certificate_authority: str
 
+    @override
+    def __repr__(self) -> str:
+        """Render the endpoint without exposing its management credential."""
+        return (
+            "SempEndpoint("
+            f"host={self.host!r}, port={self.port!r}, username={self.username!r}, "
+            f"password={REDACTED!r}, certificate_authority={self.certificate_authority!r})"
+        )
+
 
 class HttpResponse(Protocol):
     """The two members of an HTTP response this module reads."""
@@ -110,6 +128,14 @@ class HttpConnection(Protocol):
 
     def getresponse(self) -> HttpResponse:
         """Return the response to the request just sent."""
+        ...
+
+
+class MonitorPacer(Protocol):
+    """The one operation that spaces routine monitor page requests."""
+
+    def pace(self) -> None:
+        """Wait only as needed before one monitor-plane request."""
         ...
 
 
@@ -173,9 +199,13 @@ def _detail(request: Request, status: int, document: Mapping[str, object]) -> st
 def _cursor(document: Mapping[str, object]) -> str | None:
     """Return the paging cursor a partial collection carries, or ``None`` when it is whole."""
     meta = document.get("meta")
-    paging = meta.get("paging") if isinstance(meta, Mapping) else None
+    if not isinstance(meta, Mapping) or "paging" not in meta:
+        return None
+    paging = meta["paging"]
     cursor = paging.get("cursorQuery") if isinstance(paging, Mapping) else None
-    return cursor if isinstance(cursor, str) else None
+    if not isinstance(cursor, str) or not cursor:
+        raise SempError(SempFailure.MALFORMED, "paging cursor")
+    return cursor
 
 
 def _rows(request: Request, data: object) -> tuple[Mapping[str, object], ...]:
@@ -184,18 +214,93 @@ def _rows(request: Request, data: object) -> tuple[Mapping[str, object], ...]:
         return ()
     if isinstance(data, Mapping):
         return (data,)
-    if isinstance(data, list):
-        return tuple(row for row in data if isinstance(row, Mapping))
+    if isinstance(data, list) and all(isinstance(row, Mapping) for row in data):
+        return tuple(data)
     raise SempError(SempFailure.MALFORMED, describe(request))
+
+
+def _monitor_rows(request: Request, document: Mapping[str, object]) -> tuple[MonitorRow, ...]:
+    """Return collection rows aligned with their child-collection count objects."""
+    data = document.get("data")
+    collections = document.get("collections")
+    if not isinstance(data, list) or not isinstance(collections, list):
+        raise SempError(SempFailure.MALFORMED, describe(request))
+    if len(data) != len(collections):
+        raise SempError(SempFailure.MALFORMED, describe(request))
+    if not all(isinstance(row, Mapping) for row in data):
+        raise SempError(SempFailure.MALFORMED, describe(request))
+    if not all(isinstance(row, Mapping) for row in collections):
+        raise SempError(SempFailure.MALFORMED, describe(request))
+    return tuple(
+        MonitorRow(data=data_row, collections=collection_row)
+        for data_row, collection_row in zip(data, collections, strict=True)
+    )
 
 
 class SempSession:
     """A ``SempTransport`` over one injected HTTPS connection."""
 
-    def __init__(self, connection: HttpConnection, endpoint: SempEndpoint) -> None:
-        """Bind the session to a connection and the credential it authenticates with."""
+    def __init__(
+        self,
+        connection: HttpConnection,
+        endpoint: SempEndpoint,
+        *,
+        monitor_pacer: MonitorPacer | None = None,
+    ) -> None:
+        """Bind the session to a connection, credential, and optional monitor pacer."""
         self._connection = connection
         self._headers = _headers(endpoint)
+        self._config_spec: Mapping[str, object] | None = None
+        self._monitor_pacer = monitor_pacer
+
+    def require_config_fields(self, required: Mapping[str, frozenset[str]]) -> None:
+        """Refuse unless the broker's own OpenAPI 2 spec declares every required field."""
+        document = self._read_config_spec()
+        definitions = document.get("definitions")
+        if not isinstance(definitions, Mapping):
+            raise SempError(SempFailure.SPEC, "definitions")
+        for schema_name, required_fields in required.items():
+            schema = definitions.get(schema_name)
+            properties = schema.get("properties") if isinstance(schema, Mapping) else None
+            if not isinstance(properties, Mapping):
+                raise SempError(SempFailure.SPEC, schema_name)
+            available = frozenset(name for name in properties if isinstance(name, str))
+            missing = required_fields - available
+            if missing:
+                raise SempError(
+                    SempFailure.SPEC,
+                    {"schema": schema_name, "missing": tuple(sorted(missing))},
+                )
+
+    def _read_config_spec(self) -> Mapping[str, object]:
+        """Read and cache the broker-owned OpenAPI document, which has no SEMP envelope."""
+        if self._config_spec is not None:
+            return self._config_spec
+        request = Request(Method.GET, "spec", {})
+        try:
+            self._connection.request(
+                request.method.value,
+                f"{SEMP_CONFIG_PATH}/{request.path}",
+                None,
+                self._headers,
+            )
+            response = self._connection.getresponse()
+            payload = response.read()
+        except OSError as error:
+            raise SempError(SempFailure.TRANSPORT, describe(request)) from error
+        if response.status not in _SUCCESS_STATUS:
+            raise SempError(
+                SempFailure.STATUS,
+                f"{describe(request)} status={response.status}",
+            )
+        try:
+            document = json.loads(payload)
+        except json.JSONDecodeError as error:
+            raise SempError(SempFailure.MALFORMED, describe(request)) from error
+        if not isinstance(document, Mapping):
+            raise SempError(SempFailure.MALFORMED, describe(request))
+        self._config_spec = document
+        return document
 
     def send(self, request: Request) -> tuple[Mapping[str, object], ...]:
         """Perform ``request`` and return its ``data`` member as a tuple of objects.
@@ -252,10 +357,24 @@ class SempSession:
         """
         return self._read_paged(path, SEMP_MONITOR_PATH)
 
+    def read_monitor_rows(self, path: str) -> tuple[MonitorRow, ...]:
+        """Return monitor rows with each row's child-collection counts kept aligned."""
+        rows: list[MonitorRow] = []
+        query = self._page_query(path)
+        for _ in range(MAX_PAGES):
+            request = Request(Method.GET, path + query, {})
+            document = self._perform(request, SEMP_MONITOR_PATH)
+            rows.extend(_monitor_rows(request, document))
+            cursor = _cursor(document)
+            if cursor is None:
+                return tuple(rows)
+            query = self._page_query(path, cursor)
+        raise SempError(SempFailure.PAGING, path)
+
     def _read_paged(self, path: str, root: str) -> tuple[Mapping[str, object], ...]:
         """Walk one collection's cursor to its end, or refuse at the page bound."""
         rows: list[Mapping[str, object]] = []
-        query = f"?count={PAGE_SIZE}"
+        query = self._page_query(path)
         for _ in range(MAX_PAGES):
             request = Request(Method.GET, path + query, {})
             document = self._perform(request, root)
@@ -263,12 +382,21 @@ class SempSession:
             cursor = _cursor(document)
             if cursor is None:
                 return tuple(rows)
-            query = f"?count={PAGE_SIZE}&cursor={quote(cursor, safe='')}"
+            query = self._page_query(path, cursor)
         raise SempError(SempFailure.PAGING, path)
+
+    @staticmethod
+    def _page_query(path: str, cursor: str | None = None) -> str:
+        """Return paging query members without replacing a caller's narrow selection."""
+        separator = "&" if "?" in path else "?"
+        cursor_member = f"&cursor={quote(cursor, safe='')}" if cursor is not None else ""
+        return f"{separator}count={PAGE_SIZE}{cursor_member}"
 
     def _perform(self, request: Request, root: str = SEMP_CONFIG_PATH) -> Mapping[str, object]:
         """Send one request under ``root`` and return the whole SEMP result document."""
         body = json.dumps(dict(request.body)) if request.body else None
+        if root == SEMP_MONITOR_PATH and self._monitor_pacer is not None:
+            self._monitor_pacer.pace()
         try:
             self._connection.request(
                 request.method.value, f"{root}/{request.path}", body, self._headers
@@ -281,11 +409,19 @@ class SempSession:
 
     def _document(self, request: Request, status: int, payload: bytes) -> Mapping[str, object]:
         """Parse one response, refusing a non-SEMP body and a refused status."""
+        if status == _NO_CONTENT_STATUS and not payload:
+            return {"meta": {"responseCode": status}}
         try:
             document = json.loads(payload)
         except json.JSONDecodeError as error:
             raise SempError(SempFailure.MALFORMED, describe(request)) from error
         if not isinstance(document, Mapping):
+            raise SempError(SempFailure.MALFORMED, describe(request))
+        meta = document.get("meta")
+        response_code = meta.get("responseCode") if isinstance(meta, Mapping) else None
+        if isinstance(response_code, bool) or not isinstance(response_code, int):
+            raise SempError(SempFailure.MALFORMED, describe(request))
+        if response_code != status:
             raise SempError(SempFailure.MALFORMED, describe(request))
         if status not in _SUCCESS_STATUS:
             raise SempError(SempFailure.STATUS, _detail(request, status, document))

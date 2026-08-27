@@ -79,14 +79,24 @@ class FakeConnection:
         return self.response
 
 
-def _document(data: object, *, code: str = "", description: str = "", cursor: str = "") -> bytes:
-    """Return a SEMP result document carrying ``data``, an optional error, and a cursor."""
+def _document(
+    data: object,
+    *,
+    code: str = "",
+    collections: object | None = None,
+    description: str = "",
+    cursor: str = "",
+) -> bytes:
+    """Return a SEMP result document carrying data, collections, an error, and a cursor."""
     meta: dict[str, object] = {"responseCode": 200}
     if cursor:
         meta["paging"] = {"cursorQuery": cursor}
     if code:
         meta = {"responseCode": 400, "error": {"code": code, "description": description}}
-    return json.dumps({"data": data, "meta": meta}).encode()
+    document: dict[str, object] = {"data": data, "meta": meta}
+    if collections is not None:
+        document["collections"] = collections
+    return json.dumps(document).encode()
 
 
 class PagingConnection(FakeConnection):
@@ -137,7 +147,19 @@ class SendTests(unittest.TestCase):
 
     def test_a_result_with_no_data_member_is_no_rows(self) -> None:
         # Arrange
-        connection = FakeConnection(FakeResponse(200, json.dumps({"meta": {}}).encode()))
+        connection = FakeConnection(
+            FakeResponse(200, json.dumps({"meta": {"responseCode": 200}}).encode())
+        )
+
+        # Act
+        rows = SempSession(connection, ENDPOINT).send(PLAIN_REQUEST)
+
+        # Assert
+        self.assertEqual((), rows)
+
+    def test_an_empty_no_content_success_is_one_valid_empty_result(self) -> None:
+        # Arrange
+        connection = FakeConnection(FakeResponse(204, b""))
 
         # Act
         rows = SempSession(connection, ENDPOINT).send(PLAIN_REQUEST)
@@ -266,6 +288,155 @@ class SendTests(unittest.TestCase):
         # Assert
         self.assertIs(SempFailure.MALFORMED, failure)
 
+    def test_a_collection_with_one_non_object_row_is_refused_instead_of_truncated(self) -> None:
+        # Arrange
+        connection = FakeConnection(
+            FakeResponse(200, _document([{"queueName": "q1"}, "not-an-object"]))
+        )
+
+        # Act
+        failure, _ = _failure_of(connection, PLAIN_REQUEST)
+
+        # Assert
+        self.assertIs(SempFailure.MALFORMED, failure)
+
+    def test_a_success_response_without_the_mandatory_meta_object_is_refused(self) -> None:
+        # Arrange
+        response = FakeResponse(200, json.dumps({"data": {"queueName": "q1"}}).encode())
+        connection = FakeConnection(response)
+
+        # Act
+        failure, _ = _failure_of(connection, PLAIN_REQUEST)
+
+        # Assert
+        self.assertIs(SempFailure.MALFORMED, failure)
+
+    def test_a_meta_response_code_that_disagrees_with_http_is_refused(self) -> None:
+        # Arrange
+        payload = json.dumps({"data": {}, "meta": {"responseCode": 503}}).encode()
+        response = FakeResponse(200, payload)
+        connection = FakeConnection(response)
+
+        # Act
+        failure, _ = _failure_of(connection, PLAIN_REQUEST)
+
+        # Assert
+        self.assertIs(SempFailure.MALFORMED, failure)
+
+
+class ConfigSpecTests(unittest.TestCase):
+    def test_required_fields_are_verified_against_the_brokers_openapi_spec(self) -> None:
+        # Arrange
+        spec = {
+            "swagger": "2.0",
+            "definitions": {
+                "MsgVpnQueue": {
+                    "properties": {"deadMsgQueue": {"type": "string"}, "maxMsgSize": {}}
+                }
+            },
+        }
+        connection = FakeConnection(FakeResponse(200, json.dumps(spec).encode()))
+        required = {"MsgVpnQueue": frozenset({"deadMsgQueue", "maxMsgSize"})}
+
+        # Act
+        SempSession(connection, ENDPOINT).require_config_fields(required)
+
+        # Assert
+        self.assertEqual(
+            ("GET", f"{SEMP_CONFIG_PATH}/spec", None),
+            connection.calls[0][:3],
+        )
+
+    def test_a_required_field_missing_from_the_pinned_spec_is_a_typed_refusal(self) -> None:
+        # Arrange
+        spec = {
+            "swagger": "2.0",
+            "definitions": {"MsgVpnQueue": {"properties": {"deadMsgQueue": {}}}},
+        }
+        connection = FakeConnection(FakeResponse(200, json.dumps(spec).encode()))
+        required = {"MsgVpnQueue": frozenset({"deadMsgQueue", "maxMsgSize"})}
+
+        # Act
+        try:
+            SempSession(connection, ENDPOINT).require_config_fields(required)
+        except SempError as error:
+            captured = error
+        else:
+            message = "a missing pinned queue field was accepted"
+            raise AssertionError(message)
+
+        # Assert
+        self.assertEqual(
+            (SempFailure.SPEC, True, True),
+            (
+                captured.failure,
+                "MsgVpnQueue" in str(captured.value),
+                "maxMsgSize" in str(captured.value),
+            ),
+        )
+
+    def test_malformed_spec_collections_and_schemas_are_refused(self) -> None:
+        # Arrange
+        documents: tuple[object, ...] = (
+            {},
+            {"definitions": []},
+            {"definitions": {"MsgVpnQueue": []}},
+            {"definitions": {"MsgVpnQueue": {"properties": []}}},
+        )
+        required = {"MsgVpnQueue": frozenset({"deadMsgQueue"})}
+
+        # Act
+        failures = []
+        for document in documents:
+            connection = FakeConnection(FakeResponse(200, json.dumps(document).encode()))
+            with pytest.raises(SempError) as captured:
+                SempSession(connection, ENDPOINT).require_config_fields(required)
+            failures.append(captured.value.failure)
+
+        # Assert
+        self.assertEqual([SempFailure.SPEC] * len(documents), failures)
+
+    def test_spec_transport_status_and_document_failures_are_typed(self) -> None:
+        # Arrange
+        connections = (
+            FakeConnection(failure=ConnectionRefusedError("no listener")),
+            FakeConnection(FakeResponse(503, b"{}")),
+            FakeConnection(FakeResponse(200, b"not-json")),
+            FakeConnection(FakeResponse(200, b"[]")),
+        )
+        expected = (
+            SempFailure.TRANSPORT,
+            SempFailure.STATUS,
+            SempFailure.MALFORMED,
+            SempFailure.MALFORMED,
+        )
+
+        # Act
+        failures = []
+        for connection in connections:
+            with pytest.raises(SempError) as captured:
+                SempSession(connection, ENDPOINT).require_config_fields({})
+            failures.append(captured.value.failure)
+
+        # Assert
+        self.assertEqual(list(expected), failures)
+
+    def test_the_verified_spec_is_cached_for_the_session_epoch(self) -> None:
+        # Arrange
+        spec: dict[str, object] = {
+            "definitions": {"MsgVpnQueue": {"properties": {"deadMsgQueue": {}}}}
+        }
+        connection = FakeConnection(FakeResponse(200, json.dumps(spec).encode()))
+        session = SempSession(connection, ENDPOINT)
+        required = {"MsgVpnQueue": frozenset({"deadMsgQueue"})}
+
+        # Act
+        session.require_config_fields(required)
+        session.require_config_fields(required)
+
+        # Assert
+        self.assertEqual(1, len(connection.calls))
+
 
 class ReadAllTests(unittest.TestCase):
     def test_a_single_page_collection_is_read_in_one_call(self) -> None:
@@ -324,6 +495,28 @@ class ReadAllTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((SempFailure.PAGING, MAX_PAGES), (captured.failure, len(endless.calls)))
+
+    def test_a_present_paging_member_with_no_text_cursor_is_refused(self) -> None:
+        # Arrange
+        payload = json.dumps(
+            {
+                "data": [{"queueName": "q1"}],
+                "meta": {"responseCode": 200, "paging": {"cursorQuery": 7}},
+            }
+        ).encode()
+        connection = FakeConnection(FakeResponse(200, payload))
+
+        # Act
+        try:
+            SempSession(connection, ENDPOINT).read_all("msgVpns/default/queues")
+        except SempError as error:
+            captured = error
+        else:
+            message = "an ill-typed paging cursor was treated as the end"
+            raise AssertionError(message)
+
+        # Assert
+        self.assertIs(SempFailure.MALFORMED, captured.failure)
 
 
 class ReadMonitorTests(unittest.TestCase):
@@ -384,6 +577,102 @@ class ReadMonitorTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(connection.calls[0][1].startswith(f"{SEMP_CONFIG_PATH}/"))
+
+    def test_queue_monitor_rows_preserve_the_alignment_of_data_and_child_counts(self) -> None:
+        # Arrange
+        data = [{"queueName": "q1", "bindCount": 1}, {"queueName": "q2", "bindCount": 0}]
+        collections = [{"msgs": {"count": 50}}, {"msgs": {"count": 75}}]
+        connection = FakeConnection(FakeResponse(200, _document(data, collections=collections)))
+
+        # Act
+        rows = SempSession(connection, ENDPOINT).read_monitor_rows(
+            "msgVpns/default/queues?select=queueName%2CbindCount%2Cmsgs.count"
+        )
+
+        # Assert
+        self.assertEqual(
+            ((data[0], collections[0]), (data[1], collections[1])),
+            tuple((row.data, row.collections) for row in rows),
+        )
+
+    def test_queue_monitor_rows_refuse_misaligned_child_counts(self) -> None:
+        # Arrange
+        connection = FakeConnection(
+            FakeResponse(
+                200,
+                _document(
+                    [{"queueName": "q1"}, {"queueName": "q2"}],
+                    collections=[{"msgs": {"count": 1}}],
+                ),
+            )
+        )
+
+        # Act
+        try:
+            SempSession(connection, ENDPOINT).read_monitor_rows("msgVpns/default/queues")
+        except SempError as error:
+            captured = error
+        else:
+            message = "misaligned queue and child-collection rows were accepted"
+            raise AssertionError(message)
+
+        # Assert
+        self.assertIs(SempFailure.MALFORMED, captured.failure)
+
+    def test_queue_monitor_rows_refuse_non_collection_or_non_object_members(self) -> None:
+        # Arrange
+        documents = (
+            {"data": {}, "collections": [], "meta": {"responseCode": 200}},
+            {"data": [], "collections": {}, "meta": {"responseCode": 200}},
+            {"data": ["bad"], "collections": [{}], "meta": {"responseCode": 200}},
+            {"data": [{}], "collections": ["bad"], "meta": {"responseCode": 200}},
+        )
+
+        # Act
+        failures = []
+        for document in documents:
+            connection = FakeConnection(FakeResponse(200, json.dumps(document).encode()))
+            with pytest.raises(SempError) as captured:
+                SempSession(connection, ENDPOINT).read_monitor_rows("msgVpns/default/queues")
+            failures.append(captured.value.failure)
+
+        # Assert
+        self.assertEqual([SempFailure.MALFORMED] * len(documents), failures)
+
+    def test_aligned_monitor_rows_follow_cursors_and_refuse_an_endless_cursor(self) -> None:
+        # Arrange
+        pages = PagingConnection(
+            [
+                _document([{"queueName": "q1"}], collections=[{}], cursor="next"),
+                _document([{"queueName": "q2"}], collections=[{}]),
+            ]
+        )
+        endless = PagingConnection(
+            [_document([{"queueName": "q"}], collections=[{}], cursor="next")] * (MAX_PAGES + 1)
+        )
+
+        # Act
+        rows = SempSession(pages, ENDPOINT).read_monitor_rows("msgVpns/default/queues")
+        with pytest.raises(SempError) as captured:
+            SempSession(endless, ENDPOINT).read_monitor_rows("msgVpns/default/queues")
+
+        # Assert
+        self.assertEqual(("q1", "q2"), tuple(row.data["queueName"] for row in rows))
+        self.assertEqual(
+            (SempFailure.PAGING, MAX_PAGES),
+            (captured.value.failure, len(endless.calls)),
+        )
+
+    def test_an_existing_monitor_select_is_preserved_when_the_page_bound_is_added(self) -> None:
+        # Arrange
+        connection = FakeConnection(FakeResponse(200, _document([], collections=[])))
+        path = "msgVpns/default/queues?select=queueName%2CbindCount%2Cmsgs.count"
+
+        # Act
+        SempSession(connection, ENDPOINT).read_monitor_rows(path)
+
+        # Assert
+        self.assertIn(f"&count={PAGE_SIZE}", connection.calls[0][1])
 
 
 class HeaderTests(unittest.TestCase):
@@ -457,6 +746,16 @@ class ConnectTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1 + RETRY_COUNT, len(connection.calls))
+
+    def test_the_endpoint_representation_redacts_its_password(self) -> None:
+        # Arrange
+        endpoint = ENDPOINT
+
+        # Act
+        represented = repr(endpoint)
+
+        # Assert
+        self.assertEqual((False, True), (CREDENTIAL in represented, "<redacted>" in represented))
 
 
 class SempErrorTests(unittest.TestCase):

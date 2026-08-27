@@ -31,9 +31,9 @@ values in this guide:
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
 | Schema-bound dashboard lifecycle sources and composed events | [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
-| Durable application processing and the fourteen-family representation | [ADR-0114](../docs/adr/0114-define-durable-application-processing.md) |
-| Closed application payloads, integration body, projections, and HTTP documents | [ADR-0116](../docs/adr/0116-close-the-application-data-plane-wire-documents.md) |
-| Reserved-topic RPC versus mission-scoped Gateway Response record | [ADR-0117](../docs/adr/0117-preserve-mission-scoped-gateway-response-records.md) |
+| Durable application processing and the fourteen-family representation | [ADR-0146](../docs/adr/0146-define-durable-application-processing.md) |
+| Closed application payloads, integration body, projections, and HTTP documents | [ADR-0148](../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Reserved-topic RPC versus mission-scoped Gateway Response record | [ADR-0149](../docs/adr/0149-preserve-mission-scoped-gateway-response-records.md) |
 
 An Accepted architecture decision record (ADR) governs whenever a schema, fixture, implementation, or
 document disagrees with it. Never rewrite Accepted ADR prose. Create a new or superseding record before
@@ -64,12 +64,12 @@ event schema has a distinct event-schema `$id` and constrains the payload, event
 together.
 
 The version-one manifest currently owns 66 schemas. Twenty-three are dashboard schemas: 21 have
-server-facing dashboard-API Pydantic twins and two remain browser-only. ADR-0116 added twelve
+server-facing dashboard-API Pydantic twins and two remain browser-only. ADR-0148 added twelve
 payload/event documents, the standalone `integration/agent-response` schema, and four dashboard HTTP
 documents. Agent Response has no payload/event pair and no CloudEvents `BINDINGS` row; wrapping it in an
 envelope would change its representation and authority. The fourteen topic families are not fourteen
 identical wire shapes: eleven are notification-only, two carry request/reply RPC, Agent Response is a
-direct integration body, and ADR-0117 additionally preserves a direct mission-scoped Gateway Response
+direct integration body, and ADR-0149 additionally preserves a direct mission-scoped Gateway Response
 CloudEvent beside that family's reserved-topic raw RPC reply.
 
 Schemas describe representation and structural validation. They do not own mission authorization,

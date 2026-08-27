@@ -44,6 +44,19 @@ class IdempotencyKind(Enum):
 
     COMMAND = "command"
     APPROVAL_CONSUMPTION = "approval consumption"
+    DASHBOARD_START = "dashboard start"
+    DASHBOARD_RESET = "dashboard reset"
+    DASHBOARD_COMMAND = "dashboard command"
+    DASHBOARD_DECISION = "dashboard decision"
+
+
+DASHBOARD_IDEMPOTENCY_KINDS = (
+    IdempotencyKind.DASHBOARD_START,
+    IdempotencyKind.DASHBOARD_RESET,
+    IdempotencyKind.DASHBOARD_COMMAND,
+    IdempotencyKind.DASHBOARD_DECISION,
+)
+"""The four public mutation operations whose repeats return their exact response."""
 
 
 class IdempotencyDecision(Enum):
@@ -80,8 +93,8 @@ def idempotency_decision(kind: IdempotencyKind, *, known: bool) -> IdempotencyDe
         known: Whether the identifier has been seen before.
 
     Returns:
-        Execute on first sight; return the prior result for a known command; deny a known
-        approval consumption, which is the documented exception to replay-as-success.
+        Execute on first sight; return the prior result for a known repeatable operation; deny
+        a known approval consumption, which is the documented exception to replay-as-success.
     """
     if not known:
         return IdempotencyDecision.EXECUTE

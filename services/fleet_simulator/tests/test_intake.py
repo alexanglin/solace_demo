@@ -14,11 +14,15 @@ from __future__ import annotations
 
 import unittest
 from enum import Enum
-from typing import Final
+from typing import Final, cast
+from unittest.mock import patch
 
 from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.envelope import EnvelopeError, EnvelopeRefusal
 from aerial_rescue_domain.authority import CommandType
 from aerial_rescue_fleet_simulator.intake import (
+    AssignSectorCommand,
+    EscalateRescueCommand,
     IntakeError,
     IntakeRefusal,
     accept,
@@ -31,6 +35,7 @@ SECTOR: Final = "sector-04"
 EVENT_ID: Final = "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6e"
 CORRELATION: Final = "c-2026-0001"
 TOPIC: Final = f"aerial-rescue/v1/{MISSION}/drone/{DRONE}/command/assign-sector"
+ESCALATION_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/drone/{DRONE}/command/escalate-rescue"
 SCHEMA: Final = (
     "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json"
 )
@@ -79,6 +84,43 @@ def _bytes(**changes: object) -> bytes:
     return canonical.canonical_bytes(_document(**changes))
 
 
+def _escalation_document(**payload_changes: object) -> dict[str, object]:
+    """Return one fully bound rescue-escalation command with payload changes applied."""
+    payload: dict[str, object] = {
+        "missionId": MISSION,
+        "droneId": DRONE,
+        "commandId": COMMAND,
+        "approvalId": "approval-0001",
+        "proposalId": "proposal-0001",
+        "proposalDigest": "1" * 64,
+        "proposalVersion": 1,
+        "evidenceDecisionId": "decision-0001",
+        "evidenceDecisionDigest": "2" * 64,
+        "evidenceDecisionVersion": 1,
+        "latitudeMicrodegrees": 45_123_456,
+        "longitudeMicrodegrees": -75_123_456,
+    }
+    for name, value in payload_changes.items():
+        if value is ...:
+            del payload[name]
+        else:
+            payload[name] = value
+    return _document(
+        source="urn:aerial-rescue:command-gateway:gateway-synthetic-01",
+        type="aerial-rescue.v1.drone.command.escalate-rescue",
+        dataschema=(
+            "https://aerial-rescue.invalid/schemas/v1/payload/"
+            "drone-command-escalate-rescue.schema.json"
+        ),
+        data=payload,
+    )
+
+
+def _escalation_bytes(**payload_changes: object) -> bytes:
+    """Return canonical bytes for one rescue-escalation command."""
+    return canonical.canonical_bytes(_escalation_document(**payload_changes))
+
+
 def _refusal(payload: bytes | None, topic: str = TOPIC, drone: str = DRONE) -> tuple[Enum, object]:
     """Return the refusal accepting raises, failing the test if the command is accepted."""
     try:
@@ -96,11 +138,13 @@ class AcceptanceTests(unittest.TestCase):
 
         # Act
         command = accept(payload, TOPIC, DRONE, MISSION)
+        assigned = cast("AssignSectorCommand", command)
 
         # Assert
+        self.assertIsInstance(command, AssignSectorCommand)
         self.assertEqual(
             (COMMAND, CommandType.ASSIGN_SECTOR, SECTOR),
-            (command.command_id, command.command_type, command.sector_id),
+            (assigned.command_id, assigned.command_type, assigned.sector_id),
         )
 
     def test_the_accepted_command_carries_what_its_answer_must_quote(self) -> None:
@@ -182,38 +226,74 @@ class CommandTypeRefusalTests(unittest.TestCase):
         # Assert
         self.assertEqual((IntakeRefusal.UNKNOWN_COMMAND_TYPE, "self-destruct"), (refusal, value))
 
-    def test_a_schema_bound_rescue_escalation_reaches_the_payload_handler(self) -> None:
-        """The closed wire schema is recognized even before this adapter implements its effect."""
+    def test_a_schema_bound_rescue_escalation_preserves_every_authority_binding(self) -> None:
         # Arrange
-        escalation = f"aerial-rescue/v1/{MISSION}/drone/{DRONE}/command/escalate-rescue"
-        document = _document(
-            source="urn:aerial-rescue:command-gateway:gateway-synthetic-01",
-            type="aerial-rescue.v1.drone.command.escalate-rescue",
-            dataschema=(
-                "https://aerial-rescue.invalid/schemas/v1/payload/"
-                "drone-command-escalate-rescue.schema.json"
-            ),
-            data={
-                "missionId": MISSION,
-                "droneId": DRONE,
-                "commandId": COMMAND,
-                "approvalId": "approval-0001",
-                "proposalId": "proposal-0001",
-                "proposalDigest": "1" * 64,
-                "proposalVersion": 1,
-                "evidenceDecisionId": "decision-0001",
-                "evidenceDecisionDigest": "2" * 64,
-                "evidenceDecisionVersion": 1,
-                "latitudeMicrodegrees": 45123456,
-                "longitudeMicrodegrees": -75123456,
-            },
-        )
+        payload = _escalation_bytes()
 
         # Act
-        refusal, value = _refusal(canonical.canonical_bytes(document), topic=escalation)
+        command = accept(payload, ESCALATION_TOPIC, DRONE, MISSION)
+        escalation = cast("EscalateRescueCommand", command)
 
         # Assert
-        self.assertEqual((IntakeRefusal.MALFORMED_COMMAND, "sectorId"), (refusal, value))
+        self.assertIsInstance(command, EscalateRescueCommand)
+        self.assertEqual(
+            (
+                COMMAND,
+                CommandType.ESCALATE_RESCUE,
+                "approval-0001",
+                "proposal-0001",
+                "1" * 64,
+                1,
+                "decision-0001",
+                "2" * 64,
+                1,
+                45_123_456,
+                -75_123_456,
+            ),
+            (
+                escalation.command_id,
+                escalation.command_type,
+                escalation.approval_id,
+                escalation.proposal_id,
+                escalation.proposal_digest,
+                escalation.proposal_version,
+                escalation.evidence_decision_id,
+                escalation.evidence_decision_digest,
+                escalation.evidence_decision_version,
+                escalation.latitude_microdegrees,
+                escalation.longitude_microdegrees,
+            ),
+        )
+
+    def test_rescue_escalation_refuses_each_missing_or_malformed_binding(self) -> None:
+        # Arrange
+        cases: tuple[tuple[str, object, str], ...] = (
+            ("approvalId", ..., "approvalId"),
+            ("proposalId", "PROPOSAL", "proposalId"),
+            ("proposalDigest", "A" * 64, "proposalDigest"),
+            ("proposalVersion", True, "proposalVersion"),
+            ("evidenceDecisionId", ..., "evidenceDecisionId"),
+            ("evidenceDecisionDigest", "2" * 63, "evidenceDecisionDigest"),
+            ("evidenceDecisionVersion", 2, "evidenceDecisionVersion"),
+            ("latitudeMicrodegrees", 90_000_001, "latitudeMicrodegrees"),
+            ("longitudeMicrodegrees", -180_000_001, "longitudeMicrodegrees"),
+            ("unexpected", "authority-bypass", "payload"),
+        )
+        observed: list[tuple[IntakeRefusal, object]] = []
+
+        # Act
+        for member, value, _expected in cases:
+            refusal, context = _refusal(
+                _escalation_bytes(**{member: value}),
+                topic=ESCALATION_TOPIC,
+            )
+            observed.append((IntakeRefusal(refusal), context))
+
+        # Assert
+        self.assertEqual(
+            [(IntakeRefusal.MALFORMED_COMMAND, expected) for _member, _value, expected in cases],
+            observed,
+        )
 
 
 class PayloadRefusalTests(unittest.TestCase):
@@ -236,6 +316,20 @@ class PayloadRefusalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, refusal)
+
+    def test_a_known_command_with_no_registered_payload_binding_is_named_explicitly(self) -> None:
+        # Arrange
+        missing_binding = EnvelopeError(EnvelopeRefusal.UNKNOWN_TYPE, "type", "future-command")
+
+        # Act
+        with patch(
+            "aerial_rescue_fleet_simulator.intake.decode_envelope",
+            side_effect=missing_binding,
+        ):
+            actual = _refusal(_bytes())
+
+        # Assert
+        self.assertEqual((IntakeRefusal.UNBOUND_COMMAND_TYPE, "future-command"), actual)
 
     def test_a_payload_naming_another_drone_does_not_bind_to_the_topic(self) -> None:
         # Arrange

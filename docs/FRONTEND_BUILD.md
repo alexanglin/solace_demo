@@ -1,9 +1,9 @@
 # Dashboard Build Guide
 
-This document has one job: how `apps/dashboard` moves from its committed, deliberately red browser
-acceptance contract to a green product surface, together with the contract and service work that
-unblocks it. It owns the build increments, the increment-to-blocker join, and the browser module
-composition. Every other fact is a reference to its canonical owner.
+This document has one job: track how `apps/dashboard` moves from its original UI-first acceptance
+contract to a green product surface, together with the contract and service work that unblocks it. It
+owns the build increments, the increment-to-blocker join, and the browser module composition. Every
+other fact is a reference to its canonical owner.
 
 ## 1. Authority and scope
 
@@ -23,43 +23,40 @@ of [`CONTRACTS.md`](CONTRACTS.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), and
 [`operating-parameters.md`](operating-parameters.md). ADR-0102 separately constrains the normal startup
 path that R9 must preserve, while
 [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) fixes the broker lifecycle sources R3 and
-R8 must implement. [ADR-0114](adr/0114-define-durable-application-processing.md) and
-[ADR-0116](adr/0116-close-the-application-data-plane-wire-documents.md) add the exact operator-command
-and proposal-decision contracts plus seven timeline-only projections. [ADR-0118](adr/0118-separate-gateway-records-from-private-replies.md)
+R8 must implement. [ADR-0146](adr/0146-define-durable-application-processing.md) and
+[ADR-0148](adr/0148-close-the-application-data-plane-wire-documents.md) add the exact operator-command
+and proposal-decision contracts plus seven timeline-only projections. [ADR-0150](adr/0150-separate-gateway-records-from-private-replies.md)
 places the direct mission-scoped gateway record on a topic disjoint from the private reply. Those accepted records govern every later
 browser and API increment; none of them claims that the corresponding runtime or control exists today.
 
 ## 2. Where the build starts from
 
-The repository state described here is dated 2026-08-25. It retains A1's green shell and the completed
-A2 contract boundary:
+The repository state described here is dated 2026-08-27. The Solace application-data-plane adoption has
+advanced both browser and runtime lanes, but production-stack browser acceptance is still pending:
 
-- The browser acceptance contract is committed and remains red beyond the A1 shell on purpose. The
-  Playwright specifications under `apps/dashboard/tests/e2e/` pin the complete operator surface —
+- The Playwright specifications under `apps/dashboard/tests/e2e/` pin the complete operator surface —
   landmarks, live regions, exact strings, fleet-table ordering, timeline ordering, keyboard and axe
-  behavior, visual baselines, and a zero-remote-request rule — before any application source exists. The contract's
-  scope and honesty rules are fixed by
+  behavior, visual baselines, and a zero-remote-request rule. The contract's scope and honesty rules are fixed by
   [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md); its local law is
   [`apps/dashboard/AGENTS.md`](../apps/dashboard/AGENTS.md) and its inventory is described in
   [`apps/dashboard/README.md`](../apps/dashboard/README.md) and the
   [`CHANGELOG.md`](../CHANGELOG.md) unreleased entry.
 - The stack is pinned by [ADR-0099](adr/0099-pin-the-dashboard-runtime-and-stack.md), with the system
   Node runtime updated by [ADR-0103](adr/0103-move-the-system-node-runtime-to-26.md), and the manifest,
-  lockfile, and strict toolchain configuration are committed. A1 replaced the
-  invalid `main` host with a neutral root, loads the real entry module, renders sibling banner and
-  main landmarks, acknowledges the fixture revision after render, and keeps the complete unit
-  coverage command green. A2 now supplies the production contract boundary; the remaining browser
-  acceptance cases still specify unimplemented A4-A8 behavior plus the R3 parity proof that closes
-  A3.
+  lockfile, and strict toolchain configuration are committed. The production entry module now consumes a
+  validated dynamic bootstrap, opens the live SSE source, folds broker-backed state, renders mode,
+  mission, fleet, timeline, recovery, proposal, and evidence surfaces, and submits the exact protected
+  proposal decision. The map, scenario controls, general command controls, replay playback, and final
+  visual acceptance remain incomplete.
 - The test harness fakes only serialized boundary inputs
   ([`dashboard-harness.ts`](../apps/dashboard/tests/e2e/support/dashboard-harness.ts)), and the
-  start and reset requests are intercepted on the wire by the specifications themselves. A3-A7 can
-  therefore be implemented and reviewed without a running backend. A8 waits for the production sources
-  and packaged runtime blockers named below.
-- The dashboard API and scenario service are now active only at their strict wire-model and
-  framework-free route-expectation layers; the fleet simulator owns the matching control-server
-  layer. None has a FastAPI application, listener, generated OpenAPI document, or private HTTP client.
-  [`services/recorder`](../services/recorder/AGENTS.md) remains a scaffold.
+  start and reset requests are intercepted on the wire by the specifications themselves. The remaining
+  browser work can still be reviewed against serialized boundaries, while A8 waits for the production
+  shared-stack sources and packaged browser execution.
+- The dashboard API, scenario service, and fleet simulator now have concrete FastAPI/HTTP compositions;
+  the dashboard listens on a Unix socket behind Caddy and the two private control listeners remain
+  container-internal. The recorder has a receiver-only capture runtime and isolated replay graph, but its
+  live export reader/codec and complete replay adapter remain open.
 - R1 is complete. Its browser-facing 23-shape schema, manifest, and fixture subincrement is green against the
   intended-red inventory and its bounded-input extension in
   [`test_dashboard_wire_contracts.py`](../tests/contract/test_dashboard_wire_contracts.py). The
@@ -81,19 +78,15 @@ A2 contract boundary:
   proves that committed output is current without network access. The production Vite-build
   integration check also proves that the test source selector and synthetic bearer sentinel are not
   emitted into browser assets.
-- A3 is in progress. The browser canonicalizer now rejects unsafe integer, string, key, array,
+- A3's browser and Python implementations are green. The browser canonicalizer rejects unsafe integer, string, key, array,
   descriptor, object, and cycle forms without invoking accessors; hashes versioned documents with
   platform Web Crypto under separated replay-state and ordered-event contexts; validates the
   ordinal/witness pairing; and compares lowercase SHA-256 values without a data-dependent early exit.
-  The shared Python/TypeScript oracle and ten-run parity evidence remain R3 work, so A3 is not marked
-  complete.
-- [`view.py`](../packages/contracts/src/aerial_rescue_contracts/view.py) projects telemetry and the
-  three validated lifecycle event kinds plus six application record kinds, but no reduced-state fold exists in Python;
-  [`audit.py`](../packages/store/src/aerial_rescue_store/audit.py) writes the ordinal but exposes
-  no read path. R1's scenario schemas and golden fixtures are contract evidence, not production
-  catalog files: the `scenarios/` directory that
-  [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes remains owned by R2 and does
-  not exist.
+  Python now owns the normalized fold, state document, ordered-event witness, and audit-ordered read path.
+  The explicit ten-run cross-language acceptance proof remains pending.
+- The strict production scenario catalog and confined loader exist, and the dashboard API's broker/store
+  projection reads authoritative audit order. Their deterministic tests are not production-stack or
+  fleet-scale evidence.
 
 ## 3. The governing decisions
 
@@ -110,7 +103,7 @@ A2 contract boundary:
 - [ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md) — Caddy as the sole
   host publisher, the API on a Unix socket, and the bootstrap shell that delivers the bearer.
 - [ADR-0097](adr/0097-close-the-ui-slice-http-contract.md) — the original closed route set, wire modes,
-  refusal order, and idempotency-key form; ADR-0114/0116 enlarge it only with the exact command and
+  refusal order, and idempotency-key form; ADR-0146/0148 enlarge it only with the exact command and
   proposal-decision mutations and still provide no generic approval route.
 - [ADR-0098](adr/0098-make-the-wilderness-dashboard-ui-first.md) — the UI-first slice: its
   workflow, viewport, fleet composition, declared-only labeling, state vocabulary, and
@@ -163,11 +156,10 @@ its entry criteria are met, and when a register row in section 7 is open, the br
 against the committed fixtures behind the eventual interface and never drafts the missing contract
 itself.
 
-**The join.** R1 gated A2, and both are now complete. A2's generated types are what A4 through A7
-consume, so the typed core no longer needs browser-owned wire shapes. A3's browser implementation is
-green and its completion remains joined to R3's cross-language parity oracle. Fixture-driven implementation and adapter tests
-through A7 need no running backend. Live wiring — real SSE, real HTTP responses, and real replay
-bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
+**The join.** R1/A2 and the browser/Python A3/A4 implementations are complete. The protected slice of
+A5-A7 now uses the production SSE and mutation boundaries supplied by R5. Replay playback, the remaining
+controls/panels, and the explicit cross-language repetition proof are still open. Production A8 evidence
+waits on the shared-stack execution of R5/R6/R8/R9 rather than on missing entry points.
 
 ![Dashboard build increments](architecture/dashboard-build-increments.png)
 
@@ -188,34 +180,32 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   check excludes the test selector and synthetic bearer from emitted assets. The check-only generator
   runs offline at pre-commit when an input changes and unconditionally at pre-push; its quality-gate
   tests pin the trigger inventory, command, and failure propagation.
-- **A3 — canonical digest module.** *Status: in progress; browser implementation green, parity
-  blocked by R3.* [`canonical.ts`](../apps/dashboard/src/domain/canonical.ts) implements the browser
+- **A3 — canonical digest module.** *Status: implementation complete; repetition evidence pending.*
+  [`canonical.ts`](../apps/dashboard/src/domain/canonical.ts) implements the browser
   twin of the [`CONTRACTS.md`](CONTRACTS.md) canonical serialization and domain-separated digest
   with platform Web Crypto, descriptor-safe input refusal, ordered-event witness construction, and
   fixed-work lowercase SHA-256 comparison. Unit and integration gates are green at the independent
-  frontend coverage threshold. The shared parity oracle and ten-run Python/TypeScript evidence still
-  arrive with R3, so this row is not complete.
-- **A4 — pure reducer and timeline model.** *Status: not started.* The
+  frontend coverage threshold. Python owns the corresponding contexts and witnesses; the explicit
+  ten-run Python/TypeScript acceptance proof remains.
+- **A4 — pure reducer and timeline model.** *Status: complete in Python and TypeScript.* The
   [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) ordinal and witness
   discipline — successor accepted, exact duplicate ignored, gap, regression, and digest divergence
   refused with the alert phrasings the specifications pin — plus the timeline as an append model
-  that telemetry never enters.
-- **A5 — event-source interface and adapters.** *Status: not started.* One interface, three
-  adapters — the test-fixture source, the live SSE source, and the replay-bundle source — with
-  explicit disposal, and the stream-overloaded control frame answered by exactly one
-  resynchronization. Live wiring waits on R5; replay bundles wait on R6.
-- **A6 — mutation client.** *Status: not started.* The in-memory-only bearer, the idempotency-key
-  form and refusal handling ADR-0097 and ADR-0116 fix for start, reset, operator command, and exact
-  proposal decision, a
-  double-submit guard that survives two synchronous activations, and a reload control that
-  performs a real document navigation.
-- **A7 — presentation state, map, and components.** *Status: not started.* Presentation state —
+  that telemetry never enters. The production live source feeds the same reducer.
+- **A5 — event-source interface and adapters.** *Status: live source complete; replay playback open.*
+  The production SSE source validates snapshot/event/control frames, resynchronizes after overload, and
+  exposes explicit loading, interruption, recovery, stale-runtime, and exhaustion states. The replay
+  graph is isolated server-side; a browser replay-bundle/playback adapter remains incomplete.
+- **A6 — mutation client.** *Status: exact proposal decision complete; other mutations open.* The
+  in-memory bearer, fresh idempotency key, closed response validation, ambiguity handling, stale-runtime
+  reload requirement, and double-submit guard are implemented for exact proposal decisions. Scenario
+  start/reset and general operator-command clients remain incomplete.
+- **A7 — presentation state, map, and components.** *Status: partial.* Presentation state —
   filters, selection, rail collapse, layer toggles, playback cursor and speed, marker
   interpolation — held outside mission state and its digest; the map adapter over the pinned
-  renderer with an empty local style and committed geometry; and the components the
-  specifications name: scenario rail, fleet rail with its semantic table, timeline, drone detail,
-  reset dialog, proposal-bound approval/refusal controls, and replay controls. Replay constructs no
-  mutation client for command or proposal decisions.
+  renderer with an empty local style and committed geometry — remains open. The current application
+  renders mission and mode status, the byte-ordered fleet table, audit timeline, recovery states, and
+  proposal-bound approval/refusal controls. Replay constructs no proposal-decision mutation client.
 - **A8 — screenshot baselines and final acceptance.** *Status: not started. Blocked by R5, R6, R8,
   and R9.* Generate baselines last, at both configured viewports, only after the coherent interface
   has been visually inspected and the real production sources work through the packaged service
@@ -246,54 +236,59 @@ bundles — waits on R5 and R6; production A8 evidence also waits on R8 and R9.
   `packages/contracts` remains
   the owner of the pure Python projections and fold in R3 and does not take a Pydantic dependency.
   ADR-0094/0097/0100/0107/0112 decide the shapes; the e2e fixture is a reference, never the type
-  authority. No FastAPI application, generated OpenAPI document, or listener is part of R1; those remain
-  R5/R8 work. R1's completion unblocks A2 and everything after it.
-- **R2 — scenario catalog and loader.** *Status: not started. Owner: `services/scenario_service`.*
-  R1 supplies contract schemas and shared golden examples only. R2 owns the two production files under
-  `scenarios/`, their strict bounded loader, digest/path validation, and lossless 20-simulation
-  projection [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) fixes.
-- **R3 — Python contract twins.** *Status: in progress. Owner: `packages/contracts`.* The strict
+  authority. R1 itself creates no FastAPI application, generated OpenAPI document, or listener; R5/R8 now
+  supply the application/listener compositions, while generated OpenAPI remains absent. R1's completion
+  unblocks A2 and everything after it.
+- **R2 — scenario catalog and loader.** *Status: complete offline; live prepared run pending. Owner:
+  `services/scenario_service`.* The two production files under `scenarios/`, strict bounded loader,
+  digest/path validation, and lossless 20-simulation projection selected by
+  [ADR-0100](adr/0100-commit-a-strict-wilderness-scenario-catalog.md) are implemented.
+- **R3 — Python contract twins.** *Status: implementation complete; repetition evidence pending. Owner:
+  `packages/contracts`.* The strict
   broker-source schemas, bindings, and normalized projections selected by
-  ADR-0111, ADR-0116, and ADR-0118 are green, including all seven timeline-only application projections. The ordered-event wrapper, the
+  ADR-0111, ADR-0148, and ADR-0150 are green, including all seven timeline-only application projections. The ordered-event wrapper, the
   witness-aware reduced-state fold and state document selected by
-  [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md), the first real use
-  of the replay-state and ordered-dashboard-event digest contexts, and the Python-and-TypeScript
-  parity fixtures that make A3 and A4 provable.
-- **R4 — store read path.** *Status: not started. Owner: `packages/store`.* The ordered
+  [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md), the replay-state and
+  ordered-dashboard-event digest contexts, and the shared anchors now exist. The explicit ten-run
+  cross-language execution remains.
+- **R4 — store read path.** *Status: complete offline; live PostgreSQL recovery pending. Owner:
+  `packages/store`.* The ordered
   non-telemetry timeline read, the latest-ordinal and ordered-event-witness read, and the cursor suffix
   behind the
   [ADR-0095](adr/0095-persist-only-the-ui-slice-lifecycle.md) persistence revision.
-- **R5 — dashboard API.** *Status: not started. Owner: `services/dashboard_api`.* The application
+- **R5 — dashboard API.** *Status: implemented and Compose-wired; live stack pending. Owner:
+  `services/dashboard_api`.* The application
   behind Caddy on the Unix socket, the closed eleven-route set, the bootstrap shell, broker-backed
   projection and recovery, the two new durable mutations, the SSE frames, and
   bounded reset cancellation
   ([ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md),
   [ADR-0097](adr/0097-close-the-ui-slice-http-contract.md),
   [ADR-0112](adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md)).
-- **R6 — recorder and replay validation.** *Status: not started. Owner: `services/recorder`.* The
-  receiver-only lifecycle path and two recorder queues
-  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) selects, the recording, the isolated
-  replay validator, and the replay-bundle route
+- **R6 — recorder and replay validation.** *Status: capture and isolated graph implemented; export codec,
+  browser playback, and live evidence open. Owner: `services/recorder`.* The receiver-only capture path,
+  durable deduplication, bounded export ports, and side-effect-free replay graph exist. A live database
+  export reader, recording codec, complete replay-bundle adapter, and shared-stack proof remain
   ([ADR-0094](adr/0094-validate-replay-before-browser-playback.md)).
 - **R7 — canonical-document propagation.** *Status: in progress. Owner: each document's
   maintainer.* The contract-era documents, root/dashboard status, operating parameters, and affected
-  component guides now reflect ADR-0114/0116/0118 without claiming a runtime. Security documentation,
+  component guides now reflect ADR-0146/0148/0150 without claiming a runtime. Security documentation,
   deployment guidance, runbooks, diagrams, and release evidence remain later adoption increments.
-- **R8 — scenario and fleet live control.** *Status: not started. Owner:
-  `services/scenario_service` and `services/fleet_simulator`.* Add the authenticated private HTTP
-  control surface [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines,
-  the exact 20-simulation projection, bounded pacing and cancellation, the guaranteed mission,
-  connectivity, and sector sources
-  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md) defines, and the
-  14-tick/280-publication proof and separate publication counter defined in
-  [`operating-parameters.md`](operating-parameters.md#workload-and-service-level-profile). Event
+- **R8 — scenario and fleet live control.** *Status: private control and fleet runtime implemented;
+  lifecycle publications and live proof open. Owners: `services/scenario_service` and
+  `services/fleet_simulator`.* The authenticated private HTTP control surface
+  [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines, exact 20-simulation
+  projection, bounded pacing/cancellation, durable command processing, and publication counter exist.
+  The guaranteed mission, connectivity, and sector sources selected by
+  [ADR-0111](adr/0111-broker-dashboard-lifecycle-sources.md), plus the 14-tick/280-publication proof in
+  [`operating-parameters.md`](operating-parameters.md#workload-and-service-level-profile), remain. Event
   identity and each source's independent producer sequence must survive reconciliation without a
   generalized outbox.
-- **R9 — production packaging and exact service selection.** *Status: not started. Owner:
-  `deploy/`, `services/dashboard_api`, and `justfile`.* Preserve
-  [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md) for normal startup while
-  adding the explicit mission-control service closure, replay-validator isolation, Unix-socket
-  relay, security headers, asset policy, health checks, and production end-to-end entry point.
+- **R9 — production packaging and exact service selection.** *Status: wiring complete; production
+  end-to-end execution pending. Owners: `deploy/`, `services/dashboard_api`, and `justfile`.* The explicit
+  mission-control service closure, Unix-socket relay, packaged assets, startup ordering, security headers,
+  and healthchecks are committed while preserving
+  [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md). The shared-stack and browser run
+  must still prove them.
 
 ## 5. Browser state architecture
 
@@ -347,14 +342,14 @@ live SSE, validated replay bundles, and deterministic test fixtures feed the sam
 | Row | Blocked dashboard work | Missing today | Owner |
 | --- | --- | --- | --- |
 | R1 | Complete; A2 is done and the typed core A4-A7 is unblocked | none; 23 schemas, fixtures, 21 service-local Python twins, and eleven route expectations are green | dashboard/scenario/fleet services |
-| R2 | live scenario listing and start data | catalog files and strict loader | `services/scenario_service` |
-| R3 | digest and reducer parity proof for A3-A4 | witness-aware ordered fold, Python state document, parity fixtures; projection rows are complete | `packages/contracts` |
-| R4 | snapshot timeline and resume reads | store timeline, latest ordinal plus witness, cursor suffix, persistence revision | `packages/store` |
-| R5 | live SSE and HTTP in A5-A6 | the API, Caddy relay, bootstrap shell, broker consumers, durable mutations, SSE frames | `services/dashboard_api` |
-| R6 | replay bundles in A5 and A8 replay flows | receiver-only lifecycle recording, two queues, validator, bundle route | `services/recorder` |
+| R2 | live scenario listing and start data | shared-stack execution of the implemented catalog/control path | `services/scenario_service` |
+| R3 | digest and reducer parity proof for A3-A4 | explicit ten-run cross-language execution | `packages/contracts` |
+| R4 | snapshot timeline and resume reads | live PostgreSQL recovery/readback of the implemented store path | `packages/store` |
+| R5 | live SSE and HTTP in A5-A6 | shared-stack Unix-socket, broker, store, and scenario execution | `services/dashboard_api` |
+| R6 | replay bundles in A5 and A8 replay flows | live export reader/codec, bundle adapter, and browser playback | `services/recorder` |
 | R7 | none directly; removes contradictions readers hit | remaining canonical-document, security, deployment, runbook, and ADR-index propagation | each document's maintainer |
-| R8 | live runtime behavior behind A5-A8 | authenticated scenario/fleet control, exact publications, and ADR-0111 lifecycle publishers | `services/scenario_service`, `services/fleet_simulator` |
-| R9 | production-source A8 evidence and isolated local delivery | exact service closure, replay isolation, Caddy/socket packaging, production E2E | `deploy/`, `services/dashboard_api`, `justfile` |
+| R8 | live runtime behavior behind A5-A8 | ADR-0111 lifecycle publishers and 14-tick/280-publication live proof | `services/scenario_service`, `services/fleet_simulator` |
+| R9 | production-source A8 evidence and isolated local delivery | execute the implemented service closure and packaged browser E2E | `deploy/`, `services/dashboard_api`, `justfile` |
 
 ## 8. Maintaining this document
 

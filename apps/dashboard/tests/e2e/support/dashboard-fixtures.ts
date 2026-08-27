@@ -593,6 +593,7 @@ function snapshot(
     },
     cursor: opaqueLiveCursor({ digest, frame: "snapshot" }),
     digest,
+    latestEventDigest: latestEventWitness(state, timeline),
     runtimeId: "runtime-synthetic-0001",
     snapshotVersion: "dashboard-snapshot/v1",
     state,
@@ -670,6 +671,31 @@ export function replayStateDigest(state: DashboardReducedState): string {
   );
   const material = `aerial-rescue/canonical/v1\nreplay-state\n${canonicalJson(stateWithoutTopLevelDigest)}`;
   return createHash("sha256").update(material, "utf8").digest("hex");
+}
+
+function orderedEventWitnessDigest(orderedEvent: OrderedDashboardEventFixture): string {
+  const material = `aerial-rescue/canonical/v1\nordered-dashboard-event\n${canonicalJson({
+    auditOrdinal: orderedEvent.auditOrdinal,
+    canonicalizationVersion: 1,
+    event: orderedEvent.event,
+  })}`;
+  return createHash("sha256").update(material, "utf8").digest("hex");
+}
+
+function latestEventWitness(
+  state: DashboardReducedState,
+  orderedEvents: readonly OrderedDashboardEventFixture[],
+): string | null {
+  if (state.latestAuditOrdinal === 0) {
+    return null;
+  }
+  const latest = orderedEvents.find(
+    (orderedEvent) => orderedEvent.auditOrdinal === state.latestAuditOrdinal,
+  );
+  if (latest === undefined) {
+    throw new Error("snapshot fixture is missing its latest ordered event witness");
+  }
+  return orderedEventWitnessDigest(latest);
 }
 
 function event(
@@ -905,6 +931,7 @@ function replayBundle(overrides: ReplayFixtureOverrides): DashboardSourceInput {
     bundleVersion: "dashboard-replay-bundle/v1",
     events: replayOrderedEvents,
     initialState: replayInitialState,
+    latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
     sessionId: "replay-session-0001",
@@ -1027,6 +1054,7 @@ export function malformedBoundaryInputs(
     bundleVersion: "dashboard-replay-bundle/v1",
     events: "not-an-array",
     initialState: replayInitialState,
+    latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
     sessionId: "replay-session-malformed",

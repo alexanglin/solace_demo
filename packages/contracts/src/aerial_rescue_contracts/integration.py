@@ -1,6 +1,6 @@
 """The closed Agent Mesh integration response at the application boundary.
 
-``docs/adr/0116-close-the-application-data-plane-wire-documents.md`` makes this
+``docs/adr/0148-close-the-application-data-plane-wire-documents.md`` makes this
 body the sole application integration document that is not a CloudEvent.  It is
 direct, non-authoritative evidence: a command gateway must validate it and commit
 a canonical proposal before any part of the response acquires durable authority.

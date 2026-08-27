@@ -19,7 +19,7 @@ live class.
 from __future__ import annotations
 
 import unittest
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
@@ -27,10 +27,14 @@ import pytest
 from aerial_rescue_domain.outbox import OutboxError, OutboxEvent, OutboxState
 from aerial_rescue_store.migration import COMMAND_OUTBOX_TABLE
 from aerial_rescue_store.outbox import (
+    COMMAND_PUBLICATION_BATCH_SIZE,
     MAXIMUM_UNCONFIRMED_RECORDS,
+    CommandOutboxRecord,
     StagedCommand,
     StagedCommandError,
     StagedCommandRefusal,
+    pending,
+    pending_statement,
     publication_statement,
     record_publication,
     stage,
@@ -42,6 +46,7 @@ from sqlalchemy import create_engine
 if TYPE_CHECKING:
     from sqlalchemy.sql.dml import Insert, Update
     from sqlalchemy.sql.expression import ClauseElement
+    from sqlalchemy.sql.selectable import Select
 
 DIALECT: Final = create_engine(f"{DRIVER}://aerial_rescue@127.0.0.1:5432/aerial_rescue").dialect
 """The dialect the member's own driver pin resolves to. Nothing connects: an engine is lazy."""
@@ -88,6 +93,48 @@ class _RecordingSession:
         """Record the statement whose single value was asked for, and answer it."""
         self.scalars.append(_rendered(statement))
         return self.written
+
+
+@dataclass
+class _Rows:
+    """Return scripted command-outbox rows in database order."""
+
+    rows: Sequence[Sequence[object]]
+
+    def all(self) -> Sequence[Sequence[object]]:
+        """Return the scripted rows."""
+        return self.rows
+
+
+@dataclass
+class _ReadSession:
+    """Record a bounded pending read without opening PostgreSQL."""
+
+    rows: Sequence[Sequence[object]]
+    statements: list[str] = field(default_factory=list)
+
+    async def execute(self, statement: Select[tuple[object, ...]], /) -> _Rows:
+        """Record the typed select and return the scripted rows."""
+        self.statements.append(_rendered(statement))
+        return _Rows(self.rows)
+
+
+def _row(
+    command: StagedCommand = STAGED,
+    state: OutboxState = OutboxState.STAGED,
+) -> tuple[object, ...]:
+    """Return one migrated command-outbox row in metadata order."""
+    return (
+        command.command_id,
+        command.mission_id,
+        command.drone_id,
+        command.payload,
+        state.value,
+        command.correlation_id,
+        command.causation_id,
+        command.traceparent,
+        command.staged_at,
+    )
 
 
 class StageStatementTests(unittest.TestCase):
@@ -174,6 +221,83 @@ class PublicationStatementTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(rendered.endswith(f"RETURNING {COMMAND_OUTBOX_TABLE}.command_id"))
+
+
+class PendingStatementTests(unittest.TestCase):
+    def test_the_read_is_state_scoped_oldest_first_and_bounded(self) -> None:
+        # Arrange
+        limit = COMMAND_PUBLICATION_BATCH_SIZE
+
+        # Act
+        rendered = _rendered(pending_statement(OutboxState.STAGED, limit))
+        bound = tuple(_parameters(pending_statement(OutboxState.STAGED, limit)).values())
+
+        # Assert
+        self.assertEqual(
+            (True, True, (OutboxState.STAGED.value, limit)),
+            (
+                "ORDER BY command_outbox.staged_at, command_outbox.command_id" in rendered,
+                "LIMIT" in rendered,
+                bound[-2:],
+            ),
+        )
+
+
+class PendingReadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_staged_and_ambiguous_rows_are_read_as_distinct_recovery_states(self) -> None:
+        # Arrange
+        staged_session = _ReadSession((_row(),))
+        ambiguous_session = _ReadSession((_row(state=OutboxState.RECONCILIATION_NEEDED),))
+
+        # Act
+        staged = await pending(
+            staged_session,
+            OutboxState.STAGED,
+            COMMAND_PUBLICATION_BATCH_SIZE,
+        )
+        ambiguous = await pending(
+            ambiguous_session,
+            OutboxState.RECONCILIATION_NEEDED,
+            COMMAND_PUBLICATION_BATCH_SIZE,
+        )
+
+        # Assert
+        self.assertEqual(
+            (
+                (CommandOutboxRecord(STAGED, OutboxState.STAGED),),
+                (CommandOutboxRecord(STAGED, OutboxState.RECONCILIATION_NEEDED),),
+            ),
+            (staged, ambiguous),
+        )
+
+    async def test_invalid_bounds_and_terminal_state_are_refused_before_sql(self) -> None:
+        # Arrange
+        cases = (
+            (OutboxState.STAGED, 0),
+            (OutboxState.STAGED, COMMAND_PUBLICATION_BATCH_SIZE + 1),
+            (OutboxState.CONFIRMED, COMMAND_PUBLICATION_BATCH_SIZE),
+        )
+        sessions = tuple(_ReadSession(()) for _case in cases)
+
+        # Act
+        refusals = []
+        for session, (state, limit) in zip(sessions, cases, strict=True):
+            with pytest.raises(StagedCommandError) as captured:
+                await pending(session, state, limit)
+            refusals.append(captured.value.refusal)
+
+        # Assert
+        self.assertEqual(
+            (
+                [
+                    StagedCommandRefusal.INVALID_READ_LIMIT,
+                    StagedCommandRefusal.INVALID_READ_LIMIT,
+                    StagedCommandRefusal.TERMINAL_READ,
+                ],
+                ([], [], []),
+            ),
+            (refusals, tuple(session.statements for session in sessions)),
+        )
 
 
 class StageTests(unittest.IsolatedAsyncioTestCase):

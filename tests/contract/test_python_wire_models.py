@@ -276,6 +276,61 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertEqual(document, parsed.model_dump(mode="python", by_alias=True))
 
+    def test_dashboard_event_model_accepts_every_new_recorded_projection(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        schema_id = f"{SCHEMA_PREFIX}dashboard/dashboard-event.schema.json"
+        base = {
+            "mission": "mission-01",
+            "time": "2026-08-25T12:00:00.000Z",
+        }
+        documents = (
+            {
+                **base,
+                "kind": "salientObservation",
+                "eventClass": "EVIDENCE",
+                "data": {
+                    "droneId": "drone-01",
+                    "observation": "thermal-anomaly",
+                    "latitudeMicrodegrees": 44_475_000,
+                    "longitudeMicrodegrees": -79_245_000,
+                    "detail": "bounded synthetic observation",
+                },
+            },
+            {
+                **base,
+                "kind": "droneCommand",
+                "eventClass": "COMMAND",
+                "data": {
+                    "droneId": "drone-01",
+                    "commandId": "command-01",
+                    "sectorId": "sector-01",
+                },
+            },
+            {
+                **base,
+                "kind": "commandResult",
+                "eventClass": "COMMAND",
+                "data": {
+                    "droneId": "drone-01",
+                    "commandId": "command-01",
+                    "outcome": "succeeded",
+                },
+            },
+        )
+
+        # Act
+        parsed = tuple(
+            dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(document))
+            for document in documents
+        )
+
+        # Assert
+        self.assertEqual(
+            documents,
+            tuple(model.model_dump(mode="python", by_alias=True) for model in parsed),
+        )
+
     def test_integer_constants_refuse_boolean_equivalence_at_each_service_boundary(self) -> None:
         # Arrange
         cases = (

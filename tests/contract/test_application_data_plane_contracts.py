@@ -1,4 +1,4 @@
-"""Closed application data-plane documents selected by ADR-0116.
+"""Closed application data-plane documents selected by ADR-0148.
 
 The contract manifest is the executable compatibility oracle.  This file pins the new
 inventory and every structural branch before the schemas, fixtures, and bindings are
@@ -187,28 +187,38 @@ def _load(path: str) -> dict[str, object]:
     )
 
 
+def _declared_constant(mapping: dict[str, object], property_name: str) -> str | None:
+    """Return the constant declared directly for one object property, if any."""
+    properties = mapping.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    property_schema = cast("dict[str, object]", properties).get(property_name)
+    if not isinstance(property_schema, dict):
+        return None
+    constant = cast("dict[str, object]", property_schema).get("const")
+    return constant if isinstance(constant, str) else None
+
+
+def _schema_members(value: object) -> tuple[object, ...]:
+    """Return the child values that can contain another schema declaration."""
+    if isinstance(value, dict):
+        return tuple(cast("dict[str, object]", value).values())
+    if isinstance(value, list):
+        return tuple(cast("list[object]", value))
+    return ()
+
+
 def _constants(value: object, property_name: str) -> frozenset[str]:
     """Return every string constant used for ``property_name`` in a schema tree."""
-    if isinstance(value, dict):
-        mapping = cast("dict[str, object]", value)
-        found: set[str] = set()
-        properties = mapping.get("properties")
-        if isinstance(properties, dict):
-            property_schema = cast("dict[str, object]", properties).get(property_name)
-            if isinstance(property_schema, dict):
-                constant = cast("dict[str, object]", property_schema).get("const")
-                if isinstance(constant, str):
-                    found.add(constant)
-        for member in mapping.values():
-            found.update(_constants(member, property_name))
-        return frozenset(found)
-    if isinstance(value, list):
-        return frozenset(
-            constant
-            for member in cast("list[object]", value)
-            for constant in _constants(member, property_name)
-        )
-    return frozenset()
+    nested = frozenset(
+        constant
+        for member in _schema_members(value)
+        for constant in _constants(member, property_name)
+    )
+    if not isinstance(value, dict):
+        return nested
+    declared = _declared_constant(cast("dict[str, object]", value), property_name)
+    return nested if declared is None else nested | {declared}
 
 
 def _property_names(value: object) -> frozenset[str]:

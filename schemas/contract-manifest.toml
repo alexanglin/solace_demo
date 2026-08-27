@@ -303,8 +303,18 @@ invalid = ["fixtures/golden/v1/dashboard/bootstrap/unknown-member.json"]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/dashboard-event.schema.json"
-valid = ["fixtures/golden/v1/dashboard/dashboard-event/baseline.json"]
-invalid = ["fixtures/golden/v1/dashboard/dashboard-event/unknown-member.json"]
+valid = [
+  "fixtures/golden/v1/dashboard/dashboard-event/baseline.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/salient-observation.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/drone-command-assign-sector.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/command-result.json",
+]
+invalid = [
+  "fixtures/golden/v1/dashboard/dashboard-event/unknown-member.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/salient-observation-unknown-member.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/drone-command-assign-sector-unknown-member.json",
+  "fixtures/golden/v1/dashboard/dashboard-event/command-result-unknown-member.json",
+]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/dashboard-event-frame.schema.json"
@@ -319,7 +329,10 @@ invalid = ["fixtures/golden/v1/dashboard/dashboard-reduced-state/unknown-member.
 [[contracts]]
 schema = "schemas/v1/dashboard/dashboard-snapshot.schema.json"
 valid = ["fixtures/golden/v1/dashboard/dashboard-snapshot/baseline.json"]
-invalid = ["fixtures/golden/v1/dashboard/dashboard-snapshot/unknown-member.json"]
+invalid = [
+  "fixtures/golden/v1/dashboard/dashboard-snapshot/unknown-member.json",
+  "fixtures/golden/v1/dashboard/dashboard-snapshot/ordinal-witness-mismatch.json",
+]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/error.schema.json"
@@ -348,8 +361,14 @@ invalid = ["fixtures/golden/v1/dashboard/readiness/unknown-member.json"]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/replay-bundle.schema.json"
-valid = ["fixtures/golden/v1/dashboard/replay-bundle/baseline.json"]
-invalid = ["fixtures/golden/v1/dashboard/replay-bundle/unknown-member.json"]
+valid = [
+  "fixtures/golden/v1/dashboard/replay-bundle/baseline.json",
+  "fixtures/golden/v1/dashboard/replay-bundle/reducer-parity.json",
+]
+invalid = [
+  "fixtures/golden/v1/dashboard/replay-bundle/unknown-member.json",
+  "fixtures/golden/v1/dashboard/replay-bundle/ordinal-witness-mismatch.json",
+]
 
 [[contracts]]
 schema = "schemas/v1/dashboard/replay-integrity.schema.json"

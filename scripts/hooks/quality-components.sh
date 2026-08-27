@@ -18,7 +18,11 @@ quality_root_python_source_present() {
 }
 
 quality_agent_python_source_present() {
-	for root in agent-mesh/plugins agent-mesh/tools; do
+	for root in \
+		agent-mesh/aerial_rescue_event_mesh_gateway \
+		agent-mesh/aerial_rescue_runtime_compat \
+		agent-mesh/plugins \
+		agent-mesh/tools; do
 		if quality_tree_has_files "$root" -name '*.py' -o -name '*.pyi'; then
 			return 0
 		fi
@@ -40,6 +44,18 @@ quality_root_python_paths() {
 	git ls-files --cached --others --exclude-standard -- '*.py' '*.pyi' |
 		grep -v '^agent-mesh/' |
 		sed -n 's|^\([^/]*\)/.*|\1|p' |
+		sort -u
+}
+
+# Emit every workspace source-layout root that mypy must treat as an import base. With
+# explicit_package_bases enabled, leaving these implicit makes one file visible both as
+# packages.member.src.package.module and as package.module through the editable install.
+# The listing is derived from the same tracked-or-unignored authority as the owned roots,
+# so activating another src-layout member cannot leave the type gate stale.
+quality_root_python_import_paths() {
+	git ls-files --cached --others --exclude-standard -- '*.py' '*.pyi' |
+		grep -v '^agent-mesh/' |
+		sed -n 's|^\(.*\/src\)/.*|\1|p' |
 		sort -u
 }
 

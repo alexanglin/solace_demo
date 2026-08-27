@@ -53,10 +53,25 @@ PUBLIC_SCHEMA_NAMES = (
 )
 
 DASHBOARD_BRANCHES = {
+    "dashboard-event": (
+        "baseline",
+        "salient-observation",
+        "drone-command-assign-sector",
+        "command-result",
+    ),
     "operator-command-request": ("baseline", "escalate-rescue"),
     "command-response": ("baseline",),
     "proposal-decision-request": ("baseline", "reject"),
     "proposal-decision-response": ("baseline", "reject"),
+}
+
+DASHBOARD_EXTRA_INVALID_FIXTURES = {
+    "dashboard-snapshot": ("ordinal-witness-mismatch",),
+    "replay-bundle": ("ordinal-witness-mismatch",),
+}
+
+DASHBOARD_EXTRA_VALID_FIXTURES = {
+    "replay-bundle": ("reducer-parity",),
 }
 
 
@@ -153,6 +168,10 @@ class DashboardWireInventoryTests(unittest.TestCase):
                 [
                     _fixture_path(name, branch).relative_to(REPO_ROOT).as_posix()
                     for branch in branches
+                ]
+                + [
+                    _fixture_path(name, fixture).relative_to(REPO_ROOT).as_posix()
+                    for fixture in DASHBOARD_EXTRA_VALID_FIXTURES.get(name, ())
                 ],
                 [
                     _fixture_path(
@@ -162,6 +181,10 @@ class DashboardWireInventoryTests(unittest.TestCase):
                     .relative_to(REPO_ROOT)
                     .as_posix()
                     for branch in branches
+                ]
+                + [
+                    _fixture_path(name, fixture).relative_to(REPO_ROOT).as_posix()
+                    for fixture in DASHBOARD_EXTRA_INVALID_FIXTURES.get(name, ())
                 ],
             )
 
@@ -245,7 +268,7 @@ class DashboardStateAuthorityTests(unittest.TestCase):
 
 
 class DashboardEventContractTests(unittest.TestCase):
-    def test_the_event_union_has_the_exact_eleven_normalized_kinds_and_classes(self) -> None:
+    def test_the_event_union_has_the_exact_thirteen_normalized_kinds_and_classes(self) -> None:
         # Arrange
         event_schema = _load(_schema_path("dashboard-event"))
         expected = {
@@ -257,7 +280,9 @@ class DashboardEventContractTests(unittest.TestCase):
             "operatorApproval": "APPROVAL",
             "agentProposal": "EVIDENCE",
             "evidenceDecision": "EVIDENCE",
+            "salientObservation": "EVIDENCE",
             "droneCommand": "COMMAND",
+            "commandResult": "COMMAND",
             "gatewayResponse": "AUDIT",
             "auditRecord": "AUDIT",
         }
@@ -344,7 +369,11 @@ class DashboardEventContractTests(unittest.TestCase):
             "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
             "#/$defs/evidenceDecision",
             "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/salientObservation",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
             "#/$defs/droneCommand",
+            "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
+            "#/$defs/commandResult",
             "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"
             "#/$defs/gatewayResponse",
             "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json"

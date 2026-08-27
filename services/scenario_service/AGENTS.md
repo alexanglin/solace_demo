@@ -7,9 +7,10 @@ These instructions apply to every file under `services/scenario_service/`. Read 
 rules still apply.
 
 This member is the Tier 2 boundary for discovering and loading versioned synthetic scenarios and
-coordinating their lifecycle. Its strict scenario-file and private-control models plus framework-free
-route expectations are implemented; its catalog loader, HTTP client/server, and lifecycle runtime are
-not. Read the owner of each concern before changing it:
+coordinating their lifecycle. Its strict scenario-file and private-control models, framework-free route
+expectations, confined catalog loader, authenticated HTTP client/server, process-epoch lifecycle
+runtime, and production catalog are implemented. The durable lifecycle adapter, generated OpenAPI, and
+live-stack qualification are not. Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -62,9 +63,15 @@ fact in its canonical authority and make the coordinated change required by the 
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn pins selected for later runtime work |
+| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, exact FastAPI, HTTPX, Pydantic, and Uvicorn pins, and the `scenario-service` console entry point |
 | `src/aerial_rescue_scenario_service/wire.py` | Owns the two scenario-file models, four scenario-control server models, four distinct fleet-control caller models, and canonical-first strict validation |
 | `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact three-route private request, response, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_scenario_service/catalog.py` | Confines, bounds, digest-checks, and validates every definition selected by the injected version-one filesystem catalog |
+| `src/aerial_rescue_scenario_service/fleet_http.py` | Owns the distinct authenticated, bounded HTTPX caller and uncertain-start status reconciliation for fleet control |
+| `src/aerial_rescue_scenario_service/control.py` | Losslessly projects accepted definitions, coordinates one process epoch, and maps typed fleet outcomes without claiming durable mission authority |
+| `src/aerial_rescue_scenario_service/http_runtime.py` | Enforces ordered private admission, canonical request/response bodies, closed refusals, Host and bearer checks, bounded lifecycle, liveness, and readiness in FastAPI |
+| `src/aerial_rescue_scenario_service/service.py` | Reads only the six private-control/catalog inputs, composes the brokerless runtime, and starts the internal Uvicorn listener |
+| `tests/` | Owns the member-local catalog, coordinator, private HTTP, composition, timeout, refusal, readiness, and no-broker behavior |
 | `src/aerial_rescue_scenario_service/__init__.py` | Package-intent docstring |
 | `src/aerial_rescue_scenario_service/py.typed` | Marker for distributed type information |
 
@@ -76,28 +83,32 @@ The model layer is closed, frozen, strict, alias-only, and checked against the m
 and one-reason-negative fixtures. It delegates canonical JSON to `packages/contracts`, keeps caller and
 server copies process-local, and imports no other service implementation.
 
-The repository still has no production `scenarios/` directory or catalog files, loader, lifecycle
-coordinator, internal HTTP server or client, simulator handoff, store adapter, composition root,
-liveness probe, readiness probe, generated OpenAPI document, listener, or member-local test suite. The
-route registry is inert data for later runtime and OpenAPI parity tests. Never add a dummy scenario,
-placeholder handler, fake catalog, no-op lifecycle operation, or import-only entry point to make an
-absent capability look started; each behavior lands through red-green-refactor.
+The repository now has the production `scenarios/` catalog and exact twenty-plus-three definition. It
+still has no durable lifecycle store adapter or generated OpenAPI document. The
+catalog loader, lifecycle coordinator,
+private HTTP server and client, lossless simulator handoff, composition root, liveness/readiness probes,
+listener entry point, and member-local test suite are implemented. An absent or invalid injected catalog
+keeps liveness available and readiness false; it never installs a dummy scenario or claims a runnable
+mission. The framework-free route registry remains the independent contract oracle.
 
-The `scenario-service` definition in `deploy/compose.yaml` is also a shell. Its command imports this
-package and exits, it publishes no port, and its inherited healthcheck imports the contracts package
-instead of probing this service. The generic application anchor supplies broker endpoint, Ollama,
-PostgreSQL, trust-store, secret, and dependency wiring, but none of those inherited values proves this
-member needs or uses that dependency. ADR-0061 deliberately gives the scenario service no broker username,
-password, role, publish grant, or subscription grant.
+The `scenario-service` definition in `deploy/compose.yaml` invokes the console entry point with distinct
+private bearer files, the production catalog root, private-only networking, dependency ordering, and an
+internal health probe. That wiring is configuration evidence, not proof that the shared-stack process has
+started or completed a mission. The application composes no broker, A2A, Ollama, or PostgreSQL capability
+and reads no corresponding environment value. ADR-0061 deliberately gives the scenario service no broker
+username, password, role, publish grant, or subscription grant.
 
-None of the current models or configuration proves an HTTP listener, catalog load, scenario acceptance, start,
-reset, simulator delivery, readiness, cancellation, or shutdown. `AGENTS.md` and its `CLAUDE.md` symlink
-remain documentation and do not affect active-member detection.
+The member-local suite proves HTTP admission, catalog load, exact projection, start/status/cancel
+coordination, readiness, bounded shutdown, and typed simulator delivery through deterministic fakes and
+HTTPX's in-process transport. It is not live process, container-network, fleet-scale, or durable-store
+evidence. `AGENTS.md` and its `CLAUDE.md` symlink remain documentation and do not affect active-member
+detection.
 
 ## 3. Produce the accepted simulator boundary without a second owner
 
-ADR-0077 fixes the semantic output this member must eventually make available: one simulator run receives
-one validated, frozen `FleetScenario` at its composition boundary. The value currently lives in
+ADR-0077 fixes the semantic output this member makes available through the private fleet-control
+projection: one simulator run receives one validated, frozen `FleetScenario` at its composition boundary.
+The value currently lives in
 `aerial_rescue_fleet_simulator.scenario` and carries exactly:
 
 - one run's `mission_id`;
@@ -129,10 +140,11 @@ Keep ownership separated:
 - The dashboard API owns the public scenario discovery, start, and reset routes. This member must not
   duplicate their browser-facing Host, Origin, bearer, OpenAPI, or idempotency boundary.
 
-ADR-0107 now defines the serializable handoff over authenticated private HTTP: this member sends the
+ADR-0107 defines the serializable handoff over authenticated private HTTP: this member sends the
 lossless fleet-control start document to the separate fleet process and validates its typed status or
-refusal. The distinct fleet-control caller models now exist locally, but no HTTP client or server exists.
-That contract does not authorize a dependency from one service package to another. Never import a
+refusal. The distinct caller models, bounded HTTPX client, and FastAPI server exist locally and import no
+other service implementation. That contract does not authorize a dependency from one service package to
+another. Never import a
 simulator composition root, duplicate `FleetScenario`, or pass loose mappings that create an unowned
 second representation.
 
@@ -163,15 +175,17 @@ replay consumes a committed versioned event stream through a structurally isolat
 fixed scenario replay, compare raw event identifiers or timestamps as its determinism oracle, or let a
 recorded event become live scenario input.
 
-## 5. Implement the decided document and catalog without claiming runtime
+## 5. Preserve the decided production document and catalog without claiming live evidence
 
 ADR-0100 selects canonical JSON, integer version `1`, `scenarios/catalog.v1.json`, and
 `scenarios/v1/wilderness-missing-person.r1.json`. The language-neutral catalog and definition schemas,
 their manifest entries, and synthetic polarity fixtures now exist under `schemas/` and `fixtures/`.
-Strict service-local Pydantic twins now validate those file shapes, but the two production files, loader,
-filesystem policy, and simulator adaptation remain unimplemented.
+Strict service-local Pydantic twins and the confined loader enforce those file shapes, byte bounds,
+depth bounds, digest identity, and filesystem policy before producing the private fleet-control
+projection. The two production files carry the exact twenty-plus-three roster and heartbeat-loss
+schedule. Their presence is not a running process or fleet-scale result.
 
-Treat every future production document and catalog entry as untrusted even though it is committed.
+Treat every production document and catalog entry as untrusted even though it is committed.
 Retain source bytes long enough to refuse duplicate keys and floating-point values before Pydantic can
 collapse or coerce them, validate the closed schema, and only then construct focused values. Never accept
 unknown fields, repair an identifier, case-fold a name, silently apply a default version, or partially
@@ -184,17 +198,17 @@ artifacts, digest mismatch, duplicate or ambiguous catalog identity, and paths o
 fetch a runtime URL, execute configuration code, import a module named by a document, or let filesystem
 order choose a definition.
 
-The byte, nesting, catalog, roster, and heartbeat-schedule bounds are now owned by
-`docs/operating-parameters.md`. Enforce them at the raw file and model boundaries; a green schema fixture
-is not evidence that the absent loader applies them.
+The byte, nesting, catalog, roster, and heartbeat-schedule bounds are owned by
+`docs/operating-parameters.md`. Enforce them at the raw file and model boundaries; the committed-catalog
+test, not a green schema fixture alone, proves that the loader applies them to the production catalog.
 
 ## 6. Map simulator-bound values losslessly and preserve refusals
 
-After the file contract exists, adapt every simulator-bound member to the simulator value without adding,
-dropping, deriving, or silently defaulting a fact. Catalog metadata, provenance, and other non-simulator
-members remain with their decided owners instead of being forced into `FleetScenario` or discarded.
-Construct the owning types and preserve their typed refusals rather than duplicating their cross-field
-rules in this service.
+The current private projection adapts every simulator-bound member without adding, dropping, deriving, or
+silently defaulting a fact. Catalog metadata, provenance, and other non-simulator members remain with
+their decided owners instead of being forced into `FleetScenario` or discarded. The fleet server
+constructs its owning types and returns its typed refusals; this client preserves those refusals rather
+than importing the fleet package or duplicating its cross-field rules.
 
 The current `FleetScenario` boundary refuses, in a fixed owning implementation:
 
@@ -207,10 +221,10 @@ The current `FleetScenario` boundary refuses, in a fixed owning implementation:
 - a negative scheduled tick ordinal.
 
 Pydantic owns the external shape and type refusal. The simulator constructor owns whether the resulting
-combination can fold. Translate an expected `ScenarioError` into ADR-0107's typed, redacted refusal; do
-not catch it and retry with repaired data, replace it with a generic accepted scenario, or restate the
-whole table in a second validator. Unexpected errors retain their stack traces only through redacted
-structured diagnostics.
+combination can fold. The fleet server translates an expected `ScenarioError` into ADR-0107's typed,
+redacted refusal, and this client maps it without exposing response detail. Do not catch it and retry with
+repaired data, replace it with a generic accepted scenario, or restate the whole table in a second
+validator. Unexpected errors retain their stack traces only through redacted structured diagnostics.
 
 Preserve the current model's deliberately narrow semantics:
 
@@ -226,10 +240,10 @@ Preserve the current model's deliberately narrow semantics:
 - weather summary and time since last contact are audit metadata that currently affect no decision.
 
 ADR-0100 fixes the prepared workload at twenty deterministic simulations plus three declared-only edge
-descriptors, but the committed schemas and golden fixtures are not the production catalog or fleet-scale
-runtime evidence. A `FleetScenario` roster contains only the twenty simulated members; it never contains
-the three declared-only descriptors. Keep every simulator roster explicit and verify the complete
-workload after the production definition and loader land. The current live fleet evidence uses a smaller
+descriptors. The committed production catalog is still not fleet-scale runtime evidence. A
+`FleetScenario` roster contains only the twenty simulated members; it never contains the three
+declared-only descriptors. Keep every simulator roster explicit and verify the complete workload in
+live acceptance. The current live fleet evidence uses a smaller
 literal and explicitly is not fleet-scale evidence. Never hardcode the workload as a service default or
 generate a roster from a count.
 
@@ -243,17 +257,17 @@ Do not claim scenario provenance in recordings or audit until a governing contra
 
 ADR-0107 defines both private directions, their closed start/status/cancel/refusal documents, exact Host
 and distinct bearer checks, bounded calls, stable-run idempotency, uncertain-start status reconciliation,
-and shared cancellation budget. The service-local server/caller models and framework-free scenario-route
-registry now express the typed boundary. This member must eventually expose those scenario-control routes
-and call the fleet-control routes without copying the public dashboard route table, applying the browser
-Origin rule internally, automatically repeating an uncertain start, sharing either private bearer, or
-importing another service implementation. None of that private HTTP runtime exists yet.
+and shared cancellation budget. The service-local models, framework-free registry, FastAPI server, and
+HTTPX caller implement that boundary without copying the public dashboard route table, applying the
+browser Origin rule internally, repeating an uncertain start, sharing either private bearer, or importing
+another service implementation.
 
-The caller supplies stable mission and run identities. The same run and canonical start body returns
-current status; different content is `RUN_CONFLICT`; an uncertain start is reconciled by querying that
-run. The contract does not itself implement durable mission binding, the public idempotency transaction,
-startup reconciliation, or partial-failure compensation. Do not hide those absent authorities in process
-memory or let the private endpoint independently repeat the dashboard mutation.
+The caller supplies stable mission and run identities. During one process epoch, the same run and
+canonical start body returns current status; different content is `RUN_CONFLICT`; an uncertain outbound
+start is reconciled by querying that run. The process-epoch binding is coordination state, not durable
+mission authority. Durable mission binding, the public idempotency transaction, startup reconciliation,
+and partial-failure compensation remain with their store/dashboard owners; the private endpoint never
+repeats the dashboard mutation.
 
 Reset is not a mission transition. It terminates the current mission and creates a new mission with a new
 identifier; it never rewinds a terminal mission, reuses identity, or edits append-only history. The SQL

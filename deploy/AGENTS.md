@@ -16,10 +16,16 @@ numeric values into this file:
 | Runtime, images, services, profiles, and ports | [ADR-0044](../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
 | Executable Compose and Dockerfile policy | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md) |
 | Per-checkout certificate authority and secret layout | [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md) |
-| Deploy scanning and actionable image-pin policy | [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
+| Deploy scanning, SBOMs, and actionable image-pin policy | [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md), [ADR-0162](../docs/adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md) |
 | PostgreSQL major version and durable volume layout | [ADR-0060](../docs/adr/0060-postgresql-18-and-its-data-directory-layout.md) |
 | Broker identities, grants, lifecycle sources, and A2A namespace | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0064](../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Web UI exposure boundary | [ADR-0065](../docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md) |
+| Dashboard relay, packaged browser, private Unix socket, and startup readiness | [ADR-0096](../docs/adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md), [ADR-0184](../docs/adr/0184-package-the-dashboard-and-gate-relay-startup-on-readiness.md) |
+| Application migration ordering | [ADR-0151](../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Bounded broker recovery and application lifecycle | [ADR-0145](../docs/adr/0145-bound-solace-recovery-and-queue-retirement.md), [ADR-0161](../docs/adr/0161-give-the-broker-a-twenty-minute-clean-stop.md) |
+| Credentialless continuous broker-event source | [ADR-0173](../docs/adr/0173-follow-the-retained-broker-event-log-without-runtime-authority.md) |
+| Opt-in VPN-scoped continuous SEMP monitor | [ADR-0181](../docs/adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) |
+| Agent Mesh SDK overlay, TLS/retry hardening, and owned process lifecycle | [ADR-0177](../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) |
 | Current runtime measurements and limits | [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Supported commands, recovery, and current profile status | [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md) |
 
@@ -32,9 +38,10 @@ runtime boundary change requires the record and coordinated updates required by 
 | --- | --- |
 | `compose.yaml` | The single local-runtime definition for every component except host Ollama |
 | `agent-mesh/Dockerfile` | The derived official Agent Mesh runtime image |
-| `agent-mesh/plugin-requirements.txt` | Hash-locked runtime plugins mirrored from `agent-mesh/uv.lock` |
+| `agent-mesh/plugin-requirements.txt` | Hash-locked runtime plugins and SDK leaf override mirrored from `agent-mesh/uv.lock` |
 | `application/Dockerfile` | The locked root-workspace application image |
 | `application/uv-requirements.txt` | Hash-locked installer used while building that image |
+| `caddy/Caddyfile` | The loopback dashboard relay over the dashboard API's private Unix socket |
 | ignored `certs/` | Public per-checkout trust material only |
 | ignored `secrets/` | Private keys, passwords, role environment, and other generated credentials |
 
@@ -56,6 +63,9 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
 - Supply credentials through declared environment indirection or files under `/run/secrets/`. Never put
   a literal credential, URL userinfo, private key, password, or live tenant value in Compose,
   Dockerfiles, build arguments, fixtures, logs, screenshots, or evidence.
+- Keep the host certificate and secret roots explicit through the two tracked, blank deployment inputs.
+  Their values may name only external directories; individual secret filenames remain closed in Compose,
+  and neither value may contain traversal or be rendered into diagnostics.
 - Never print or persist `docker compose config` rendered with `.env` and
   `deploy/secrets/.env.roles`; interpolation can disclose every role password. Use `.env.example` for
   non-secret structural work and redact any runtime evidence.
@@ -64,6 +74,18 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
 - Keep a healthcheck on every service and readiness ordering on every dependent service. A static green
   gate proves file policy only; it does not prove that the probe exists in the image, TLS is served,
   data survives recreation, authorization was provisioned, or a profile starts.
+- Keep Alembic as the sole schema initializer. Every store-backed application waits for the one-shot
+  `schema-migration` service to complete successfully; application startup must not create or mutate
+  tables independently.
+- Keep the dashboard API off TCP. Only Caddy publishes its loopback port, and only Caddy and the API may
+  mount the dedicated socket volume. Do not forward an operator-supplied Host or Origin override.
+- Keep `broker-event-monitor` credentialless and networkless. It may mount only the read-only
+  `broker-storage` `jail/logs` volume subpath at `/jail/logs`; never mount the whole storage volume, a
+  Docker socket, a secret, or a second log lifecycle into that service.
+- Keep `semp-monitor` out of every implicit profile. It may receive only its generated monitor password
+  and public trust store, and may start only after ADR-0181's interactive global-none/VPN-read-only
+  readback plus positive-read/negative-write probes. Never substitute an administrator credential,
+  global read-only access, undocumented piped CLI input, or startup-key-only inference.
 - Preserve non-root execution, numeric project-owned users, `no-new-privileges`, and read-only trust and
   configuration mounts. Install Python artifacts by hash from synchronized locks.
 - Treat the profile set and platform exception set as closed policy. Keep runnable, scaffolded,
@@ -84,10 +106,13 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
 | --- | --- |
 | Environment reference or secret | `.env.example`, its runtime consumer, the semantic validator, secret generator, and wiring tests |
 | Broker identity or grant | Governing ADR, `packages/domain`, `packages/broker`, `scripts/broker-secrets.sh`, Compose, and live denial tests |
-| Agent Mesh plugin or base | `agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, hashed plugin requirements, image inventory, and in-container compatibility evidence |
+| Agent Mesh plugin, SDK override, lifecycle, or base | ADR-0177, `agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, hashed plugin requirements, image inventory, source-shape sentinels, and in-container compatibility evidence |
 | Application dependency or base | Root/member manifests, `uv.lock`, hashed installer requirement when applicable, `.dockerignore`, and image build evidence |
 | Image pin | Governing ADR when required, `operating-parameters.md`, image inventory/pin tests, and image scans |
 | Service, profile, port, healthcheck, or platform | Architecture/runbook, pure policy gate, its conformance tests, and applicable live evidence |
+| Dashboard socket, Caddy route, static asset, or startup readiness | ADR-0096, ADR-0184, dashboard API and browser contracts, application image, Caddyfile, and end-to-end evidence |
+| Broker retained-log source or monitor isolation | ADR-0173, broker source/monitor tests, Compose policy, and source/readback live evidence |
+| SEMP monitor profile, credential, or prerequisite | ADR-0181, secret generation, read-only console tests, Compose isolation, and positive-read/negative-write live evidence |
 | PostgreSQL major or mount | ADR, operating parameter, migration and recovery runbook, and live durability evidence |
 
 Do not weaken a policy refusal merely to admit a new shape. Change the governing decision, pure gate,
@@ -106,6 +131,9 @@ and positive and negative conformance tests together.
   and never place Cloud credentials in continuous integration or tracked files.
 - A bind-mounted Agent Mesh configuration does not restart the running process. Recreate the container
   before claiming a configuration or image change was exercised.
+- `just mission-control` is the broker-native operator slice. It provisions the complete reference drone
+  queue roster, then explicitly starts the migration, fleet, private scenario control, recorder,
+  dashboard, Caddy, and broker-event monitor without Agent Mesh or Ollama.
 - `just up *ARGS` places arguments after the `up` subcommand, so `up` options such as
   `--force-recreate` and `--build` pass through directly. Select an extra profile with the
   `COMPOSE_PROFILES` environment variable, which Compose reads on its own:
@@ -139,8 +167,9 @@ uv run --frozen pytest -q \
 installed. Also run the Compose schema, YAML, and Hadolint hooks for changed files, then the complete
 commit and push stages required by the root instructions.
 
-For an image change, run the Docker- and network-dependent pin check, build, and full image scan through
-`just check-image-pins` and `just scan-images`. Image advisories are informational under ADR-0055; do
+For an image change, run the Docker- and network-dependent pin check, build, full image scan, and
+validated SBOM generation through `just check-image-pins`, `just scan-images`, and
+`scripts/security/generate-sboms.sh`. Image advisories are informational under ADR-0055; do
 not call the image clean, suppress the report, or create an advisory waiver. A stale or unresolvable
 image pin is the blocking, actionable result.
 

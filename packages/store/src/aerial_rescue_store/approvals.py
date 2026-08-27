@@ -26,9 +26,8 @@ class: a writer holding database credentials is catalogue case B24 and is not cl
 Nothing here opens a transaction. As with the audit append, the caller's transaction is what
 makes the guarantee, and this module refuses to own it.
 
-Every statement is a typed expression over the lightweight table clause below, so no identifier
-is interpolated into SQL text and no metadata object exists that could create a production table
-by accident.
+Every statement is a typed expression over the complete package-owned table metadata. Importing
+that metadata emits no DDL; Alembic remains the only schema authority.
 """
 
 from __future__ import annotations
@@ -38,10 +37,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Final, Protocol
 
 from aerial_rescue_domain.approvals import ApprovalState
-from sqlalchemy import BigInteger, String, column, insert, select, table, update
+from sqlalchemy import insert, select, update
 
 from aerial_rescue_store import StoreError
-from aerial_rescue_store.migration import APPROVAL_TABLE
+from aerial_rescue_store.database.schema import APPROVAL
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -53,26 +52,15 @@ MISSION_COLUMN: Final = "mission_id"
 PROPOSAL_COLUMN: Final = "proposal_id"
 STATE_COLUMN: Final = "state"
 
-_MISSION: Final = column(MISSION_COLUMN, String)
-_PROPOSAL: Final = column(PROPOSAL_COLUMN, String)
-_STATE: Final = column(STATE_COLUMN, String)
-_OPERATOR: Final = column("operator_identity", String)
-_ISSUED_WALL: Final = column("issued_wall", String)
-_ISSUED_MONOTONIC: Final = column("issued_monotonic_milliseconds", BigInteger)
-_TIME_TO_LIVE: Final = column("time_to_live_milliseconds", BigInteger)
-_DIGEST: Final = column("proposal_digest", String)
-
-_APPROVAL_ROWS: Final = table(
-    APPROVAL_TABLE,
-    _MISSION,
-    _PROPOSAL,
-    _STATE,
-    _OPERATOR,
-    _ISSUED_WALL,
-    _ISSUED_MONOTONIC,
-    _TIME_TO_LIVE,
-    _DIGEST,
-)
+_APPROVAL_ROWS: Final = APPROVAL
+_MISSION: Final = APPROVAL.c[MISSION_COLUMN]
+_PROPOSAL: Final = APPROVAL.c[PROPOSAL_COLUMN]
+_STATE: Final = APPROVAL.c[STATE_COLUMN]
+_OPERATOR: Final = APPROVAL.c.operator_identity
+_ISSUED_WALL: Final = APPROVAL.c.issued_wall
+_ISSUED_MONOTONIC: Final = APPROVAL.c.issued_monotonic_milliseconds
+_TIME_TO_LIVE: Final = APPROVAL.c.time_to_live_milliseconds
+_DIGEST: Final = APPROVAL.c.proposal_digest
 
 DECISION_STATES: Final = frozenset({ApprovalState.APPROVED, ApprovalState.REJECTED})
 """What an operator's decision may be. Every other state is reached by another party."""

@@ -8,7 +8,22 @@ requires-python = ">=3.14,<3.15"
 # recorded decision, not an accident (docs/adr/0004-split-python-runtimes.md).
 # The topic grammar and the versioned namespace prefix; this package builds the wildcard
 # subscription strings that grammar refuses to produce (docs/CONTRACTS.md).
-dependencies = ["aerial-rescue-contracts", "solace-pubsubplus==1.11.0"]
+dependencies = [
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+    "aerial-rescue-observability",
+    "jsonschema==4.26.0",
+    "opentelemetry-api==1.42.0",
+    "pydantic==2.13.4",
+    "pubsubplus-opentelemetry-integration==1.1.0",
+    "referencing==0.37.0",
+    "solace-pubsubplus==1.11.0",
+]
+
+[project.scripts]
+aerial-rescue-broker-events = "aerial_rescue_broker.event_monitor:main"
+aerial-rescue-broker-event-monitor = "aerial_rescue_broker.event_monitor:retained_log_main"
+aerial-rescue-semp-monitor = "aerial_rescue_broker.monitor_console:main"
 
 [build-system]
 requires = ["hatchling"]

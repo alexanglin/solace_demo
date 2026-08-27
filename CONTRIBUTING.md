@@ -121,6 +121,7 @@ just check-mutation    # independent Tier 1 mutation runs and per-module scoring
 just check-compose     # the deploy/ stack against the compose policy gate
 just check-deploy-config  # trivy config over deploy/, adjudicated under the waiver registry
 just scan-images       # build the derived images, then trivy image over all seven (needs Docker)
+scripts/security/generate-sboms.sh /path/to/empty-output # validated CycloneDX per image
 just check-image-pins  # refuse a pinned digest upstream has already moved past (needs Docker)
 ```
 
@@ -256,6 +257,47 @@ stops on the missing file rather than starting a service with a blank identity.
 Agent Mesh roles get no A2A exception and the mesh cannot reach its own topics
 ([ADR-0064](docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md)).
 
+Routine SEMP queue monitoring is a separate management principal, not another use of the provisioning
+administrator. The adapter accepts only `aerialrescuemonitor`; that internal user must have global
+access `none` and Message VPN access `read-only` for the selected VPN. The pinned broker's SEMP v2
+configuration specification exposes no internal-management-user write, so `just provision` deliberately
+does not claim to create it. Do not start the routine monitor until an
+operator has created the user through a Solace-supported, secret-safe management path and verified both
+a positive narrow monitor read and a negative configuration write. Do not substitute `admin`, grant
+global read-only access, put a password in a command or tracked file, or use a messaging username. See
+[ADR-0157](docs/adr/0157-pace-and-coalesce-read-only-semp-monitoring.md).
+
+The routine queue probe reads only the queue collection's aligned aggregate counts. It performs no
+endpoint `/msgs` request and never drains a DMQ. Calls within the monitor interval reuse the same complete
+snapshot or typed failure; each SEMP page is paced. A nonempty DMQ remains degraded evidence for operator
+investigation. The process-local budget does not account for the Event Management Agent or an operator's
+SEMP requests, so shared-stack acceptance must count every SEMP connection against the broker-wide
+ceiling in [operating-parameters.md](docs/operating-parameters.md#broker-authorization).
+
+System and Message VPN events use the software broker's Syslog path rather than another messaging
+identity. The Compose definition retains the `event` facility in the broker volume and exposes that same
+facility once through stdout using Solace's native JSON message format. The `event` facility already
+contains SYSTEM and Message VPN events, so the `system` facility is not also sent to stdout. After a
+Compose change to those initialization keys, recreate the broker before testing the path; a running
+container does not acquire them from the edited YAML:
+
+```sh
+just up --force-recreate
+just broker-events
+```
+
+Start `just broker-events` under the local supervisor before production-like acceptance. It follows only
+new, unprefixed broker lines, processes one bounded line at a time, and emits single-line JSON containing
+only the catalog event, condition, scope, severity, disposition, source, and normalized timestamp. It
+never forwards the broker's message text, hostname, Message VPN, client, or event arguments. Client
+events and capability categories absent from the standalone topology are ignored deliberately. An
+uncataloged SYSTEM or Message VPN event, malformed or oversized JSON, or a closed source emits a
+`pipeline-degraded` alert; source or alert-sink failure exits nonzero. Treat either result as monitoring
+loss, repair or restart the pipeline, and confirm a fault-injected catalog alert reaches the supervising
+collector. Do not use `just logs` as the source: its combined service stream and prefixes are outside the
+validated boundary. The exact catalog and conditional exclusions are governed by
+[ADR-0159](docs/adr/0159-gate-applicable-solace-best-practices.md).
+
 It also takes `--drone <id>`, repeated once per drone, and creates one durable command queue for
 each. A drone with no queue is not an error the broker reports: a guaranteed message matching no
 endpoint is discarded, so its commands go nowhere silently
@@ -363,16 +405,15 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   `MODEL_LOCK_REQUIRED` until the lock representation is decided
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
-- The Tier 2 members contain no co-located mutation tests, and the scaffolds contain no
-  mutation-eligible behavior at all. This does not turn the pre-push tier red: a member with nothing to
-  measure is reported as `SCAFFOLD` rather than failed
-  ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)), and both
-  the coverage and mutation gates pass on `main` today. All three Tier 1 members --
-  `packages/contracts`, `packages/domain`, and `services/command_gateway` -- are fully scored. What
-  remains is the AAA checker's three modules, carried as a row in
-  [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
-- The `services` and `event-portal` profiles are defined and held to the policy gate but have never
-  been started, so the Event Management Agent's secret mount is still design rather than measurement.
+- Tier 2 members have no mutation obligation, while all three Tier 1 members -- `packages/contracts`,
+  `packages/domain`, and `services/command_gateway` -- are scored. The scaffold classification remains a
+  fail-closed gate behavior for a future docstring-only member, but every currently declared workspace
+  member is active. The AAA checker's three modules remain a row in [`TECH_DEBT.md`](TECH_DEBT.md) with
+  their clearing condition.
+- The `services` profile now invokes real application entry points and is held to the policy gate, but its
+  complete broker/store/reconnect path still needs the adoption shared-stack run. The `event-portal`
+  profile has not been started, so the Event Management Agent's secret mount remains design rather than
+  measurement.
   The Agent Mesh management-server probe is measurement: it decides whether the default stack is up. The broker image's `curl` and the `openssl` flags
   under LibreSSL were confirmed by the default profile's first live run and are recorded in
   [`release-evidence/phase-0/first-live-run.md`](release-evidence/phase-0/first-live-run.md). No hook

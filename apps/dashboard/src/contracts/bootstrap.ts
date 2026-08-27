@@ -16,14 +16,24 @@ const MIN_SAFE_INTEGER = -MAX_SAFE_INTEGER;
 const textEncoder = new TextEncoder();
 const dashboardSchemaRegistry = createDashboardSchemaRegistry();
 
-interface BootstrapTextFailure {
+export interface CanonicalJsonTextFailure {
   readonly code: "CANONICAL_PROFILE_REFUSED" | "MALFORMED_JSON";
 }
+
+export type CanonicalJsonDecodeResult =
+  | {
+      readonly ok: true;
+      readonly value: unknown;
+    }
+  | {
+      readonly failure: CanonicalJsonTextFailure;
+      readonly ok: false;
+    };
 
 export type DashboardBootstrapParseResult =
   | DashboardSchemaValidationResult<DashboardBootstrap>
   | {
-      readonly failure: BootstrapTextFailure;
+      readonly failure: CanonicalJsonTextFailure;
       readonly ok: false;
     };
 
@@ -99,7 +109,7 @@ function scanCanonicalJson(raw: string): boolean {
   return false;
 }
 
-export function parseDashboardBootstrap(raw: string): DashboardBootstrapParseResult {
+export function decodeCanonicalJson(raw: string): CanonicalJsonDecodeResult {
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw) as unknown;
@@ -111,7 +121,16 @@ export function parseDashboardBootstrap(raw: string): DashboardBootstrapParseRes
     return { failure: { code: "CANONICAL_PROFILE_REFUSED" }, ok: false };
   }
 
-  return dashboardSchemaRegistry.validate(BOOTSTRAP_SCHEMA_ID, decoded);
+  return { ok: true, value: decoded };
+}
+
+export function parseDashboardBootstrap(raw: string): DashboardBootstrapParseResult {
+  const decoded = decodeCanonicalJson(raw);
+  if (!decoded.ok) {
+    return decoded;
+  }
+
+  return dashboardSchemaRegistry.validate(BOOTSTRAP_SCHEMA_ID, decoded.value);
 }
 
 export function consumeDashboardBootstrap(

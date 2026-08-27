@@ -31,45 +31,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
 from aerial_rescue_domain.outbox import INITIAL_STATE, OutboxEvent, OutboxState, transition
-from sqlalchemy import LargeBinary, String, column, func, insert, literal, select, table, update
+from sqlalchemy import func, insert, literal, select, update
 
 from aerial_rescue_store import StoreError
-from aerial_rescue_store.migration import COMMAND_OUTBOX_TABLE
+from aerial_rescue_store.database.schema import COMMAND_OUTBOX
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.sql.dml import Insert, Update
+    from sqlalchemy.sql.selectable import Select
 
 MAXIMUM_UNCONFIRMED_RECORDS: Final = 500
 """ADR-0093's bound: the workload ADR-0084's instrument uses and the backlog probe measured."""
 
+COMMAND_PUBLICATION_BATCH_SIZE: Final = 50
+"""The maximum oldest-first command rows one connected recovery iteration may read."""
+
 COMMAND_COLUMN: Final = "command_id"
 STATE_COLUMN: Final = "state"
 
-_COMMAND: Final = column(COMMAND_COLUMN, String)
-_MISSION: Final = column("mission_id", String)
-_DRONE: Final = column("drone_id", String)
-_PAYLOAD: Final = column("payload", LargeBinary)
-_STATE: Final = column(STATE_COLUMN, String)
-_CORRELATION: Final = column("correlation_id", String)
-_CAUSATION: Final = column("causation_id", String)
-_TRACEPARENT: Final = column("traceparent", String)
-_STAGED_AT: Final = column("staged_at", String)
-
-_OUTBOX_ROWS: Final = table(
-    COMMAND_OUTBOX_TABLE,
-    _COMMAND,
-    _MISSION,
-    _DRONE,
-    _PAYLOAD,
-    _STATE,
-    _CORRELATION,
-    _CAUSATION,
-    _TRACEPARENT,
-    _STAGED_AT,
-)
+_OUTBOX_ROWS: Final = COMMAND_OUTBOX
 
 _STAGED_COLUMNS: Final = (
     COMMAND_COLUMN,
@@ -83,6 +68,9 @@ _STAGED_COLUMNS: Final = (
     "staged_at",
 )
 
+STORED_MEMBER_COUNT: Final = len(_STAGED_COLUMNS)
+type PendingSelection = Select[tuple[object, ...]]
+
 
 class StagedCommandRefusal(Enum):
     """Why a durable outbox operation did not happen."""
@@ -95,6 +83,10 @@ class StagedCommandRefusal(Enum):
         "the record was no longer in the state the caller moved it from, so nothing changed and "
         "a publication outcome computed against a stale state was not written over a newer one"
     )
+    INVALID_READ_LIMIT = "the command-outbox read limit must be between one and fifty"
+    TERMINAL_READ = "confirmed commands are terminal and cannot enter a recovery batch"
+    READ_LIMIT_EXCEEDED = "the command-outbox read returned more rows than its requested bound"
+    UNREADABLE_ROW = "a command-outbox row does not match its migrated typed shape"
 
 
 class StagedCommandError(StoreError):
@@ -117,6 +109,14 @@ class StagedCommand:
     causation_id: str | None
     traceparent: str
     staged_at: str
+
+
+@dataclass(frozen=True)
+class CommandOutboxRecord:
+    """One exact command and the recoverable publication state read with it."""
+
+    command: StagedCommand
+    state: OutboxState
 
 
 def stage_statement(command: StagedCommand) -> Insert:
@@ -174,11 +174,36 @@ def publication_statement(command_id: str, was: OutboxState, became: OutboxState
     )
 
 
+def pending_statement(state: OutboxState, limit: int) -> PendingSelection:
+    """Return recoverable rows in deterministic oldest-first order."""
+    statement = (
+        select(*_OUTBOX_ROWS.c)
+        .where(_OUTBOX_ROWS.c[STATE_COLUMN] == state.value)
+        .order_by(_OUTBOX_ROWS.c.staged_at, _OUTBOX_ROWS.c.command_id)
+        .limit(limit)
+    )
+    return cast("PendingSelection", statement)
+
+
 class OutboxSession(Protocol):
     """What this repository needs of the caller's session, and nothing more."""
 
     async def scalar(self, statement: Insert | Update, /) -> object:
         """Return the single value the statement produces, or ``None`` if it produced no row."""
+
+
+class PendingRows(Protocol):
+    """The bounded ordered command rows selected for recovery."""
+
+    def all(self) -> Sequence[Sequence[object]]:
+        """Return every selected row in database order."""
+
+
+class OutboxReadSession(Protocol):
+    """The one SQLAlchemy read command-outbox recovery requires."""
+
+    async def execute(self, statement: PendingSelection, /) -> PendingRows:
+        """Run one bounded state-scoped selection."""
 
 
 async def stage(session: OutboxSession, command: StagedCommand) -> None:
@@ -225,3 +250,65 @@ async def record_publication(
     if moved is None:
         raise StagedCommandError(StagedCommandRefusal.NOT_IN_EXPECTED_STATE, command_id)
     return became
+
+
+async def pending(
+    session: OutboxReadSession,
+    state: OutboxState,
+    limit: int,
+) -> tuple[CommandOutboxRecord, ...]:
+    """Read a bounded batch of staged or ambiguous commands for one recovery action."""
+    if type(limit) is not int or not 1 <= limit <= COMMAND_PUBLICATION_BATCH_SIZE:
+        raise StagedCommandError(StagedCommandRefusal.INVALID_READ_LIMIT, "redacted-limit")
+    if state is OutboxState.CONFIRMED:
+        raise StagedCommandError(StagedCommandRefusal.TERMINAL_READ, state)
+    selected = await session.execute(pending_statement(state, limit))
+    rows = selected.all()
+    if len(rows) > limit:
+        raise StagedCommandError(StagedCommandRefusal.READ_LIMIT_EXCEEDED, "redacted-batch")
+    return tuple(_stored(row, state) for row in rows)
+
+
+def _stored(row: Sequence[object], expected_state: OutboxState) -> CommandOutboxRecord:
+    """Map one command row without coercing its identity, bytes, or publication state."""
+    if len(row) != STORED_MEMBER_COUNT:
+        raise StagedCommandError(StagedCommandRefusal.UNREADABLE_ROW, "redacted-row")
+    (
+        command_id,
+        mission_id,
+        drone_id,
+        payload,
+        state_value,
+        correlation_id,
+        causation_id,
+        traceparent,
+        staged_at,
+    ) = row
+    required_text = (
+        command_id,
+        mission_id,
+        drone_id,
+        state_value,
+        correlation_id,
+        traceparent,
+        staged_at,
+    )
+    valid = (
+        all(isinstance(value, str) for value in required_text)
+        and isinstance(payload, bytes)
+        and (causation_id is None or isinstance(causation_id, str))
+        and state_value == expected_state.value
+    )
+    if not valid:
+        raise StagedCommandError(StagedCommandRefusal.UNREADABLE_ROW, "redacted-row")
+    command = StagedCommand(
+        command_id=cast("str", command_id),
+        mission_id=cast("str", mission_id),
+        drone_id=cast("str", drone_id),
+        payload=cast("bytes", payload),
+        correlation_id=cast("str", correlation_id),
+        causation_id=cast("str | None", causation_id),
+        traceparent=cast("str", traceparent),
+        staged_at=cast("str", staged_at),
+    )
+    return CommandOutboxRecord(command, expected_state)

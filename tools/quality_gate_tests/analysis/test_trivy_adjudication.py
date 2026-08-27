@@ -23,7 +23,7 @@ CONFIG_DOMAIN: Final = "deploy-config"
 TARGET: Final = "postgres:17.11-trixie (debian 13.0)"
 DOCKERFILE: Final = "deploy/agent-mesh/Dockerfile"
 FROM_PATTERN: Final = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
-EXPECTED_REPOSITORIES: Final = 7
+EXPECTED_REPOSITORIES: Final = 9
 """Five pulled images and two built ones in the committed stack."""
 
 

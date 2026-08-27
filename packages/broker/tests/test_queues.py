@@ -16,17 +16,25 @@ import unittest
 
 import pytest
 from aerial_rescue_broker.queues import (
+    APPLICATION_MAX_DELIVERED_UNACKED,
+    APPLICATION_MAX_MESSAGE_BYTES,
     DEAD_MESSAGE_QUEUE,
+    DMQ_SUFFIX,
     MAX_QUEUE_NAME_LENGTH,
     MAX_SPOOL_MEGABYTES,
+    UPSTREAM_MAX_DELIVERED_UNACKED,
+    UPSTREAM_MAX_MESSAGE_BYTES,
     Endpoint,
     QueueError,
     QueueRefusal,
+    dead_message_queue_name,
     desired_queues,
     drone_queue_name,
     endpoint_for,
     family_queue_name,
     guaranteed_grants,
+    primary_queues,
+    queue_templates,
     queues_for,
 )
 from aerial_rescue_broker.subscriptions import drone_command_subscription, subscription_for
@@ -294,27 +302,50 @@ class DroneQueueTests(unittest.TestCase):
 
 
 class DesiredSetTests(unittest.TestCase):
-    def test_the_dead_message_queue_comes_first_and_exactly_once(self) -> None:
+    def test_every_application_queue_has_its_own_adjacent_dead_message_queue(self) -> None:
         # Arrange
-        expected = 1
+        primary = primary_queues(DRONES)
 
         # Act
-        names = tuple(queue.name for queue in desired_queues(DRONES))
+        queues = desired_queues(DRONES)
+        by_name = {queue.name: queue for queue in queues}
 
         # Assert
         self.assertEqual(
-            (DEAD_MESSAGE_QUEUE, expected), (names[0], names.count(DEAD_MESSAGE_QUEUE))
+            {queue.name: dead_message_queue_name(queue.name) for queue in primary},
+            {queue.name: queue.dead_message_queue for queue in primary},
+        )
+        self.assertTrue(
+            all(
+                by_name[target].name.endswith(DMQ_SUFFIX)
+                for target in (queue.dead_message_queue for queue in primary)
+                if target is not None
+            )
         )
 
-    def test_the_dead_message_queue_is_owned_by_nobody_and_attracts_nothing(self) -> None:
+    def test_dead_message_queues_are_owned_by_nobody_and_attract_nothing(self) -> None:
         # Arrange
         queues = desired_queues(())
 
         # Act
-        dead = next(queue for queue in queues if queue.name == DEAD_MESSAGE_QUEUE)
+        dead = tuple(queue for queue in queues if queue.name.endswith(DMQ_SUFFIX))
 
         # Assert
-        self.assertEqual(("", frozenset()), (dead.owner, dead.subscriptions))
+        self.assertTrue(dead)
+        self.assertEqual(
+            {("", frozenset(), None)},
+            {(queue.owner, queue.subscriptions, queue.dead_message_queue) for queue in dead},
+        )
+
+    def test_the_shared_factory_dead_message_queue_is_never_in_the_owned_set(self) -> None:
+        # Arrange
+        shared = DEAD_MESSAGE_QUEUE
+
+        # Act
+        names = {queue.name for queue in desired_queues(DRONES)}
+
+        # Assert
+        self.assertNotIn(shared, names)
 
     def test_the_desired_set_names_every_queue_once(self) -> None:
         # Arrange
@@ -326,11 +357,12 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(len(names), len(set(names)))
 
-    def test_the_small_fixture_has_twenty_one_family_queues_a_drone_each_and_the_dead_letter(
+    def test_the_small_fixture_has_a_dmq_per_primary_and_three_upstream_dmqs(
         self,
     ) -> None:
         # Arrange
-        expected = 21 + len(DRONES) + 1
+        primary = 21 + len(DRONES)
+        expected = primary * 2 + 3
 
         # Act
         queues = desired_queues(DRONES)
@@ -338,9 +370,9 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, len(queues))
 
-    def test_the_reference_fleet_reserves_forty_five_queues_and_450_megabytes(self) -> None:
+    def test_the_reference_fleet_reserves_ninety_one_queues_and_910_megabytes(self) -> None:
         # Arrange
-        expected = (45, 450)
+        expected = (91, 910)
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)
@@ -348,3 +380,69 @@ class DesiredSetTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, inventory)
+
+    def test_application_queues_apply_the_contract_document_and_one_at_a_time_bounds(self) -> None:
+        # Arrange
+        queues = primary_queues(DRONES)
+
+        # Act
+        bounds = {(queue.max_message_bytes, queue.max_delivered_unacked) for queue in queues}
+
+        # Assert
+        self.assertEqual(
+            {(APPLICATION_MAX_MESSAGE_BYTES, APPLICATION_MAX_DELIVERED_UNACKED)}, bounds
+        )
+
+
+class UpstreamQueueTemplateTests(unittest.TestCase):
+    def test_the_three_upstream_roles_get_distinct_non_durable_queue_templates(self) -> None:
+        # Arrange
+        expected = {
+            Principal.AGENT_MESH_AGENT: "aerial-rescue-agent-mesh-temp",
+            Principal.EVENT_MESH_GATEWAY: "aerial-rescue-event-mesh-gateway-temp",
+            Principal.EVENT_MESH_TOOL: "aerial-rescue-event-mesh-tool-temp",
+        }
+
+        # Act
+        templates = queue_templates()
+
+        # Assert
+        self.assertEqual(
+            expected,
+            {template.role: template.name for template in templates},
+        )
+        self.assertEqual(
+            {("non-durable", "", UPSTREAM_MAX_MESSAGE_BYTES, UPSTREAM_MAX_DELIVERED_UNACKED)},
+            {
+                (
+                    template.durability,
+                    template.name_filter,
+                    template.max_message_bytes,
+                    template.max_delivered_unacked,
+                )
+                for template in templates
+            },
+        )
+
+    def test_each_upstream_template_has_one_isolated_provisioned_dmq(self) -> None:
+        # Arrange
+        templates = queue_templates()
+
+        # Act
+        queues = {queue.name: queue for queue in desired_queues(())}
+
+        # Assert
+        self.assertEqual(
+            {template.dead_message_queue for template in templates},
+            {
+                name
+                for name in queues
+                if name in {template.dead_message_queue for template in templates}
+            },
+        )
+        self.assertTrue(
+            all(
+                queues[template.dead_message_queue].max_message_bytes == UPSTREAM_MAX_MESSAGE_BYTES
+                for template in templates
+            )
+        )

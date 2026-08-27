@@ -40,7 +40,17 @@ command -v jscpd >/dev/null 2>&1 || {
 }
 
 set --
-for path in tools packages services tests scripts agent-mesh/plugins agent-mesh/tools apps/dashboard; do
+for path in \
+	tools \
+	packages \
+	services \
+	tests \
+	scripts \
+	agent-mesh/aerial_rescue_event_mesh_gateway \
+	agent-mesh/aerial_rescue_runtime_compat \
+	agent-mesh/plugins \
+	agent-mesh/tools \
+	apps/dashboard; do
 	[ -d "$path" ] && set -- "$@" "$path"
 done
 [ "$#" -gt 0 ] || exit 0

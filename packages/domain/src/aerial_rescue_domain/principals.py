@@ -1,6 +1,6 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The ten roles and their grants are the decisions in ADR-0061 and ADR-0111. Authority is
+The nine roles and their grants are the effective decisions through ADR-0158. Authority is
 expressed over roles rather than over processes: each deployed process carries its own
 client username for observability and credential rotation, and that username binds to its
 role's ACL profile, so two edge agents have distinct identities and identical authority.
@@ -31,7 +31,6 @@ class Principal(Enum):
     FLEET_SIMULATOR = "fleet-simulator"
     COMMAND_GATEWAY = "command-gateway"
     DASHBOARD_API = "dashboard-api"
-    SCENARIO_SERVICE = "scenario-service"
     EVIDENCE_SERVICE = "evidence-service"
     RECORDER = "recorder"
     EVENT_MESH_GATEWAY = "event-mesh-gateway"
@@ -76,8 +75,9 @@ _PUBLISH: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.AUDIT,
         }
     ),
-    Principal.DASHBOARD_API: frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
-    Principal.SCENARIO_SERVICE: frozenset({Family.MISSION_EVENT}),
+    Principal.DASHBOARD_API: frozenset(
+        {Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL, Family.MISSION_EVENT}
+    ),
     Principal.EVIDENCE_SERVICE: frozenset({Family.EVIDENCE_DECISION, Family.AUDIT}),
     Principal.RECORDER: frozenset(),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.AGENT_RESPONSE}),
@@ -117,7 +117,6 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.AUDIT,
         }
     ),
-    Principal.SCENARIO_SERVICE: frozenset(),
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
     Principal.RECORDER: frozenset(Family)
     - frozenset({Family.GATEWAY_REQUEST, Family.GATEWAY_RESPONSE}),

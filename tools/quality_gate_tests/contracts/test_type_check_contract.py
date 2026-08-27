@@ -22,6 +22,7 @@ MAY_DIFFER = frozenset({"python_version", "exclude", "overrides", "plugins"})
 # The floor. Without this a deletion from BOTH tables would still satisfy the drift rule.
 REQUIRED_FLAGS = (
     "strict",
+    "explicit_package_bases",
     "warn_unused_ignores",
     "warn_unreachable",
     "disallow_any_explicit",

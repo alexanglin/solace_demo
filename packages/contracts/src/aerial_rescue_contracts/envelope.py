@@ -95,7 +95,7 @@ _TOPIC_PAYLOAD_PATHS: Final[Mapping[Family, Mapping[str, tuple[str, ...]]]] = {
     Family.EVIDENCE_DECISION: {"proposalId": ("proposalId",)},
     Family.AUDIT: {"recordType": ("recordType",)},
 }
-"""Discriminators repeated by the closed ADR-0116 payloads, including one nested action."""
+"""Discriminators repeated by the closed ADR-0148 payloads, including one nested action."""
 
 
 class EnvelopeRefusal(Enum):

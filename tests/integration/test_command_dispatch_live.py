@@ -63,7 +63,7 @@ from aerial_rescue_broker.messaging import (
 )
 from aerial_rescue_broker.provisioning import message_count
 from aerial_rescue_broker.queues import (
-    DEAD_MESSAGE_QUEUE,
+    dead_message_queue_name,
     drone_queue_name,
     family_queue_name,
 )
@@ -112,6 +112,7 @@ GATEWAY_SOURCE: Final = "urn:aerial-rescue:service:command-gateway"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
 
 PROBE_QUEUE: Final = drone_queue_name(PROBE_DRONE)
+PROBE_DEAD_MESSAGE_QUEUE: Final = dead_message_queue_name(PROBE_QUEUE)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
@@ -419,7 +420,7 @@ class CommandDispatchLiveTests(unittest.TestCase):
 
 
 class UnreadableCommandLiveTests(unittest.TestCase):
-    """A command no drone can read reaches the dead-message queue, not a redelivery loop."""
+    """A command no drone can read reaches its source queue's DMQ, not a redelivery loop."""
 
     dead_before: int
     dead_after: int
@@ -430,7 +431,7 @@ class UnreadableCommandLiveTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         """Publish bytes that are not an envelope and let the simulator meet them."""
-        cls.dead_before = _depth(DEAD_MESSAGE_QUEUE)
+        cls.dead_before = _depth(PROBE_DEAD_MESSAGE_QUEUE)
         _publish(b"{not canonical json")
         _settled_depth(PROBE_QUEUE, 1)
         report = run(
@@ -448,7 +449,7 @@ class UnreadableCommandLiveTests(unittest.TestCase):
         )
         cls.intake = report.intake
         cls.remaining = _settled_depth(PROBE_QUEUE, 0)
-        cls.dead_after = _settled_depth(DEAD_MESSAGE_QUEUE, cls.dead_before + 1)
+        cls.dead_after = _settled_depth(PROBE_DEAD_MESSAGE_QUEUE, cls.dead_before + 1)
 
     @override
     @classmethod

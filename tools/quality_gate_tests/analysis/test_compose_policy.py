@@ -139,6 +139,18 @@ def run_gate_script() -> None:
 
 
 class ComposeParsingTests(QualityGateTestCase):
+    def test_a_duplicate_service_key_is_rejected_instead_of_silently_overridden(self) -> None:
+        # Arrange
+        errors: list[str] = []
+        text = "services:\n  dashboard-api: {image: first}\n  dashboard-api: {image: second}\n"
+
+        # Act
+        parsed = compose_policy_gate.parse_compose("deploy/compose.yaml", text, errors)
+
+        # Assert
+        self.assertIsNone(parsed)
+        self.assertTrue(any("duplicate mapping key 'dashboard-api'" in error for error in errors))
+
     def test_invalid_yaml_is_an_error(self) -> None:
         # Arrange
         errors: list[str] = []
@@ -671,6 +683,48 @@ class InterpolationTests(QualityGateTestCase):
 
 
 class HealthcheckTests(QualityGateTestCase):
+    def test_the_exact_schema_migration_one_shot_uses_exit_status_instead_of_health(self) -> None:
+        # Arrange
+        migration = service(
+            healthcheck=OMIT,
+            profiles=["services", "mission-control"],
+        )
+        migration.update(
+            {
+                "command": ["/app/.venv/bin/aerial-rescue-migrate"],
+                "restart": "no",
+                "depends_on": {"postgres": {"condition": "service_healthy"}},
+            }
+        )
+        compose = stack(**{"schema-migration": migration})
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_schema_migration_impostor_without_health_still_fails(self) -> None:
+        # Arrange
+        migration = service(
+            healthcheck=OMIT,
+            profiles=["services", "mission-control"],
+        )
+        migration.update(
+            {
+                "command": ["/app/.venv/bin/python", "-c", "import aerial_rescue_store"],
+                "restart": "no",
+                "depends_on": {"postgres": {"condition": "service_healthy"}},
+            }
+        )
+        compose = stack(**{"schema-migration": migration})
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertIn("services.schema-migration lacks a healthcheck.test", findings)
+
     def test_a_service_without_a_healthcheck_fails(self) -> None:
         # Arrange
         compose = stack(web=service(healthcheck=OMIT))
@@ -759,6 +813,26 @@ class ProfileTests(QualityGateTestCase):
         # Assert
         self.assertEqual([], findings)
 
+    def test_the_fail_closed_semp_monitor_profile_passes(self) -> None:
+        # Arrange
+        compose = stack(web=service(profiles=["semp-monitor"]))
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_the_accepted_mission_control_profile_passes(self) -> None:
+        # Arrange
+        compose = stack(web=service(profiles=["mission-control"]))
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
     def test_an_unknown_profile_fails(self) -> None:
         # Arrange
         compose = stack(web=service(profiles=["services", "debug"]))
@@ -768,7 +842,8 @@ class ProfileTests(QualityGateTestCase):
 
         # Assert
         self.assertIn(
-            "services.web.profiles[1] is not a known profile (known: event-portal, mesh, services)",
+            "services.web.profiles[1] is not a known profile "
+            "(known: event-portal, mesh, mission-control, semp-monitor, services)",
             findings,
         )
 
@@ -829,6 +904,42 @@ class SecretDeclarationTests(QualityGateTestCase):
         # Assert
         self.assertEqual([], findings)
 
+    def test_an_explicit_secret_directory_with_the_ignored_fallback_passes(self) -> None:
+        # Arrange
+        compose = stack_with(
+            secrets={
+                "postgres-password": {
+                    "file": ("${AERIAL_RESCUE_SECRET_DIRECTORY:-./secrets}/postgres-password")
+                }
+            }
+        )
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_an_explicit_secret_directory_cannot_escape_into_a_parent(self) -> None:
+        # Arrange
+        compose = stack_with(
+            secrets={
+                "postgres-password": {
+                    "file": "${AERIAL_RESCUE_SECRET_DIRECTORY:-./secrets}/../postgres-password"
+                }
+            }
+        )
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertIn(
+            "secrets.postgres-password must declare a file under ./secrets/ "
+            "or an environment source",
+            findings,
+        )
+
     def test_an_environment_sourced_secret_passes(self) -> None:
         # Arrange
         compose = stack_with(secrets={"token": {"environment": "SESSION_SECRET_KEY"}})
@@ -842,6 +953,22 @@ class SecretDeclarationTests(QualityGateTestCase):
     def test_a_file_secret_outside_the_ignored_root_fails(self) -> None:
         # Arrange
         compose = stack_with(secrets={"postgres-password": {"file": "../postgres-password"}})
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertIn(
+            "secrets.postgres-password must declare a file under ./secrets/ "
+            "or an environment source",
+            findings,
+        )
+
+    def test_a_relative_secret_file_cannot_escape_the_ignored_root(self) -> None:
+        # Arrange
+        compose = stack_with(
+            secrets={"postgres-password": {"file": "./secrets/../postgres-password"}}
+        )
 
         # Act
         findings = diagnostics(compose)

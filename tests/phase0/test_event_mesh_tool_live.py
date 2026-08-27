@@ -37,6 +37,7 @@ from typing import Final
 import pytest
 from aerial_rescue_broker.deployment import read_credential
 from aerial_rescue_broker.messaging import (
+    DIRECT_INTEGRATION_RECEIVER_CAPACITY,
     BrokerEndpoint,
     SolacePublisher,
     SolaceReceiver,
@@ -142,7 +143,9 @@ def _ask(request: bytes, topic: str, seconds: int = REPLY_WINDOW_SECONDS) -> lis
     reply_topic = _reply_topic()
     request_id = str(uuid.uuid4())
     service = _connected(Principal.EVENT_MESH_TOOL)
-    receiver = SolaceReceiver(service, (reply_topic,))
+    receiver = SolaceReceiver(
+        service, (reply_topic,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     publisher = SolacePublisher(service)
     seen: list[bytes] = []
     try:
@@ -168,7 +171,9 @@ def _request_topic(operation: str = "command-authority") -> str:
 def _observe(role: Principal, subscription: str, seconds: int) -> list[str]:
     """Return the topics ``subscription`` carries within the window, on ``role``'s identity."""
     service = _connected(role)
-    receiver = SolaceReceiver(service, (subscription,))
+    receiver = SolaceReceiver(
+        service, (subscription,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     seen: list[str] = []
     try:
         for _ in range(seconds):
@@ -224,7 +229,9 @@ def _observe_while_asking(
     The receiver starts before the task is submitted, for the same reason ``_ask`` does.
     """
     service = _connected(role)
-    receiver = SolaceReceiver(service, (subscription,))
+    receiver = SolaceReceiver(
+        service, (subscription,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     seen: list[str] = []
     try:
         _send_to(TARGET_AGENT, prompt)
@@ -321,7 +328,11 @@ class ReplyChannelAuthorityTests(unittest.TestCase):
 
         # Act
         try:
-            SolaceReceiver(service, (forbidden,))
+            SolaceReceiver(
+                service,
+                (forbidden,),
+                buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY,
+            )
         except PubSubPlusClientError as denial:
             outcome = type(denial).__name__
         else:

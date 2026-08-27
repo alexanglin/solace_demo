@@ -4,29 +4,27 @@
  */
 
 /**
- * One normalized dashboard event, with transport-only and internal integrity members removed.
- */
-export type DashboardEvent =
-  | DroneTelemetry
-  | ConnectivityChanged
-  | MissionLifecycle
-  | SectorLifecycle
-  | OperatorCommand
-  | OperatorApproval
-  | AgentProposal
-  | EvidenceDecision
-  | DroneCommand
-  | GatewayResponse
-  | AuditRecord;
-
-/**
  * A complete reduced mission state and its ordered non-telemetry timeline.
  */
-export interface DashboardSnapshot {
+export type DashboardSnapshot = (
+  | {
+      state: {
+        latestAuditOrdinal: 0;
+      };
+      latestEventDigest: null;
+    }
+  | {
+      state: {
+        latestAuditOrdinal: number;
+      };
+      latestEventDigest: string;
+    }
+) & {
   snapshotVersion: "dashboard-snapshot/v1";
   runtimeId: string;
   cursor: string;
   digest: string;
+  latestEventDigest: null | string;
   currentRun: null | LiveRun | ReplayRun;
   state: DashboardReducedState;
   /**
@@ -41,11 +39,31 @@ export interface DashboardSnapshot {
       | OperatorApproval
       | AgentProposal
       | EvidenceDecision
+      | SalientObservation
       | DroneCommand
+      | CommandResult
       | GatewayResponse
       | AuditRecord;
   })[];
-}
+};
+/**
+ * One normalized dashboard event, with transport-only and internal integrity members removed.
+ */
+export type DashboardEvent =
+  | DroneTelemetry
+  | ConnectivityChanged
+  | MissionLifecycle
+  | SectorLifecycle
+  | OperatorCommand
+  | OperatorApproval
+  | AgentProposal
+  | EvidenceDecision
+  | SalientObservation
+  | DroneCommand
+  | CommandResult
+  | GatewayResponse
+  | AuditRecord;
+
 export interface LiveRun {
   mode: "degradedLive";
   missionId: string;
@@ -334,23 +352,53 @@ export interface EvidenceDecision {
           | "human-dismissal";
       };
 }
+export interface SalientObservation {
+  kind: "salientObservation";
+  eventClass: "EVIDENCE";
+  mission: string;
+  time: string;
+  data: {
+    droneId: string;
+    observation: string;
+    latitudeMicrodegrees: number;
+    longitudeMicrodegrees: number;
+    detail: string;
+  };
+}
 export interface DroneCommand {
   kind: "droneCommand";
+  eventClass: "COMMAND";
+  mission: string;
+  time: string;
+  data:
+    | {
+        droneId: string;
+        commandId: string;
+        sectorId: string;
+      }
+    | {
+        droneId: string;
+        commandId: string;
+        approvalId: string;
+        proposalId: string;
+        proposalDigest: string;
+        proposalVersion: 1;
+        evidenceDecisionId: string;
+        evidenceDecisionDigest: string;
+        evidenceDecisionVersion: 1;
+        latitudeMicrodegrees: number;
+        longitudeMicrodegrees: number;
+      };
+}
+export interface CommandResult {
+  kind: "commandResult";
   eventClass: "COMMAND";
   mission: string;
   time: string;
   data: {
     droneId: string;
     commandId: string;
-    approvalId: string;
-    proposalId: string;
-    proposalDigest: string;
-    proposalVersion: 1;
-    evidenceDecisionId: string;
-    evidenceDecisionDigest: string;
-    evidenceDecisionVersion: 1;
-    latitudeMicrodegrees: number;
-    longitudeMicrodegrees: number;
+    outcome: "acknowledged" | "succeeded" | "failed";
   };
 }
 export interface GatewayResponse {

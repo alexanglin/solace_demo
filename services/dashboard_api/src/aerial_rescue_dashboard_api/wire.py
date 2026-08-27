@@ -16,6 +16,7 @@ from pydantic import (
     Field,
     RootModel,
     StringConstraints,
+    model_validator,
 )
 
 _SCHEMA_PREFIX = "https://aerial-rescue.invalid/schemas/v1/"
@@ -348,7 +349,29 @@ class _EvidenceDecisionEvent(_WireModel):
     data: _EvidenceDecisionDataValue
 
 
-class _DroneCommandData(_WireModel):
+class _SalientObservationData(_WireModel):
+    drone_id: _Identifier = Field(alias="droneId")
+    observation: _Kind
+    latitude_microdegrees: _Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: _Longitude = Field(alias="longitudeMicrodegrees")
+    detail: _NonEmptyString
+
+
+class _SalientObservationEvent(_WireModel):
+    kind: Literal["salientObservation"]
+    event_class: Literal["EVIDENCE"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _SalientObservationData
+
+
+class _AssignSectorDroneCommandData(_WireModel):
+    drone_id: _Identifier = Field(alias="droneId")
+    command_id: _Identifier = Field(alias="commandId")
+    sector_id: _Identifier = Field(alias="sectorId")
+
+
+class _EscalateRescueDroneCommandData(_WireModel):
     drone_id: _Identifier = Field(alias="droneId")
     command_id: _Identifier = Field(alias="commandId")
     approval_id: _Identifier = Field(alias="approvalId")
@@ -367,7 +390,21 @@ class _DroneCommandEvent(_WireModel):
     event_class: Literal["COMMAND"] = Field(alias="eventClass")
     mission: _Identifier
     time: _Instant
-    data: _DroneCommandData
+    data: _AssignSectorDroneCommandData | _EscalateRescueDroneCommandData
+
+
+class _CommandResultData(_WireModel):
+    drone_id: _Identifier = Field(alias="droneId")
+    command_id: _Identifier = Field(alias="commandId")
+    outcome: Literal["acknowledged", "succeeded", "failed"]
+
+
+class _CommandResultEvent(_WireModel):
+    kind: Literal["commandResult"]
+    event_class: Literal["COMMAND"] = Field(alias="eventClass")
+    mission: _Identifier
+    time: _Instant
+    data: _CommandResultData
 
 
 class _GatewayResponseData(_WireModel):
@@ -557,7 +594,9 @@ type _DashboardEventValue = Annotated[
     | _OperatorApprovalEvent
     | _AgentProposalEvent
     | _EvidenceDecisionEvent
+    | _SalientObservationEvent
     | _DroneCommandEvent
+    | _CommandResultEvent
     | _GatewayResponseEvent
     | _AuditRecordEvent,
     Field(discriminator="kind"),
@@ -570,7 +609,9 @@ type _TimelineEventValue = Annotated[
     | _OperatorApprovalEvent
     | _AgentProposalEvent
     | _EvidenceDecisionEvent
+    | _SalientObservationEvent
     | _DroneCommandEvent
+    | _CommandResultEvent
     | _GatewayResponseEvent
     | _AuditRecordEvent,
     Field(discriminator="kind"),
@@ -660,16 +701,53 @@ class _DashboardSnapshot(_WireModel):
     runtime_id: _Identifier = Field(alias="runtimeId")
     cursor: _Cursor
     digest: _Digest
+    latest_event_digest: _Digest | None = Field(alias="latestEventDigest")
     current_run: _CurrentRun | None = Field(alias="currentRun")
     state: _DashboardReducedState
     timeline: Annotated[list[_TimelineOrderedEvent], Field(max_length=256)]
 
+    @model_validator(mode="after")
+    def _require_complete_checkpoint(self) -> _DashboardSnapshot:
+        """Bind the external event witness to the reduced-state audit ordinal."""
+        if (self.state.latest_audit_ordinal == 0) != (self.latest_event_digest is None):
+            message = "latestEventDigest must be null if and only if latestAuditOrdinal is zero"
+            raise ValueError(message)
+        return self
+
 
 class _DashboardError(_WireModel):
     error_version: Literal["dashboard-error/v1"] = Field(alias="errorVersion")
-    error_code: Annotated[
-        str,
-        StringConstraints(pattern=r"^[A-Z][A-Z0-9_]{0,63}$", max_length=64),
+    error_code: Literal[
+        "ASSET_NOT_FOUND",
+        "AUTHENTICATION_FAILED",
+        "BODY_TOO_LARGE",
+        "CANCELLATION_NOT_ESTABLISHED",
+        "CANONICAL_JSON_INVALID",
+        "DEPENDENCY_UNAVAILABLE",
+        "HOST_INVALID",
+        "IDEMPOTENCY_CONFLICT",
+        "IDEMPOTENCY_KEY_INVALID",
+        "INTERNAL_FAILURE",
+        "METHOD_NOT_ALLOWED",
+        "MODE_INVALID",
+        "MODE_UNAVAILABLE",
+        "MUTATION_REFUSED",
+        "NOT_READY",
+        "NO_CURRENT_RUN",
+        "OPERATION_CONFLICT",
+        "ORIGIN_INVALID",
+        "PATH_BODY_MISMATCH",
+        "PATH_INVALID",
+        "REPLAY_READ_ONLY",
+        "REPLAY_SESSION_NOT_FOUND",
+        "REQUEST_INVALID",
+        "ROUTE_NOT_FOUND",
+        "RUN_CONFLICT",
+        "SCENARIO_NOT_FOUND",
+        "SCENARIO_REVISION_MISMATCH",
+        "SCHEMA_INVALID",
+        "SSE_CAPACITY_EXCEEDED",
+        "UNSUPPORTED_MEDIA_TYPE",
     ] = Field(alias="errorCode")
     message: _NonEmptyString
 
@@ -700,8 +778,17 @@ class _ReplayBundle(_WireModel):
     scenario_id: _Identifier = Field(alias="scenarioId")
     scenario_revision: _StrictOne = Field(alias="scenarioRevision")
     initial_state: _DashboardReducedState = Field(alias="initialState")
+    latest_event_digest: _Digest | None = Field(alias="latestEventDigest")
     events: Annotated[list[_OrderedDashboardEvent], Field(max_length=512)]
     integrity: _ReplayIntegrity
+
+    @model_validator(mode="after")
+    def _require_complete_checkpoint(self) -> _ReplayBundle:
+        """Bind the external event witness to the initial-state audit ordinal."""
+        if (self.initial_state.latest_audit_ordinal == 0) != (self.latest_event_digest is None):
+            message = "latestEventDigest must be null if and only if latestAuditOrdinal is zero"
+            raise ValueError(message)
+        return self
 
 
 class _ResetRequest(_WireModel):

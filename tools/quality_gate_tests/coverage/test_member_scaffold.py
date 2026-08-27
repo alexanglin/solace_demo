@@ -5,19 +5,18 @@ from pathlib import Path
 from tools import member_scaffold
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
-SCAFFOLDED_MEMBERS = (
-    "packages/observability",
-    "services/evidence_service",
-    "services/recorder",
-)
+SCAFFOLDED_MEMBERS: tuple[str, ...] = ()
 ACTIVE_MEMBERS = (
     "packages/broker",
     "packages/contracts",
     "packages/domain",
+    "packages/observability",
     "packages/store",
     "services/command_gateway",
     "services/dashboard_api",
+    "services/evidence_service",
     "services/fleet_simulator",
+    "services/recorder",
     "services/scenario_service",
 )
 
@@ -140,7 +139,7 @@ class MemberScaffoldPredicateTests(QualityGateTestCase):
 
 
 class RepositoryScaffoldTests(QualityGateTestCase):
-    def test_the_three_declared_scaffolds_are_scaffolds_and_the_active_members_are_not(
+    def test_declared_scaffolds_are_scaffolds_and_active_members_are_not(
         self,
     ) -> None:
         # Arrange

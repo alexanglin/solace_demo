@@ -1,0 +1,10 @@
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	reverse_proxy unix//run/aerial-rescue/dashboard-api.sock {
+		flush_interval -1
+	}
+}

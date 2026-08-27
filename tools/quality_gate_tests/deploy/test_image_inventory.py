@@ -18,7 +18,7 @@ from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCas
 DIGEST: Final = "sha256:" + "0" * 64
 PULLED_IMAGE: Final = f"postgres:17.11-trixie@{DIGEST}"
 BASE_IMAGE: Final = f"python:3.14.7-slim-trixie@{DIGEST}"
-COMMITTED_IMAGES: Final = 7
+COMMITTED_IMAGES: Final = 9
 INVENTORY_MODULE: Final = "tools.image_inventory"
 
 
@@ -283,7 +283,7 @@ class CommandLineTests(QualityGateTestCase):
 
 
 class RepositoryInventoryTests(QualityGateTestCase):
-    def test_the_committed_stack_yields_seven_images(self) -> None:
+    def test_the_committed_stack_yields_nine_images(self) -> None:
         # Arrange
         deploy = REPOSITORY_ROOT / "deploy"
         arguments = ["--compose", str(deploy / "compose.yaml")]

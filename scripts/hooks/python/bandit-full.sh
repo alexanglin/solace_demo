@@ -50,7 +50,11 @@ fi
 
 if [ "$agent_active" = true ]; then
 	set --
-	for path in agent-mesh/plugins agent-mesh/tools; do
+	for path in \
+		agent-mesh/aerial_rescue_event_mesh_gateway \
+		agent-mesh/aerial_rescue_runtime_compat \
+		agent-mesh/plugins \
+		agent-mesh/tools; do
 		[ -d "$path" ] && set -- "$@" "$path"
 	done
 	if [ "$#" -gt 0 ]; then

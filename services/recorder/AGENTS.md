@@ -6,8 +6,9 @@ These instructions apply to every file under `services/recorder/`. Read the repo
 [`AGENTS.md`](../../AGENTS.md) first. Its TDD, safety, security, documentation, and version-control
 rules still apply.
 
-This member is the planned Tier 2 boundary for sanitized recording export and structurally isolated,
-side-effect-free replay. It is not implemented yet. Read the owner of each concern before changing it:
+This member is the active Tier 2 boundary for durable application-event capture, sanitized recording
+export, and structurally isolated, side-effect-free replay. Read the owner of each concern before
+changing it:
 
 | Concern | Authority or reference |
 | --- | --- |
@@ -42,6 +43,9 @@ side-effect-free replay. It is not implemented yet. Read the owner of each conce
 | Gateway RPC and its authoritative CloudEvent record | [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md) |
 | Reserved request/reply transport channel | [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
 | Recorder independence from the Event Mesh Gateway queue | [ADR-0071](../../docs/adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md) |
+| Durable application processing and settlement order | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Complete Alembic and typed SQLAlchemy Core boundary | [ADR-0151](../../docs/adr/0151-require-migrated-sqlalchemy-durable-tables.md) |
+| Durable malformed-Guaranteed-ingress refusal | [ADR-0159](../../docs/adr/0159-gate-applicable-solace-best-practices.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle an audit shape, recording format, sanitizer allowlist, pseudonymization scheme,
@@ -49,45 +53,33 @@ broker grant, delivery guarantee, replay adapter, compatibility rule, or safety 
 service-local constant or comment. Put the fact in its canonical authority and make the coordinated
 change required by the root guide.
 
-## 2. Preserve the current scaffold truth
+## 2. Preserve the current implementation truth
 
-Apart from this guide and its symlink, the member contains only:
+This member is active and measured at Tier 2. Its current production surface is:
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares the package shell, Python range, build backend, description, and Tier 2 status |
-| `src/aerial_rescue_recorder/__init__.py` | One package-intent docstring; no executable statement |
-| `src/aerial_rescue_recorder/py.typed` | Empty marker for future distributed type information |
+| `pyproject.toml` | Declares the broker, contracts, and store dependencies plus the live console entry point, Python, build, and Tier 2 metadata |
+| `broker.py` | Fair receiver-only Direct/Guaranteed admission, payload validation, and body-free refusal classification |
+| `capture.py`, `store.py` | Atomic inbox/source-event/audit processing with post-commit settlement over store-owned transactions |
+| `processing.py` | Receiver-only orchestration, transport exclusion, exact duplicate reuse, and durable refusal before Guaranteed rejection or Direct drop |
+| `console.py`, `service.py` | Concrete live composition, one long-lived receiver-only session, fair bounded intake, lifecycle/readiness recovery, process cancellation, and reverse-order shutdown |
+| `export.py` | Ordered bounded export over injected storage, sanitizer, and codec ports |
+| `replay.py` | Structurally isolated replay with no publisher or writer capability |
+| `tests/` | Member-local capture, refusal, export, replay, broker-admission, store-adapter, lifecycle, and concrete-composition evidence |
 
-The manifest is version `0.0.0`, has no dependencies, declares no entry point, and contains no test or
-mutation configuration. There is no recorder, audit reader, sanitizer, pseudonymizer, format or header,
-NDJSON reader or writer, replay fixture, projection adapter, reducer, composition root, liveness probe,
-readiness probe, or member-local test. No workspace member declares this package as a dependency or
-imports it.
+The `aerial-rescue-recorder` console validates the runtime schema registry and bounded settings before
+effects, reads only the recorder credential, constructs a lazy bounded SQLAlchemy engine, and opens one
+receiver-only PubSub+ session. It has no publisher capability. Its offline tests prove composition,
+fairness, transaction/settlement ordering, readiness transitions, cancellation, cleanup continuation,
+and replay graph shape against controlled boundaries. They do not prove real PubSub+ subscription or
+redelivery, PostgreSQL isolation or restart recovery, live reconnection, or process-signal behavior in a
+container.
 
-[`tools/member_scaffold.py`](../../tools/member_scaffold.py) therefore classifies the member as
-`SCAFFOLD`, and
-[`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
-pins that repository fact. The member becomes active when any of these is true:
-
-- a Python module under `src/` contains more than an empty body or one docstring;
-- a non-Python source file other than `py.typed` appears under `src/`; or
-- a `tests/` directory exists.
-
-An unreadable or syntactically invalid Python source is also non-scaffold. Any activating input restores
-normal fail-closed coverage behavior: executable Python is measured at the declared Tier 2; a tests-only
-or non-Python activation with no measurable Python fails as `no measurable source`. Never add a dummy
-record, placeholder test, empty port, no-op deny sink, or import-only entry point to make the member look
-started. The first behavior lands through red-green-refactor with member-local tests.
-
-The `recorder` definition in `deploy/compose.yaml` is also a shell. Its command imports this package and
-exits, and the inherited healthcheck imports the contracts package rather than probing this service. Its
-broker credential configuration proves configuration shape only. The entire `services` profile remains
-inert because its application commands are import probes that exit rather than long-running service
-commands. Another member having a package entry point does not change this recorder definition. None of
-that proves startup, subscription, capture, durability, sanitization, export, replay, readiness,
-cancellation, or shutdown. `AGENTS.md` and its `CLAUDE.md` symlink live outside `src/` and do not activate
-the scaffold.
+The `recorder` definition in `deploy/compose.yaml` invokes that console after migrations and supplies the
+schema root, trust store, and exact credential file. Its process-liveness healthcheck is not recorder
+application readiness, and Compose wiring is not container evidence. Do not claim deployed startup,
+subscription, capture, durability, readiness, cancellation, or shutdown from the member-local tests.
 
 ## 3. Keep capture, audit, export, sanitization, and replay separate
 
@@ -96,9 +88,9 @@ mission history, dashboard state, or transport behavior. Keep these stages expli
 
 1. **Capture** accepts a transport input on the recorder's own identity and classifies and validates it
    against its concrete topic and wire contract.
-2. **Audit persistence** is an independently owned stage, not a recorder responsibility decided here.
-   Its future owner appends the accepted application fact through `packages/store`, which assigns the
-   authoritative monotonic audit ordinal inside the durable transaction.
+2. **Audit persistence** is coordinated here through a narrow transaction port while `packages/store`
+   owns the repositories and assigns the authoritative monotonic audit ordinal inside the durable
+   transaction.
 3. **Export** reads authoritative audit rows in ordinal order. It does not reconstruct mission history
    from broker arrival order or diagnostic logs.
 4. **Sanitization** converts a typed export candidate into a public-safe, versioned record through a
@@ -113,10 +105,11 @@ from a file, or let a direct filesystem write race the database transaction. The
 "writes sanitized CloudEvents to NDJSON" describes the target artifact; it does not repeal the audit
 table's authority or combine export with sanitization.
 
-The exact owner that maps accepted broker input into a future audit row, the row shape, the transaction
-set, and the export interface are not yet implemented. Resolve them through their owning store and
-contract decisions before coding. Do not make this service own database models, migrations, SQLAlchemy
-repositories, domain transitions, envelope parsing, topic parsing, or dashboard reduction.
+`capture.py` maps accepted broker input into the already-decided audit and source-event shapes, and
+`store.py` adapts that work to one store-owned transaction. `export.py` defines the bounded read and
+sanitization ports but no live database reader or recording codec is composed yet. Do not make this
+service own database models, migrations, SQLAlchemy repositories, domain transitions, topic grammar, or
+dashboard reduction.
 
 - Use `packages/contracts` for canonical decoding and bytes, CloudEvents and RPC validation, topic
   parsing and binding, dashboard projection and state reduction, and domain-separated digests.
@@ -139,31 +132,33 @@ identifiers, threads, tasks, or signal handlers at import time.
 
 ## 4. Treat the recorder as read-only and classify every broker input
 
-ADR-0061 provisions the `recorder` role with subscribe exceptions for all eleven application topic
-families and no publish grant. That matrix is an authority ceiling, not a record-format definition and
-not proof that every delivered payload belongs in a replay fixture. Broker readback establishes a
-deny-by-default publish profile with zero recorder publish exceptions and eleven subscribe exceptions;
-B19 and representative live probes prove denial on the topics they exercise. No live probe covers every
-family or proves subscription delivery or denial. Keep claims at that evidence level. The recorder has
-no A2A authority and must not subscribe to, persist, or replay Agent Mesh discovery, delegation, prompts,
-model traces, or internal task traffic.
+ADR-0061 provisions the `recorder` role with subscribe exceptions for thirteen application families --
+every family except the two raw gateway request/reply transports -- and no publish grant. That matrix is
+an authority ceiling, not a record-format definition and not proof that every delivered payload belongs
+in a replay fixture. The concrete graph binds ten Guaranteed recordable-family queues and two Direct
+recordable-family subscriptions; it deliberately does not bind the raw structured Agent Response body.
+Broker configuration and representative live denial probes do not prove every subscription, redelivery,
+or denial path. Keep claims at that evidence level. The recorder has no A2A authority and must not
+subscribe to, persist, or replay Agent Mesh discovery, delegation, prompts, model traces, or internal
+task traffic.
 
-Do not instantiate a publisher for this read-only process. The current `packages/broker` convenience
-session constructs a persistent publisher together with its direct receiver, so it is not the recorder's
-future composition seam. Add and prove a receiver-only broker adapter in the broker package before using
-it here. Do not work around the recorder ACL, add a replay-publish grant, or invent a replay broker topic.
+Do not instantiate a publisher for this read-only process. `console.py` opens only
+`open_receiver_only_session`, `broker.py` accepts only a receiver-only session capability, and
+`processing.py` owns no publication port. Preserve that structural boundary. Do not work around the
+recorder ACL, add a replay-publish grant, or invent a replay broker topic.
 
-The eleven-family subscription contains more than one wire shape. Raw broker ingress belongs in
+The application surface contains more than one wire shape. Raw broker ingress belongs in
 `packages/broker`: retain the original bytes long enough for canonical decoding to refuse repeated keys,
 apply the required Pydantic trust-boundary wrapper there, invoke the pure contracts validators, and pass
 only a typed value into this service. Do not accept vendor messages or broad `Any` values here or create a
 second raw-ingress adapter. Parse the topic first and select the contract deliberately:
 
-- The nine notification families carry structured CloudEvents. Decode through the canonical decoder,
+- The twelve recordable notification families carry structured CloudEvents. Decode through the
+  canonical decoder,
   validate the closed envelope, type-to-`dataschema` and subject bindings, and exact topic binding. Before
-  payload data can affect audit or replay state, also run the contracts-owned runtime payload validator
-  once it exists. The current envelope parser binds a schema identifier but does not execute the JSON
-  Schema, and the root fixture oracle is not a runtime ingress boundary.
+  payload data can affect audit or replay state, run the contracts-owned runtime payload validator.
+  `broker.py` does so before constructing a `ReceivedNotification`; the root fixture oracle is not a
+  runtime ingress boundary.
 - A gateway request on a real mission's `gateway/request` topic is schema-bound RPC, not a CloudEvent.
   It is a question awaiting an answer, not an application event. Whether a future auxiliary recording
   format retains this transport fact is undecided; never pass it blindly to the envelope parser or
@@ -175,13 +170,19 @@ second raw-ingress adapter. Parse the topic first and select the contract delibe
   `aerial-rescue/v1/{missionId}/gateway/record/{requestId}`. That mission-scoped CloudEvent is the
   authoritative record for the recorder, dashboard, and audit timeline. Do not duplicate it with the
   raw reply or derive it yourself.
+- The Direct structured Agent Response body is an integration input to the command gateway, not an
+  authoritative event. The normalized Guaranteed Agent Proposal is the recordable notification. Do not
+  persist or replay the raw model-facing response.
 
-The contracts package currently binds only drone telemetry, salient drone events, and the
-mission-scoped gateway response as application envelopes. An ACL covering a family does not make an
-unbound type valid. Refuse malformed, repeated-key, unbound, `dataschema`-mismatched,
+The contracts package binds every recordable notification type to its closed payload schema. An ACL
+covering a family still does not make an unknown type valid. Refuse malformed, repeated-key, unbound,
+`dataschema`-mismatched,
 subject-mismatched, and topic-mismatched inputs through typed outcomes before persistence. Refuse an
-invalid payload through the future contracts-owned runtime validator rather than mistaking schema-fixture
-evidence for runtime validation. Do not log or retain raw refused bodies.
+invalid payload through the contracts-owned runtime validator rather than mistaking schema-fixture
+evidence for runtime validation. For malformed Guaranteed ingress, commit the bounded body-free refusal
+fact before message-bound rejection; a persistence failure leaves it unsettled. For malformed Direct
+ingress, commit the same bounded evidence and drop the unacknowledged message so the long-lived consumer
+continues. Do not log or retain raw refused bodies.
 
 Consume authoritative application topics on the recorder's own identity. ADR-0071 explicitly excludes
 the Event Mesh Gateway's temporary data-plane queue as an authoritative route. Do not scrape another
@@ -194,24 +195,27 @@ Broker arrival order, file line order, event time, identifier, trace context, an
 `sequence` do not replace it. Preserve original producer sequence for stale-update and diagnostic rules,
 but use the durable ordinal to select and order export rows.
 
-`packages/store` holds no durable schema: no audit model, migration, append operation, transaction,
-ordinal, export query, or recovery behavior exists. `packages/broker` currently exposes a direct
-receiver, not a durable queue consumer, and supplies no recorder acknowledgement, redelivery, expiry,
-dead-message, or offline-backlog path. Therefore this service cannot yet claim complete capture,
-at-least-once durable delivery, RPO-0, backlog recovery, or no loss.
+`packages/store` owns the complete Alembic chain and typed SQLAlchemy Core repositories used here:
+`audit_log`, `broker_inbox`, `source_event`, and `broker_refusal`. Its recorder transaction claims the
+inbox, stores immutable source bytes, appends the authoritative ordinal, and completes the inbox in one
+database transaction. `packages/broker` owns the receiver-only Direct and durable consumers plus
+message-bound settlement. Member tests prove these boundaries and their ordering; only real PostgreSQL
+and PubSub+ restart/failure tests can prove database isolation, broker redelivery, dead-message policy,
+offline backlog recovery, and no duplicate side effects. Routine Direct telemetry remains deliberately
+lossy, so the system must never claim universal RPO-0 or no loss.
 
 Routine telemetry is intentionally direct and supersedable; do not silently turn its loss profile into a
 guaranteed-delivery promise. Conversely, do not use the telemetry exception to weaken future critical
 audit capture. Define the critical and lossy classes, queue ownership, retention, expiry, dead-message,
 reconnect, and overload behavior through their governing decisions and operating parameters.
 
-Once durable critical ingress exists, acknowledge only after the related durable transaction commits.
-A fake can prove call order, but only real PostgreSQL and PubSub+ failure tests can prove transaction and
-settlement behavior. On rollback, cancellation, or ambiguous failure, leave the message recoverable;
-never acknowledge first and hope a later write succeeds.
+Guaranteed critical ingress acknowledges only after the related durable transaction commits. A fake can
+prove call order, but only real PostgreSQL and PubSub+ failure tests can prove transaction and settlement
+behavior. On rollback, cancellation, or ambiguous failure, leave the message recoverable; never
+acknowledge first and hope a later write succeeds.
 
-Treat duplicates and out-of-order delivery as normal. Use the future durable idempotency contract rather
-than an in-memory seen set. Never drop an event solely because its event time or producer sequence is
+Treat duplicates and out-of-order delivery as normal. Use the durable broker inbox rather than an
+in-memory seen set. Never drop an event solely because its event time or producer sequence is
 less than the last audit ordinal, and never rewrite history to make arrival order look monotonic. Surface
 gaps and refused records as typed, redacted operational outcomes; do not manufacture replacement events
 or conceal incomplete capture.
@@ -311,15 +315,15 @@ sinks must be unreachable or refuse replay mode. A committed-file replay should 
 connection. Credential scoping is a deliberate second layer, not a substitute for structural isolation.
 The full replay graph must attempt zero outbound connections.
 
-Replay drives the same production dashboard-facing normalized-event path as live operation. That adapter
-protocol does not exist yet. Do not evade the recorder's no-publish grant with a broker replay topic,
-import the dashboard service, or build an independent replay-only projection or reducer. Define a typed
-in-process or local boundary through the owner selected by the governing decision.
+Replay drives the same production dashboard-facing normalized-event path as live operation. The
+`ReplayObserver` protocol now supplies that capability-narrow in-process seam, but no concrete browser
+replay adapter or recording source is composed. Do not evade the recorder's no-publish grant with a broker
+replay topic, import the dashboard service, or build an independent replay-only projection or reducer.
 
-The current contracts package can project only drone telemetry and has no complete reduced-state fold or
-state-document implementation. Most event families lack bound payload schemas and projections. A parser
-that can read lines is therefore not evidence that the mission can be replayed faithfully. Complete the
-contract, projection, reducer, and cross-language obligations before claiming end-to-end replay.
+The contracts package now validates and projects the complete recorded event inventory and owns the pure
+reduced-state fold/state document. A parser that can read lines and an observer protocol are still not
+evidence that a mission can be replayed faithfully: the versioned recording codec, concrete adapter,
+cross-language repetition, and production zero-network execution remain required.
 
 Preserve these replay semantics:
 
@@ -347,18 +351,20 @@ broker arrival order, event identifiers, or timestamps as either oracle.
 
 ## 9. Keep missing contracts visible
 
-The following are design and implementation gaps, not invitations for service-local defaults:
+The following are remaining design and implementation gaps, not invitations for service-local defaults:
 
-- the audit row, append transaction, ordinal, idempotency key, and audit-to-export mapping;
-- durable recorder queues, acknowledgement, redelivery, expiry, dead-message, reconnect, overload, and
-  lossy-versus-critical classification;
+- the store-to-export adapter and the complete audit-to-recording mapping;
+- live PubSub+ and PostgreSQL verification of durable recorder queues, redelivery, dead-message,
+  reconnect, overload, restart recovery, and settlement after commit;
 - the capture policy for gateway RPC and any non-event auxiliary record;
 - the sanitizer allowlist, pseudonymization contract, version, collision handling, and stability scope;
 - the recording header, record union, compatibility policy, bounds, checksum, path, retention, and
   atomic-finalization rules;
 - the committed replay-fixture owner and verification path;
-- the dashboard-facing adapter, missing projections, pure reduced-state fold, and state document; and
-- mode-specific readiness, cancellation, drain, shutdown, and recovery behavior.
+- the dashboard-facing replay adapter, any still-missing projections, and process-level zero-network
+  replay verification; and
+- shared-stack execution of the Compose-wired console, recorder-specific readiness, and end-to-end
+  recovery evidence.
 
 Resolve a technology or version choice, contract shape, safety boundary, verification change, or numeric
 parameter through the ADR and canonical-document process required by the root guide. Never hide an open
@@ -367,8 +373,8 @@ decision in an environment-variable fallback, test fixture, implementation defau
 
 Inject typed ports for receiver, authoritative audit export reader, sanitizer, recording input/output,
 dashboard event sink, run mode, clock, identifiers, and configuration only where real behavior needs
-them. Add an audit-append port here only if a future Accepted decision assigns that ingestion role to this
-service. Open only the selected input stream to read and validate its header; validate all settings and
+them. Keep audit append behind the existing store-owned recorder transaction. Open only the selected
+input stream to read and validate its header; validate all settings and
 that header before opening effectful or external sinks. Bound every queue, line, file, transaction,
 timeout, retry, reconnect, concurrency fan-out, drain, and shutdown deadline with values owned by
 `docs/operating-parameters.md`; an open parameter blocks its dependent behavior.
@@ -381,10 +387,9 @@ finalize only complete sanitized files, and close owned resources.
 
 ## 10. Build tests at the boundary that owns the claim
 
-For the first behavior, run the existing scaffold gate, add the smallest AAA test under
-`services/recorder/tests/`, observe the intended red result, and then add the minimum production code.
-Do not activate the member with tests alone and leave no measurable source. Never weaken or alter an
-existing expected behavior merely to make implementation pass.
+For every behavior, add the smallest AAA test under `services/recorder/tests/`, observe the intended red
+result, and then add the minimum production code. Never weaken or alter an existing expected behavior
+merely to make implementation pass.
 
 Member-level tests should cover the orchestration this service owns as contracts arrive:
 
@@ -446,18 +451,17 @@ uv run --frozen pytest -q \
 pre-commit run --files services/recorder/AGENTS.md services/recorder/CLAUDE.md --hook-stage pre-commit
 ```
 
-Once implementation exists, start with the focused member and every affected owner:
+For implementation changes, start with the focused member and every affected owner:
 
 ```sh
 uv run --frozen pytest -q services/recorder/tests
-uv run --frozen pytest -q packages/contracts/tests packages/broker/tests
+uv run --frozen pytest -q packages/contracts/tests packages/broker/tests packages/store/tests
 just check-aaa
 ```
 
-Add `packages/store/tests` once that suite exists and a change reaches its boundary. Add contract,
-integration, security, replay, dashboard, and live-resource suites when the change reaches those
-boundaries. Run the complete formatting, Ruff, strict mypy, security, coverage, build, and production
-gates required by the root guide and `docs/TESTING.md`.
+Add contract, integration, security, replay, dashboard, and live-resource suites when the change reaches
+those boundaries. Run the complete formatting, Ruff, strict mypy, security, coverage, build, and
+production gates required by the root guide and `docs/TESTING.md`.
 
 Before handoff, run the repository-wide authorities. Until new files are staged, a no-index comparison
 exits with status 1 because each path differs from `/dev/null`; empty output from the `--check` form means
@@ -476,6 +480,6 @@ git diff --no-index /dev/null services/recorder/CLAUDE.md
 readlink services/recorder/CLAUDE.md
 ```
 
-Inspect the complete diff, verify the symlink target, and report every check that could not run. A
-scaffolded store, absent queue, missing schema, open sanitizer decision, incomplete reducer, or unproven
-live dependency is a blocking or unverified obligation, never evidence that the path passed.
+Inspect the complete diff, verify the symlink target, and report every check that could not run. An open
+sanitizer or recording-format decision, missing export/replay adapter, or unproven live dependency is a
+blocking or unverified obligation, never evidence that the path passed.

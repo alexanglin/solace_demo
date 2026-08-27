@@ -37,6 +37,7 @@ from uuid import uuid4
 import pytest
 from aerial_rescue_broker.deployment import DEFAULT_VPN, read_credential
 from aerial_rescue_broker.messaging import (
+    DIRECT_TELEMETRY_RECEIVER_CAPACITY,
     BrokerEndpoint,
     BrokerSession,
     open_fleet_session,
@@ -151,6 +152,7 @@ class FleetSimulatorLiveTests(unittest.TestCase):
             Principal.DASHBOARD_API,
             read_credential(DEPLOY, Principal.DASHBOARD_API),
             (subscription_for(Family.DRONE_TELEMETRY),),
+            direct_receiver_capacity=DIRECT_TELEMETRY_RECEIVER_CAPACITY,
         )
         try:
             report = run(

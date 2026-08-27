@@ -3,7 +3,14 @@ name = "aerial-rescue-recorder"
 version = "0.0.0"
 description = "Sanitized recording and side-effect-free replay."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = [
+    "aerial-rescue-broker",
+    "aerial-rescue-contracts",
+    "aerial-rescue-store",
+]
+
+[project.scripts]
+aerial-rescue-recorder = "aerial_rescue_recorder.console:main"
 
 [build-system]
 requires = ["hatchling"]

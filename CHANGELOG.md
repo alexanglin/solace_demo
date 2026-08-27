@@ -10,10 +10,38 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The application image now carries its pinned production dashboard, and the relay waits for real
+  application readiness.** A dedicated Node 26.7.0/pnpm 11.23.0 stage installs the frozen dashboard
+  lock without lifecycle scripts and copies only the Vite distribution into the Python runtime. The
+  image also owns an explicit writer-free replay root; Compose supplies the closed public and private
+  dashboard inputs, and its Unix-socket healthcheck requires `degradedLive` readiness before Caddy may
+  start while preserving the separate relayed liveness probe ([ADR-0184](docs/adr/0184-package-the-dashboard-and-gate-relay-startup-on-readiness.md)).
+
+- **Routine SEMP queue health now has a fail-closed continuous composition without widening its
+  authority.** The opt-in `semp-monitor` profile receives only its generated password and public trust
+  store, constructs the writer-free `ReadOnlySempMonitor`, emits bounded aggregate counts, and exits
+  nonzero on read loss. It remains disabled until an interactive operator proves global `none`, VPN
+  default `none`, one selected-VPN `read-only` exception, a positive aggregate read, and a negative
+  same-value configuration-write denial ([ADR-0181](docs/adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md)).
+
+- **The standalone PubSub+ profile now exposes its minimum broker-event monitoring path.** The software
+  broker retains its `event` Syslog facility and sends one broker-native JSON copy to container stdout.
+  A bounded streaming processor validates the closed capability-relevant SYSTEM and Message VPN catalog,
+  emits tenant-neutral raise/clear/observation alerts, degrades on malformed or uncataloged active-scope
+  input, and exits nonzero when its source or alert sink fails. HA, DMR, bridges, LDAP, replication,
+  transactions, and appliance-only categories remain explicitly conditional rather than falsely active.
+
+- **The pinned Event Mesh Gateway now has a project-owned, contract-Direct output path.** The owned
+  extension subclasses only the supported gateway composition seam, reuses the connected Solace
+  messaging service, refuses instead of buffering Direct output, and treats a persistent receipt as
+  successful only when it carries no exception and explicitly confirms persistence. The runtime image
+  installs that extension, its hardened image probe verifies the exact SDK surface, and the isolated
+  Agent Mesh gate enforces 100% statement and branch coverage over both the validator and extension.
+
 - **The Solace application data-plane contract is closed without claiming that its runtime exists.**
-  [ADR-0114](docs/adr/0114-define-durable-application-processing.md) expands the unique topic taxonomy
+  [ADR-0146](docs/adr/0146-define-durable-application-processing.md) expands the unique topic taxonomy
   to fourteen families and selects the durable inbox/outbox and application-processing semantics;
-  [ADR-0116](docs/adr/0116-close-the-application-data-plane-wire-documents.md) supplies the closed
+  [ADR-0148](docs/adr/0148-close-the-application-data-plane-wire-documents.md) supplies the closed
   operator-command, approval, structured agent-response, canonical-proposal, evidence-decision,
   rescue-command, typed-audit, and dashboard HTTP documents. The manifest grows by 17 schemas, from 49
   to 66, including four additions that take the dashboard inventory from 19 to 23. Generated
@@ -22,7 +50,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
   The fifteen-family classification is wire- and delivery-disjoint: twelve families are
   notification-only, `GATEWAY_REQUEST` and `GATEWAY_RESPONSE` carry request/reply RPC, and
-  `AGENT_RESPONSE` carries the direct non-CloudEvent integration body. ADR-0118 separates the private
+  `AGENT_RESPONSE` carries the direct non-CloudEvent integration body. ADR-0150 separates the private
   response and mission record: the reserved `reply` topic carries only the raw RPC body, while a real
   mission `GATEWAY_RECORD` topic carries only the bound CloudEvent observed by the dashboard
   and recorder. Crossed topic/body combinations and caller-selected delivery are refused before broker
@@ -41,9 +69,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   This tranche provides schemas, fixtures, pure validation/projection, strict model and route
   registries, and desired policy tables only. It does not provide FastAPI handlers, continuously
   running evidence/recorder services, command dispatch, the broker's representation-aware delivery
-  router, or ADR-0114's additive Alembic migrations and SQLAlchemy repositories. Earlier Unreleased
+  router, or ADR-0146's additive Alembic migrations and SQLAlchemy repositories. Earlier Unreleased
   totals of 13 families, 46 endpoints, 49 schemas, 19 dashboard schemas, 17 dashboard server models,
-  and nine public routes describe pre-ADR-0114/0116 snapshots and are superseded by the totals above.
+  and nine public routes describe pre-ADR-0146/0148 snapshots and are superseded by the totals above.
 
 - **Two accepted decisions closed the lifecycle-source and duplicate-witness gaps before A3/R3
   implementation.** [ADR-0111](docs/adr/0111-broker-dashboard-lifecycle-sources.md) selects
@@ -51,7 +79,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   independent run-scoped producer identity and sequence, and routes them through the receiver-only
   recorder into durable audit order. The family, delivery, and ACL tables and their desired-state
   provisioner now include the scenario-service role and two recorder lifecycle queues, so the reference
-  inventory was 46 endpoints with 460 MB of nominal reservation at that tranche. ADR-0114 later
+  inventory was 46 endpoints with 460 MB of nominal reservation at that tranche. ADR-0146 later
   replaces that inventory with 45 endpoints and 450 MB after removing the command gateway's proposal
   queue. Both are offline desired-state claims; the R6 recorder receiver and R8 lifecycle publishers
   are still pending.
@@ -68,7 +96,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 - **The dashboard now has a production contract boundary generated from the schemas rather than from
   its Playwright examples.** The original A2 tranche committed one TypeScript module for each of 19
-  dashboard schemas plus a schema-ID mapping index; ADR-0116 extends that same generated and validated
+  dashboard schemas plus a schema-ID mapping index; ADR-0148 extends that same generated and validated
   boundary to the current 23 schemas. A strict Ajv 2020-12 registry statically registers the repository
   schemas, resolves their references offline, refuses unknown fields without coercing or mutating the
   candidate, and returns a generated type only after validation.
@@ -113,7 +141,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   fleet simulator owns the four fleet-control server documents. The two browser-owned documents remain
   explicitly browser-only. Canonical decoding precedes strict model validation, and framework-free
   route registries pinned nine public routes and both three-route private surfaces for later runtime
-  and OpenAPI parity tests. ADR-0116 now raises those dashboard totals to 21 server-facing models and
+  and OpenAPI parity tests. ADR-0148 now raises those dashboard totals to 21 server-facing models and
   eleven public routes while leaving the private surfaces unchanged. [ADR-0108](docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md)
   records that ownership and keeps the schemas normative.
 

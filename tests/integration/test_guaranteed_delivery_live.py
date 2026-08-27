@@ -7,12 +7,12 @@ is evidence about a plan. This probe is the other kind: it publishes to the cont
 ``deploy/compose.yaml`` with nothing bound, reads the queue's depth from the broker's own
 monitor API, then binds, receives, and settles, so what is asserted is the broker's answer.
 
-Depths are asserted as deltas rather than as absolutes. The dead-message queue has no
-consumer by design -- nothing may bind it -- so what a rejection puts there stays, and a
-later run would read a number a previous run left. Every queue this test fills is drained
-in ``tearDown`` for the same reason, the two collateral ones included: a drone command
-reaches three queues, and leaving two of them spooling would make the next run's arithmetic
-depend on this one.
+Depths are asserted as deltas rather than as absolutes. The source queue's isolated
+dead-message queue has no consumer by design -- nothing may bind it -- so what a rejection
+puts there stays, and a later run would read a number a previous run left. Every queue this
+test fills is drained in ``tearDown`` for the same reason, the two collateral ones included:
+a drone command reaches three queues, and leaving two of them spooling would make the next
+run's arithmetic depend on this one.
 
 The prerequisite is one command: ``just provision --namespace aerial-rescue-mesh --drone
 drone-delivery-probe``. Without it the probe drone has no queue, and a command published
@@ -50,8 +50,8 @@ from aerial_rescue_broker.messaging import (
 )
 from aerial_rescue_broker.provisioning import message_count
 from aerial_rescue_broker.queues import (
-    DEAD_MESSAGE_QUEUE,
     MAX_REDELIVERY_COUNT,
+    dead_message_queue_name,
     drone_queue_name,
     family_queue_name,
 )
@@ -81,6 +81,7 @@ COMMAND_TOPIC: Final = format_topic(
 COMMAND_BODY: Final = b'{"probe":1}'
 
 PROBE_QUEUE: Final = drone_queue_name(PROBE_DRONE)
+PROBE_DEAD_MESSAGE_QUEUE: Final = dead_message_queue_name(PROBE_QUEUE)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
     (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
@@ -291,7 +292,7 @@ class GuaranteedDeliveryTests(unittest.TestCase):
         # Arrange
         _publish_one_command()
         queued = _settled_depth(PROBE_QUEUE, 1)
-        dead = _depth(DEAD_MESSAGE_QUEUE)
+        dead = _depth(PROBE_DEAD_MESSAGE_QUEUE)
 
         # Act
         _consume_one(Principal.FLEET_SIMULATOR, PROBE_QUEUE, Outcome.REJECTED)
@@ -302,7 +303,7 @@ class GuaranteedDeliveryTests(unittest.TestCase):
             (
                 queued,
                 _settled_depth(PROBE_QUEUE, 0),
-                _settled_depth(DEAD_MESSAGE_QUEUE, dead + 1),
+                _settled_depth(PROBE_DEAD_MESSAGE_QUEUE, dead + 1),
             ),
         )
 
@@ -311,7 +312,7 @@ class GuaranteedDeliveryTests(unittest.TestCase):
         # Arrange
         _publish_one_command()
         _settled_depth(PROBE_QUEUE, 1)
-        dead = _depth(DEAD_MESSAGE_QUEUE)
+        dead = _depth(PROBE_DEAD_MESSAGE_QUEUE)
 
         # Act
         deliveries = _fail_until_abandoned()
@@ -322,7 +323,7 @@ class GuaranteedDeliveryTests(unittest.TestCase):
             (
                 deliveries,
                 _settled_depth(PROBE_QUEUE, 0),
-                _settled_depth(DEAD_MESSAGE_QUEUE, dead + 1),
+                _settled_depth(PROBE_DEAD_MESSAGE_QUEUE, dead + 1),
             ),
         )
 

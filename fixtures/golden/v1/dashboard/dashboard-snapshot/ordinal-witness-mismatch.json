@@ -1,0 +1,17 @@
+{
+  "snapshotVersion": "dashboard-snapshot/v1",
+  "runtimeId": "runtime-synthetic-0001",
+  "cursor": "mission-cursor-empty-0001",
+  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "latestEventDigest": null,
+  "currentRun": null,
+  "state": {
+    "canonicalizationVersion": 1,
+    "stateVersion": 1,
+    "currentMission": null,
+    "fleet": [],
+    "latestAuditOrdinal": 1,
+    "sectors": []
+  },
+  "timeline": []
+}

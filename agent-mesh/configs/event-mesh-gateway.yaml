@@ -13,7 +13,7 @@
 # record of a salient event.
 apps:
   - name: event-mesh-gateway-app
-    app_module: sam_event_mesh_gateway.app
+    app_module: aerial_rescue_event_mesh_gateway.app
     broker:
       dev_mode: false
       broker_url: ${SOLACE_BROKER_URL}
@@ -69,11 +69,12 @@ apps:
           # The validated CloudEvent's payload, passed as an object rather than spliced into a
           # template. `detail` is free text a drone reported, so it is untrusted input; keeping
           # it a JSON string value means it cannot break out of the structure around it.
-          input_expression: input:payload:data
-          # Declaring an input schema is what puts the plugin into structured invocation for an
-          # agent target. It is a hint to the agent, deliberately naming the members without
-          # restating their bounds; the authoritative contract is
-          # schemas/v1/payload/drone-event-salient.schema.json, validated before publication.
+          input_expression: input.payload:data
+          # Declaring both schemas uses the official plugin's structured invocation protocol:
+          # the accepted data object becomes an artifact and the response is read only from the
+          # schema-validated output artifact. The agent owns only two bounded coordinates. Every
+          # identity and source binding is added later by the owned gateway component from trusted
+          # forward context; the model cannot select or override one.
           structured_invocation:
             input_schema:
               type: object
@@ -84,23 +85,165 @@ apps:
                 - latitudeMicrodegrees
                 - longitudeMicrodegrees
                 - detail
+              additionalProperties: false
+              properties:
+                missionId:
+                  type: string
+                  pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                droneId:
+                  type: string
+                  pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                observation:
+                  type: string
+                  pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+                  maxLength: 32
+                latitudeMicrodegrees:
+                  type: integer
+                  minimum: -90000000
+                  maximum: 90000000
+                longitudeMicrodegrees:
+                  type: integer
+                  minimum: -180000000
+                  maximum: 180000000
+                detail:
+                  type: string
+                  maxLength: 4096
+            output_schema:
+              type: object
+              required:
+                - latitudeMicrodegrees
+                - longitudeMicrodegrees
+              additionalProperties: false
+              properties:
+                latitudeMicrodegrees:
+                  type: integer
+                  minimum: -90000000
+                  maximum: 90000000
+                longitudeMicrodegrees:
+                  type: integer
+                  minimum: -180000000
+                  maximum: 180000000
           target_agent_name: MissionCoordinator
           on_success: salient-event-assessment
           on_error: salient-event-failure
           forward_context:
             # aerial-rescue/v1/{missionId}/drone/{droneId}/event/salient -- level 2.
             missionId: input.topic_levels:2
-      # Both routes publish inside the agent-response family, the only family this role may
-      # publish. They are non-authoritative: an agent proposes, and only the deterministic
-      # command gateway publishes an executable command (docs/adr/0005).
+            droneId: input.topic_levels:4
+            # The complete CloudEvent remains outside the model-owned output. These members let
+            # the owned boundary compare topic and envelope identities before it constructs a
+            # candidate. A mismatch produces only a redacted abstention.
+            eventMissionId: input.payload:data.missionId
+            eventDroneId: input.payload:data.droneId
+            sourceEventId: input.payload:id
+            sourceEventDigest: input.user_properties:aerial-rescue-source-event-digest
+            correlationId: input.payload:correlationid
+            agentName: static:MissionCoordinator
+      # Both routes publish the same closed integration document inside the agent-response
+      # family, the only application family this role may publish. The official output handler
+      # evaluates the owned `agent_response` field and validates it once more before Direct I/O.
+      # A model never supplies a topic, command event, application identity, or source binding.
       output_handlers:
         - name: salient-event-assessment
           topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
-          payload_expression: task_response:text
-          payload_encoding: utf-8
-          payload_format: text
-        - name: salient-event-failure
-          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
-          payload_expression: task_response:a2a_task_response.error
+          payload_expression: task_response:agent_response
           payload_encoding: utf-8
           payload_format: json
+          output_schema: &agent_response_schema
+            anyOf:
+              - type: object
+                required:
+                  - agentResponseVersion
+                  - missionId
+                  - agentName
+                  - invocationId
+                  - correlationId
+                  - outcome
+                  - result
+                additionalProperties: false
+                properties:
+                  agentResponseVersion: {const: 1}
+                  missionId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  agentName:
+                    type: string
+                    pattern: '^[A-Za-z0-9_]{1,64}$'
+                  invocationId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  correlationId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  outcome: {const: candidate}
+                  result:
+                    type: object
+                    required:
+                      - proposalType
+                      - sourceEventId
+                      - sourceEventDigest
+                      - droneId
+                      - latitudeMicrodegrees
+                      - longitudeMicrodegrees
+                      - commandType
+                    additionalProperties: false
+                    properties:
+                      proposalType: {const: candidate-location}
+                      sourceEventId:
+                        type: string
+                        pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                      sourceEventDigest:
+                        type: string
+                        pattern: '^[0-9a-f]{64}$'
+                      droneId:
+                        type: string
+                        pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                      latitudeMicrodegrees:
+                        type: integer
+                        minimum: -90000000
+                        maximum: 90000000
+                      longitudeMicrodegrees:
+                        type: integer
+                        minimum: -180000000
+                        maximum: 180000000
+                      commandType: {const: escalate-rescue}
+              - type: object
+                required:
+                  - agentResponseVersion
+                  - missionId
+                  - agentName
+                  - invocationId
+                  - correlationId
+                  - outcome
+                  - reason
+                additionalProperties: false
+                properties:
+                  agentResponseVersion: {const: 1}
+                  missionId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  agentName:
+                    type: string
+                    pattern: '^[A-Za-z0-9_]{1,64}$'
+                  invocationId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  correlationId:
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  outcome: {const: abstained}
+                  reason:
+                    enum:
+                      - timeout
+                      - transport-error
+                      - model-error
+                      - invalid-output
+                      - identity-mismatch
+          on_validation_error: drop
+        - name: salient-event-failure
+          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
+          payload_expression: task_response:agent_response
+          payload_encoding: utf-8
+          payload_format: json
+          output_schema: *agent_response_schema
+          on_validation_error: drop

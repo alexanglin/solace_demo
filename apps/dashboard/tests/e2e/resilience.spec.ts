@@ -211,7 +211,7 @@ test("disposes the suffix source and requests a fresh snapshot after stream over
   await expect(page.getByRole("status", { name: "Dashboard state" })).toHaveText(
     "Stream overloaded · resynchronizing",
   );
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
+  await expect(page.getByRole("status", { name: "Current mission", exact: true })).toContainText(
     "mission-synthetic-0001",
   );
 });
@@ -229,7 +229,7 @@ test("disposes the previous source before switching modes", async ({ page }) => 
   // Assert
   expect(disposalCount).toBe(1);
   await expect(page.getByRole("status", { name: "Operating mode" })).toHaveText("ISOLATED REPLAY");
-  await expect(page.getByRole("status", { name: "Current mission" })).toContainText(
+  await expect(page.getByRole("status", { name: "Current mission", exact: true })).toContainText(
     "recorded-mission-synthetic-0001",
   );
 });

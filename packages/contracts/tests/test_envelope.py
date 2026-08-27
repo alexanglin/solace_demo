@@ -92,7 +92,7 @@ ASSIGN_SECTOR_SCHEMA = (
 )
 ASSIGN_SECTOR_TYPE = "aerial-rescue.v1.drone.command.assign-sector"
 ESCALATE_RESCUE_TYPE = "aerial-rescue.v1.drone.command.escalate-rescue"
-"""The approval-bound rescue command ADR-0116 closes and binds."""
+"""The approval-bound rescue command ADR-0148 closes and binds."""
 
 ASSIGN_SECTOR_BASELINE: dict[str, object] = cast(
     "dict[str, object]",

@@ -18,9 +18,9 @@ broker message payload, with a **closed** member set: twelve required members, t
 nothing else ([ADR-0037](adr/0037-cloudevents-envelope-profile.md)). Eleven of the fourteen topic
 families are notification-only. `GATEWAY_RESPONSE` carries only private request/reply RPC, while
 `GATEWAY_RECORD` carries its direct mission-scoped CloudEvent record on a disjoint topic
-([ADR-0118](adr/0118-separate-gateway-records-from-private-replies.md)). `AGENT_RESPONSE` is the one
+([ADR-0150](adr/0150-separate-gateway-records-from-private-replies.md)). `AGENT_RESPONSE` is the one
 direct plugin-integration body and is never a CloudEvent
-([ADR-0114](adr/0114-define-durable-application-processing.md)). A JSON `null` is never read as
+([ADR-0146](adr/0146-define-durable-application-processing.md)). A JSON `null` is never read as
 absence; an optional member is present or omitted. `packages/contracts` validates the profile as a pure
 function, `envelope.parse_envelope`, and every refusal is a typed value naming the member at fault. The
 bounds live in [operating-parameters.md](operating-parameters.md#topic-and-envelope-bounds).
@@ -86,7 +86,7 @@ is the only producer and parser of these topics:
 | Rule | Levels | Form |
 | --- | --- | --- |
 | IDENTIFIER | `missionId`, `sectorId`, `droneId`, `commandId`, `requestId`, `proposalId`; also the envelope's `id`, `subject`, `correlationid`, `causationid` | `^(?:[a-z0-9]\|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$`: lowercase ASCII letters, digits, interior hyphens |
-| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; command and gateway-operation authority are closed in `packages/domain`, while the application documents close proposal type to `candidate-location` and audit record type to `proposal-normalization`, `evidence-decision`, or `command-authorization` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), [ADR-0116](adr/0116-close-the-application-data-plane-wire-documents.md)) |
+| KIND | `commandType`, `eventType`, `proposalType`, `recordType`, `operation`; also `producerKind` in `source` | `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, bounded in length; command and gateway-operation authority are closed in `packages/domain`, while the application documents close proposal type to `candidate-location` and audit record type to `proposal-normalization`, `evidence-decision`, or `command-authorization` ([ADR-0041](adr/0041-deny-by-default-command-authority-table.md), [ADR-0069](adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), [ADR-0148](adr/0148-close-the-application-data-plane-wire-documents.md)) |
 | AGENT_NAME | `agentName` | `^[A-Za-z0-9_]{1,64}$`, the ASCII subset of what Agent Mesh 1.28.7 accepts as an agent name; Solace topics are case-sensitive, so two names differing only in case are two topics |
 | DECISION | `decision` | exactly `approve` or `reject` |
 
@@ -114,7 +114,7 @@ the pinned upstream component owns and names. The mission-scoped `GATEWAY_RECORD
 direct. The remaining ten families are guaranteed, with one durable queue per consuming role
 ([ADR-0079](adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md),
 [ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md),
-[ADR-0118](adr/0118-separate-gateway-records-from-private-replies.md)). A raw reply body on a mission
+[ADR-0150](adr/0150-separate-gateway-records-from-private-replies.md)). A raw reply body on a mission
 topic, a CloudEvent on the reserved reply topic, or a caller-selected delivery mismatch is refused
 before broker I/O.
 
@@ -155,8 +155,8 @@ of these normalized events directly.
 
 ## Application data-plane documents
 
-[ADR-0114](adr/0114-define-durable-application-processing.md) and
-[ADR-0116](adr/0116-close-the-application-data-plane-wire-documents.md) close the application surface
+[ADR-0146](adr/0146-define-durable-application-processing.md) and
+[ADR-0148](adr/0148-close-the-application-data-plane-wire-documents.md) close the application surface
 that connects the dashboard, command gateway, Event Mesh Gateway, evidence service, fleet, and recorder.
 The notification vocabulary is exact: operator commands are `assign-sector` or `escalate-rescue`;
 operator decisions are `approve` or `reject`; proposals are `candidate-location`; evidence outcomes are
@@ -174,12 +174,24 @@ application-event identity. Topic and body identities, the pending invocation, c
 event, and source digest must agree before normalization. Direct receipt is non-authoritative: only the
 subsequent PostgreSQL transaction can create a durable proposal or audit fact.
 
+The gateway publishes that body with exactly six transport-authenticated string user properties:
+`aerial-rescue-agent-response-invocation-id`,
+`aerial-rescue-agent-response-correlation-id`,
+`aerial-rescue-agent-response-mission-id`,
+`aerial-rescue-agent-response-source-event-id`,
+`aerial-rescue-agent-response-source-event-digest`, and
+`aerial-rescue-agent-response-agent-name`. The owned gateway derives them only from trusted forward
+context and the deterministic invocation identity, never from the model or encoded body. The command
+gateway refuses an open or malformed set, records and reloads it through the immutable
+`pending_invocation` repository in the normalization transaction, and only then compares and claims the
+response ([ADR-0182](adr/0182-bind-agent-responses-to-transport-authenticated-context.md)).
+
 The source digest binds the complete accepted salient-event envelope under the `source-event` context:
 the canonical document is `{canonicalizationVersion: 1, event: <complete envelope>}`. The fleet places
 that value in the `aerial-rescue-source-event-digest` broker user property, and the official gateway
 constructs `sourceEventId` and `sourceEventDigest` only from trusted forward context. The evidence
 service and recorder independently recompute the value from their durable source-event delivery
-([ADR-0120](adr/0120-bind-proposals-to-the-complete-source-event.md)).
+([ADR-0152](adr/0152-bind-proposals-to-the-complete-source-event.md)).
 
 The command gateway normalizes an accepted candidate into the immutable `AGENT_PROPOSAL` payload. It
 mints the proposal identity and envelope metadata, preserves the source bindings, and computes the
@@ -220,7 +232,7 @@ nor a durable audit ordinal and therefore never masquerades as an ordered dashbo
 The gateway request and the reserved gateway reply carry request/reply RPC; the mission-scoped
 gateway-response topic carries the direct CloudEvent record described below
 ([ADR-0068](adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md),
-[ADR-0118](adr/0118-separate-gateway-records-from-private-replies.md)). The requestor is the
+[ADR-0150](adr/0150-separate-gateway-records-from-private-replies.md)). The requestor is the
 official Event Mesh Tool, which composes its payload from a lookup into the agent's A2A context, an
 argument the model supplied, or a configured literal. None of those is a clock or an identifier
 source, so it can produce none of `id`, `time`, `sequence`, or `traceparent`, and the request cannot
@@ -383,7 +395,7 @@ They create no listener, client, generated OpenAPI document, or runtime route.
 ## Local HTTP API
 
 The dashboard API is the closed surface accepted by
-[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md) and enlarged only by ADR-0114/0116:
+[ADR-0097](adr/0097-close-the-ui-slice-http-contract.md) and enlarged only by ADR-0146/0148:
 
 | Method and path | Purpose |
 | --- | --- |
@@ -453,7 +465,11 @@ version, binds the selected evidence decision and exact escalation action, and c
 `reject`. The server derives the operator identity and decision instants and mints the approval and event
 identities. The approve response includes `expiresAt`; the reject response forbids it. Both return the
 immutable approval-event identity. Publication does not consume an approval; only the command gateway's
-authorization transaction can do that.
+authorization transaction can do that. The dashboard's runtime identifier authenticates the event
+source but is not command authority. On verified Guaranteed ingress, the command gateway preserves the
+original issue wall instant and time to live while binding that instant once into its own epoch and
+monotonic origin. Expired, wall-regressed, mismatched, unbound, or pre-restart authority cannot stage a
+command ([ADR-0183](adr/0183-bind-approval-authority-to-the-command-gateway-clock.md)).
 
 ## Dashboard event stream
 
@@ -607,10 +623,10 @@ schema, and four dashboard HTTP documents. The integration body has no composed 
 ## Delivery and failure semantics
 
 - Telemetry may be dropped under congestion. Critical events use durable queues, publisher confirmation, explicit consumer acknowledgement, idempotent handling, and a bounded local outbox; the exact no-loss claim is limited to the declared queue, spool, storage, and disconnect fault envelope. A queue is created only for a `(role, family)` pair the subscribe grant already permits, is bound only by its named owner, and sends what it cannot deliver to the dead-message queue rather than discarding it ([ADR-0080](adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)); the values are in [operating-parameters.md](operating-parameters.md#guaranteed-delivery-endpoints). A guaranteed message matching no queue is discarded by the broker and not refused, so a drone the provisioner was never told about loses its commands silently.
-- Every guaranteed consumer validates first, claims its durable inbox identity, commits its domain effects and resulting application-outbox rows in PostgreSQL, and only then settles the broker delivery. Rollback leaves the message unsettled. Exact redelivery returns the durable prior outcome without repeating an effect; reuse of the same identity with different canonical bytes is a hard refusal. Publisher confirmation is the only terminal publication success, while an ambiguous result enters reconciliation. One application-outbox drain iteration takes at most the bounded oldest eligible batch and never holds a database transaction across broker I/O ([ADR-0114](adr/0114-define-durable-application-processing.md)); the bounds are in [operating-parameters.md](operating-parameters.md#durable-application-processing).
+- Every guaranteed consumer validates first, claims its durable inbox identity, commits its domain effects and resulting application-outbox rows in PostgreSQL, and only then settles the broker delivery. Rollback leaves the message unsettled. Exact redelivery returns the durable prior outcome without repeating an effect; reuse of the same identity with different canonical bytes is a hard refusal. Publisher confirmation is the only terminal publication success, while an ambiguous result enters reconciliation. One application-outbox drain iteration takes at most the bounded oldest eligible batch and never holds a database transaction across broker I/O ([ADR-0146](adr/0146-define-durable-application-processing.md)); the bounds are in [operating-parameters.md](operating-parameters.md#durable-application-processing).
 - Each simulated drone's PostgreSQL-backed critical outbox is independently bounded. Critical fleet transitions commit with their exact outbox record or refuse without evicting older work. Reaching either bound refuses the new critical record and appends a continuity-breach audit outcome. Direct telemetry is never buffered: congestion or disconnect drops and counts it, and the next current update supersedes it. A command effect, durable receipt, and exact prior result commit before settlement, so redelivery after restart cannot apply the effect twice.
 - `AGENT_RESPONSE` and the mission-scoped gateway record are direct and may be lost while their consumer is absent. Neither direct input is authorization. The former becomes durable only through proposal normalization; the raw reserved-topic RPC reply is never recorded as a mission event.
-- A broker disconnect removes readiness immediately. Recovery re-establishes every required durable binding and drains all eligible local outbox rows before readiness returns. Exhausting the bounded SDK reconnect budget ends in bounded shutdown and a non-zero process exit ([ADR-0113](adr/0113-bound-solace-recovery-and-queue-retirement.md)).
+- A broker disconnect removes readiness immediately. Recovery re-establishes every required durable binding and drains all eligible local outbox rows before readiness returns. Exhausting the bounded SDK reconnect budget ends in bounded shutdown and a non-zero process exit ([ADR-0145](adr/0145-bound-solace-recovery-and-queue-retirement.md)).
 - Queue reconciliation first produces a no-delete plan and then reads each exact stale candidate back immediately before deletion. Only an omitted `aerial-rescue/v1` queue that still has zero messages and zero consumer binds may be deleted. An unreadable field, changed name, message, bind, unrelated queue, desired queue, or `#DEAD_MSG_QUEUE` refuses deletion and makes the apply fail closed.
 - The no-loss claim covers the application data plane and **excludes the Agent Mesh ingress hop**. Event Mesh Gateway 1.1.0 binds a temporary data-plane queue it names itself, so a salient event published while the gateway is disconnected reaches no queue and is never redelivered; delivery into the mesh is at-least-once only while the gateway holds its connection. The authoritative record of such an event is its application topic, which the recorder and the evidence service consume on their own identities, and no command, approval, or audit record depends on a gateway delivery ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
 - Critical Event Mesh Gateway handlers use explicit deferred acknowledgement on completion and an explicitly tested failure-settlement policy; never rely on plugin defaults for redelivery or dead-letter behavior. In Event Mesh Gateway 1.1.0 configuration that is `acknowledgment_policy.mode: on_completion`, `on_failure.action: nack`, and `on_failure.nack_outcome: rejected`, at the gateway and in every per-handler override; the semantic-configuration validator fails `GATEWAY_POLICY` on anything else.
@@ -620,4 +636,4 @@ schema, and four dashboard HTTP documents. The integration body has no composed 
 - A reconnecting drone reconciles commands and reports its last acknowledged sequence.
 - Model timeouts, invalid JSON, or schema failures create observable failure events and an abstain/manual-review result in live simulation. Recorded results are available only in isolated replay mode.
 - Agent Mesh or Ollama failure prevents new agent recommendations but does not stop telemetry, the dashboard, operator control, or replay.
-- Rescue escalation cannot occur without atomically consuming an unexpired, single-use approval whose mission, proposal identity/digest/version, selected evidence-decision identity/digest/version, and exact action parameters match the persisted canonical facts about to be published. That authorization transaction also claims idempotency, appends the typed audit outcome, and stages the command outbox; all four effects commit or roll back together ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md), [ADR-0114](adr/0114-define-durable-application-processing.md)).
+- Rescue escalation cannot occur without atomically consuming an unexpired, single-use approval whose mission, proposal identity/digest/version, selected evidence-decision identity/digest/version, exact action parameters, and command-gateway clock epoch match the persisted canonical facts about to be published. The dashboard monotonic reading never authorizes; verified ingress binds the original issue wall instant once to the receiving gateway's monotonic origin. That authorization transaction also claims idempotency, appends the typed audit outcome, and stages the command outbox; all four effects commit or roll back together ([ADR-0040](adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md), [ADR-0146](adr/0146-define-durable-application-processing.md), [ADR-0183](adr/0183-bind-approval-authority-to-the-command-gateway-clock.md)).

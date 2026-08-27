@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn==0.52.3",
 ]
 
+[project.scripts]
+scenario-service = "aerial_rescue_scenario_service.service:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

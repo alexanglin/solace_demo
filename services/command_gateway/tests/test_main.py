@@ -21,7 +21,13 @@ from typing import Final
 
 import pytest
 from aerial_rescue_broker.deployment import DEFAULT_DEPLOY_DIRECTORY, read_credential
-from aerial_rescue_broker.messaging import BrokerEndpoint, InboundMessage, open_session
+from aerial_rescue_broker.messaging import (
+    DIRECT_INTEGRATION_RECEIVER_CAPACITY,
+    BrokerEndpoint,
+    InboundMessage,
+    open_command_gateway_session,
+)
+from aerial_rescue_command_gateway.console import default_runtime
 from aerial_rescue_command_gateway.exchange import ExchangeOutcome
 from aerial_rescue_command_gateway.reply import REPLY_METADATA_KEY, REPLY_TOPIC_KEY
 from aerial_rescue_command_gateway.service import (
@@ -32,9 +38,9 @@ from aerial_rescue_command_gateway.service import (
     SettingsError,
     SettingsRefusal,
     broker_endpoint,
-    default_runtime,
     main,
     serve,
+    serve_application,
 )
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import TRACEPARENT_PATTERN
@@ -46,6 +52,7 @@ REQUEST_ID: Final = "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e"
 MISSION: Final = "m-2026-0001"
 REPLY_TOPIC: Final = f"aerial-rescue/v1/reply/gateway/response/{REQUESTOR}"
 REQUEST_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/gateway/request/command-authority"
+RECORD_TOPIC: Final = f"aerial-rescue/v1/{MISSION}/gateway/record/{REQUEST_ID}"
 METADATA: Final = json.dumps([{"request_id": REQUEST_ID, "response_topic": REPLY_TOPIC}])
 TWO: Final = 2
 THREE: Final = 3
@@ -101,6 +108,20 @@ class FakePublisher:
         self.sent.append(topic)
 
 
+class FakeDirectPublisher:
+    """A Direct publisher that records unacknowledged sends."""
+
+    def __init__(self) -> None:
+        """Start with nothing sent."""
+        self.sent: list[str] = []
+
+    def publish_unacknowledged(
+        self, topic: str, _payload: bytes, _properties: Mapping[str, object]
+    ) -> None:
+        """Record one Direct publication."""
+        self.sent.append(topic)
+
+
 class FakeSession:
     """A broker session that hands out fakes and records how it was opened."""
 
@@ -108,6 +129,7 @@ class FakeSession:
         """Record the ports this session yields."""
         self.receiver = receiver
         self.publisher = publisher
+        self.direct_publisher = FakeDirectPublisher()
         self.closed = 0
         self.opened_with: tuple[object, ...] = ()
         self.credential_for: tuple[object, ...] = ()
@@ -123,9 +145,17 @@ class FakeSession:
         role: object,
         credential: object,
         subscriptions: Sequence[str],
+        *,
+        direct_receiver_capacity: int | None = None,
     ) -> FakeSession:
         """Record every argument the root wired in, and return this session."""
-        self.opened_with = (endpoint, role, credential, tuple(subscriptions))
+        self.opened_with = (
+            endpoint,
+            role,
+            credential,
+            tuple(subscriptions),
+            direct_receiver_capacity,
+        )
         return self
 
     def close(self) -> None:
@@ -249,6 +279,42 @@ class CountingStampTests(unittest.TestCase):
             (stamp.event_id, stamp.traceparent),
         )
 
+    def test_authorization_uses_distinct_command_and_audit_sequences(self) -> None:
+        # Arrange
+        stamps = _stamps()
+
+        # Act
+        stamp = stamps.next_authorization()
+
+        # Assert
+        self.assertEqual(
+            ("command-gateway", 0, 1, True),
+            (
+                stamp.producer_id,
+                stamp.command_sequence,
+                stamp.audit_sequence,
+                re.fullmatch(TRACEPARENT_PATTERN, stamp.traceparent) is not None,
+            ),
+        )
+
+    def test_normalization_uses_distinct_proposal_and_audit_sequences(self) -> None:
+        # Arrange
+        stamps = _stamps()
+
+        # Act
+        stamp = stamps.next_normalization()
+
+        # Assert
+        self.assertEqual(
+            ("command-gateway", 0, 1, True),
+            (
+                stamp.producer_id,
+                stamp.proposal_sequence,
+                stamp.audit_sequence,
+                re.fullmatch(TRACEPARENT_PATTERN, stamp.traceparent) is not None,
+            ),
+        )
+
 
 class ServeTests(unittest.TestCase):
     def test_each_received_message_is_answered_and_counted(self) -> None:
@@ -313,7 +379,8 @@ class MainTests(unittest.TestCase):
             (
                 0,
                 1,
-                2,
+                [REPLY_TOPIC],
+                [RECORD_TOPIC],
                 (
                     BrokerEndpoint(
                         url="tcps://localhost:55443", vpn="default", trust_store="/certs"
@@ -321,12 +388,14 @@ class MainTests(unittest.TestCase):
                     Principal.COMMAND_GATEWAY,
                     "not-a-real-credential",
                     ("aerial-rescue/v1/*/gateway/request/*",),
+                    DIRECT_INTEGRATION_RECEIVER_CAPACITY,
                 ),
             ),
             (
                 status,
                 session.closed,
-                len(session.publisher.sent),
+                session.publisher.sent,
+                session.direct_publisher.sent,
                 session.opened_with,
             ),
         )
@@ -393,7 +462,7 @@ class DefaultRuntimeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            (expected, os.environ, open_session),
+            (expected, os.environ, open_command_gateway_session),
             (runtime.deploy, runtime.environment, runtime.open_broker),
         )
 
@@ -402,7 +471,7 @@ class DefaultRuntimeTests(unittest.TestCase):
         runtime = default_runtime()
 
         # Act
-        reader = runtime.credential
+        reader = runtime.broker_credential
 
         # Assert
         self.assertIs(read_credential, reader)
@@ -425,15 +494,15 @@ class DefaultRuntimeTests(unittest.TestCase):
             ),
         )
 
-    def test_the_default_runtime_keeps_running_until_it_is_stopped(self) -> None:
+    def test_the_default_runtime_selects_the_continuous_application_server(self) -> None:
         # Arrange
         runtime = default_runtime()
 
         # Act
-        running = runtime.running()
+        server = runtime.serve
 
         # Assert
-        self.assertTrue(running)
+        self.assertIs(serve_application, server)
 
 
 if __name__ == "__main__":

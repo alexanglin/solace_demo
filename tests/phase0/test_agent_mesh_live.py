@@ -86,7 +86,7 @@ def _service() -> MessagingService:
         .from_properties(properties)
         .with_transport_security_strategy(
             TLS.create().with_certificate_validation(
-                True, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
+                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
             )
         )
         .build()
