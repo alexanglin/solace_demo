@@ -127,6 +127,17 @@ jobs:
         with:
           version: v0.74.0
 
+      # setup-trivy fetches with --depth=1 and leaves this repository shallow, so the
+      # pushed-range hooks resolve endpoints whose ancestry git can no longer see:
+      # `base..head` then excludes nothing and reaches the first commit in the
+      # repository. Measured on run 33031501035 -- commit-stage read 214 ancestors of
+      # the same base and 91 commits, push-stage read 1 and 237.
+      - name: Restore the history the trivy setup truncates
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --prune --unshallow
+          fi
+
       - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
         env:
           QUALITY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
