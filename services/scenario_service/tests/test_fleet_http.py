@@ -77,6 +77,16 @@ def _cancel_request() -> FleetControlCancelRequest:
     )
 
 
+async def _started_client(transport: httpx.AsyncBaseTransport) -> FleetHttpClient:
+    """Build and start the canonical in-memory fleet-control client."""
+    client = FleetHttpClient(
+        FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
+        transport=transport,
+    )
+    await client.startup()
+    return client
+
+
 class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_sends_canonical_authenticated_request_with_exact_timeouts(self) -> None:
         # Arrange
@@ -88,11 +98,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
                 202, content=_status_bytes(), headers={"content-type": "application/json"}
             )
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         status = await client.start(_start_request())
@@ -125,11 +131,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
                 200, content=_status_bytes(), headers={"content-type": "application/json"}
             )
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         status = await client.start(_start_request())
@@ -159,11 +161,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
                 200, content=_status_bytes(), headers={"content-type": "application/json"}
             )
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         status = await client.start(_start_request())
@@ -201,11 +199,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
         def handler(_request: httpx.Request) -> httpx.Response:
             return next(replies)
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         with pytest.raises(FleetControlError) as conflict:
@@ -224,11 +218,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
             message = "sensitive endpoint detail"
             raise httpx.ConnectError(message, request=request)
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         with pytest.raises(FleetControlError) as captured:
@@ -250,11 +240,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
                 headers={"content-type": "application/json"},
             )
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         status = await client.cancel(_cancel_request(), 0.25)
@@ -364,11 +350,9 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
         # Act
         refusals: list[FleetControlRefusal] = []
         for response in responses:
-            client = FleetHttpClient(
-                FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-                transport=httpx.MockTransport(lambda _request, item=response: item),
+            client = await _started_client(
+                httpx.MockTransport(lambda _request, item=response: item)
             )
-            await client.startup()
             with pytest.raises(FleetControlError) as captured:
                 await client.status(RUN_ID)
             refusals.append(captured.value.refusal)
@@ -383,11 +367,7 @@ class FleetHttpClientTests(unittest.IsolatedAsyncioTestCase):
             message = "uncertain cancellation"
             raise httpx.ReadTimeout(message, request=request)
 
-        client = FleetHttpClient(
-            FleetHttpSettings("http://fleet-simulator:8082", HOST, BEARER),
-            transport=httpx.MockTransport(handler),
-        )
-        await client.startup()
+        client = await _started_client(httpx.MockTransport(handler))
 
         # Act
         with pytest.raises(FleetControlError) as captured:

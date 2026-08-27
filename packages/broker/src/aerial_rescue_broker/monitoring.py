@@ -2,9 +2,9 @@
 
 Routine monitoring is deliberately a smaller capability than provisioning. The adapter in
 this module exposes only monitor reads, requires a dedicated management username, spaces
-every SEMP page request, and never offers ``send``. Queue health is collected from the
-queue collection's aligned ``msgs.count`` aggregate; no message child collection is read,
-so monitoring cannot expose payloads or turn a large backlog into message enumeration.
+every SEMP request, and never offers ``send``. Queue depth comes from the parent collection's
+aligned ``msgs.count`` aggregate. Active binds come from count-only transmit-flow collection
+responses for observed desired queues. Neither path exposes message or flow rows.
 
 The local pacer can bound this process, not unrelated SEMP clients. It reserves half of the
 broker-wide ten-request-per-second ceiling for provisioning, Event Management Agent, and
@@ -26,18 +26,12 @@ from aerial_rescue_broker.provisioning import (
     MonitorRow,
     MonitorTransport,
     ProvisioningError,
-    QueueRuntimeState,
-    queue_runtime_states,
+    QueueDepthState,
+    queue_depth_states,
+    queue_tx_flow_monitor_path,
 )
 from aerial_rescue_broker.queues import DMQ_SUFFIX, MAX_BIND_COUNT, QUEUE_NAME_ROOT, QueueSpec
-from aerial_rescue_broker.semp import (
-    MAX_PAGES,
-    PAGE_SIZE,
-    HttpConnection,
-    SempEndpoint,
-    SempError,
-    SempSession,
-)
+from aerial_rescue_broker.semp import HttpConnection, SempEndpoint, SempError, SempSession
 
 MONITOR_USERNAME: Final = "aerialrescuemonitor"
 """Dedicated internal management username required by the routine read-only adapter."""
@@ -51,8 +45,11 @@ ROUTINE_MONITOR_REQUESTS_PER_SECOND: Final = 5
 MONITOR_REQUEST_INTERVAL_SECONDS: Final = 1.0 / ROUTINE_MONITOR_REQUESTS_PER_SECOND
 """Minimum spacing between the individual SEMP pages a routine monitor requests."""
 
-MAX_MONITORED_QUEUES: Final = MAX_PAGES * PAGE_SIZE
-"""Maximum expected inventory, aligned with the transport's bounded page walk."""
+MAX_MONITORED_QUEUES: Final = 2_000
+"""Maximum parent queue inventory aligned with the bounded SEMP page walk."""
+
+MAX_MONITORED_BIND_COUNTS: Final = 89
+"""Maximum desired queue bind fan-out for the fixed 23-drone reference fleet."""
 
 _OWNED_PREFIX: Final = f"{QUEUE_NAME_ROOT}/"
 
@@ -142,17 +139,21 @@ class ReadOnlySempMonitor:
         """Return aligned aggregate monitor rows through the paced session."""
         return self._session.read_monitor_rows(path)
 
+    def read_monitor_count(self, path: str) -> int:
+        """Return one paced child-collection total without exposing its rows."""
+        return self._session.read_monitor_count(path)
+
 
 @dataclass(frozen=True)
 class QueueHealthSnapshot:
     """One complete desired/project-owned queue aggregate at a monotonic instant."""
 
     collected_at: float
-    queues: tuple[QueueRuntimeState, ...]
+    queues: tuple[QueueDepthState, ...]
     message_count: int
-    primary_backlog: tuple[QueueRuntimeState, ...]
-    nonempty_dead_messages: tuple[QueueRuntimeState, ...]
-    unexpected_owned: tuple[QueueRuntimeState, ...]
+    primary_backlog: tuple[QueueDepthState, ...]
+    nonempty_dead_messages: tuple[QueueDepthState, ...]
+    unexpected_owned: tuple[QueueDepthState, ...]
     missing: tuple[str, ...]
     bind_mismatches: tuple[str, ...]
     healthy: bool
@@ -161,7 +162,7 @@ class QueueHealthSnapshot:
 def _expected_inventory(queues: Sequence[QueueSpec]) -> dict[str, QueueSpec]:
     """Return an exact bounded desired inventory, refusing duplicate identities."""
     expected = {queue.name: queue for queue in queues}
-    if not expected or len(expected) != len(queues) or len(expected) > MAX_MONITORED_QUEUES:
+    if not expected or len(expected) != len(queues) or len(expected) > MAX_MONITORED_BIND_COUNTS:
         raise MonitorError(MonitorRefusal.INVENTORY)
     return expected
 
@@ -172,7 +173,9 @@ def _is_owned(name: str, expected: dict[str, QueueSpec]) -> bool:
 
 
 def _bind_mismatches(
-    observations: dict[str, QueueRuntimeState], expected: dict[str, QueueSpec]
+    observations: dict[str, QueueDepthState],
+    bind_counts: dict[str, int],
+    expected: dict[str, QueueSpec],
 ) -> tuple[str, ...]:
     """Return desired endpoints whose steady-state bind count disagrees with ownership."""
     mismatches = []
@@ -181,13 +184,14 @@ def _bind_mismatches(
         if observation is None:
             continue
         wanted = MAX_BIND_COUNT if queue.owner else 0
-        if observation.bind_count != wanted:
+        if bind_counts.get(name) != wanted:
             mismatches.append(name)
     return tuple(sorted(mismatches))
 
 
 def _snapshot(
-    states: tuple[QueueRuntimeState, ...],
+    states: tuple[QueueDepthState, ...],
+    bind_counts: dict[str, int],
     expected: dict[str, QueueSpec],
     collected_at: float,
 ) -> QueueHealthSnapshot:
@@ -207,7 +211,7 @@ def _snapshot(
     )
     unexpected_owned = tuple(state for state in owned if state.name not in expected)
     missing = tuple(sorted(set(expected) - observations.keys()))
-    bind_mismatches = _bind_mismatches(observations, expected)
+    bind_mismatches = _bind_mismatches(observations, bind_counts, expected)
     healthy = not (missing or bind_mismatches or unexpected_owned or nonempty_dead_messages)
     return QueueHealthSnapshot(
         collected_at=collected_at,
@@ -223,7 +227,7 @@ def _snapshot(
 
 
 class QueueHealthMonitor:
-    """Coalesce routine calls around one bounded, aggregate-only queue read."""
+    """Coalesce routine calls around one bounded parent read and desired bind fan-out."""
 
     def __init__(
         self,
@@ -245,7 +249,7 @@ class QueueHealthMonitor:
 
     @property
     def has_snapshot(self) -> bool:
-        """Return whether at least one complete successful aggregate has been observed."""
+        """Return whether at least one complete successful snapshot has been observed."""
         return self._snapshot is not None
 
     @property
@@ -280,16 +284,23 @@ class QueueHealthMonitor:
             return cached
         self._last_attempt = now
         try:
-            states = queue_runtime_states(self._transport, self._vpn)
+            states = queue_depth_states(
+                self._transport,
+                self._vpn,
+                maximum_queues=MAX_MONITORED_QUEUES,
+            )
+            observed = {state.name for state in states}
+            bind_counts = {
+                name: self._transport.read_monitor_count(
+                    queue_tx_flow_monitor_path(self._vpn, name)
+                )
+                for name in sorted(self._expected.keys() & observed)
+            }
         except (ProvisioningError, SempError) as error:
             failure = MonitorError(MonitorRefusal.READ)
             self._failure = failure
             raise failure from error
-        if len(states) > MAX_MONITORED_QUEUES:
-            failure = MonitorError(MonitorRefusal.READ)
-            self._failure = failure
-            raise failure
-        snapshot = _snapshot(states, self._expected, now)
+        snapshot = _snapshot(states, bind_counts, self._expected, now)
         self._snapshot = snapshot
         self._failure = None
         return snapshot

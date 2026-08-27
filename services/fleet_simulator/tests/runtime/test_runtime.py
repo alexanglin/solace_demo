@@ -33,7 +33,7 @@ from aerial_rescue_domain.commands import CommandEvent, CommandState, SendBudget
 from aerial_rescue_domain.idempotency import SequenceVerdict
 from aerial_rescue_domain.outbox import OutboxEvent
 from aerial_rescue_domain.principals import Principal
-from aerial_rescue_fleet_simulator.control_wire import (
+from aerial_rescue_fleet_simulator.control_plane.wire import (
     FleetControlRunStatus,
     FleetControlStartRequest,
 )

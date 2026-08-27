@@ -44,8 +44,10 @@ Read the authority for the concern before editing it:
 | Immediate ACKs for individually confirmed publications | [ADR-0169](../../docs/adr/0169-request-immediate-acks-for-confirmed-publications.md) |
 | Publisher-owned DMQ eligibility | [ADR-0170](../../docs/adr/0170-force-dmq-eligibility-at-the-publisher.md) |
 | Isolated DMQs, paired retirement, and paced aggregate monitoring | [ADR-0157](../../docs/adr/0157-pace-and-coalesce-read-only-semp-monitoring.md) |
+| Pinned-broker queue depth and active-bind monitoring | [ADR-0190](../../docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md) |
 | Solace-native W3C trace propagation | [ADR-0156](../../docs/adr/0156-pin-solace-native-trace-propagation.md) |
 | Body-free Direct trace refusal | [ADR-0180](../../docs/adr/0180-persist-direct-ingress-refusals-without-stopping-consumers.md) |
+| Recorder grant and combined lifecycle queue | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
 | Fixed Agent Mesh A2A namespace | [ADR-0064](../../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
 
 An Accepted ADR governs if code, tests, comments, or older evidence disagree. A change to a broker
@@ -106,10 +108,11 @@ wildcard subscription strings because concrete publish topics must reject wildca
 - Keep management-plane SEMP JSON distinct from application CloudEvent canonicalization. SEMP requests
   follow the broker API; application payloads and topics follow `packages/contracts`.
 - Keep the monitoring plane read-only. `send` performs every write and is bound to the configuration
-  root; `read_monitor` is a separate method rather than a flag so no request can mutate through a
-  monitor path. Read queue depth from the aggregate `msgs.count` collection member aligned to its queue
-  row; never enumerate the `/msgs` child collection. `spooledMsgCount` is cumulative and never falls,
-  and `msgSpoolUsage` is bytes.
+  root; monitor reads are separate methods rather than flags so no request can mutate through a monitor
+  path. Read queue depth from the parent collection's aligned `msgs.count`, selected with literal comma
+  separators. Read active binds from the exact queue's count-only `txFlows` response; the pinned parent
+  row has no `bindCount`. Never enumerate `/msgs` or expose transmit-flow rows. `spooledMsgCount` is
+  cumulative and never falls, and `msgSpoolUsage` is bytes ([ADR-0190](../../docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)).
 - Keep the continuous SEMP composition opt-in and fail-closed. Its credential is the fixed
   `aerialrescuemonitor` management identity, not a messaging role or provisioning administrator; its
   externally proven scope is global `none`, VPN default `none`, and exactly one selected-VPN
@@ -125,10 +128,11 @@ wildcard subscription strings because concrete publish topics must reject wildca
   closure, or alert-delivery failure as degraded. HA, DMR, bridging, LDAP, replication, transactions,
   and appliance-only events stay explicitly excluded until their topology decisions activate them.
 - Routine monitoring accepts only `aerialrescuemonitor`, exposes no configuration method, coalesces
-  successful and failed attempts for the selected interval, and paces every page under its reserved SEMP
-  share. The pacer bounds this process only; live acceptance must count all SEMP clients against the
-  broker-wide ceiling. The pinned configuration specification exposes no internal-management-user write;
-  do not invent one or substitute the provisioning administrator.
+  successful and failed attempts for the selected interval, and paces every parent page and count-only
+  child request under its reserved SEMP share. Probe binds only for observed desired queues, in stable
+  order and inside the accepted fan-out bound. The pacer bounds this process only; live acceptance must
+  count all SEMP clients against the broker-wide ceiling. The pinned configuration specification exposes
+  no internal-management-user write; do not invent one or substitute the provisioning administrator.
 - A nonempty DMQ is retained failure evidence. Report it as degraded health, but never settle, drain,
   purge, or delete it through the routine monitor. Queue retirement remains a separate two-step operator
   action with immediate aggregate readback.
@@ -164,9 +168,12 @@ exceptions. Preserve all of these properties:
   over-grants, but it is not the configured steady state and must never be reported as satisfying the
   Agent Mesh deployment.
 - Derive every profile's exceptions only from `grants()`, `may_use_a2a()`, and
-  `may_use_reply_channel()`. Keep the projection total across every `Principal`, `Access`, and
-  contracts `Family` value. The A2A exception is withheld until a namespace is supplied; the reply
-  channel is not, because it is a fixed topic that no configuration varies.
+  `may_use_reply_channel()`, then apply ADR-0120's one authorized narrowing: the recorder's
+  `DRONE_EVENT` subscribe exception is the exact `connectivity-changed` topic rather than the
+  family wildcard that would also reach salient detections. Keep the projection total across every
+  `Principal`, `Access`, and contracts `Family` value. The A2A exception is withheld until a
+  namespace is supplied; the reply channel is not, because it is a fixed topic that no
+  configuration varies.
 - Keep publish, subscribe, and shared-subscription defaults at deny. On the managed local broker, each
   deployed process must use an explicitly created identity bound to its role profile and generated
   credential. The current provisioner does not inventory arbitrary pre-existing usernames, so readback
@@ -218,11 +225,12 @@ require both permitted positive controls and forbidden negative controls before 
 is enforced.
 
 Queues are derived, never listed. The set is the subscribe grants intersected with the guaranteed
-families, so a queue exists only where the ACL already permits the subscription and a queue can
-narrow authority but never widen it. How each role's endpoints are realised is a table total over the
-ten roles, and `NONE` is provable rather than asserted: a `NONE` role must hold no guaranteed
-subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly one role carries it
-on ADR-0071's authority.
+families, except that ADR-0120 consolidates the recorder's lifecycle subscriptions into one exclusive
+queue. A queue exists only where the ACL already permits the subscription and can narrow authority but
+never widen it. How each role's endpoints are realised is a table total over every role, and `NONE` is
+provable rather than asserted: a `NONE` role must hold no guaranteed subscribe grant, so only
+`UPSTREAM` can drop a consumer that has one, and exactly one role carries it on ADR-0071's authority.
+The scenario service is brokerless and receives no profile, username, secret, or queue projection.
 
 Every queue value is written rather than inherited. Five broker defaults are wrong here — redelivery
 retries forever, expiry is ignored, the per-queue spool exceeds the whole message VPN's, the
@@ -304,6 +312,13 @@ transport. Require Pydantic ingress, deterministic fakes, failure injection, and
 broker evidence before claiming broker reconnect or durability behavior. The offline suite proves
 what the adapter passes to the client, never that the broker accepted it — the first live apply
 refused two members the fake had happily accepted.
+The recorder's combined lifecycle consumer does not prove those broader claims. Keep its transaction
+and every other reconciliation transaction in the owning service/store, contain the untyped vendor
+client behind this typed façade, and prove the official Solace client satisfies the need before adding
+a project-owned transport. Require Pydantic ingress, deterministic fakes, failure injection, and
+authorized live broker evidence before claiming broker reconnect, durability, or shutdown behavior.
+The offline suite proves what the adapter passes to the client, never that the broker accepted it —
+the first live apply refused two members the fake had happily accepted.
 
 ## 8. Testing and cross-tree coordination
 
@@ -380,9 +395,10 @@ the canonical local-stack sequence in `CONTRIBUTING.md`, including the fixed nam
 uv run --frozen pytest -q tests/security/test_broker_authorization.py
 ```
 
-That suite proves its current publish and connect controls only. It does not prove subscription denial,
-A2A behavior, Cloud parity, or the live stale-exception delete path; test and record those separately
-when an affected change reaches them.
+That suite proves its current publish and connect controls plus the exact recorder and scenario-service
+direct-subscription controls it names. It does not prove every subscription grant, durable queue
+ownership or redelivery, A2A behavior, Cloud parity, TLS-downgrade closure, or the live stale-exception
+delete path; test and record those separately when an affected change reaches them.
 
 Inspect the complete diff and verify that grants, rendered subscriptions, SEMP state, secret redaction,
 configuration, and documentation agree. Report offline, live-container, and Cloud-showcase evidence as

@@ -1,4 +1,4 @@
-"""Closed repeat behavior for the four public dashboard mutation operations."""
+"""Closed repeat behavior for the generic dashboard command and decision operations."""
 
 from __future__ import annotations
 
@@ -16,8 +16,6 @@ class DashboardIdempotencyTests(unittest.TestCase):
     def test_the_dashboard_mutation_kind_set_is_closed_and_operation_specific(self) -> None:
         # Arrange
         expected = (
-            IdempotencyKind.DASHBOARD_START,
-            IdempotencyKind.DASHBOARD_RESET,
             IdempotencyKind.DASHBOARD_COMMAND,
             IdempotencyKind.DASHBOARD_DECISION,
         )
@@ -36,7 +34,7 @@ class DashboardIdempotencyTests(unittest.TestCase):
         decisions = tuple(idempotency_decision(kind, known=True) for kind in kinds)
 
         # Assert
-        self.assertEqual((IdempotencyDecision.RETURN_PRIOR_RESULT,) * 4, decisions)
+        self.assertEqual((IdempotencyDecision.RETURN_PRIOR_RESULT,) * 2, decisions)
 
 
 if __name__ == "__main__":

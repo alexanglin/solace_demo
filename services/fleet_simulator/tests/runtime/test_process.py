@@ -13,12 +13,12 @@ from aerial_rescue_fleet_simulator.console import (
     fleet_drone_ids,
     serve_control,
 )
-from aerial_rescue_fleet_simulator.control_wire import (
+from aerial_rescue_fleet_simulator.control_plane.runtime import ServerSettings
+from aerial_rescue_fleet_simulator.control_plane.wire import (
     FleetControlCancelRequest,
     FleetControlRunStatus,
     FleetControlStartRequest,
 )
-from aerial_rescue_fleet_simulator.http_runtime import ServerSettings
 from fastapi import FastAPI
 
 pytestmark = [pytest.mark.unit]

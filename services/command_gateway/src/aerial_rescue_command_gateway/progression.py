@@ -172,6 +172,40 @@ def _result(
     )
 
 
+def _duplicate_state(result: bytes, command_id: str) -> CommandState:
+    """Recover the state paired with an exact durable inbox result."""
+    try:
+        document = canonical.decode(result)
+    except ValueError:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT) from None
+    if not isinstance(document, dict) or frozenset(document) != {
+        "commandResult",
+        "commandId",
+        "state",
+    }:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT)
+    if canonical.canonical_bytes(document) != result or document["commandId"] != command_id:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT)
+    try:
+        outcome = CommandResultOutcome(document["commandResult"])
+        parsed_state = CommandState(document["state"])
+    except KeyError, TypeError, ValueError:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT) from None
+    if outcome not in {
+        CommandResultOutcome.UPDATED,
+        CommandResultOutcome.STALE,
+        CommandResultOutcome.MISMATCH,
+    }:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT)
+    if outcome is CommandResultOutcome.UPDATED and parsed_state not in {
+        CommandState.ACKNOWLEDGED,
+        CommandState.SUCCEEDED,
+        CommandState.FAILED,
+    }:
+        raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT)
+    return parsed_state
+
+
 def _matches(ingress: CommandResultIngress, current: StoredCommandProgress) -> bool:
     """Require every topic/body identity to match the durable command binding."""
     identity = current.identity
@@ -244,10 +278,9 @@ async def handle_command_result(
         if claim.decision is InboxDecision.DUPLICATE:
             if claim.result is None:
                 raise ProgressionError(ProgressionRefusal.DUPLICATE_RESULT)
-            current = await transaction.load_progress(accepted.payload.command_id)
             result = CommandResult(
                 CommandResultOutcome.DUPLICATE,
-                current.progress.state,
+                _duplicate_state(claim.result, accepted.payload.command_id),
                 claim.result,
             )
         else:

@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from http import HTTPStatus
 from typing import Protocol, cast, override
 
 from aerial_rescue_contracts import canonical, digest
@@ -29,27 +29,22 @@ from aerial_rescue_contracts.view import (
     checkpoint_from_replay,
     prepare_checkpoint,
 )
-from aerial_rescue_domain.idempotency import IdempotencyDecision, IdempotencyKind
-from aerial_rescue_store.idempotency import (
-    ClaimOutcome,
-    StoredClaim,
-    StoredClaimError,
-    StoredClaimRefusal,
-)
 
-from aerial_rescue_dashboard_api.application import (
+from aerial_rescue_dashboard_api.boundary.application import (
     AssetOutcome,
-    AuthorizedMutation,
     EventStream,
     JsonOutcome,
 )
+from aerial_rescue_dashboard_api.boundary.errors import ApiError
+from aerial_rescue_dashboard_api.boundary.mutation_boundary import AuthorizedMutation
+from aerial_rescue_dashboard_api.boundary.wire import parse_wire_document
 from aerial_rescue_dashboard_api.lifecycle import Dependency, RuntimeReadiness
-from aerial_rescue_dashboard_api.mutations import DashboardMutationError
-from aerial_rescue_dashboard_api.wire import parse_wire_document
+from aerial_rescue_dashboard_api.messaging.mutations import DashboardMutationError
+from aerial_rescue_dashboard_api.orchestration import MutationAnswer
+from aerial_rescue_dashboard_api.ports import RunMode as DurableRunMode
 
 _SCHEMA_PREFIX = "https://aerial-rescue.invalid/schemas/v1/dashboard/"
 _CANONICALIZATION_VERSION = 1
-_CANCEL_TIMEOUT_SECONDS = 15.0
 
 
 class OperationsRefusal(Enum):
@@ -203,23 +198,26 @@ class MutationPort(Protocol):
         ...
 
 
-class ScenarioMutationTransaction(Protocol):
-    """The idempotency capabilities used on either side of private run control."""
+class ScenarioOperationPort(Protocol):
+    """Durable dashboard-operation authority for scenario start and reset."""
 
-    async def claim(self, request: StoredClaim) -> ClaimOutcome:
-        """Claim one route-specific idempotency identity."""
+    async def reconcile_pending(self) -> None:
+        """Recover the one pending operation before broker readiness."""
         ...
 
-    async def record_result(self, idempotency_key: str, result: bytes) -> None:
-        """Record the exact immutable successful response."""
+    async def start(
+        self,
+        scenario_id: str,
+        mode: DurableRunMode,
+        scenario_revision: int,
+        idempotency_key: str,
+        request_digest: str,
+    ) -> MutationAnswer:
+        """Claim and complete one durable start operation."""
         ...
 
-
-class ScenarioMutationTransactions(Protocol):
-    """Construct independent short claim and result transactions."""
-
-    def open(self) -> AbstractAsyncContextManager[ScenarioMutationTransaction]:
-        """Return one independent commit-or-rollback transaction."""
+    async def reset(self, idempotency_key: str, request_digest: str) -> MutationAnswer:
+        """Claim and complete one durable reset operation."""
         ...
 
 
@@ -248,7 +246,7 @@ class LiveOperationPorts:
     broker: LiveBrokerPort
     hub: ProjectionHubPort
     mutations: MutationPort
-    transactions: ScenarioMutationTransactions
+    scenario_operations: ScenarioOperationPort
 
 
 class _CommonOperations:
@@ -283,16 +281,14 @@ class LiveDashboardOperations(_CommonOperations):
         *,
         ports: LiveOperationPorts,
         readiness: RuntimeReadiness,
-        claimed_at: Callable[[], str],
     ) -> None:
         """Bind the exact live capabilities without acquiring them at construction."""
         super().__init__(ports.files, ports.hub)
         self._scenario = ports.scenario
         self._broker = ports.broker
         self._mutations = ports.mutations
-        self._transactions = ports.transactions
+        self._scenario_operations = ports.scenario_operations
         self._readiness = readiness
-        self._claimed_at = claimed_at
         self._active: _LiveRun | None = None
         self._lock = asyncio.Lock()
         self._opened = False
@@ -303,6 +299,7 @@ class LiveDashboardOperations(_CommonOperations):
         try:
             await self._scenario.startup()
             self._readiness.set_dependency(Dependency.SCENARIO_CONTROL, ready=self._scenario.ready)
+            await self._scenario_operations.reconcile_pending()
             await self._broker.startup()
         except BaseException:
             await self._close_started_resources()
@@ -337,71 +334,61 @@ class LiveDashboardOperations(_CommonOperations):
         scenario_id: str,
         mutation: AuthorizedMutation,
     ) -> JsonOutcome:
-        """Durably claim one stable live run and make it the broker projection authority."""
+        """Delegate the durable start, then activate its selected broker mission."""
         async with self._lock:
-            scenario = self._files.scenario(scenario_id, _scenario_revision(mutation))
-            mission_id = _stable_identifier("mission", "start", mutation, scenario_id)
-            run_id = _stable_identifier("run", "start", mutation, scenario_id)
-            selected = _LiveRun(scenario_id, _scenario_revision(mutation), mission_id, run_id)
-            response = _live_response("start", selected, scenario, None)
-            prior = await self._claim(
-                mutation,
-                IdempotencyKind.DASHBOARD_START,
-                mission_id,
+            revision = _scenario_revision(mutation)
+            try:
+                answer = await self._scenario_operations.start(
+                    scenario_id,
+                    DurableRunMode.DEGRADED_LIVE,
+                    revision,
+                    mutation.ingress.idempotency_key,
+                    _scenario_operation_digest(mutation, "start", scenario_id),
+                )
+            except ApiError as refusal:
+                return _error(refusal.code.value, refusal.public_message, refusal.status)
+            outcome = _operation_answer(answer, "start-response")
+            if answer.status != HTTPStatus.ACCEPTED:
+                return outcome
+            document = _mapping(canonical.decode(answer.body))
+            selected = _LiveRun(
                 scenario_id,
+                revision,
+                _text(document, "missionId"),
+                _text(document, "runId"),
             )
-            if prior is not None:
-                _validate_response("start-response", prior)
-                await self._restore_if_needed(selected, scenario)
-                return JsonOutcome(202, _schema("start-response"), prior)
-            await self._scenario.start(scenario_id, selected.scenario_revision, mission_id, run_id)
-            await self._activate(selected, scenario, None)
-            await self._record_result(mutation, response)
-            return JsonOutcome(202, _schema("start-response"), response)
+            if self._active != selected:
+                scenario = self._files.scenario(scenario_id, revision)
+                await self._activate(selected, scenario, None)
+            return outcome
 
     async def reset(self, mutation: AuthorizedMutation) -> JsonOutcome:
-        """Confirm cancellation, then start and durably identify one fresh successor."""
+        """Delegate durable cancellation/reset, then activate its fresh successor."""
         async with self._lock:
-            predecessor = self._active
-            if predecessor is None:
+            if self._active is None:
                 return _error("NO_CURRENT_RUN", OperationsRefusal.NO_CURRENT_RUN.value, 409)
-            scope = f"{predecessor.scenario_id}:{predecessor.mission_id}"
-            mission_id = _stable_identifier("mission", "reset", mutation, scope)
-            run_id = _stable_identifier("run", "reset", mutation, scope)
+            try:
+                answer = await self._scenario_operations.reset(
+                    mutation.ingress.idempotency_key,
+                    _scenario_operation_digest(mutation, "reset", None),
+                )
+            except ApiError as refusal:
+                return _error(refusal.code.value, refusal.public_message, refusal.status)
+            outcome = _operation_answer(answer, "reset-response")
+            if answer.status != HTTPStatus.ACCEPTED:
+                return outcome
+            document = _mapping(canonical.decode(answer.body))
             successor = _LiveRun(
-                predecessor.scenario_id,
-                predecessor.scenario_revision,
-                mission_id,
-                run_id,
+                self._active.scenario_id,
+                self._active.scenario_revision,
+                _text(document, "missionId"),
+                _text(document, "runId"),
             )
             scenario = self._files.scenario(successor.scenario_id, successor.scenario_revision)
-            response = _live_response("reset", successor, scenario, predecessor.mission_id)
-            prior = await self._claim(
-                mutation,
-                IdempotencyKind.DASHBOARD_RESET,
-                mission_id,
-                scope,
-            )
-            if prior is not None:
-                _validate_response("reset-response", prior)
-                await self._restore_if_needed(successor, scenario)
-                return JsonOutcome(202, _schema("reset-response"), prior)
-            cancelled = await self._scenario.cancel(
-                predecessor.mission_id,
-                predecessor.run_id,
-                timeout_seconds=_CANCEL_TIMEOUT_SECONDS,
-            )
-            if cancelled.get("state") not in {"ABORTED", "EXHAUSTED"}:
-                raise DashboardOperationsError(OperationsRefusal.CONTROL)
-            await self._scenario.start(
-                successor.scenario_id,
-                successor.scenario_revision,
-                successor.mission_id,
-                successor.run_id,
-            )
-            await self._activate(successor, scenario, predecessor.mission_id)
-            await self._record_result(mutation, response)
-            return JsonOutcome(202, _schema("reset-response"), response)
+            predecessor = _nullable_text(document.get("predecessorMissionId"))
+            if self._active != successor:
+                await self._activate(successor, scenario, predecessor)
+            return outcome
 
     async def command(self, mutation: AuthorizedMutation) -> JsonOutcome:
         """Return durable staging, never publication or command completion."""
@@ -418,44 +405,6 @@ class LiveDashboardOperations(_CommonOperations):
         except DashboardMutationError:
             return _error("MUTATION_REFUSED", "proposal decision was refused", 409)
         return JsonOutcome(202, _schema("proposal-decision-response"), body)
-
-    async def _claim(
-        self,
-        mutation: AuthorizedMutation,
-        kind: IdempotencyKind,
-        mission_id: str,
-        scope: str,
-    ) -> bytes | None:
-        request = _stored_claim(mutation, kind, mission_id, scope, self._claimed_at())
-        try:
-            async with self._transactions.open() as transaction:
-                outcome = await transaction.claim(request)
-        except StoredClaimError as error:
-            if error.refusal is StoredClaimRefusal.RESULT_NOT_RECORDED:
-                return None
-            raise DashboardOperationsError(OperationsRefusal.IDEMPOTENCY) from error
-        if outcome.decision is IdempotencyDecision.EXECUTE:
-            return None
-        if (
-            outcome.decision is IdempotencyDecision.RETURN_PRIOR_RESULT
-            and outcome.result is not None
-        ):
-            return outcome.result
-        raise DashboardOperationsError(OperationsRefusal.IDEMPOTENCY)
-
-    async def _record_result(self, mutation: AuthorizedMutation, response: bytes) -> None:
-        async with self._transactions.open() as transaction:
-            await transaction.record_result(mutation.ingress.idempotency_key, response)
-
-    async def _restore_if_needed(
-        self,
-        selected: _LiveRun,
-        scenario: Mapping[str, object],
-    ) -> None:
-        if self._active == selected:
-            return
-        await self._scenario.status(selected.run_id)
-        await self._activate(selected, scenario, None)
 
     async def _activate(
         self,
@@ -612,28 +561,6 @@ class ReplayDashboardOperations(_CommonOperations):
             {"mode": "replay", "sessionId": run.session_id},
         )
         self._active = run
-
-
-def _stored_claim(
-    mutation: AuthorizedMutation,
-    kind: IdempotencyKind,
-    mission_id: str,
-    scope: str,
-    claimed_at: str,
-) -> StoredClaim:
-    document = {
-        "canonicalizationVersion": _CANONICALIZATION_VERSION,
-        "body": canonical.decode(mutation.ingress.canonical_body),
-        "operation": kind.value,
-        "scope": scope,
-    }
-    return StoredClaim(
-        mutation.ingress.idempotency_key,
-        kind,
-        digest.digest(digest.Context.IDEMPOTENCY_BODY, document),
-        mission_id,
-        claimed_at,
-    )
 
 
 def _initial_checkpoint(
@@ -818,13 +745,6 @@ def _replay_run(
     session_id: str,
 ) -> _ReplayRun:
     document = dict(_mapping(canonical.decode(source)))
-    document["sessionId"] = session_id
-    integrity = dict(_mapping(document.get("integrity")))
-    integrity.pop("checksum", None)
-    covered = dict(document)
-    covered["integrity"] = integrity
-    integrity["checksum"] = hashlib.sha256(canonical.canonical_bytes(covered)).hexdigest()
-    document["integrity"] = integrity
     body = canonical.canonical_bytes(document)
     _validate_response("replay-bundle", body)
     return _ReplayRun(scenario_id, scenario_revision, session_id, body)
@@ -833,6 +753,29 @@ def _replay_run(
 def _scenario_revision(mutation: AuthorizedMutation) -> int:
     document = _mapping(mutation.ingress.document.model_dump(mode="python", by_alias=True))
     return _integer(document, "scenarioRevision")
+
+
+def _scenario_operation_digest(
+    mutation: AuthorizedMutation,
+    operation: str,
+    scenario_id: str | None,
+) -> str:
+    """Use the dashboard-operation digest profile selected by the durable coordinator."""
+    covered: dict[str, object] = {
+        "canonicalizationVersion": _CANONICALIZATION_VERSION,
+        "operation": operation,
+        "request": canonical.decode(mutation.ingress.canonical_body),
+    }
+    if scenario_id is not None:
+        covered["scenarioId"] = scenario_id
+    return digest.digest(digest.Context.IDEMPOTENCY_BODY, covered)
+
+
+def _operation_answer(answer: MutationAnswer, success_schema: str) -> JsonOutcome:
+    """Validate and classify a durable dashboard-operation answer."""
+    selected = success_schema if answer.status == HTTPStatus.ACCEPTED else "error"
+    _validate_response(selected, answer.body)
+    return JsonOutcome(answer.status, _schema(selected), answer.body)
 
 
 def _validate_response(name: str, body: bytes) -> None:

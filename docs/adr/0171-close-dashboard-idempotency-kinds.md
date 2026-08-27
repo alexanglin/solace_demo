@@ -1,6 +1,6 @@
 # ADR-0171: Close durable idempotency over every public dashboard mutation
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0189
 - **Date:** 2026-08-26
 - **Deciders:** Alex Anglin
 - **Supersedes in part:** ADR-0092

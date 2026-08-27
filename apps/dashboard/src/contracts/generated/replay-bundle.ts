@@ -8,20 +8,19 @@
  */
 export type DashboardReplayBundle = (
   | {
-      initialState: {
+      initialState?: {
         latestAuditOrdinal: 0;
       };
-      latestEventDigest: null;
+      latestEventDigest?: null;
     }
   | {
-      initialState: {
+      initialState?: {
         latestAuditOrdinal: number;
       };
-      latestEventDigest: string;
+      latestEventDigest?: string;
     }
 ) & {
   bundleVersion: "dashboard-replay-bundle/v1";
-  sessionId: string;
   scenarioId: string;
   scenarioRevision: 1;
   initialState: DashboardReducedState;

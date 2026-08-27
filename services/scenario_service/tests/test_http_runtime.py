@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import unittest
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Sequence
 from typing import Final, cast, override
 
 import httpx
@@ -23,6 +22,8 @@ from aerial_rescue_scenario_service.wire import (
 )
 from fastapi import FastAPI
 
+from tests.http_support import PrivateRequestHeaders, asgi_client_for
+
 pytestmark = [pytest.mark.unit]
 
 HOST: Final = "scenario-service:8081"
@@ -30,6 +31,8 @@ BEARER: Final = "a" * 64
 AUTHORIZATION: Final = f"Bearer {BEARER}"
 RUN_ID: Final = "run-2026-0001"
 MISSION_ID: Final = "mission-2026-0001"
+_client: Final = asgi_client_for("http://scenario-service:8081")
+_headers: Final = PrivateRequestHeaders(HOST, BEARER, title_case=True)
 
 
 def _status(*, state: str = "SEARCHING") -> ScenarioControlRunStatus:
@@ -41,11 +44,6 @@ def _status(*, state: str = "SEARCHING") -> ScenarioControlRunStatus:
             "missionId": MISSION_ID,
             "runId": RUN_ID,
             "state": state,
-            "declaredCount": 23,
-            "simulatedCount": 20,
-            "declaredOnlyCount": 3,
-            "completedTickCount": 2,
-            "telemetryPublicationCount": 40,
         }
     )
 
@@ -70,26 +68,6 @@ def _cancel_bytes(**changes: object) -> bytes:
     }
     document.update(changes)
     return canonical.canonical_bytes(document)
-
-
-def _headers(**changes: str) -> dict[str, str]:
-    headers = {
-        "Host": HOST,
-        "Authorization": AUTHORIZATION,
-        "Content-Type": "application/json",
-    }
-    headers.update(changes)
-    return headers
-
-
-@asynccontextmanager
-async def _client(application: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    async with application.router.lifespan_context(application):
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://scenario-service:8081"
-        ) as client:
-            yield client
 
 
 class FakeControl:
@@ -141,6 +119,12 @@ class FakeControl:
         return _status(state="ABORTED")
 
 
+def _application(control: FakeControl) -> FastAPI:
+    """Build the private runtime with deterministic lifecycle bounds."""
+    settings = ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1)
+    return create_application(settings, control)
+
+
 class RecordingHandler(logging.Handler):
     def __init__(self) -> None:
         """Record error-level events without relying on an assertion context manager."""
@@ -157,10 +141,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_authorized_start_is_validated_and_returned_as_canonical_json(self) -> None:
         # Arrange
         control = FakeControl()
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -219,10 +200,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
         operation_calls: list[list[tuple[str, object]]] = []
         for body, headers, _expected_code, _expected_status in cases:
             control = FakeControl()
-            application = create_application(
-                ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-                control,
-            )
+            application = _application(control)
             async with _client(application) as client:
                 response = await client.post("/internal/v1/runs", content=body, headers=headers)
             observed.append((response.status_code, response.json()["errorCode"]))
@@ -238,10 +216,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_reads_require_host_and_bearer_before_lookup(self) -> None:
         # Arrange
         control = FakeControl()
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -263,10 +238,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_binds_the_path_before_calling_the_control_port(self) -> None:
         # Arrange
         control = FakeControl()
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -297,10 +269,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         control = FakeControl()
         control.refusal = ControlRefusal.RUN_NOT_FOUND
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -324,10 +293,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_liveness_is_distinct_from_dependency_readiness(self) -> None:
         # Arrange
         control = FakeControl(ready=False)
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -368,10 +334,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_framework_error_bodies_do_not_replace_the_closed_refusal_shape(self) -> None:
         # Arrange
         control = FakeControl()
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
 
         # Act
         async with _client(application) as client:
@@ -390,10 +353,7 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_probe_host_duplicate_headers_and_cancel_authentication_fail_closed(self) -> None:
         # Arrange
         control = FakeControl()
-        application = create_application(
-            ServerSettings(HOST, BEARER, startup_timeout_seconds=1, shutdown_timeout_seconds=1),
-            control,
-        )
+        application = _application(control)
         duplicate_headers = [
             ("Host", HOST),
             ("Host", HOST),
@@ -425,8 +385,8 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
         invalid_control = FakeControl()
         invalid_control.invalid_result = True
         applications = (
-            create_application(ServerSettings(HOST, BEARER, 1, 1), unexpected_control),
-            create_application(ServerSettings(HOST, BEARER, 1, 1), invalid_control),
+            _application(unexpected_control),
+            _application(invalid_control),
         )
         logger = logging.getLogger("aerial_rescue_scenario_service.http_runtime")
         recording_handler = RecordingHandler()

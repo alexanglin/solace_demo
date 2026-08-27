@@ -27,6 +27,19 @@ document reads as a stronger claim than this page allows, this page governs.
 - **Containment and hasty search do not exist here.** Neither do task assignment by resource type,
   segment prioritisation, or the reflex tasks that begin a real incident.
 
+## Current dashboard slice
+
+- **Only twenty deterministic simulations execute.** The dashboard truthfully lists three canonical
+  external edge-agent descriptors, but labels each `DECLARED ONLY — NOT EXECUTED`. Those descriptors
+  have no connectivity or telemetry fields and never become fleet-control requests. The target
+  23-executable-member demonstration is follow-on work.
+- **The scenario is fixed and synthetic.** The current operator starts the committed wilderness polygon
+  and roster. Weather and time-since-contact are neither requested nor accepted because no implemented
+  current-slice decision consumes them. A future contract may add either only with a tested operational
+  consumer.
+- **The dashboard is mission visibility, reset, and replay—not the complete rescue workflow.** It has no
+  approval, command, evidence, model, rescue, escalation, or executable edge-agent control.
+
 ## Command, control, and the approval gate
 
 - **No incident command structure is modelled.** A single "operator" role stands in for what would be

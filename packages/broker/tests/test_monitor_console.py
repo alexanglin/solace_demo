@@ -22,7 +22,7 @@ from aerial_rescue_broker.monitoring import (
     MonitorRefusal,
     QueueHealthSnapshot,
 )
-from aerial_rescue_broker.provisioning import MonitorRow
+from aerial_rescue_broker.provisioning import MonitorRow, queue_tx_flow_monitor_path
 from aerial_rescue_broker.queues import MAX_BIND_COUNT, desired_queues
 from aerial_rescue_broker.semp import SempEndpoint
 
@@ -38,6 +38,7 @@ class FakeMonitorTransport:
     def __init__(self) -> None:
         """Start before the aggregate monitor collection is read."""
         self.paths: list[str] = []
+        self.count_paths: list[str] = []
         self.closed = False
 
     def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
@@ -49,14 +50,19 @@ class FakeMonitorTransport:
         self.paths.append(path)
         return tuple(
             MonitorRow(
-                data={
-                    "queueName": queue.name,
-                    "bindCount": MAX_BIND_COUNT if queue.owner else 0,
-                },
+                data={"queueName": queue.name},
                 collections={"msgs": {"count": 0}},
             )
             for queue in desired_queues(DRONES)
         )
+
+    def read_monitor_count(self, path: str) -> int:
+        """Return the accepted bind total for one exact desired queue."""
+        self.count_paths.append(path)
+        for queue in desired_queues(DRONES):
+            if path == queue_tx_flow_monitor_path(VPN, queue.name):
+                return MAX_BIND_COUNT if queue.owner else 0
+        raise AssertionError(path)
 
     def close(self) -> None:
         """Record graceful ownership release."""
@@ -196,6 +202,7 @@ class MonitorConsoleTests(unittest.TestCase):
         )
         self.assertFalse(hasattr(transport, "send"))
         self.assertEqual(1, len(transport.paths))
+        self.assertEqual(len(desired_queues(DRONES)), len(transport.count_paths))
         self.assertTrue(transport.closed)
         self.assertTrue(json.loads(out.getvalue())["healthy"])
 

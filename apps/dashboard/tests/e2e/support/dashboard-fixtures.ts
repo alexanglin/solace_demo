@@ -583,8 +583,11 @@ function scenarioCatalog(scenarios: readonly ScenarioFixture[] = [scenario]): Da
 function snapshot(
   state: DashboardReducedState,
   timeline: readonly OrderedDashboardEventFixture[],
+  latestEvent: OrderedDashboardEventFixture | null,
 ): DashboardSourceInput {
   const digest = replayStateDigest(state);
+  const latestEventDigest =
+    state.latestAuditOrdinal === 0 ? null : orderedEventWitnessDigest(latestEvent);
   return sourceInput("sse-frame", "snapshot", {
     currentRun: {
       missionId: "mission-synthetic-0001",
@@ -593,7 +596,7 @@ function snapshot(
     },
     cursor: opaqueLiveCursor({ digest, frame: "snapshot" }),
     digest,
-    latestEventDigest: latestEventWitness(state, timeline),
+    latestEventDigest,
     runtimeId: "runtime-synthetic-0001",
     snapshotVersion: "dashboard-snapshot/v1",
     state,
@@ -602,11 +605,19 @@ function snapshot(
 }
 
 function sourceSignal(
-  signal: "connecting" | "disconnected" | "offline" | "recovered" | "runtimeChanged",
+  signal: "connecting" | "disconnected" | "offline" | "recovered",
 ): DashboardSourceInput {
   return sourceInput("source-signal", signal, {
     signal,
     signalVersion: "dashboard-source-signal/v1",
+  });
+}
+
+function changedRuntimeSnapshot(input: DashboardSourceInput): DashboardSourceInput {
+  const document = JSON.parse(input.raw) as Record<string, unknown>;
+  return sourceInput(input.channel, input.name, {
+    ...document,
+    runtimeId: "runtime-restarted-0002",
   });
 }
 
@@ -673,7 +684,10 @@ export function replayStateDigest(state: DashboardReducedState): string {
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
-function orderedEventWitnessDigest(orderedEvent: OrderedDashboardEventFixture): string {
+function orderedEventWitnessDigest(orderedEvent: OrderedDashboardEventFixture | null): string {
+  if (orderedEvent === null) {
+    throw new Error("snapshot fixture is missing its latest ordered event witness");
+  }
   const material = `aerial-rescue/canonical/v1\nordered-dashboard-event\n${canonicalJson({
     auditOrdinal: orderedEvent.auditOrdinal,
     canonicalizationVersion: 1,
@@ -682,20 +696,14 @@ function orderedEventWitnessDigest(orderedEvent: OrderedDashboardEventFixture): 
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
-function latestEventWitness(
-  state: DashboardReducedState,
+function latestOrderedEvent(
   orderedEvents: readonly OrderedDashboardEventFixture[],
-): string | null {
-  if (state.latestAuditOrdinal === 0) {
-    return null;
-  }
-  const latest = orderedEvents.find(
-    (orderedEvent) => orderedEvent.auditOrdinal === state.latestAuditOrdinal,
-  );
+): OrderedDashboardEventFixture {
+  const latest = orderedEvents.at(-1);
   if (latest === undefined) {
     throw new Error("snapshot fixture is missing its latest ordered event witness");
   }
-  return orderedEventWitnessDigest(latest);
+  return latest;
 }
 
 function event(
@@ -934,7 +942,6 @@ function replayBundle(overrides: ReplayFixtureOverrides): DashboardSourceInput {
     latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
-    sessionId: "replay-session-0001",
   };
   const provisionalR1ChecksumMaterial = {
     ...coveredBundle,
@@ -972,13 +979,17 @@ export function fixtureForState(
     return script([bootstrap(), readiness(), scenarioCatalog([])]);
   }
   if (viewState === "ready") {
-    return script([...common, snapshot(plannedState(), [])]);
+    return script([...common, snapshot(plannedState(), [], null)]);
   }
   if (viewState === "starting") {
-    return script([...common, snapshot(plannedState(), []), operationSignal("start", "pending")]);
+    return script([
+      ...common,
+      snapshot(plannedState(), [], null),
+      operationSignal("start", "pending"),
+    ]);
   }
   const currentLiveState = liveState();
-  const running = snapshot(currentLiveState, liveTimeline());
+  const running = snapshot(currentLiveState, liveTimeline(), latestOrderedEvent(liveAuditEvents()));
   if (viewState === "resetting") {
     return script([...common, running, operationSignal("reset", "pending")]);
   }
@@ -992,7 +1003,7 @@ export function fixtureForState(
     return script([...common, running, sourceSignal("disconnected"), sourceSignal("recovered")]);
   }
   if (viewState === "staleRuntime") {
-    return script([...common, running, sourceSignal("runtimeChanged")]);
+    return script([...common, running, changedRuntimeSnapshot(running)]);
   }
   if (viewState === "contractFailure") {
     return script([
@@ -1057,7 +1068,6 @@ export function malformedBoundaryInputs(
     latestEventDigest: null,
     scenarioId: "wilderness-missing-person",
     scenarioRevision: 1,
-    sessionId: "replay-session-malformed",
   };
   const malformedIntegrity = {
     algorithm: "sha256" as const,
@@ -1194,7 +1204,11 @@ export function heartbeatInitialFixture(): DashboardSourceScript {
     bootstrap(),
     readiness(),
     scenarioCatalog(),
-    snapshot(heartbeatBaseState(), heartbeatTimeline()),
+    snapshot(
+      heartbeatBaseState(),
+      heartbeatTimeline(),
+      latestOrderedEvent(heartbeatRecoveryEvents()),
+    ),
   ]);
 }
 

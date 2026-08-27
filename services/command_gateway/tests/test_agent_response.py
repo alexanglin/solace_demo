@@ -8,6 +8,7 @@ delivery reuses the prior result; changed or untrusted context writes nothing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import unittest
 from collections.abc import Mapping
@@ -31,7 +32,11 @@ from aerial_rescue_command_gateway.normalization import (
 )
 from aerial_rescue_command_gateway.ports import DirectDelivery
 from aerial_rescue_contracts import canonical
-from aerial_rescue_contracts.integration import AgentCandidate, AgentOutcome
+from aerial_rescue_contracts.integration import (
+    AgentCandidate,
+    AgentOutcome,
+    agent_response_document,
+)
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
 from aerial_rescue_store.inbox import InboxDecision, InboxIdentity, InboxOutcome
 from aerial_rescue_store.pending_invocations import (
@@ -40,7 +45,9 @@ from aerial_rescue_store.pending_invocations import (
 )
 from aerial_rescue_store.proposals import StoredProposal
 
-ROOT = Path(__file__).parents[3]
+from .fixture_paths import repository_root
+
+ROOT = repository_root(Path(__file__))
 AGENT_TOPIC = "aerial-rescue/v1/mission-synthetic-0001/agent/response/VisionAgent"
 
 PENDING = PendingInvocation(
@@ -104,6 +111,8 @@ class FakeTransaction:
         self.proposals: list[StoredProposal] = []
         self.events: list[StagedApplicationEvent] = []
         self.completed: list[tuple[InboxIdentity, bytes, str]] = []
+        self.loaded_invocation_ids: list[str] = []
+        self.claimed_identities: list[InboxIdentity] = []
         self.order: list[str] = []
 
     async def record_pending(self, pending: PendingInvocation) -> None:
@@ -113,14 +122,16 @@ class FakeTransaction:
             raise self.pending_failure
         self.recorded_pending.append(pending)
 
-    async def load_pending(self, _invocation_id: str) -> PendingInvocation:
+    async def load_pending(self, invocation_id: str) -> PendingInvocation:
         """Return the trusted forward context."""
         self.order.append("load-pending")
+        self.loaded_invocation_ids.append(invocation_id)
         return self.pending
 
-    async def claim(self, _identity: InboxIdentity) -> InboxOutcome:
+    async def claim(self, identity: InboxIdentity) -> InboxOutcome:
         """Return the configured inbox decision."""
         self.order.append("claim")
+        self.claimed_identities.append(identity)
         return self.claim_outcome
 
     async def record_proposal(self, proposal: StoredProposal) -> None:
@@ -197,6 +208,16 @@ class CandidateNormalizationTests(unittest.IsolatedAsyncioTestCase):
         transaction = FakeTransaction()
         unit_of_work = FakeUnitOfWork(transaction)
         expected_payload = json.loads(_fixture("payload/agent-proposal/baseline.json"))
+        ingress = _ingress()
+        response_bytes = canonical.canonical_bytes(agent_response_document(ingress.response))
+        expected_identity = InboxIdentity(
+            consumer="command-gateway",
+            source="event-mesh-gateway",
+            event_id=ingress.response.invocation_id,
+            mission_id=ingress.response.mission_id,
+            canonical_digest=hashlib.sha256(response_bytes).hexdigest(),
+        )
+        expected_artifacts = build_normalization(ingress, PENDING, STAMP)
 
         # Act
         result = await handle_agent_response(_delivery(), STAMP, unit_of_work)
@@ -218,7 +239,10 @@ class CandidateNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 expected_payload,
                 2,
-                1,
+                [PENDING.invocation_id],
+                [expected_identity],
+                [(expected_identity, expected_artifacts.result, STAMP.occurred_at)],
+                expected_artifacts.result,
                 [PENDING],
             ),
             (
@@ -227,8 +251,129 @@ class CandidateNormalizationTests(unittest.IsolatedAsyncioTestCase):
                 transaction.order,
                 canonical.decode(transaction.proposals[0].payload),
                 len(transaction.events),
-                len(transaction.completed),
+                transaction.loaded_invocation_ids,
+                transaction.claimed_identities,
+                transaction.completed,
+                result.result,
                 transaction.recorded_pending,
+            ),
+        )
+
+    def test_candidate_artifacts_preserve_every_exact_proposal_and_outbox_member(self) -> None:
+        # Arrange
+        ingress = _ingress()
+        traced = replace(STAMP, tracestate="vendor=value")
+        expected_proposal_data = canonical.decode(_fixture("payload/agent-proposal/baseline.json"))
+        expected_audit_data = canonical.decode(
+            _fixture("payload/audit/proposal-normalization/normalized.json")
+        )
+
+        # Act
+        artifacts = build_normalization(ingress, PENDING, traced)
+
+        # Assert
+        proposal = cast("StoredProposal", artifacts.proposal)
+        proposal_event, audit_event = artifacts.events
+        proposal_document = cast("dict[str, object]", canonical.decode(proposal_event.payload))
+        audit_document = cast("dict[str, object]", canonical.decode(audit_event.payload))
+        self.assertEqual(
+            (
+                expected_proposal_data,
+                expected_audit_data,
+                PENDING.source_event_id,
+                PENDING.source_event_id,
+                "proposal-synthetic-0001",
+                "mission-synthetic-0001",
+                PENDING.source_event_id,
+                PENDING.source_event_digest,
+                "VisionAgent",
+                "invocation-synthetic-0001",
+                "candidate-location",
+                "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+                canonical.canonical_bytes(expected_proposal_data),
+                "drone-synthetic-01",
+                45_123_456,
+                -75_123_456,
+                "escalate-rescue",
+                traced.occurred_at,
+                5,
+                "correlation-synthetic-0001",
+                PENDING.source_event_id,
+                traced.traceparent,
+                (
+                    "command-gateway",
+                    "event-agent-proposal-0001",
+                    "agent-proposal",
+                    "aerial-rescue/v1/mission-synthetic-0001/agent/proposal/VisionAgent/candidate-location",
+                    b"{}",
+                    traced.traceparent,
+                    "vendor=value",
+                    "correlation-synthetic-0001",
+                    PENDING.source_event_id,
+                    traced.occurred_at,
+                ),
+                (
+                    "command-gateway",
+                    "event-audit-proposal-normalized-0001",
+                    "audit",
+                    "aerial-rescue/v1/mission-synthetic-0001/audit/proposal-normalization",
+                    b"{}",
+                    traced.traceparent,
+                    "vendor=value",
+                    "correlation-synthetic-0001",
+                    PENDING.source_event_id,
+                    traced.occurred_at,
+                ),
+                proposal_event.payload,
+            ),
+            (
+                proposal_document["data"],
+                audit_document["data"],
+                proposal_document["causationid"],
+                audit_document["causationid"],
+                proposal.proposal_id,
+                proposal.mission_id,
+                proposal.source_event_id,
+                proposal.source_event_digest,
+                proposal.agent_name,
+                proposal.invocation_id,
+                proposal.proposal_type,
+                proposal.proposal_digest,
+                proposal.payload,
+                proposal.drone_id,
+                proposal.latitude_microdegrees,
+                proposal.longitude_microdegrees,
+                proposal.command_type,
+                proposal.issued_at,
+                proposal.sequence,
+                proposal.correlation_id,
+                proposal.causation_id,
+                proposal.traceparent,
+                (
+                    proposal_event.producer,
+                    proposal_event.event_id,
+                    proposal_event.family,
+                    proposal_event.topic,
+                    proposal_event.headers,
+                    proposal_event.traceparent,
+                    proposal_event.tracestate,
+                    proposal_event.correlation_id,
+                    proposal_event.causation_id,
+                    proposal_event.staged_at,
+                ),
+                (
+                    audit_event.producer,
+                    audit_event.event_id,
+                    audit_event.family,
+                    audit_event.topic,
+                    audit_event.headers,
+                    audit_event.traceparent,
+                    audit_event.tracestate,
+                    audit_event.correlation_id,
+                    audit_event.causation_id,
+                    audit_event.staged_at,
+                ),
+                artifacts.result,
             ),
         )
 
@@ -259,13 +404,21 @@ class CandidateNormalizationTests(unittest.IsolatedAsyncioTestCase):
         audit = cast("Mapping[str, object]", canonical.decode(transaction.events[0].payload))
         data = cast("Mapping[str, object]", audit["data"])
         self.assertEqual(
-            (NormalizationOutcome.COMMITTED, [], "abstained", "invalid-output", 1),
+            (
+                NormalizationOutcome.COMMITTED,
+                [],
+                "abstained",
+                "invalid-output",
+                1,
+                transaction.events[0].payload,
+            ),
             (
                 result.outcome,
                 transaction.proposals,
                 data["outcome"],
                 data["reason"],
                 len(transaction.events),
+                result.result,
             ),
         )
 
@@ -391,6 +544,16 @@ class NormalizationRefusalTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DefensiveNormalizationTests(unittest.IsolatedAsyncioTestCase):
+    def test_structured_normalization_errors_expose_the_exact_closed_message(self) -> None:
+        # Arrange
+        refusal = NormalizationRefusal.DIGEST_MISMATCH
+
+        # Act
+        error = NormalizationError(refusal)
+
+        # Assert
+        self.assertEqual((refusal.value, refusal), (str(error), error.refusal))
+
     def test_trusted_common_identity_and_source_event_identity_are_both_rechecked(self) -> None:
         # Arrange
         ingress = _ingress()

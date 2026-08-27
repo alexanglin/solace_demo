@@ -7,6 +7,7 @@ dependencies = [
     "aerial-rescue-broker",
     "aerial-rescue-contracts",
     "aerial-rescue-domain",
+    "aerial-rescue-observability",
     "aerial-rescue-store",
     "fastapi==0.141.1",
     "httpx==0.28.1",
@@ -15,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-aerial-rescue-dashboard-api = "aerial_rescue_dashboard_api.console:main"
+aerial-rescue-dashboard-api = "aerial_rescue_dashboard_api.delivery.production:main"
 
 [build-system]
 requires = ["hatchling"]

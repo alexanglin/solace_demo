@@ -7,20 +7,20 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-import aerial_rescue_fleet_simulator.http_runtime as http_runtime_module
+import aerial_rescue_fleet_simulator.control_plane.runtime as http_runtime_module
 import httpx
 import pytest
 from aerial_rescue_contracts import canonical
-from aerial_rescue_fleet_simulator.control_wire import (
-    FleetControlCancelRequest,
-    FleetControlRunStatus,
-    FleetControlStartRequest,
-)
-from aerial_rescue_fleet_simulator.http_runtime import (
+from aerial_rescue_fleet_simulator.control_plane.runtime import (
     ControlError,
     ControlRefusal,
     ServerSettings,
     create_application,
+)
+from aerial_rescue_fleet_simulator.control_plane.wire import (
+    FleetControlCancelRequest,
+    FleetControlRunStatus,
+    FleetControlStartRequest,
 )
 from fastapi import FastAPI
 

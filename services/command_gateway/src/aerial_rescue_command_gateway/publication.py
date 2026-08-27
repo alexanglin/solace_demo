@@ -54,7 +54,7 @@ class ApplicationPublicationRefusal(Enum):
 
     BATCH_EXCEEDED = "the application outbox returned more than the bounded batch"
     HEADERS = "staged application headers are not one canonical object"
-    IDENTITY = "staged application identity does not bind to its producer and topic family"
+    IDENTITY = "staged application row does not bind to its canonical CloudEvent"
     CONFIRMATION = "the publication confirmation instant is invalid"
     BROKER_OUTCOME = "the routed publisher returned a non-publication failure"
 
@@ -140,6 +140,25 @@ class RoutedPublisher(Protocol):
         """Validate, authorize, derive delivery, and publish one staged event."""
 
 
+def _bind_application_event(event: StagedApplicationEvent, topic: Topic) -> None:
+    """Require every durable row identity to equal its validated CloudEvent."""
+    try:
+        envelope = decode_envelope(event.payload)
+        check_topic_binding(envelope, topic)
+    except ValueError:
+        raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY) from None
+    valid = (
+        envelope.id == event.event_id
+        and envelope.traceparent == event.traceparent
+        and envelope.tracestate == event.tracestate
+        and envelope.correlation_id == event.correlation_id
+        and envelope.causation_id == event.causation_id
+        and envelope.time == event.staged_at
+    )
+    if not valid:
+        raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY)
+
+
 def _application_properties(event: StagedApplicationEvent) -> Mapping[str, object]:
     """Decode one exact canonical property object and bind its durable identity."""
     try:
@@ -148,6 +167,7 @@ def _application_properties(event: StagedApplicationEvent) -> Mapping[str, objec
         raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY) from None
     if event.producer != APPLICATION_PRODUCER or event.family != parsed.family.literal_suffix:
         raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY)
+    _bind_application_event(event, parsed)
     try:
         decoded = canonical.decode(event.headers)
     except ValueError:

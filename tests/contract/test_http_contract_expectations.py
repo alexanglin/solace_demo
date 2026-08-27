@@ -70,7 +70,11 @@ def _public_expectations() -> tuple[RouteExpectation, ...]:
             "/api/v1/readiness",
             (("mode", True, ("degradedLive", "replay")),),
             None,
-            ((200, _json(_dashboard_schema("readiness"))), ("default", error)),
+            (
+                (200, _json(_dashboard_schema("readiness"))),
+                (503, _json(_dashboard_schema("readiness"))),
+                ("default", error),
+            ),
         ),
         (
             "GET",
@@ -174,7 +178,8 @@ def _public_expectations() -> tuple[RouteExpectation, ...]:
     )
 
 
-def _private_expectations(prefix: str) -> tuple[RouteExpectation, ...]:
+def _fleet_expectations() -> tuple[RouteExpectation, ...]:
+    prefix = "fleet-control"
     refusal = _json(_rpc_schema(f"{prefix}-refusal"))
     status = _json(_rpc_schema(f"{prefix}-run-status"))
     return (
@@ -202,6 +207,49 @@ def _private_expectations(prefix: str) -> tuple[RouteExpectation, ...]:
     )
 
 
+def _scenario_expectations() -> tuple[RouteExpectation, ...]:
+    prefix = "scenario-control"
+    refusal = _json(_rpc_schema(f"{prefix}-refusal"))
+    status = _json(_rpc_schema(f"{prefix}-run-status"))
+    return (
+        (
+            "GET",
+            "/internal/v1/scenarios",
+            (),
+            None,
+            ((200, _json(_dashboard_schema("scenario-catalog"))), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs",
+            (),
+            _json(_rpc_schema(f"{prefix}-start-request")),
+            ((202, status), ("default", refusal)),
+        ),
+        (
+            "GET",
+            "/internal/v1/runs/{runId}",
+            (),
+            None,
+            ((200, status), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs/{runId}/cancel",
+            (),
+            _json(_rpc_schema(f"{prefix}-cancel-request")),
+            ((200, status), ("default", refusal)),
+        ),
+        (
+            "POST",
+            "/internal/v1/runs/{runId}/recover",
+            (),
+            _json(_rpc_schema(f"{prefix}-recovery-request")),
+            ((200, status), ("default", refusal)),
+        ),
+    )
+
+
 def _schema_ids(routes: tuple[RouteExpectation, ...]) -> frozenset[str]:
     """Collect every normative schema identity referenced by route bodies."""
     identities: set[str] = set()
@@ -216,13 +264,13 @@ def _schema_ids(routes: tuple[RouteExpectation, ...]) -> frozenset[str]:
 class HttpContractExpectationTests(unittest.TestCase):
     def test_public_and_private_route_registries_match_the_accepted_surface_exactly(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
         scenario = _contract_module("aerial_rescue_scenario_service.http_contract")
-        fleet = _contract_module("aerial_rescue_fleet_simulator.control_http_contract")
+        fleet = _contract_module("aerial_rescue_fleet_simulator.control_plane.http_contract")
         expected = (
             _public_expectations(),
-            _private_expectations("scenario-control"),
-            _private_expectations("fleet-control"),
+            _scenario_expectations(),
+            _fleet_expectations(),
         )
 
         # Act
@@ -234,7 +282,7 @@ class HttpContractExpectationTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, actual)
-        self.assertEqual(17, sum(len(routes) for routes in actual))
+        self.assertEqual(19, sum(len(routes) for routes in actual))
 
     def test_every_route_schema_is_manifest_owned(self) -> None:
         # Arrange
@@ -246,9 +294,9 @@ class HttpContractExpectationTests(unittest.TestCase):
             f"https://aerial-rescue.invalid/{cast('str', entry['schema'])}" for entry in entries
         }
         modules = (
-            _contract_module("aerial_rescue_dashboard_api.http_contract"),
+            _contract_module("aerial_rescue_dashboard_api.boundary.http_contract"),
             _contract_module("aerial_rescue_scenario_service.http_contract"),
-            _contract_module("aerial_rescue_fleet_simulator.control_http_contract"),
+            _contract_module("aerial_rescue_fleet_simulator.control_plane.http_contract"),
         )
 
         # Act
@@ -263,7 +311,7 @@ class HttpContractExpectationTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
         expected_workflow_paths = {
             "/api/v1/missions/{missionId}/commands",
             "/api/v1/missions/{missionId}/proposals/{proposalId}/decisions",
@@ -288,7 +336,7 @@ class HttpContractExpectationTests(unittest.TestCase):
 
     def test_only_the_four_selected_public_mutations_carry_json_request_bodies(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
 
         # Act
         body_routes = tuple(
@@ -326,7 +374,7 @@ class HttpContractExpectationTests(unittest.TestCase):
 
     def test_sse_html_and_assets_do_not_claim_the_same_framing(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
         success_bodies = {
             path: responses[0][1] for _, path, _, _, responses in dashboard.ROUTE_EXPECTATIONS
         }

@@ -155,30 +155,34 @@ class StartupRecipeTests(QualityGateTestCase):
         self.assertEqual(1, len(started))
         self.assertTrue(started[0].rstrip().endswith(f"{BROKER_SERVICE} {DATABASE_SERVICE}"))
 
-    def test_mission_control_starts_the_explicit_subset_without_agent_mesh_or_ollama(self) -> None:
+    def test_mission_control_starts_the_guarded_explicit_subset_without_agent_mesh_or_ollama(
+        self,
+    ) -> None:
         # Arrange
-        body = _recipe("mission-control")
+        body = _recipe("mission-control-up")
         required = {
             "broker-event-monitor",
-            "schema-migration",
+            "migration",
             "fleet-simulator",
             "scenario-service",
             "recorder",
+            "replay-validator",
             "dashboard-api",
             "caddy",
         }
 
         # Act
-        final = body[-1]
-        provision = next(index for index, line in enumerate(body) if PROVISION_MODULE in line)
+        declared = set(_just_string("mission_control_services").split())
+        joined = " ".join(body)
 
         # Assert
-        self.assertIn("--profile mission-control", final)
-        self.assertTrue(all(service in final.split() for service in required))
-        self.assertNotIn("agent-mesh", " ".join(body))
-        self.assertNotIn(PREFLIGHT, " ".join(body))
-        self.assertLess(provision, len(body) - 1)
-        self.assertIn("{{ARGS}}", final)
+        self.assertEqual(required, declared)
+        self.assertIn("--profile mission-control", joined)
+        self.assertNotIn("agent-mesh", joined)
+        self.assertNotIn(PREFLIGHT, joined)
+        self.assertIn(PROVISION_MODULE, joined)
+        self.assertIn(f"{{{{{REFERENCE_DRONE_ARGUMENTS}}}}}", joined)
+        self.assertNotIn("--queue-projection", joined)
 
 
 if __name__ == "__main__":

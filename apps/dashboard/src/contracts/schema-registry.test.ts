@@ -161,6 +161,22 @@ test.each([
   },
 );
 
+test("refuses a non-object snapshot before accepting an ordinal witness", () => {
+  // Arrange
+  const schemaId =
+    "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json";
+  const registry = createDashboardSchemaRegistry();
+
+  // Act
+  const result = registry.validate(schemaId, null);
+
+  // Assert
+  expect(result).toEqual({
+    failure: { code: "SCHEMA_VALIDATION_FAILED", schemaId },
+    ok: false,
+  });
+});
+
 test("accepts and anchors the complete serialized running snapshot used by the browser", async () => {
   // Arrange
   const source = fixtureForState("running");

@@ -60,26 +60,28 @@ The semantic-configuration gate [ADR-0032](adr/0032-agent-mesh-semantic-configur
 
 A green result is configuration evidence only. The recorded Phase 0 runs separately prove broker identity
 and ACL enforcement, A2A discovery and delegation, Event Mesh Gateway transformation, and Event Mesh Tool
-request/reply for the then-current configuration. The newly structured Agent Response and complete
-application data plane still require the adoption live run; offline configuration validation cannot prove
-their settlement, redelivery, reconnect, or model behavior.
+request/reply for the then-current configuration. Those live records also cover the bounded settlement,
+redelivery, and structured-model-output paths named by their evidence. The newly structured Agent Response
+and complete application data plane still require the adoption shared-stack run; offline configuration
+validation cannot prove their settlement, redelivery, reconnect, or model behavior.
 
 ## Local Python components
 
 - **Fleet simulator:** Adapts the deterministic scenario to broker and clock ports, drives the pure Tier 1
   domain state machines in `packages/domain` — mission, sector, command, drone connectivity, and evidence
   lifecycles ([ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md)) — injects failures, publishes
-  telemetry, and consumes commands. The concrete console and authenticated private FastAPI control
-  listener accept the projected scenario, bind every provisioned per-drone queue, publish Direct
-  telemetry, and process commands through durable receipts and a bounded critical-result outbox. Command
-  effects and exact results commit before settlement; broker recovery pauses an active run before the
-  next tick, publication, or command receive and resumes that exact operation after readiness returns.
-  Offline tests cover the composition and recovery state machine. Earlier live probes cover Direct
-  telemetry and the drone side of command intake
+  telemetry, and consumes commands. Its authenticated private listener preserves the accepted twenty-member
+  workload, fixed-rate tick loop, mission-scoped producer epochs, and idempotent start/status/cancel path.
+  Direct telemetry, guaranteed lifecycle publication, and the drone-observable half of command dispatch have
+  live evidence
   ([fleet-simulator-first-run.md](../release-evidence/phase-3/fleet-simulator-first-run.md),
-  [command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md)); they do not
-  prove the newly composed process, PostgreSQL receipts, or reconnect behavior. Schema-bound fleet
-  lifecycle and salient-event publication remain incomplete.
+  [command-dispatch-first-run.md](../release-evidence/phase-3/command-dispatch-first-run.md),
+  [wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+  The adopted runtime additionally binds every provisioned per-drone queue and processes commands through
+  durable receipts and a bounded critical-result outbox: effects and exact results commit before settlement,
+  and broker recovery pauses then resumes the exact active operation. Deterministic tests cover that stronger
+  composition; PostgreSQL receipt recovery and a broker-container reconnect remain shared-stack acceptance
+  work.
 - **Command gateway:** Owns deterministic mission-command policy, direct Agent Response normalization,
   canonical proposal persistence/publication, idempotency, proposal-and-evidence-bound approval checks,
   typed authorization audit, command progress, outbox state, and executable command publication. Its
@@ -92,16 +94,19 @@ their settlement, redelivery, reconnect, or model behavior.
   store for mission state, broker inbox/outbox records, proposals, approvals, idempotency results,
   evidence provenance and decisions, command progress and receipts, and audit records. Access is through
   async SQLAlchemy 2.x with `asyncpg`, and every durable table and constraint is introduced through an
-  append-only Alembic revision. The nine-revision history includes audit, approval, idempotency,
+  append-only Alembic revision. The ten-revision history preserves immutable dashboard revision 0005 and
+  appends application-data-plane revisions 0006 through 0010. Its 25 SQLAlchemy-owned tables include audit,
+  approval, idempotency,
   command-outbox, broker inbox/refusal, general application outbox, proposal, evidence, source-event,
   command-progress, durable receipt, pending-invocation, and dashboard-idempotency state. Typed
   SQLAlchemy Core repositories and service-specific units of work own those transactions; production
   code does not create durable tables from metadata. Broker acknowledgement occurs only after the
   related durable transaction commits. An append-only audit table with a monotonic ordinal is the
-  ordering authority for the mission timeline. The first four revisions have live PostgreSQL evidence;
-  applying and exercising revisions five through nine remains part of the adoption live run. See
+  ordering authority for the mission timeline. Revisions 0001 through 0005 have live PostgreSQL evidence;
+  applying and exercising revisions 0006 through 0010 remains part of the adoption shared-stack run. See
   [ADR-0003](adr/0003-postgres-durable-mission-store.md) and
-  [ADR-0146](adr/0146-define-durable-application-processing.md).
+  [ADR-0146](adr/0146-define-durable-application-processing.md) and
+  [ADR-0189](adr/0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md).
 - **Broker adapter:** Wraps the pinned Solace PubSub+ Messaging API for Python in the Python 3.14
   application environment and isolates connection, publishing, subscription, acknowledgement, retry,
   and shutdown behavior. The typed router derives delivery from validated topic and representation
@@ -114,7 +119,8 @@ their settlement, redelivery, reconnect, or model behavior.
   explicit roster, geometry, and heartbeat-loss schedule, losslessly projects only simulated members
   into the fleet input, and exposes lifecycle operations. The input carries no seed or random source.
   ADR-0158 keeps this process brokerless: private start, status, and cancel control uses authenticated
-  bounded HTTP, and the fleet owns lifecycle publication after accepting the projected run.
+  bounded HTTP, and the dashboard owns durable mission-event staging and publication while the fleet owns
+  telemetry, critical drone events, and command effects.
   The exact twenty-plus-three production catalog, confined digest-validating loader, process-epoch
   lifecycle coordination, HTTP client/server, health/readiness, internal listener, console entry point,
   and brokerless Compose wiring are implemented. Durable mission binding, generated OpenAPI, and live
@@ -128,23 +134,29 @@ their settlement, redelivery, reconnect, or model behavior.
   Compose. Deterministic tests prove the transaction and recovery orchestration; live settlement,
   reconnect, and shared-stack qualification remain. Model failure produces an explicit abstention or
   manual-review outcome; recorded evidence is never substituted.
-- **Recorder/replayer:** Is the receiver-only path from validated broker lifecycle sources into durable
+- **Recorder/replayer:** Is the receiver-only path from validated broker application sources into durable
   audit order, committing guaranteed input before acknowledgement, and writes sanitized CloudEvents to
-  NDJSON for the isolated replay path. It classifies all fourteen application families, persists the
-  eleven notification-only families plus the direct mission-scoped Gateway Response record, excludes
-  raw reserved-topic RPC replies, and treats direct telemetry and Agent Response as their explicit lossy
-  classes. Its receiver-only broker composition, inbox deduplication, commit-before-settlement capture,
+  NDJSON for the isolated replay path. It classifies the complete applicable subset of the fifteen topic
+  families — twelve notifications, two reserved request/reply families, and one direct Agent Response
+  integration — while excluding raw RPC replies and A2A control traffic. The recorder combines mission,
+  sector, and connectivity transitions on one ordered lifecycle queue, commits Guaranteed input before
+  settlement, and treats Direct telemetry and Agent Response as their explicit lossy classes. Its
+  receiver-only broker composition, inbox deduplication, commit-before-settlement capture,
   bounded ordered export ports, and structurally isolated replay graph are implemented and Compose-wired.
   The live database export reader and recording codec remain uncomposed, and shared-stack capture,
   redelivery, reconnect, and replay evidence remain pending.
 - **Dashboard API:** Owns scenario control, health, readiness, replay, the packaged browser/bootstrap, broker-backed
   normalized mission state, server-sent events, canonical operator commands, and exact proposal
   decisions. The concrete FastAPI application implements the closed Host, Origin, bearer, body, and
-  idempotency boundary; composes the scenario client, SQLAlchemy transactions, mixed broker session,
-  audit recovery, normalized projection, bounded SSE, live mutations, and a capability-isolated replay
-  graph; and listens only on the private Unix socket behind Caddy. Offline tests prove composition and
+  idempotency boundary. Its deployed composition preserves the accepted `OperationCoordinator` start/reset
+  transaction and exact-response recovery, then layers the Solace supervisor, SQLAlchemy application
+  transactions, mixed broker session, audit recovery, normalized projection, bounded SSE, command/decision
+  mutations, and a capability-isolated replay graph, and listens only on the private Unix socket behind
+  Caddy. Offline tests prove composition and
   refusal ordering. Unix-socket reachability and end-to-end broker/store behavior remain shared-stack
-  acceptance work; generated OpenAPI remains absent.
+  acceptance work; generated OpenAPI remains absent. The start/reset path retains its accepted live
+  qualification, while the added broker/store/command/decision paths still require the adoption
+  shared-stack run.
 
 All Python work runs in an isolated project virtual environment managed by `uv`:
 
@@ -158,15 +170,27 @@ The Solace Python library must not be hosted through Python's `multiprocessing` 
 
 ### Deployment layout
 
-Every component except Ollama runs under Docker Compose from `deploy/compose.yaml`, and the compose policy gate holds that file to its policy on every commit ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md)). Images are pinned by tag and index digest, every published port binds to `127.0.0.1`, secrets are files under the ignored `deploy/secrets/` mounted at `/run/secrets/`, and every service declares a healthcheck.
+Every component except Ollama runs under Docker Compose from `deploy/compose.yaml`, and the compose policy gate holds that file to its policy on every commit ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0045](adr/0045-fail-closed-compose-policy-gate.md)). Images are pinned by tag and index digest, every published port binds to `127.0.0.1`, and secrets are files under the ignored `deploy/secrets/` mounted at `/run/secrets/`. Broker, PostgreSQL, and Caddy each use a distinct single-member, non-masquerading loopback-publisher bridge; their actual application edges remain on need-to-know internal networks or Caddy's private Unix socket ([ADR-0131](adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md)). Every long-running service declares a healthcheck; only the migration and replay-validator one-shot jobs use successful completion as their dependency condition. Dashboard startup reuses the broker and PostgreSQL already running in the `aerial-rescue-mesh` project rather than creating a parallel stateful stack ([ADR-0117](adr/0117-select-the-exact-mission-control-service-closure.md), [ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)).
 
 | Profile | Services | State |
 | --- | --- | --- |
 | default | `broker` (PubSub+ Standard 10.26.0), `postgres` (PostgreSQL 18.6), and `agent-mesh`, built on the official `solace/solace-agent-mesh:1.28.7` image with the two pinned Event Mesh wheels installed by hash | Runnable. The mesh carries five apps: the Orchestrator, the MissionCoordinator agent, the MissionResponse workflow, the HTTP/SSE Web UI, and the Event Mesh Gateway. It joined the default profile when `agent-mesh/configs/` landed, which is the condition [ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) set and [ADR-0102](adr/0102-start-the-agent-mesh-with-the-default-profile.md) executes. It still needs a local model, so `just up` refuses to start it unless the locked model is served |
-| `services` | migrations, six Python services including the dashboard API, and Caddy; application processes use one Python 3.14.7 image | Runnable entry points, dependency ordering, private control listeners, Unix-socket relay, and healthchecks are wired. The complete profile has not yet passed the adoption shared-stack, reconnect, and soak acceptance run |
+| `services` | migration, scenario, fleet, command gateway, evidence, recorder, dashboard API, and Caddy, built from the Python 3.14.7 application image carrying the frozen Vite dashboard | All application services have real bounded entrypoints, health/readiness behavior, dependency ordering, private control listeners, and the Unix-socket relay. The accepted mission-control slice has live evidence; the combined application data plane has deterministic evidence and still awaits its shared-stack reconnect and soak qualification |
+| `mission-control` | migration, fleet simulator, scenario service, recorder, isolated replay validator, dashboard API, and Caddy; the broker and PostgreSQL are shared base services, not profile-owned targets | Qualified through `just mission-control-up`, which preserves the base broker/PostgreSQL container identities and volumes. The accepted run applied immutable migration 0005 and exercised the prepared wilderness mission. The adoption extends the same project and topology through revision 0010; it does not create a second stateful stack ([ADR-0117](adr/0117-select-the-exact-mission-control-service-closure.md), [ADR-0120](adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md), [ADR-0139](adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md)) |
 | `event-portal` | the Event Management Agent for Event Portal runtime discovery, an amd64-only image run under emulation | Non-gating showcase support ([ADR-0043](adr/0043-docker-broker-with-solace-cloud-showcase.md)) |
-| `semp-monitor` | the continuous aggregate queue-health process, with only its generated monitor password and public trust store | Opt-in and fail-closed. An operator must first prove global `none`, VPN default `none`, exactly one selected-VPN `read-only` exception, a positive aggregate read, and a negative configuration write ([ADR-0181](adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md)) |
+| `semp-monitor` | the continuous aggregate queue-health process, with only its generated monitor password and public trust store | Opt-in and fail-closed. It combines one bounded parent depth inventory with sequential count-only active-flow reads for observed desired queues. An operator must first prove global `none`, VPN default `none`, exactly one selected-VPN `read-only` exception, a positive aggregate read, and a negative configuration write ([ADR-0181](adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md), [ADR-0190](adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)) |
 
+Normal `just up` owns the complete runtime and the broker/PostgreSQL lifecycle. Dashboard stop and test
+cleanup target only fleet simulator, scenario service, recorder, dashboard API, and Caddy; they do not
+run Compose `down`, remove networks or volumes, stop a shared stateful service, or delete dashboard
+history. Production browser and soak guards compare the shared base container IDs at test start and test
+completion. Broker acceptance asserts the mission-control queues and grants as a required subset of
+the shared inventory, never as its exclusive contents.
+
+The reconciled Compose graph has eight explicitly isolated networks and five retained or handoff volumes.
+The adoption reuses that graph, its migration service, replay validator, recorder-readiness lease, non-root
+Unix-socket ownership, and hardened Caddy relay; no service may broaden an established network edge to
+avoid an explicit dependency.
 Verification stays native: `agent-mesh/.venv` on Python 3.13.15 runs the configuration validator and the compatibility probes ([ADR-0029](adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md)), while the container, which carries upstream's Python 3.13.11, is the runtime. The plugin-compatibility probe is run inside the built image by `scripts/probes/agent-mesh-image-probe.sh`, which is what lets the mesh be called supported; it passed on the image's CPython 3.13.11 on 2026-08-21. Ollama stays on the host; containers reach it as `http://host.docker.internal:11434`. The showcase profile is the same stack pointed at the Solace Cloud service through an ignored `.env.showcase`; no gate, hook, or release criterion depends on it.
 
 `scripts/broker-secrets.sh` generates the per-checkout certificate authority, the broker's server certificate with subject alternative names for `localhost`, `broker`, and `127.0.0.1`, and the stack's passwords; `deploy/certs/` is the trust-store directory every client mounts, and `tcps` validation is never relaxed ([ADR-0046](adr/0046-generated-local-certificate-authority.md)).
@@ -196,15 +220,21 @@ The current UI-first wilderness slice is specified as a map-first command center
 - a non-telemetry mission timeline ordered by audit ordinal; and
 - isolated-replay playback controls and an unmistakable degraded-live or replay badge.
 
-The current React and TypeScript application validates bootstrap, snapshot, SSE, and mutation responses;
-folds the broker-backed event stream; retains the last validated state during interruption; renders mode,
-readiness, mission, fleet, timeline, proposal, and evidence state; and provides an accessible,
-double-submission-resistant exact proposal approval/rejection flow. Replay renders the recorded facts
-without constructing action controls. Caddy serves the packaged Vite bundle and relays same-origin API
-traffic to the Unix-socket FastAPI process. The map, scenario start/reset surface, general operator-command
-controls, replay playback controls, and the remaining prepared-artifact/model presentation are not in the
-current component tree. The complete production browser flow remains unverified until the services
-profile and browser acceptance run execute together.
+The React and TypeScript application preserves the accepted map, scenario start/reset, synchronized fleet
+table, audit-ordered timeline, reset dialog, replay controls, compact layout, reduced-motion path, and
+validated bootstrap/snapshot/SSE sources. It now also folds broker-backed proposal and evidence state,
+retains the last validated state during interruption, exposes retry/recovered status, and provides an
+accessible, double-submission-resistant exact proposal approval/rejection flow. Replay renders recorded
+facts without constructing action controls. Caddy serves the packaged Vite bundle and relays same-origin
+API traffic to the Unix-socket FastAPI process.
+
+Commit `db2b640` and the committed Phase 3 record qualify the established wilderness dashboard slice:
+the fixture inventory, eight production workflows, selected API replacement and transport recovery, and
+the bounded post-mission soak on the shared `aerial-rescue-mesh` project
+([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That result is bounded to the accepted mission-control slice and measured dashboard API process. It does
+not qualify the newly added proposal/evidence/decision stream, full command flow, Agent Response path,
+application reconnect, or whole-stack resource behavior; those remain adoption live acceptance work.
 
 ## Solace operational surfaces
 
@@ -214,22 +244,13 @@ The project deliberately exercises and exposes both Solace layers:
 - **Solace PubSub+ Broker Manager** (`https://localhost:1943` on the container; the browser warns until the per-checkout authority is trusted)**:** show separately named Agent Mesh, gateway, command, simulator, edge-agent, recorder, and dashboard clients; inspect A2A and application topic subscriptions; observe ingress/egress rates; inspect guaranteed queue state; and use Try Me with the scoped A2A namespace during diagnostics.
 - **Aerial Rescue Mesh dashboard:** show normalized wilderness mission, sector, fleet, connectivity,
   proposal, evidence, command, approval, audit, replay, and recovery state. The current application
-  renders the broker-backed mission/fleet/timeline, exact proposal decision, mode, and recovery surfaces.
-  The map and remaining controls/panels listed above are still incomplete.
+  preserves the qualified map, mission/fleet/timeline, start/reset, mode, and replay surfaces and layers
+  broker-backed proposal/evidence state, exact proposal decisions, and recovery status onto them. General
+  command controls and the remaining prepared-artifact/model presentation are not yet in the browser.
 
 The disconnect/reconnect acceptance flow must make Solace's role visible in Broker Manager: an offline drone's durable command queue changes from depth `0` to `1`, then returns to `0` only after reconnect, durable processing, and acknowledgement. Separately, Agent Mesh agent cards and task traffic prove dynamic discovery and A2A delegation over the broker. Screenshots may document these checks only after tenant-specific values and credentials are redacted.
 
-Reserve and document loopback-only development ports to avoid collisions: Agent Mesh
-initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, dashboard Vite development
-server `5173`, Caddy's production dashboard origin `8080`, and Ollama `11434`. The initialization UI is
-a setup surface, not an operational monitoring surface. Caddy is the sole `127.0.0.1:8080` publisher and
-relays to the dashboard API's private Unix socket; the API publishes no IP port
-([ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md)). This layout is wired in the
-Compose `services` profile but has not yet been proven by the adoption live run. The stack also publishes,
-on `127.0.0.1` only, `55443` and `1943` for the broker, `5432` for Postgres, `8000` for the Agent Mesh Web
-UI, and `8180` for the Event Management Agent; the broker's own `8080` and `8000` are never published,
-which is how they coexist with the reservations above
-([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
+Reserve and document loopback-only development ports to avoid collisions: Agent Mesh initialization/configuration UI `5002`, Agent Mesh runtime Web UI `8000`, dashboard Vite development server `5173`, Caddy's production dashboard origin `8080`, and Ollama `11434`. The initialization UI is a setup surface, not an operational monitoring surface. Caddy is the sole `127.0.0.1:8080` publisher and relays without buffering to `/run/aerial-rescue/dashboard-api.sock`; the API publishes no IP port and Caddy receives no application credential ([ADR-0096](adr/0096-relay-the-dashboard-over-caddy-and-a-unix-socket.md)). Scenario and fleet listen only on dedicated internal networks at 8081 and 8082. The stack also publishes, on `127.0.0.1` only, 55443 and 1943 for the broker, 5432 for Postgres, 8000 for the Agent Mesh Web UI, and 8180 for the Event Management Agent; the broker's own 8080 and 8000 are never published ([ADR-0044](adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md)).
 
 ## Observability and operating modes
 

@@ -10,8 +10,8 @@ from typing import Final, cast
 import httpx
 from aerial_rescue_contracts import canonical
 
-from aerial_rescue_dashboard_api.ingress import MAX_MUTATION_BODY_BYTES
-from aerial_rescue_dashboard_api.wire import parse_wire_document
+from aerial_rescue_dashboard_api.boundary.ingress import MAX_MUTATION_BODY_BYTES
+from aerial_rescue_dashboard_api.boundary.wire import parse_wire_document
 
 _RPC_SCHEMA_PREFIX: Final = "https://aerial-rescue.invalid/schemas/v1/rpc/"
 _JSON_MEDIA_TYPE: Final = "application/json"

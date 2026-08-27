@@ -112,11 +112,6 @@ const dashboardSchemas = [
     typeName: "DashboardHealth",
   },
   {
-    fileName: "mutation-outcome",
-    schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/mutation-outcome.schema.json`,
-    typeName: "DashboardMutationOutcome",
-  },
-  {
     fileName: "operator-command-request",
     schemaId: `${RESERVED_SCHEMA_ORIGIN}${RESERVED_SCHEMA_PREFIX}dashboard/operator-command-request.schema.json`,
     typeName: "DashboardOperatorCommandRequest",

@@ -1,0 +1,18 @@
+{
+  "auditOrdinal": 4,
+  "event": {
+    "kind": "droneTelemetry",
+    "eventClass": "TELEMETRY",
+    "mission": "mission-synthetic-0001",
+    "time": "2026-08-24T12:00:04.000Z",
+    "data": {
+      "droneId": "drone-sim-01",
+      "latitudeMicrodegrees": 44475000,
+      "longitudeMicrodegrees": -79245000,
+      "batteryPercent": 96,
+      "altitudeMetres": 83,
+      "headingDegrees": 45,
+      "groundSpeedCentimetresPerSecond": 950
+    }
+  }
+}

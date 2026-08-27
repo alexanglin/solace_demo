@@ -43,7 +43,7 @@ member's test directory; keep only real cross-component evidence here.
 | `test_guaranteed_delivery_live.py` | Publish one persistent command, inspect the broker's durable queues over SEMP, exercise explicit settlement and bounded redelivery, and test one denied non-owner and allowed owner binding on the probe queue |
 | `test_command_dispatch_live.py` | Publish one drone command on the command-gateway identity, let the fleet simulator bind its own drone's queue on the fleet-simulator identity and answer it, read the acknowledgement and the resolution back on the command-gateway identity, and leave the six filled queues at the depth they started at |
 | `test_backlog_recovery_live.py` | Spool 500 drone commands across a 23-drone fleet with no consumer bound, then measure how long one fleet-simulator run takes to drain them, under the instrument [ADR-0084](../../docs/adr/0084-give-backlog-recovery-an-instrument.md) defines |
-| `test_durable_store_live.py` | Create a database named for the run, walk the store's four-revision Alembic history up one step at a time and back down again, and assert the tables, each stamped revision, the enforcement of six of the eleven declared constraints, a repeat application changing nothing, and an emptying downgrade; then, on a migrated database, read the server-side bounds, the cluster's deadlock interval, and the isolation level back from a session, commit and abandon transactions, race two audit appenders for one mission, race two consumers of one approval and two claimants of one key, refuse the outbox record past the bound, and commit and roll back ADR-0006's three writes together. Drop it afterwards |
+| `test_durable_store_live.py` | Create a database named for the run, walk the complete append-only Alembic history one revision at a time in both directions, and exercise the store's constraints and transactions. It proves dashboard-run persistence and recovery, live mission/scenario identity, missionless replay, broker deduplication and snapshot reads, then covers the application inbox/outbox, evidence, durable command-processing, refusal, and idempotency revisions. Drop only that database afterwards |
 
 Keep module import, marker evaluation, and collection deterministic and offline. Do not read generated
 credentials, open a socket, start a client, inspect SEMP, drain a queue, or mutate the broker until the
@@ -98,9 +98,44 @@ The twenty-three `drone-backlog-NN` identifiers are written out in full in
 `test_backlog_recovery_live.PROVISIONING`; the ellipsis above stands for the other twenty-one and
 is not a shell form that works.
 
-Keep every drone in that single invocation. The applier converges the desired state and deletes what
-the matrix no longer grants, so naming one drone alone removes the queues the other probes need.
-`test_command_dispatch_live.PROVISIONING` holds the same command in its raw `python -m` form.
+Keep every drone in that single invocation, because a drone the invocation never names is never
+created. The applier adds what the matrix grants and deletes only ACL topic exceptions and queue
+subscriptions; it never deletes a queue, a client username, or an ACL profile
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) records that
+gap, and `packages/broker/tests/test_provisioning.py` asserts it). So a short invocation leaves the
+other probes' queues in place but never creates the ones it omitted, and a guaranteed command
+published for a drone with no queue is discarded rather than refused.
+`test_command_dispatch_live.PROVISIONING` holds a shorter five-drone command in its raw `python -m`
+form; prefer the twenty-eight-drone superset above.
+
+The dead-message queue must be empty before a live run. `test_command_dispatch_live`'s
+`UnreadableCommandLiveTests` and `test_backlog_recovery_live` both read `#DEAD_MSG_QUEUE`'s depth in
+their Arrange step, and `message_count` walks the collection at 100 rows per page for at most 20
+pages, so a queue holding more than 2000 messages raises `SempError` with `PAGING` before either
+probe reaches its own queues. The dead-message queue is written with no `maxRedeliveryCount` and no
+`maxTtl`, and with `respectTtlEnabled` false
+([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)), so nothing
+in it expires, and nothing may bind it to drain it: it only grows. One full live run puts it past
+2000, because the collateral `dashboard-api`, `evidence-service`, and `recorder` family queues have
+no consumer while the `services` profile is down, and everything they collect expires into it.
+
+Past 10 MB it stops being a reporting problem. Every queue carries
+`rejectMsgToSenderOnDiscardBehavior: always`, so once the dead-message queue is at its bound the next
+guaranteed publish is never acknowledged, and the probes fail with `PubSubTimeoutError: Message
+publish timeout` naming the published topic -- not anything that mentions the dead-message queue.
+Telemetry and gateway-request publishes keep passing in the same run, because only `GUARANTEED`
+families are spooled; that asymmetry is the signature.
+
+Clearing it is an out-of-band action to request explicitly, not a step any probe or recipe performs:
+delete the queue over SEMP, then re-run the provisioning invocation above, which writes
+`#DEAD_MSG_QUEUE` first and recreates it empty.
+
+A broker provisioned before
+[ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) also keeps
+the eight superseded `recorder` family queues that one combined `recorder/dashboard.lifecycle` queue
+replaced. Because the applier deletes no queue, they persist with their original wildcard
+subscriptions, bind nothing, and feed the dead-message queue on every run. They are removed by the
+same out-of-band SEMP delete, and the applier does not recreate them.
 
 What each file adds to that shared prerequisite:
 

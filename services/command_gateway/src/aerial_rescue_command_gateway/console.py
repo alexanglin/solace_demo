@@ -11,7 +11,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 from uuid import uuid4
 
 from aerial_rescue_broker.deployment import DEFAULT_DEPLOY_DIRECTORY, read_credential
@@ -41,7 +41,7 @@ from aerial_rescue_store.bounds import (
     STATEMENT_TIMEOUT_MILLISECONDS,
     EngineBounds,
 )
-from aerial_rescue_store.engine import create_engine
+from aerial_rescue_store.engine import StoreEngine, create_engine
 from aerial_rescue_store.session import StoreSessionFactory, close, create_session_factory
 from aerial_rescue_store.settings import (
     CONTAINER_HOST,
@@ -122,11 +122,8 @@ class ApplicationServer(Protocol):
         """Return only after shutdown or terminal broker exhaustion."""
 
 
-class EnginePort(Protocol):
-    """The only owned SQLAlchemy engine operation used during shutdown."""
-
-    async def dispose(self) -> None:
-        """Release every pooled connection."""
+type EnginePort = StoreEngine
+"""The concrete lazy SQLAlchemy engine shared by creation, sessions, and shutdown."""
 
 
 EngineFactory = Callable[[DatabaseSettings, EngineBounds], EnginePort]
@@ -297,8 +294,8 @@ def default_runtime(
         bounds=_production_bounds(),
         broker_credential=read_credential,
         database_settings=_database_settings,
-        create_engine=cast("EngineFactory", create_engine),
-        create_sessions=cast("SessionFactoryBuilder", create_session_factory),
+        create_engine=create_engine,
+        create_sessions=create_session_factory,
         compose_store=compose_application_store,
         open_broker=open_command_gateway_session,
         bindings=gateway_bindings(),

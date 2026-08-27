@@ -10,13 +10,12 @@ import yaml
 from tools.quality_gate_tests.support import REPOSITORY_ROOT
 
 COMPOSE = REPOSITORY_ROOT / "deploy" / "compose.yaml"
-MIGRATION = "schema-migration"
+MIGRATION = "migration"
 APPLICATION_SERVICES = frozenset(
     {
         "dashboard-api",
         "fleet-simulator",
         "command-gateway",
-        "scenario-service",
         "evidence-service",
         "recorder",
     }

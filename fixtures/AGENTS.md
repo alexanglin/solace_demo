@@ -76,9 +76,10 @@ Never infer ownership from a filename, register one physical file under two sche
 into several owners. When the same document must be exercised by two schemas, keep deliberate physical
 copies under the two schema-specific paths and register each copy once.
 
-The current manifest owns 66 schemas. Its application-data-plane increment adds twelve payload/event
-schemas, one standalone Agent Response integration schema, and four dashboard HTTP schemas; the dashboard
-inventory is now 23. The Agent Response fixtures deliberately have no composed CloudEvent copy. The raw
+The current manifest owns 68 schemas. Its application-data-plane increment adds twelve payload/event
+schemas, one standalone Agent Response integration schema, and four dashboard HTTP schemas; after the
+ADR-0124 minimal-wire reconciliation, the dashboard inventory is 22. The Agent Response fixtures
+deliberately have no composed CloudEvent copy. The raw
 Gateway Response RPC reply and its mission-scoped CloudEvent record retain different owning schemas and
 fixtures even though both parse under one topic family. A fixture proving either representation is valid
 does not prove a service routed it to the only legal topic or opened the right transport.

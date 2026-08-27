@@ -1,6 +1,6 @@
 # The single definition of the local runtime (docs/adr/0044). Every component except Ollama
 # runs from this file, and the compose policy gate (docs/adr/0045) holds it to the policy on
-# every commit. Run `just secrets` once, then `just up`.
+# every commit. Run `just secrets` once, then use `just up` or `just mission-control-up`.
 #
 # Profiles:
 #   default       broker, postgres, and the Agent Mesh from its derived official image. The
@@ -24,12 +24,18 @@ x-trust-store: &trust-store ${AERIAL_RESCUE_CERTIFICATE_DIRECTORY:-./certs}:/etc
 # Non-secret application settings. Project-owned services read broker and database
 # credentials from their one mounted role file and the shared Postgres file beneath
 # AERIAL_RESCUE_DEPLOY_DIR; no application password crosses the environment boundary.
-x-application-environment: &application-environment
+x-broker-environment: &broker-environment
   SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
   SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
   TRUST_STORE: ${TRUST_STORE}
+  AERIAL_RESCUE_DEPLOY_DIR: /run
+  AERIAL_RESCUE_SCHEMA_DIR: /app/schemas
+  PYTHONDONTWRITEBYTECODE: "1"
+
+x-store-environment: &store-environment
   POSTGRES_USER: ${POSTGRES_USER}
   POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
   AERIAL_RESCUE_DEPLOY_DIR: /run
   AERIAL_RESCUE_SCHEMA_DIR: /app/schemas
   PYTHONDONTWRITEBYTECODE: "1"
@@ -42,6 +48,10 @@ x-application: &application
   profiles: ["services"]
   stop_grace_period: 15s
   restart: "on-failure:3"
+  user: "10001:10001"
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
   security_opt:
     - no-new-privileges:true
 
@@ -49,9 +59,6 @@ services:
   broker:
     image: solace/solace-pubsub-standard:10.26.0.8799@sha256:05f80ec7bd38c7592bebfb88a729b1b61c99fc1553758663f13eac626624698f
     hostname: broker
-    # Solace's single-node template fixes the shared memory, the file limits, and the
-    # 100-connection scaling tier; the admin password and the server certificate are
-    # compose secrets written by `just secrets` (docs/adr/0046).
     shm_size: 1g
     ulimits:
       core: -1
@@ -74,16 +81,15 @@ services:
       - broker-admin-password
       - source: broker-server-pem
         target: broker-server.pem
-    # SMF over TLS and SEMP over TLS only; 8080, 8000, 55555, and every other default stay
-    # unpublished, which is how the reserved-port collisions are removed (docs/adr/0044).
     ports:
       - "127.0.0.1:55443:55443"
       - "127.0.0.1:1943:1943"
     volumes:
       - broker-storage:/var/lib/solace
+    networks:
+      - event-mesh
+      - broker-loopback
     healthcheck:
-      # /health-check/direct-active is the standalone endpoint. Whether the image carries
-      # curl is confirmed by the first live run; the documented fallback is a /dev/tcp probe.
       test: ["CMD-SHELL", "curl -fsS http://localhost:5550/health-check/direct-active >/dev/null"]
       interval: 10s
       timeout: 5s
@@ -158,6 +164,8 @@ services:
     depends_on:
       broker:
         condition: service_healthy
+    networks:
+      - broker-loopback
     read_only: true
     cap_drop:
       - ALL
@@ -173,22 +181,18 @@ services:
       - no-new-privileges:true
 
   postgres:
-    image: postgres:18.6-trixie@sha256:1957b2ff3137e4ef7f3bc813e74fff50b1e1ffddc85c8b9d6f14ade972be8687
+    image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      <<: *store-environment
     secrets:
       - postgres-password
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      # PostgreSQL 18 moved the data directory: PGDATA is /var/lib/postgresql/18/docker and
-      # the image declares /var/lib/postgresql as its volume. Mounting the 17-era
-      # /var/lib/postgresql/data would leave the cluster outside the named volume, and it is
-      # also the layout that makes `pg_upgrade --link` fail on a mount-point boundary at the
-      # next major (docs/adr/0060).
       - postgres-data:/var/lib/postgresql
+    networks:
+      - store
+      - postgres-loopback
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -202,11 +206,8 @@ services:
   # Alembic is the sole schema authority (ADR-0151). This process exits after applying
   # `head`; its zero exit status is the dependency signal, so a healthcheck after exit would
   # be fictitious. It receives no broker settings, identity, trust store, or published port.
-  schema-migration:
-    build:
-      context: ..
-      dockerfile: deploy/application/Dockerfile
-    image: aerial-rescue/application:0.0.0
+  migration:
+    <<: *application
     profiles: ["services", "mission-control"]
     command: ["/app/.venv/bin/aerial-rescue-migrate"]
     environment:
@@ -219,9 +220,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - store
     restart: "no"
-    security_opt:
-      - no-new-privileges:true
 
   agent-mesh:
     build:
@@ -229,9 +230,6 @@ services:
       dockerfile: deploy/agent-mesh/Dockerfile
     image: aerial-rescue/agent-mesh:1.28.7
     environment:
-      # The image defaults developer mode on, binds the Web UI to every interface inside
-      # the container, and ships a placeholder session secret; each is overridden here.
-      # Loopback-only is enforced by the host binding below, not inside the container.
       SOLACE_DEV_MODE: "false"
       SOLACE_BROKER_URL: ${SOLACE_BROKER_URL}
       # The runtime's own identity. The Event Mesh Gateway and Tool are separate roles with
@@ -248,16 +246,8 @@ services:
       SOLACE_BROKER_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
       SOLACE_AGENT_MESH_AGENT_USERNAME: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
       SOLACE_AGENT_MESH_AGENT_PASSWORD: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
-      # The Event Mesh Gateway runs in this same connector process but is a separate role,
-      # so it connects on its own identity on both the control plane and the data plane
-      # (agent-mesh/configs/event-mesh-gateway.yaml, docs/adr/0061). A gate test holds this
-      # list to every credential the mounted configuration names, because the validator
-      # checks those references against the host-scope .env.example and cannot see in here.
       SOLACE_EVENT_MESH_GATEWAY_USERNAME: ${SOLACE_EVENT_MESH_GATEWAY_USERNAME}
       SOLACE_EVENT_MESH_GATEWAY_PASSWORD: ${SOLACE_EVENT_MESH_GATEWAY_PASSWORD}
-      # The Event Mesh Tool runs inside the MissionCoordinator app but opens its own
-      # request/reply session on its own identity, which may publish the gateway-request
-      # family and consume only the reserved reply channel (docs/adr/0070).
       SOLACE_EVENT_MESH_TOOL_USERNAME: ${SOLACE_EVENT_MESH_TOOL_USERNAME}
       SOLACE_EVENT_MESH_TOOL_PASSWORD: ${SOLACE_EVENT_MESH_TOOL_PASSWORD}
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
@@ -280,11 +270,13 @@ services:
       - *trust-store
     ports:
       - "127.0.0.1:8000:8000"
+    networks:
+      - event-mesh
+      - model-egress
     depends_on:
       broker:
         condition: service_healthy
     healthcheck:
-      # The management server's readiness probe; the first configuration enables it.
       test: ["CMD", "/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
       interval: 15s
       timeout: 5s
@@ -297,19 +289,20 @@ services:
   dashboard-api:
     <<: *application
     profiles: ["services", "mission-control"]
-    command: ["/app/.venv/bin/aerial-rescue-dashboard-api"]
+    command: ["/bin/sh", "-c", "umask 0007; exec /app/.venv/bin/python -m aerial_rescue_dashboard_api"]
     environment:
-      <<: *application-environment
+      <<: [*broker-environment, *store-environment]
       DASHBOARD_ALLOWED_HOSTS: localhost:8080
       DASHBOARD_ALLOWED_ORIGIN: http://localhost:8080
       DASHBOARD_OPERATOR_ID: local-operator
-      DASHBOARD_ASSET_ROOT: /app/dashboard/assets
-      DASHBOARD_REPLAY_ROOT: /app/replays
-      DASHBOARD_SOCKET_PATH: /run/aerial-rescue/dashboard-api.sock
-      SCENARIO_CATALOG_ROOT: /app/scenarios
-      SCENARIO_CONTROL_URL: http://scenario-service:8081/
+      DASHBOARD_ASSET_ROOT: /app/dashboard
+      DASHBOARD_REPLAY_ROOT: /run/aerial-rescue/replay
+      DASHBOARD_SOCKET: /run/aerial-rescue/dashboard-api.sock
+      SCENARIO_CONTROL_URL: http://scenario-service:8081
+      SCENARIO_CONTROL_SECRET_FILE: /run/secrets/scenario-control-bearer
       SCENARIO_CONTROL_HOST: scenario-service:8081
       SCENARIO_CONTROL_BEARER_FILE: /run/secrets/scenario-control-bearer
+      RECORDER_READINESS_PATH: /run/aerial-rescue/recorder-readiness/ready.json
     secrets:
       - postgres-password
       - broker-dashboard-api-password
@@ -317,15 +310,25 @@ services:
     volumes:
       - *trust-store
       - dashboard-socket:/run/aerial-rescue
+      - validated-replay:/run/aerial-rescue/replay:ro
+      - recorder-readiness:/run/aerial-rescue/recorder-readiness:ro
+    networks:
+      - event-mesh
+      - store
+      - dashboard-scenario
     depends_on:
       broker:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      schema-migration:
+      migration:
         condition: service_completed_successfully
       scenario-service:
         condition: service_healthy
+      recorder:
+        condition: service_healthy
+      replay-validator:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -349,7 +352,7 @@ services:
     profiles: ["services", "mission-control"]
     command: ["/app/.venv/bin/aerial-rescue-fleet-simulator"]
     environment:
-      <<: *application-environment
+      <<: [*broker-environment, *store-environment]
       FLEET_CONTROL_HOST: fleet-simulator:8082
       FLEET_CONTROL_BEARER_FILE: /run/secrets/fleet-control-bearer
       FLEET_DRONE_IDS: drone-sim-01,drone-sim-02,drone-sim-03,drone-sim-04,drone-sim-05,drone-sim-06,drone-sim-07,drone-sim-08,drone-sim-09,drone-sim-10,drone-sim-11,drone-sim-12,drone-sim-13,drone-sim-14,drone-sim-15,drone-sim-16,drone-sim-17,drone-sim-18,drone-sim-19,drone-sim-20,drone-vision-01,drone-navigation-02,drone-comms-03
@@ -359,12 +362,16 @@ services:
       - fleet-control-bearer
     volumes:
       - *trust-store
+    networks:
+      - event-mesh
+      - store
+      - scenario-fleet
     depends_on:
       broker:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      schema-migration:
+      migration:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -385,18 +392,21 @@ services:
     <<: *application
     command: ["/app/.venv/bin/aerial-rescue-command-gateway"]
     environment:
-      <<: *application-environment
+      <<: [*broker-environment, *store-environment]
     secrets:
       - postgres-password
       - broker-command-gateway-password
     volumes:
       - *trust-store
+    networks:
+      - event-mesh
+      - store
     depends_on:
       broker:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      schema-migration:
+      migration:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1"]
@@ -419,9 +429,10 @@ services:
     secrets:
       - scenario-control-bearer
       - fleet-control-bearer
+    networks:
+      - scenario-fleet
+      - dashboard-scenario
     depends_on:
-      schema-migration:
-        condition: service_completed_successfully
       fleet-simulator:
         condition: service_healthy
     healthcheck:
@@ -443,18 +454,25 @@ services:
     <<: *application
     command: ["/app/.venv/bin/aerial-rescue-evidence-service"]
     environment:
-      <<: *application-environment
+      <<: [*broker-environment, *store-environment]
+      OLLAMA_HOST: ${OLLAMA_HOST}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     secrets:
       - postgres-password
       - broker-evidence-service-password
     volumes:
       - *trust-store
+    networks:
+      - event-mesh
+      - store
+      - model-egress
     depends_on:
       broker:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      schema-migration:
+      migration:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1"]
@@ -468,60 +486,84 @@ services:
     profiles: ["services", "mission-control"]
     command: ["/app/.venv/bin/aerial-rescue-recorder"]
     environment:
-      <<: *application-environment
+      <<: [*broker-environment, *store-environment]
+      RECORDER_READINESS_PATH: /run/aerial-rescue/recorder-readiness/ready.json
     secrets:
       - postgres-password
       - broker-recorder-password
     volumes:
       - *trust-store
+      - recorder-readiness:/run/aerial-rescue/recorder-readiness
+    networks:
+      - event-mesh
+      - store
     depends_on:
       broker:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      schema-migration:
+      migration:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "kill -0 1"]
+      test: ["CMD", "/app/.venv/bin/python", "-m", "aerial_rescue_recorder.readiness", "--check", "/run/aerial-rescue/recorder-readiness/ready.json"]
       interval: 10s
       timeout: 3s
-      retries: 3
-      start_period: 5s
+      retries: 6
+      start_period: 10s
+
+  replay-validator:
+    <<: *application
+    profiles: ["services", "mission-control"]
+    command:
+      - /app/.venv/bin/python
+      - -m
+      - aerial_rescue_recorder.validator
+      - --input
+      - /input/v1/wilderness-missing-person.r1.ndjson
+      - --output-directory
+      - /run/aerial-rescue/replay-output
+    network_mode: none
+    restart: "no"
+    volumes:
+      - ../recordings:/input:ro
+      - validated-replay:/run/aerial-rescue/replay-output
 
   caddy:
     image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
-    profiles: ["services", "mission-control"]
+    profiles: ["mission-control"]
+    user: "10001:10001"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    environment:
+      XDG_CONFIG_HOME: /tmp/config
+      XDG_DATA_HOME: /tmp/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,uid=10001,gid=10001,mode=0700
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - dashboard-socket:/run/aerial-rescue:ro
+      - dashboard-socket:/run/aerial-rescue
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
       dashboard-api:
         condition: service_healthy
+    networks:
+      - caddy-loopback
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          wget --quiet --spider --header='Host: localhost:8080'
-          http://127.0.0.1:8080/api/v1/health
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    stop_grace_period: 15s
-    restart: "on-failure:3"
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
     security_opt:
       - no-new-privileges:true
 
   event-management-agent:
     image: solace/event-management-agent:1.9.9@sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b
-    # Published for amd64 only; Docker Desktop runs it under emulation (docs/adr/0044).
     platform: linux/amd64
     profiles: ["event-portal"]
     environment:
-      # The names the agent's connection file reads. The connection file itself is
-      # generated in the Solace Cloud console and kept as an ignored secret.
       SOLACE_SEMP_USERNAME: ${SOLACE_SEMP_USERNAME}
       SOLACE_SEMP_PASSWORD: ${SOLACE_SEMP_PASSWORD}
       SOLACE_VPN_NAME: ${SOLACE_VPN_NAME}
@@ -530,6 +572,9 @@ services:
         target: /config/ema.yml
     ports:
       - "127.0.0.1:8180:8180"
+    networks:
+      - event-mesh
+      - model-egress
     depends_on:
       broker:
         condition: service_healthy
@@ -569,7 +614,45 @@ secrets:
   ema-connection-file:
     file: ${AERIAL_RESCUE_SECRET_DIRECTORY:-./secrets}/ema-connection-file.yml
 
+networks:
+  event-mesh:
+    internal: true
+  broker-loopback:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+  store:
+    internal: true
+  postgres-loopback:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+  dashboard-scenario:
+    internal: true
+  scenario-fleet:
+    internal: true
+  caddy-loopback:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+  model-egress: {}
+
 volumes:
   broker-storage: {}
   postgres-data: {}
-  dashboard-socket: {}
+  dashboard-socket:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,uid=10001,gid=10001,mode=0770
+  validated-replay: {}
+  recorder-readiness:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=64k,uid=10001,gid=10001,mode=0750

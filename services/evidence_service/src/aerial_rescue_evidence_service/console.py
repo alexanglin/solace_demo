@@ -29,18 +29,8 @@ from aerial_rescue_broker.messaging import (
 from aerial_rescue_broker.routing import DeliveryRouter, PublicationPorts
 from aerial_rescue_contracts.instant import format_instant
 from aerial_rescue_domain.principals import Principal
-from aerial_rescue_store.bounds import (
-    CHECKOUT_TIMEOUT_SECONDS,
-    CONNECT_RETRIES,
-    CONNECT_TIMEOUT_SECONDS,
-    IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS,
-    LOCK_TIMEOUT_MILLISECONDS,
-    POOL_OVERFLOW,
-    POOL_SIZE,
-    SHUTDOWN_GRACE_SECONDS,
-    STATEMENT_TIMEOUT_MILLISECONDS,
-    EngineBounds,
-)
+from aerial_rescue_store.bounds import EngineBounds
+from aerial_rescue_store.bounds import production_bounds as _production_bounds
 from aerial_rescue_store.engine import create_engine
 from aerial_rescue_store.processing.broker_refusals import BrokerRefusalRecorder
 from aerial_rescue_store.processing.evidence import (
@@ -50,7 +40,12 @@ from aerial_rescue_store.processing.evidence import (
 )
 from aerial_rescue_store.processing.source_ingress import SourceProcessingTransactions
 from aerial_rescue_store.session import Disposable, close, create_session_factory
-from aerial_rescue_store.settings import CONTAINER_HOST, DatabaseSettings, database_settings
+from aerial_rescue_store.settings import (
+    CONTAINER_HOST,
+    DatabaseResolver,
+    DatabaseSettings,
+    database_settings,
+)
 
 from aerial_rescue_evidence_service.runtime import (
     BrokerOutboxPublisher,
@@ -72,6 +67,7 @@ TRUST_STORE_SETTING: Final = "TRUST_STORE"
 DEPLOY_DIRECTORY_SETTING: Final = "AERIAL_RESCUE_DEPLOY_DIR"
 SCHEMA_DIRECTORY_SETTING: Final = "AERIAL_RESCUE_SCHEMA_DIR"
 DEFAULT_SCHEMA_DIRECTORY: Final = "schemas"
+production_bounds: Final = _production_bounds
 
 
 class SettingsRefusal(Enum):
@@ -131,19 +127,6 @@ class SessionOpener(Protocol):
         bindings: GuaranteedProcessingBindings,
     ) -> EvidenceBrokerSession:
         """Connect with the Evidence Service role and derived durable queues."""
-
-
-class DatabaseResolver(Protocol):
-    """Resolve one bounded PostgreSQL target without opening a connection."""
-
-    def __call__(
-        self,
-        environment: Mapping[str, str],
-        deploy: Path,
-        *,
-        host: str,
-    ) -> DatabaseSettings:
-        """Read the generated database credential for the selected host."""
 
 
 class StoreComposer(Protocol):
@@ -223,21 +206,6 @@ def broker_endpoint(environment: Mapping[str, str]) -> BrokerEndpoint:
             raise SettingsError(SettingsRefusal.MISSING_SETTING, name)
         values.append(value)
     return BrokerEndpoint(values[0], values[1], values[2])
-
-
-def production_bounds() -> EngineBounds:
-    """Construct every accepted SQLAlchemy wait from its canonical owner."""
-    return EngineBounds(
-        pool_size=POOL_SIZE,
-        pool_overflow=POOL_OVERFLOW,
-        checkout_timeout_seconds=CHECKOUT_TIMEOUT_SECONDS,
-        connect_timeout_seconds=CONNECT_TIMEOUT_SECONDS,
-        connect_retries=CONNECT_RETRIES,
-        statement_timeout_milliseconds=STATEMENT_TIMEOUT_MILLISECONDS,
-        lock_timeout_milliseconds=LOCK_TIMEOUT_MILLISECONDS,
-        idle_in_transaction_timeout_milliseconds=(IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS),
-        shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS,
-    )
 
 
 def compose_store(

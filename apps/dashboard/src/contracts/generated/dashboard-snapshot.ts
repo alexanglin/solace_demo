@@ -8,16 +8,16 @@
  */
 export type DashboardSnapshot = (
   | {
-      state: {
+      state?: {
         latestAuditOrdinal: 0;
       };
-      latestEventDigest: null;
+      latestEventDigest?: null;
     }
   | {
-      state: {
+      state?: {
         latestAuditOrdinal: number;
       };
-      latestEventDigest: string;
+      latestEventDigest?: string;
     }
 ) & {
   snapshotVersion: "dashboard-snapshot/v1";

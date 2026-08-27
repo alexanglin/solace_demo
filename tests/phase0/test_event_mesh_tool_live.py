@@ -31,17 +31,13 @@ import http.client
 import json
 import unittest
 import uuid
-from pathlib import Path
 from typing import Final
 
 import pytest
-from aerial_rescue_broker.deployment import read_credential
 from aerial_rescue_broker.messaging import (
     DIRECT_INTEGRATION_RECEIVER_CAPACITY,
-    BrokerEndpoint,
     SolacePublisher,
     SolaceReceiver,
-    build_service,
 )
 from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts import canonical
@@ -59,15 +55,11 @@ from aerial_rescue_contracts.topics import (
 )
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
-from solace.messaging.messaging_service import MessagingService
+
+from tests.broker_live_support import connected_service as _connected
 
 pytestmark = [pytest.mark.phase0, pytest.mark.docker, pytest.mark.broker, pytest.mark.ollama]
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn="default", trust_store=str(DEPLOY / "certs")
-)
 NAMESPACE: Final = "aerial-rescue-mesh"
 
 MISSION: Final = "m-2026-0001"
@@ -123,13 +115,6 @@ def _properties(reply_topic: str, request_id: str) -> dict[str, object]:
         REPLY_TOPIC_KEY: reply_topic,
         REPLY_METADATA_KEY: json.dumps([{"request_id": request_id, "response_topic": reply_topic}]),
     }
-
-
-def _connected(role: Principal) -> MessagingService:
-    """Return a connected service on ``role``'s identity, validating the checkout's authority."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
 
 
 def _ask(request: bytes, topic: str, seconds: int = REPLY_WINDOW_SECONDS) -> list[bytes]:
@@ -270,7 +255,9 @@ class CommandAuthorityAnswerTests(unittest.TestCase):
         # Act
         replies = _ask(request, _request_topic())
         commands = _observe(
-            Principal.RECORDER, subscription_for(Family.DRONE_COMMAND), SILENCE_WINDOW_SECONDS
+            Principal.DASHBOARD_API,
+            subscription_for(Family.DRONE_COMMAND),
+            SILENCE_WINDOW_SECONDS,
         )
 
         # Assert

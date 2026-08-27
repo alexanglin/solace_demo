@@ -3,7 +3,7 @@ name = "aerial-rescue-observability"
 version = "0.0.0"
 description = "Structured logging, metrics, and trace-context propagation."
 requires-python = ">=3.14,<3.15"
-dependencies = ["opentelemetry-api==1.42.0"]
+dependencies = ["aerial-rescue-contracts", "opentelemetry-api==1.42.0"]
 
 [build-system]
 requires = ["hatchling"]

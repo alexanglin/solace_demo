@@ -8,10 +8,10 @@ double-submission-resistant exact proposal approval/rejection client and panel; 
 recorded facts without constructing that action path. The 23 browser schemas, generated types,
 offline Ajv registry, canonical encoder, domain-separated Web Crypto digests, ordered-event
 witnesses, fixture isolation, and freshness gates remain its trust boundary. The corresponding
-The workspace implements the FastAPI server, SQLAlchemy and Solace adapters, Unix-socket console,
-packaged Vite bundle, and Caddy relay. The map, scenario start/reset, general
-operator-command controls, replay playback, and complete production-stack browser acceptance remain
-open; generated OpenAPI is absent.
+workspace implements the FastAPI server, SQLAlchemy and Solace adapters, Unix-socket console,
+packaged Vite bundle, and Caddy relay. The map, scenario start/reset, general operator-command
+controls, replay playback, and complete production-stack browser acceptance remain open; generated
+OpenAPI is absent.
 
 ## Contract boundary
 

@@ -1,6 +1,6 @@
 # ADR-0157: Pace and coalesce read-only SEMP monitoring
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0190
 - **Date:** 2026-08-25
 - **Deciders:** Alex Anglin
 - **Supersedes:** ADR-0154

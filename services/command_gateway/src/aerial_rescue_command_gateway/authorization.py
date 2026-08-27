@@ -11,7 +11,7 @@ import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Final, cast
+from typing import Final
 
 from aerial_rescue_contracts import canonical, digest
 from aerial_rescue_contracts.digest import (
@@ -29,12 +29,15 @@ from aerial_rescue_domain.approvals import (
 )
 from aerial_rescue_domain.idempotency import IdempotencyDecision, IdempotencyKind
 from aerial_rescue_domain.scoring import EvidenceBand
+from aerial_rescue_store.command_progress import CommandIdentity
 from aerial_rescue_store.evidence import EvidenceDecisionOutcome, StoredEvidenceDecision
 from aerial_rescue_store.idempotency import StoredClaim
 from aerial_rescue_store.inbox import InboxDecision, InboxIdentity, InboxOutcome
+from aerial_rescue_store.outbox import StagedCommand
 from aerial_rescue_store.proposals import StoredProposal
 
 from aerial_rescue_command_gateway.command_artifacts import (
+    AuthorizationArtifacts,
     AuthorizationStamp,
     build_authorization_artifacts,
 )
@@ -251,6 +254,8 @@ def _approval_reason(error: ApprovalError, state: ApprovalState) -> str:
     if error.refusal is ApprovalRefusal.NOT_APPROVED:
         return "approval-rejected" if state is ApprovalState.REJECTED else "approval-missing"
     mapping = {
+        ApprovalRefusal.TRANSITION: "approval-missing",
+        ApprovalRefusal.TIME_TO_LIVE: "approval-missing",
         ApprovalRefusal.EXPIRED: "approval-expired",
         ApprovalRefusal.CLOCK_REGRESSION: "approval-expired",
         ApprovalRefusal.SUPERSEDED: "approval-superseded",
@@ -260,7 +265,10 @@ def _approval_reason(error: ApprovalError, state: ApprovalState) -> str:
         ApprovalRefusal.DIGEST: "proposal-mismatch",
         ApprovalRefusal.PARAMETERS: "proposal-mismatch",
     }
-    return mapping.get(cast("ApprovalRefusal", error.refusal), "approval-missing")
+    refusal = error.refusal
+    if not isinstance(refusal, ApprovalRefusal):
+        return "approval-missing"
+    return mapping[refusal]
 
 
 def _consume_bound_approval(
@@ -311,7 +319,7 @@ def _approval_binding_refusal(bound: BoundApproval, action: EscalateRescueAction
         "latitudeMicrodegrees": action.latitude_microdegrees,
         "longitudeMicrodegrees": action.longitude_microdegrees,
     }
-    if bound.action.model_dump(by_alias=True) != expected_action:
+    if bound.action.model_dump() != expected_action:
         return "action-mismatch"
     return None
 
@@ -379,6 +387,20 @@ def _duplicate_inbox_result(inbox: InboxOutcome) -> AuthorizationResult:
     return AuthorizationResult(AuthorizationOutcome.DUPLICATE, inbox.result)
 
 
+def _command_effects(
+    artifacts: AuthorizationArtifacts,
+) -> tuple[StagedCommand, CommandIdentity] | None:
+    """Return one complete command pair or fail closed on an internal partial result."""
+    command = artifacts.command
+    progress = artifacts.progress
+    if command is None and progress is None:
+        return None
+    if command is None or progress is None:
+        message = "authorization command artifacts are incomplete"
+        raise RuntimeError(message)
+    return command, progress
+
+
 async def _persist_decision(
     transaction: AuthorizationTransaction,
     ingress: OperatorCommandIngress,
@@ -398,9 +420,11 @@ async def _persist_decision(
         await transaction.persist_consumed(decision.approval)
     await transaction.append_audit(artifacts.audit_record)
     await transaction.stage_application(artifacts.audit_event)
-    if artifacts.command is not None and artifacts.progress is not None:
-        await transaction.stage_command(artifacts.command)
-        await transaction.initialize_progress(artifacts.progress, stamp.occurred_at)
+    command_effects = _command_effects(artifacts)
+    if command_effects is not None:
+        command, progress = command_effects
+        await transaction.stage_command(command)
+        await transaction.initialize_progress(progress, stamp.occurred_at)
     await transaction.record_result(ingress.payload.command_id, artifacts.result)
     await transaction.complete(_identity(ingress), artifacts.result, stamp.occurred_at)
     outcome = (

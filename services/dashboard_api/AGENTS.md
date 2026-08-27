@@ -78,21 +78,23 @@ make the coordinated change required by the root guide.
 | Path | Current responsibility |
 | --- | --- |
 | `pyproject.toml` | Declares Python 3.14, Tier 2, the broker/contracts/domain/store dependency closure, exact third-party pins, and the production console script |
-| `src/aerial_rescue_dashboard_api/wire.py` | Owns the 21 server-facing dashboard models, four distinct scenario-control caller models, the two browser-only classifications, and canonical-first strict validation |
-| `src/aerial_rescue_dashboard_api/http_contract.py` | Records the exact eleven-route public request, response, framing, query, and default-refusal expectations without constructing a server |
-| `src/aerial_rescue_dashboard_api/security.py` | Validates the raw Host, Origin, and bearer boundary before route or body effects |
-| `src/aerial_rescue_dashboard_api/ingress.py` | Applies the bounded canonical mutation and path-binding boundary |
+| `src/aerial_rescue_dashboard_api/boundary/wire.py` | Owns the 21 server-facing dashboard models, four distinct scenario-control caller models, the two browser-only classifications, and canonical-first strict validation |
+| `src/aerial_rescue_dashboard_api/boundary/http_contract.py` | Records the exact eleven-route public request, response, framing, query, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_dashboard_api/boundary/security.py` | Validates the raw Host, Origin, and bearer boundary before route or body effects |
+| `src/aerial_rescue_dashboard_api/boundary/ingress.py` | Applies the bounded canonical mutation and path-binding boundary |
 | `src/aerial_rescue_dashboard_api/runtime_context.py` | Creates the fresh in-memory bearer and validated public runtime identity |
 | `src/aerial_rescue_dashboard_api/lifecycle.py` | Owns the closed process lifecycle and mode-specific readiness state |
 | `src/aerial_rescue_dashboard_api/sse_buffer.py` | Owns the finite per-client telemetry-evicting overload policy |
-| `src/aerial_rescue_dashboard_api/application.py` | Constructs separate live/replay FastAPI graphs over injected typed route operations; it owns raw-ASGI authorization, exact routes, response validation, bounded mutation reads, dynamic bootstrap, SSE framing, and safe lifecycle ordering |
-| `src/aerial_rescue_dashboard_api/projection.py` | Recovers recorder-ordered audit facts through the contracts reducer and fans one normalized checkpoint out through bounded SSE clients |
-| `src/aerial_rescue_dashboard_api/mutations.py` and `outbox.py` | Durably stage and publish the selected operator command and exact proposal decision |
+| `src/aerial_rescue_dashboard_api/boundary/application.py` | Constructs separate live/replay FastAPI graphs over injected typed route operations; it owns raw-ASGI authorization, exact routes, response validation, bounded mutation reads, dynamic bootstrap, SSE framing, and safe lifecycle ordering |
+| `src/aerial_rescue_dashboard_api/messaging/projection.py` | Recovers recorder-ordered audit facts through the contracts reducer and fans one normalized checkpoint out through bounded SSE clients |
+| `src/aerial_rescue_dashboard_api/messaging/mutations.py` and `messaging/outbox.py` | Durably stage and publish the selected operator command and exact proposal decision |
 | `src/aerial_rescue_dashboard_api/scenario_http.py` and `operations.py` | Implement authenticated private live run control, durable route idempotency, and capability-isolated read-only replay |
 | `src/aerial_rescue_dashboard_api/files.py` | Validates scenarios, replay bundles, and exactly one content-hashed local asset entrypoint before readiness |
-| `src/aerial_rescue_dashboard_api/broker_runtime.py` and `supervisor.py` | Own one mixed Solace session, durable recovery, reconnect readiness, outbox drain, cancellation, and reverse shutdown |
+| `src/aerial_rescue_dashboard_api/messaging/broker_runtime.py` and `messaging/supervisor.py` | Own one mixed Solace session, durable recovery, reconnect readiness, outbox drain, cancellation, and reverse shutdown |
 | `src/aerial_rescue_dashboard_api/console.py` | Composes the live SQLAlchemy/Solace graph and runs Uvicorn only on the configured Unix socket |
-| `tests/` | Proves the local boundary, ingress, lifecycle, composition, route inventory, response validation, SSE, refusal-before-effect, and Tier 2 behavior |
+| `tests/boundary/` | Proves the HTTP application, ingress, wire, refusal, and local-operator boundary |
+| `tests/messaging/` and `tests/outbox/` | Prove broker recovery, projection, mutation, publication, and supervisor behavior |
+| Remaining `tests/` modules | Prove adapters, lifecycle, composition, SSE, and Tier 2 behavior |
 | `src/aerial_rescue_dashboard_api/__init__.py` | Package-intent docstring |
 | `src/aerial_rescue_dashboard_api/py.typed` | Marker for distributed type information |
 

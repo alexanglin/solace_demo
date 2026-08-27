@@ -17,13 +17,14 @@ project's intention.
 
 Depths are read as deltas by counting a queue's own message collection, for the reason the
 delivery probe records: ``spooledMsgCount`` is cumulative and never falls. Every queue this
-test fills is drained afterwards, the four collateral ones included -- a command reaches
-three queues and a result reaches three more -- so the next run's arithmetic does not depend
+test fills is drained afterwards, the two collateral dashboard queues included -- a command reaches
+two queues and a result reaches two more -- so the next run's arithmetic does not depend
 on this one.
 
-**The prerequisite names every probe drone at once**, because the provisioner deletes what the
-matrix no longer grants, and because the fleet simulator now binds a queue for every drone its
-scenario declares. The command is in ``PROVISIONING`` below, and it is the same one
+**The prerequisite names every probe drone at once**, because a drone the invocation never names
+is never created -- the applier deletes only ACL topic exceptions and queue subscriptions, never a
+queue (ADR-0080) -- and because the fleet simulator now binds a queue for every drone its scenario
+declares. The command is in ``PROVISIONING`` below, and it is the same one
 ``test_fleet_simulator_live.py`` needs.
 
 Without it this drone has no queue, and a command published for a drone with no queue is
@@ -35,39 +36,25 @@ Carries the ``integration``, ``docker``, and ``broker`` markers, so no blocking 
 
 from __future__ import annotations
 
-import time
 import unittest
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Final, override
 from uuid import uuid4
 
 import pytest
-from aerial_rescue_broker.deployment import (
-    ADMIN_CREDENTIAL,
-    ADMIN_USERNAME,
-    CERTIFICATE_AUTHORITY,
-    DEFAULT_HOST,
-    DEFAULT_PORT,
-    DEFAULT_VPN,
-    read_credential,
-)
+from aerial_rescue_broker.deployment import read_credential
 from aerial_rescue_broker.messaging import (
-    BrokerEndpoint,
     Outcome,
     SolacePersistentReceiver,
     SolacePublisher,
-    build_service,
     open_fleet_session,
 )
-from aerial_rescue_broker.provisioning import message_count
 from aerial_rescue_broker.queues import (
     dead_message_queue_name,
     drone_queue_name,
     family_queue_name,
 )
-from aerial_rescue_broker.semp import SempEndpoint, SempSession, connect
 from aerial_rescue_contracts.canonical import canonical_bytes
 from aerial_rescue_contracts.envelope import Envelope, decode_envelope, envelope_document
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
@@ -83,25 +70,34 @@ from aerial_rescue_fleet_simulator.service import (
     Runtime,
     run,
 )
-from solace.messaging.messaging_service import MessagingService
+
+from tests.broker_live_support import (
+    DEPLOY_ROOT as DEPLOY,
+)
+from tests.broker_live_support import (
+    LOCAL_BROKER_ENDPOINT as ENDPOINT,
+)
+from tests.broker_live_support import (
+    SHARED_PROBE_DRONES,
+    settled_queue_depth,
+)
+from tests.broker_live_support import (
+    connected_service as _service,
+)
+from tests.broker_live_support import (
+    queue_depth as _depth,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn=DEFAULT_VPN, trust_store=str(DEPLOY / "certs")
-)
-
 PROVISIONING: Final = (
     "uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh"
-    " --drone drone-delivery-probe --drone drone-dispatch-probe"
-    " --drone drone-vision-01 --drone drone-thermal-02 --drone drone-audio-03"
+    + "".join(f" --drone {drone}" for drone in SHARED_PROBE_DRONES)
 )
 """Every drone every live probe declares. One invocation, because the applier converges."""
 
 MISSION: Final = "m-dispatch-probe"
-PROBE_DRONE: Final = "drone-dispatch-probe"
+PROBE_DRONE: Final = SHARED_PROBE_DRONES[1]
 PROBE_SECTOR: Final = "sector-probe"
 COMMAND_ID: Final = "cmd-dispatch-probe"
 TICKS: Final = 3
@@ -116,12 +112,10 @@ PROBE_DEAD_MESSAGE_QUEUE: Final = dead_message_queue_name(PROBE_QUEUE)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
     (
         Principal.DASHBOARD_API,
         family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND_RESULT),
     ),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND_RESULT)),
 )
 FILLED_QUEUES: Final = (
     (Principal.FLEET_SIMULATOR, PROBE_QUEUE),
@@ -159,55 +153,14 @@ SCENARIO: Final = FleetScenario(
 )
 
 
-def _semp_endpoint() -> SempEndpoint:
-    """Return the administrator SEMP endpoint, over the per-checkout authority."""
-    return SempEndpoint(
-        host=DEFAULT_HOST,
-        port=DEFAULT_PORT,
-        username=ADMIN_USERNAME,
-        password=(DEPLOY / ADMIN_CREDENTIAL).read_text().strip(),
-        certificate_authority=str(DEPLOY / CERTIFICATE_AUTHORITY),
-    )
-
-
-def _depth(queue: str) -> int:
-    """Return how many messages are on ``queue`` right now, by counting them.
-
-    Deliberately not ``spooledMsgCount``, which reads like the depth and is not: it is a
-    cumulative counter that never falls, so a drained queue still reports every message it
-    ever held. Measured on 2026-08-23, a queue reporting ``spooledMsgCount`` 17 held zero
-    messages. ``msgSpoolUsage`` is the current figure but is bytes rather than messages, so
-    the queue's own message collection is the only instrument that answers the question
-    asked here.
-
-    Counted through ``packages/broker`` rather than here, so the cursor is followed to the
-    collection's end and a depth larger than one page is a real number rather than the page
-    size. The member refuses with ``PAGING`` past its bound instead of truncating.
-    """
-    endpoint = _semp_endpoint()
-    connection = connect(endpoint)
-    try:
-        return message_count(SempSession(connection, endpoint), DEFAULT_VPN, queue)
-    finally:
-        connection.close()
-
-
 def _settled_depth(queue: str, expected: int) -> int:
     """Return the depth once it reaches ``expected``, or the last reading within the bound."""
-    depth = _depth(queue)
-    for _ in range(SETTLE_POLLS):
-        if depth == expected:
-            return depth
-        time.sleep(SETTLE_INTERVAL_SECONDS)
-        depth = _depth(queue)
-    return depth
-
-
-def _service(role: Principal) -> MessagingService:
-    """Return a connected service on one role's own least-privilege identity."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
+    return settled_queue_depth(
+        queue,
+        expected,
+        polls=SETTLE_POLLS,
+        interval_seconds=SETTLE_INTERVAL_SECONDS,
+    )
 
 
 def _command_topic() -> str:

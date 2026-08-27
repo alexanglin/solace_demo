@@ -33,16 +33,16 @@ structural = true
 
 [[exemptions]]
 directory = "schemas/v1/dashboard"
-reason = "ADR-0148 fixes 23 reserved dashboard schema identifiers directly under this exact path; moving any document into a subdirectory changes its public identifier and breaks committed fixtures, generated types, and runtime registries."
+reason = "ADR-0189 reconciles the public inventory to 22 dashboard schema identifiers directly under this exact path; moving any document into a subdirectory changes its public identifier and breaks committed fixtures, generated types, and runtime registries."
 reviewed_by = "Alex Anglin"
-reviewed_on = "2026-08-25"
-decided_by = "ADR-0148"
+reviewed_on = "2026-08-27"
+decided_by = "ADR-0189"
 structural = true
 
 [[exemptions]]
 directory = "apps/dashboard/src/contracts/generated"
-reason = "ADR-0058 requires one generated module for every dashboard schema and ADR-0148 fixes that inventory at 23; this directory is the byte-regenerated flat mirror of the flat public schema registry, while sharding it would add a second authored classification that the source registry does not own."
+reason = "ADRs 0058 and 0189 require one generated module for each of the 22 dashboard schemas plus the flat index; this directory is the byte-regenerated mirror of the public schema registry, while sharding it would add a second authored classification that the source registry does not own."
 reviewed_by = "Alex Anglin"
-reviewed_on = "2026-08-25"
-decided_by = "ADR-0148"
+reviewed_on = "2026-08-27"
+decided_by = "ADR-0189"
 structural = true

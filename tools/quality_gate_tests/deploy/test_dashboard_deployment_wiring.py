@@ -44,7 +44,8 @@ class DashboardDeploymentWiringTests(unittest.TestCase):
         self.assertLess(frozen_install, source_copy)
         self.assertLess(source_copy, production_build)
         self.assertIn(
-            "COPY --from=dashboard-builder /workspace/apps/dashboard/dist /app/dashboard",
+            "COPY --from=dashboard-builder --chown=10001:10001 "
+            "/workspace/apps/dashboard/dist /app/dashboard",
             source,
         )
 
@@ -98,10 +99,9 @@ class DashboardDeploymentWiringTests(unittest.TestCase):
         self.assertEqual("localhost:8080", environment.get("DASHBOARD_ALLOWED_HOSTS"))
         self.assertEqual("http://localhost:8080", environment.get("DASHBOARD_ALLOWED_ORIGIN"))
         self.assertEqual("local-operator", environment.get("DASHBOARD_OPERATOR_ID"))
-        self.assertEqual("/app/dashboard/assets", environment.get("DASHBOARD_ASSET_ROOT"))
-        self.assertEqual("/app/replays", environment.get("DASHBOARD_REPLAY_ROOT"))
-        self.assertEqual("/app/scenarios", environment.get("SCENARIO_CATALOG_ROOT"))
-        self.assertEqual("http://scenario-service:8081/", environment.get("SCENARIO_CONTROL_URL"))
+        self.assertEqual("/app/dashboard", environment.get("DASHBOARD_ASSET_ROOT"))
+        self.assertEqual("/run/aerial-rescue/replay", environment.get("DASHBOARD_REPLAY_ROOT"))
+        self.assertEqual("http://scenario-service:8081", environment.get("SCENARIO_CONTROL_URL"))
         self.assertEqual("scenario-service:8081", environment.get("SCENARIO_CONTROL_HOST"))
         self.assertEqual(
             "/run/secrets/scenario-control-bearer",

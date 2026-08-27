@@ -17,12 +17,16 @@ CADDYFILE = REPOSITORY_ROOT / "deploy" / "caddy" / "Caddyfile"
 SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
 
 APPLICATION_COMMANDS = {
-    "dashboard-api": "/app/.venv/bin/aerial-rescue-dashboard-api",
-    "fleet-simulator": "/app/.venv/bin/aerial-rescue-fleet-simulator",
-    "command-gateway": "/app/.venv/bin/aerial-rescue-command-gateway",
-    "scenario-service": "/app/.venv/bin/scenario-service",
-    "evidence-service": "/app/.venv/bin/aerial-rescue-evidence-service",
-    "recorder": "/app/.venv/bin/aerial-rescue-recorder",
+    "dashboard-api": [
+        "/bin/sh",
+        "-c",
+        "umask 0007; exec /app/.venv/bin/python -m aerial_rescue_dashboard_api",
+    ],
+    "fleet-simulator": ["/app/.venv/bin/aerial-rescue-fleet-simulator"],
+    "command-gateway": ["/app/.venv/bin/aerial-rescue-command-gateway"],
+    "scenario-service": ["/app/.venv/bin/scenario-service"],
+    "evidence-service": ["/app/.venv/bin/aerial-rescue-evidence-service"],
+    "recorder": ["/app/.venv/bin/aerial-rescue-recorder"],
 }
 ROLE_SERVICES = {
     "dashboard-api": "dashboard-api",
@@ -33,11 +37,12 @@ ROLE_SERVICES = {
 }
 MISSION_CONTROL_SERVICES = frozenset(
     {
-        "schema-migration",
+        "migration",
         "dashboard-api",
         "fleet-simulator",
         "scenario-service",
         "recorder",
+        "replay-validator",
         "caddy",
     }
 )
@@ -113,9 +118,7 @@ class ApplicationRuntimeWiringTests(unittest.TestCase):
         commands = {name: services[name].get("command") for name in APPLICATION_COMMANDS}
 
         # Assert
-        self.assertEqual(
-            {name: [command] for name, command in APPLICATION_COMMANDS.items()}, commands
-        )
+        self.assertEqual(APPLICATION_COMMANDS, commands)
         self.assertNotIn("import aerial_rescue_", COMPOSE.read_text(encoding="utf-8"))
 
     def test_the_application_image_contains_runtime_schemas_and_the_scenario_catalog(self) -> None:
@@ -287,8 +290,9 @@ class ApplicationRuntimeWiringTests(unittest.TestCase):
         self.assertIn("auto_https off", compact)
         self.assertIn("reverse_proxy unix//run/aerial-rescue/dashboard-api.sock", compact)
         self.assertIn("flush_interval -1", compact)
-        self.assertNotIn("header_up Host", compact)
-        self.assertNotIn("header_up Origin", compact)
+        self.assertIn("header_up Host {http.request.hostport}", compact)
+        self.assertIn("header_up Origin {http.request.header.Origin}", compact)
+        self.assertIn("header_up -Forwarded", compact)
 
     def test_host_certificate_and_secret_roots_are_explicit_safe_inputs(self) -> None:
         # Arrange

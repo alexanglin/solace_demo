@@ -4,6 +4,8 @@
 # neither depends on `just` being installed. These are the human-facing names.
 
 reference_drone_arguments := "--drone drone-sim-01 --drone drone-sim-02 --drone drone-sim-03 --drone drone-sim-04 --drone drone-sim-05 --drone drone-sim-06 --drone drone-sim-07 --drone drone-sim-08 --drone drone-sim-09 --drone drone-sim-10 --drone drone-sim-11 --drone drone-sim-12 --drone drone-sim-13 --drone drone-sim-14 --drone drone-sim-15 --drone drone-sim-16 --drone drone-sim-17 --drone drone-sim-18 --drone drone-sim-19 --drone drone-sim-20 --drone drone-vision-01 --drone drone-navigation-02 --drone drone-comms-03"
+mission_control_services := "broker-event-monitor migration fleet-simulator scenario-service recorder replay-validator dashboard-api caddy"
+mission_control_long_running_services := "broker-event-monitor fleet-simulator scenario-service recorder dashboard-api caddy"
 
 # Show available recipes.
 default:
@@ -102,13 +104,58 @@ up *ARGS:
     scripts/preflight-ollama.sh
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait {{ARGS}}
 
-# Start the broker-backed mission-control subset without Agent Mesh or Ollama. Explicit
-# targets are required because Compose also enables no-profile services when a profile is
-# selected; naming the accepted set keeps the default Agent Mesh out (ADR-0096).
-mission-control *ARGS:
-    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait broker postgres
-    uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh {{reference_drone_arguments}}
-    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --detach --wait {{ARGS}} broker-event-monitor schema-migration fleet-simulator scenario-service recorder dashboard-api caddy
+# Start the dashboard extension inside the existing aerial-rescue-mesh project. Broker and
+# PostgreSQL are shared stack services and must already be healthy; --no-deps prevents this
+# recipe from creating, starting, or updating either shared service. The accepted optional
+# flags are --build, --no-build, and --force-recreate.
+mission-control-up *ARGS:
+    @set -eu; \
+        requested_args={{quote(ARGS)}}; \
+        build_requested=false; \
+        no_build_requested=false; \
+        recreate_arg=; \
+        set -f; \
+        set -- $requested_args; \
+        for arg do \
+            case "$arg" in \
+                --build) build_requested=true ;; \
+                --no-build) no_build_requested=true ;; \
+                --force-recreate) recreate_arg=--force-recreate ;; \
+                *) echo "unsupported mission-control-up argument: $arg" >&2; exit 2 ;; \
+            esac; \
+        done; \
+        if [ "$build_requested" = true ] && [ "$no_build_requested" = true ]; then \
+            echo "mission-control-up cannot combine --build and --no-build" >&2; \
+            exit 2; \
+        fi; \
+        broker_id="$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q broker)"; \
+        postgres_id="$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q postgres)"; \
+        test -n "$broker_id" || { echo "mission-control requires the shared broker; run just up first" >&2; exit 1; }; \
+        test -n "$postgres_id" || { echo "mission-control requires shared postgres; run just up first" >&2; exit 1; }; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps --format json broker | grep -Eq '"Health"[[:space:]]*:[[:space:]]*"healthy"' || { echo "mission-control requires the shared broker to be healthy; run just up first" >&2; exit 1; }; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps --format json postgres | grep -Eq '"Health"[[:space:]]*:[[:space:]]*"healthy"' || { echo "mission-control requires shared postgres to be healthy; run just up first" >&2; exit 1; }; \
+        if [ "$build_requested" = true ]; then \
+            docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control build dashboard-api; \
+        fi; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --no-start --no-deps --no-build $recreate_arg {{mission_control_services}}; \
+        docker inspect "$broker_id" | grep -q '"aerial-rescue-mesh_event-mesh"' || docker network connect --alias broker aerial-rescue-mesh_event-mesh "$broker_id"; \
+        docker inspect "$postgres_id" | grep -q '"aerial-rescue-mesh_store"' || docker network connect --alias postgres aerial-rescue-mesh_store "$postgres_id"; \
+        uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh --port 1943 {{reference_drone_arguments}}; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --detach --wait --no-deps --no-build --no-recreate {{mission_control_services}}; \
+        test "$broker_id" = "$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q broker)" || { echo "mission-control changed the shared broker container" >&2; exit 1; }; \
+        test "$postgres_id" = "$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q postgres)" || { echo "mission-control changed the shared postgres container" >&2; exit 1; }
+
+# Stop only the exact mission-control closure; named data volumes are preserved.
+mission-control-down:
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control stop {{mission_control_long_running_services}}
+
+# Follow only the mission-control closure's logs.
+mission-control-logs:
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control logs --follow --tail 200 {{mission_control_services}}
+
+# Show only the mission-control closure's state and health.
+mission-control-ps:
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control ps {{mission_control_services}}
 
 # Apply the broker authorization matrix over SEMP. Needs a running broker and the
 # credentials `just secrets` writes (docs/adr/0061). Safe to re-run; it converges.

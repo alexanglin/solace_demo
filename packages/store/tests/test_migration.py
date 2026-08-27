@@ -55,11 +55,13 @@ FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
 FOURTH_REVISION: Final = "0004_command_outbox"
-FIFTH_REVISION: Final = "0005_application_processing"
+FIFTH_REVISION: Final = "0005_dashboard_runtime"
+SIXTH_REVISION: Final = "0006_application_processing"
 FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
 SECOND_TO_THIRD: Final = f"{SECOND_REVISION}:{THIRD_REVISION}"
 THIRD_TO_FOURTH: Final = f"{THIRD_REVISION}:{FOURTH_REVISION}"
 FOURTH_TO_FIFTH: Final = f"{FOURTH_REVISION}:{FIFTH_REVISION}"
+FIFTH_TO_SIXTH: Final = f"{FIFTH_REVISION}:{SIXTH_REVISION}"
 """Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
@@ -341,8 +343,8 @@ class FourthRevisionTests(unittest.TestCase):
         )
 
 
-class FifthRevisionTests(unittest.TestCase):
-    """Rendered from 0004 so the application-processing schema is one additive step."""
+class SixthRevisionTests(unittest.TestCase):
+    """Rendered from immutable 0005 so application processing is one additive step."""
 
     def test_the_step_creates_every_new_authoritative_table_and_no_prior_table(self) -> None:
         # Arrange
@@ -360,7 +362,7 @@ class FifthRevisionTests(unittest.TestCase):
         )
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -376,7 +378,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertIn("PRIMARY KEY (consumer, source, event_id)", emitted)
@@ -388,7 +390,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -407,7 +409,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -426,7 +428,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -442,7 +444,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -458,7 +460,7 @@ class FifthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FOURTH_TO_FIFTH)
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
 
         # Assert
         self.assertEqual(
@@ -488,7 +490,7 @@ class FifthRevisionTests(unittest.TestCase):
         )
 
         # Act
-        emitted = downgrade_statements(config, FOURTH_REVISION)
+        emitted = downgrade_statements(config, FIFTH_REVISION)
 
         # Assert
         self.assertEqual(

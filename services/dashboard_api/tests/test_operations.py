@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields
 from http import HTTPStatus
 from pathlib import Path
 from typing import Final, cast, override
@@ -12,23 +11,18 @@ from typing import Final, cast, override
 import pytest
 from aerial_rescue_contracts import canonical
 from aerial_rescue_dashboard_api import operations as operations_module
-from aerial_rescue_dashboard_api.application import AuthorizedMutation, EventStream
+from aerial_rescue_dashboard_api.boundary.application import EventStream
+from aerial_rescue_dashboard_api.boundary.ingress import parse_mutation
+from aerial_rescue_dashboard_api.boundary.mutation_boundary import AuthorizedMutation
 from aerial_rescue_dashboard_api.files import DashboardFileSettings, FilesystemDashboardData
-from aerial_rescue_dashboard_api.ingress import parse_mutation
 from aerial_rescue_dashboard_api.lifecycle import RunMode, RuntimeReadiness
-from aerial_rescue_dashboard_api.mutations import DashboardMutationError, MutationRefusal
+from aerial_rescue_dashboard_api.messaging.mutations import DashboardMutationError, MutationRefusal
 from aerial_rescue_dashboard_api.operations import (
     LiveDashboardOperations,
     LiveOperationPorts,
     ReplayDashboardOperations,
 )
-from aerial_rescue_domain.idempotency import IdempotencyDecision, IdempotencyKind
-from aerial_rescue_store.idempotency import (
-    ClaimOutcome,
-    StoredClaim,
-    StoredClaimError,
-    StoredClaimRefusal,
-)
+from aerial_rescue_dashboard_api.orchestration import MutationAnswer
 
 _ROOT = Path(__file__).parents[3]
 _KEY: Final = "123e4567-e89b-42d3-a456-426614174000"
@@ -97,11 +91,6 @@ class _Scenario:
             "missionId": mission_id,
             "runId": run_id,
             "state": "PLANNED",
-            "declaredCount": 23,
-            "simulatedCount": 20,
-            "declaredOnlyCount": 3,
-            "completedTickCount": 0,
-            "telemetryPublicationCount": 0,
         }
 
     async def status(self, run_id: str) -> Mapping[str, object]:
@@ -171,38 +160,94 @@ class _MutationService:
 
 
 @dataclass
-class _ClaimState:
-    claims: dict[str, tuple[StoredClaim, bytes | None]] = field(default_factory=dict)
+class _ScenarioOperations:
+    scenario: _Scenario
+    claims: dict[str, MutationAnswer] = field(default_factory=dict)
+    current: tuple[str, str] | None = None
+    reconciliations: int = 0
 
+    async def reconcile_pending(self) -> None:
+        self.reconciliations += 1
 
-@dataclass
-class _Transaction:
-    state: _ClaimState
+    async def start(
+        self,
+        scenario_id: str,
+        _mode: object,
+        revision: int,
+        key: str,
+        _request_digest: str,
+    ) -> MutationAnswer:
+        prior = self.claims.get(key)
+        if prior is not None:
+            return prior
+        token = key.replace("-", "")[-24:]
+        mission_id = f"mission-{token}"
+        run_id = f"run-{token}"
+        await self.scenario.start(scenario_id, revision, mission_id, run_id)
+        answer = MutationAnswer(
+            int(HTTPStatus.ACCEPTED),
+            canonical.canonical_bytes(
+                {
+                    "declaredCount": 23,
+                    "declaredOnlyCount": 3,
+                    "missionId": mission_id,
+                    "mode": "degradedLive",
+                    "operationVersion": "dashboard-start-response/v1",
+                    "runId": run_id,
+                    "simulatedCount": 20,
+                }
+            ),
+        )
+        self.claims[key] = answer
+        self.current = (mission_id, run_id)
+        return answer
 
-    async def claim(self, request: StoredClaim) -> ClaimOutcome:
-        prior = self.state.claims.get(request.idempotency_key)
-        if prior is None:
-            self.state.claims[request.idempotency_key] = (request, None)
-            return ClaimOutcome(IdempotencyDecision.EXECUTE, None)
-        stored, result = prior
-        assert stored.kind is request.kind
-        assert stored.body_digest == request.body_digest
-        assert result is not None
-        return ClaimOutcome(IdempotencyDecision.RETURN_PRIOR_RESULT, result)
-
-    async def record_result(self, idempotency_key: str, result: bytes) -> None:
-        claim, prior = self.state.claims[idempotency_key]
-        assert prior is None
-        self.state.claims[idempotency_key] = (claim, result)
-
-
-@dataclass
-class _Transactions:
-    state: _ClaimState = field(default_factory=_ClaimState)
-
-    @asynccontextmanager
-    async def open(self) -> AsyncIterator[_Transaction]:
-        yield _Transaction(self.state)
+    async def reset(self, key: str, _request_digest: str) -> MutationAnswer:
+        prior = self.claims.get(key)
+        if prior is not None:
+            return prior
+        assert self.current is not None
+        predecessor, predecessor_run = self.current
+        status = await self.scenario.cancel(
+            predecessor,
+            predecessor_run,
+            timeout_seconds=15.0,
+        )
+        if status.get("state") not in {"ABORTED", "EXHAUSTED"}:
+            return MutationAnswer(
+                int(HTTPStatus.CONFLICT),
+                canonical.canonical_bytes(
+                    {
+                        "errorCode": "CANCELLATION_NOT_ESTABLISHED",
+                        "errorVersion": "dashboard-error/v1",
+                        "message": (
+                            "current run cancellation was not established "
+                            "within the bounded interval"
+                        ),
+                    }
+                ),
+            )
+        token = key.replace("-", "")[-24:]
+        mission_id = f"mission-{token}"
+        run_id = f"run-{token}"
+        answer = MutationAnswer(
+            int(HTTPStatus.ACCEPTED),
+            canonical.canonical_bytes(
+                {
+                    "declaredCount": 23,
+                    "declaredOnlyCount": 3,
+                    "missionId": mission_id,
+                    "mode": "degradedLive",
+                    "operationVersion": "dashboard-reset-response/v1",
+                    "predecessorMissionId": predecessor,
+                    "runId": run_id,
+                    "simulatedCount": 20,
+                }
+            ),
+        )
+        self.claims[key] = answer
+        self.current = (mission_id, run_id)
+        return answer
 
 
 @pytest.mark.asyncio
@@ -220,10 +265,9 @@ async def test_live_start_is_durable_repeatable_and_activates_one_broker_mission
             broker,
             hub,
             _MutationService(),
-            _Transactions(),
+            _ScenarioOperations(scenario),
         ),
         readiness=RuntimeReadiness(RunMode.DEGRADED_LIVE),
-        claimed_at=lambda: _NOW,
     )
     mutation = _mutation("start-request", _KEY)
 
@@ -260,10 +304,9 @@ async def test_live_reset_confirms_predecessor_cancellation_before_starting_succ
             broker,
             _Hub(),
             _MutationService(),
-            _Transactions(),
+            _ScenarioOperations(scenario),
         ),
         readiness=RuntimeReadiness(RunMode.DEGRADED_LIVE),
-        claimed_at=lambda: _NOW,
     )
     await operations.open()
     started = await operations.start_scenario(
@@ -278,7 +321,7 @@ async def test_live_reset_confirms_predecessor_cancellation_before_starting_succ
     start_document = cast("dict[str, object]", canonical.decode(started.body))
     reset_document = cast("dict[str, object]", canonical.decode(reset.body))
     effects = [name for name, _value in scenario.calls if name in {"start", "cancel"}]
-    assert effects == ["start", "cancel", "start"]
+    assert effects == ["start", "cancel"]
     assert reset_document["predecessorMissionId"] == start_document["missionId"]
     assert reset_document["missionId"] != start_document["missionId"]
     assert broker.activated == [start_document["missionId"], reset_document["missionId"]]
@@ -312,7 +355,7 @@ async def test_replay_graph_rebinds_a_fresh_session_without_any_writer_capabilit
     start_document = cast("dict[str, object]", canonical.decode(started.body))
     rebound = cast("dict[str, object]", canonical.decode(bundle.body))
     assert start_document["sessionId"] != reset_document["sessionId"]
-    assert rebound["sessionId"] == reset_document["sessionId"]
+    assert "sessionId" not in rebound
     assert hub.replacements[-1][1] == {
         "mode": "replay",
         "sessionId": reset_document["sessionId"],
@@ -374,51 +417,26 @@ class _FailingCloseHub(_Hub):
         raise RuntimeError(message)
 
 
-@dataclass
-class _OutcomeTransaction:
-    outcome: ClaimOutcome | None = None
-    refusal: StoredClaimRefusal | None = None
-
-    async def claim(self, _request: StoredClaim) -> ClaimOutcome:
-        if self.refusal is not None:
-            raise StoredClaimError(self.refusal, "redacted")
-        if self.outcome is None:
-            return ClaimOutcome(IdempotencyDecision.EXECUTE, None)
-        return self.outcome
-
-    async def record_result(self, _idempotency_key: str, _result: bytes) -> None:
-        return None
-
-
-@dataclass
-class _OutcomeTransactions:
-    transaction: _OutcomeTransaction
-
-    @asynccontextmanager
-    async def open(self) -> AsyncIterator[_OutcomeTransaction]:
-        yield self.transaction
-
-
 def _live(
     tmp_path: Path,
     *,
     scenario: _Scenario | None = None,
     broker: _Broker | None = None,
     mutations: object | None = None,
-    transactions: object | None = None,
+    scenario_operations: _ScenarioOperations | None = None,
 ) -> LiveDashboardOperations:
     tmp_path.mkdir(parents=True, exist_ok=True)
+    selected_scenario = scenario or _Scenario()
     return LiveDashboardOperations(
         ports=LiveOperationPorts(
             _files(tmp_path),
-            scenario or _Scenario(),
+            selected_scenario,
             broker or _Broker(),
             _Hub(),
             cast("operations_module.MutationPort", mutations or _MutationService()),
-            cast("operations_module.ScenarioMutationTransactions", transactions or _Transactions()),
+            scenario_operations or _ScenarioOperations(selected_scenario),
         ),
         readiness=RuntimeReadiness(RunMode.DEGRADED_LIVE),
-        claimed_at=lambda: _NOW,
     )
 
 
@@ -448,15 +466,20 @@ async def test_prior_start_restores_a_fresh_process_epoch_before_returning_resul
     tmp_path: Path,
 ) -> None:
     # Arrange
-    transactions = _Transactions()
-    first = _live(tmp_path / "first", transactions=transactions)
+    first_scenario = _Scenario()
+    scenario_operations = _ScenarioOperations(first_scenario)
+    first = _live(
+        tmp_path / "first",
+        scenario=first_scenario,
+        scenario_operations=scenario_operations,
+    )
     second_scenario = _Scenario()
     second_broker = _Broker()
     second = _live(
         tmp_path / "second",
         scenario=second_scenario,
         broker=second_broker,
-        transactions=transactions,
+        scenario_operations=scenario_operations,
     )
     mutation = _mutation("start-request", _KEY)
     await first.open()
@@ -470,7 +493,7 @@ async def test_prior_start_restores_a_fresh_process_epoch_before_returning_resul
 
     # Assert
     assert repeated == expected
-    assert [name for name, _value in second_scenario.calls].count("status") == 1
+    assert [name for name, _value in second_scenario.calls].count("start") == 0
     assert len(second_broker.activated) == 1
 
 
@@ -514,12 +537,15 @@ async def test_reset_refuses_when_private_control_does_not_confirm_cancellation(
     )
 
     # Act
-    with pytest.raises(operations_module.DashboardOperationsError) as captured:
-        await operations.reset(_mutation("reset-request", _RESET_KEY))
+    reset = await operations.reset(_mutation("reset-request", _RESET_KEY))
     await operations.close()
 
     # Assert
-    assert captured.value.refusal is operations_module.OperationsRefusal.CONTROL
+    assert reset.status_code == HTTPStatus.CONFLICT
+    assert (
+        cast("dict[str, object]", canonical.decode(reset.body))["errorCode"]
+        == "CANCELLATION_NOT_ESTABLISHED"
+    )
     assert [name for name, _value in scenario.calls].count("start") == 1
 
 
@@ -571,10 +597,9 @@ async def test_close_attempts_every_resource_and_reraises_the_first_failure(tmp_
             broker,
             hub,
             _MutationService(),
-            _Transactions(),
+            _ScenarioOperations(scenario),
         ),
         readiness=RuntimeReadiness(RunMode.DEGRADED_LIVE),
-        claimed_at=lambda: _NOW,
     )
     await operations.open()
 
@@ -588,57 +613,16 @@ async def test_close_attempts_every_resource_and_reraises_the_first_failure(tmp_
     assert scenario.ready is False
 
 
-@pytest.mark.asyncio
-async def test_claim_maps_store_refusals_and_incomplete_prior_outcomes_fail_closed(
-    tmp_path: Path,
-) -> None:
+def test_scenario_routes_depend_on_the_dedicated_dashboard_operation_authority() -> None:
     # Arrange
-    mutation = _mutation("start-request", _KEY)
-    not_recorded = _live(
-        tmp_path / "not-recorded",
-        transactions=_OutcomeTransactions(
-            _OutcomeTransaction(refusal=StoredClaimRefusal.RESULT_NOT_RECORDED)
-        ),
-    )
-    mismatch = _live(
-        tmp_path / "mismatch",
-        transactions=_OutcomeTransactions(
-            _OutcomeTransaction(refusal=StoredClaimRefusal.BODY_MISMATCH)
-        ),
-    )
-    incomplete = _live(
-        tmp_path / "incomplete",
-        transactions=_OutcomeTransactions(
-            _OutcomeTransaction(outcome=ClaimOutcome(IdempotencyDecision.RETURN_PRIOR_RESULT, None))
-        ),
-    )
+    port_names = {item.name for item in fields(LiveOperationPorts)}
 
     # Act
-    retriable = await not_recorded._claim(
-        mutation,
-        IdempotencyKind.DASHBOARD_START,
-        "mission-synthetic-0001",
-        "wilderness-missing-person",
-    )
-    with pytest.raises(operations_module.DashboardOperationsError) as refused:
-        await mismatch._claim(
-            mutation,
-            IdempotencyKind.DASHBOARD_START,
-            "mission-synthetic-0001",
-            "wilderness-missing-person",
-        )
-    with pytest.raises(operations_module.DashboardOperationsError) as missing_result:
-        await incomplete._claim(
-            mutation,
-            IdempotencyKind.DASHBOARD_START,
-            "mission-synthetic-0001",
-            "wilderness-missing-person",
-        )
+    generic_idempotency = {"transactions", "claimed_at"} & port_names
 
     # Assert
-    assert retriable is None
-    assert refused.value.refusal is operations_module.OperationsRefusal.IDEMPOTENCY
-    assert missing_result.value.refusal is operations_module.OperationsRefusal.IDEMPOTENCY
+    assert "scenario_operations" in port_names
+    assert generic_idempotency == set()
 
 
 @pytest.mark.asyncio

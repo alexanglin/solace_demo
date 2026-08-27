@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "bundleVersion",
-    "sessionId",
     "scenarioId",
     "scenarioRevision",
     "initialState",
@@ -17,9 +16,6 @@
   "properties": {
     "bundleVersion": {
       "const": "dashboard-replay-bundle/v1"
-    },
-    "sessionId": {
-      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
     },
     "scenarioId": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
@@ -54,7 +50,6 @@
   "anyOf": [
     {
       "type": "object",
-      "required": ["initialState", "latestEventDigest"],
       "properties": {
         "initialState": {
           "type": "object",
@@ -72,7 +67,6 @@
     },
     {
       "type": "object",
-      "required": ["initialState", "latestEventDigest"],
       "properties": {
         "initialState": {
           "type": "object",

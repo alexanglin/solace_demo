@@ -109,7 +109,6 @@
   "anyOf": [
     {
       "type": "object",
-      "required": ["state", "latestEventDigest"],
       "properties": {
         "state": {
           "type": "object",
@@ -127,7 +126,6 @@
     },
     {
       "type": "object",
-      "required": ["state", "latestEventDigest"],
       "properties": {
         "state": {
           "type": "object",

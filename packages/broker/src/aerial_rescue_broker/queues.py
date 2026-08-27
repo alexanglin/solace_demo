@@ -39,7 +39,9 @@ from aerial_rescue_domain.principals import Access, Principal, authorize, grants
 
 from aerial_rescue_broker.subscriptions import (
     LEVEL_SEPARATOR,
+    connectivity_subscription,
     drone_command_subscription,
+    salient_subscription,
     subscription_for,
 )
 
@@ -51,6 +53,9 @@ DEAD_MESSAGE_QUEUE: Final = "#DEAD_MSG_QUEUE"
 
 DMQ_SUFFIX: Final = "_dmq"
 """Suffix appended to a primary queue to create its isolated dead-message queue."""
+
+RECORDER_LIFECYCLE_QUEUE: Final = "aerial-rescue/v1/recorder/dashboard.lifecycle"
+"""One exclusive queue preserving broker arrival order across all lifecycle producers."""
 
 MAX_QUEUE_NAME_LENGTH: Final = 200
 """The Solace bound on a queue name; a proof test shows the longest rendering is inside it."""
@@ -90,6 +95,7 @@ class Endpoint(Enum):
     """How a role's guaranteed consumption is endpointed (ADR-0080)."""
 
     FAMILY = "one queue per guaranteed family the role may subscribe to"
+    COMBINED_LIFECYCLE = "one queue for all dashboard lifecycle families"
     PER_DRONE = "one command queue per simulated drone"
     UPSTREAM = "a pinned component names and binds its own endpoint"
     NONE = "the role consumes no guaranteed application family"
@@ -100,7 +106,7 @@ _ENDPOINTS: Final[Mapping[Principal, Endpoint]] = {
     Principal.COMMAND_GATEWAY: Endpoint.FAMILY,
     Principal.DASHBOARD_API: Endpoint.FAMILY,
     Principal.EVIDENCE_SERVICE: Endpoint.FAMILY,
-    Principal.RECORDER: Endpoint.FAMILY,
+    Principal.RECORDER: Endpoint.COMBINED_LIFECYCLE,
     Principal.EVENT_MESH_GATEWAY: Endpoint.UPSTREAM,
     Principal.EVENT_MESH_TOOL: Endpoint.NONE,
     Principal.AGENT_MESH_AGENT: Endpoint.NONE,
@@ -319,6 +325,51 @@ def _drone_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     )
 
 
+def _recorder_lifecycle_queue() -> QueueSpec:
+    """Return the recorder's one queue over all guaranteed dashboard lifecycle sources."""
+    families = (Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT)
+    subscriptions = {
+        connectivity_subscription() if family is Family.DRONE_EVENT else subscription_for(family)
+        for family in families
+    }
+    return _application_queue(
+        RECORDER_LIFECYCLE_QUEUE,
+        Principal.RECORDER.value,
+        frozenset(subscriptions),
+    )
+
+
+def _recorder_queues() -> tuple[QueueSpec, ...]:
+    """Return the combined lifecycle queue and every other Guaranteed recorder queue.
+
+    The drone-event family is split into two exact subscriptions: connectivity enters the
+    combined lifecycle queue and salient events enter the ordinary drone-event queue. This
+    retains the feature recorder's complete applicable-family grant without delivering one
+    connectivity event twice.
+    """
+    lifecycle = frozenset({Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT})
+    remaining = guaranteed_grants(Principal.RECORDER) - lifecycle
+    family_queues = tuple(
+        _application_queue(
+            LEVEL_SEPARATOR.join(
+                (QUEUE_NAME_ROOT, Principal.RECORDER.value, family.literal_suffix)
+            ),
+            Principal.RECORDER.value,
+            frozenset({subscription_for(family)}),
+        )
+        for family in Family
+        if family in remaining
+    )
+    salient = _application_queue(
+        LEVEL_SEPARATOR.join(
+            (QUEUE_NAME_ROOT, Principal.RECORDER.value, Family.DRONE_EVENT.literal_suffix)
+        ),
+        Principal.RECORDER.value,
+        frozenset({salient_subscription()}),
+    )
+    return (_recorder_lifecycle_queue(), salient, *family_queues)
+
+
 def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     """Return every durable queue ``role`` owns.
 
@@ -336,6 +387,8 @@ def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     endpoint = endpoint_for(role)
     if endpoint is Endpoint.FAMILY:
         return _family_queues(role)
+    if endpoint is Endpoint.COMBINED_LIFECYCLE:
+        return _recorder_queues()
     if endpoint is Endpoint.PER_DRONE:
         return _drone_queues(drones)
     return ()

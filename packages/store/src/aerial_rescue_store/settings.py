@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, override
+from typing import TYPE_CHECKING, Final, Protocol, override
 
 from aerial_rescue_store import StoreError
 
@@ -83,6 +83,19 @@ class DatabaseSettings:
             f"DatabaseSettings(host={self.host!r}, port={self.port!r}, "
             f"user={self.user!r}, database={self.database!r}, password={REDACTED})"
         )
+
+
+class DatabaseResolver(Protocol):
+    """Resolve one bounded PostgreSQL target without opening a connection."""
+
+    def __call__(
+        self,
+        environment: Mapping[str, str],
+        deploy: Path,
+        *,
+        host: str,
+    ) -> DatabaseSettings:
+        """Read the generated database credential for the selected host."""
 
 
 def data_source_name(settings: DatabaseSettings) -> str:

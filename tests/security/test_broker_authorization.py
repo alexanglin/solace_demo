@@ -22,38 +22,31 @@ from __future__ import annotations
 
 import unittest
 from enum import Enum
-from pathlib import Path
 
 import pytest
-from aerial_rescue_broker.deployment import credential_path
 from aerial_rescue_broker.monitor_console import MONITOR_CREDENTIAL
 from aerial_rescue_broker.monitoring import MONITOR_USERNAME, ReadOnlySempMonitor
-from aerial_rescue_broker.provisioning import Method, Request, queue_monitor_collection_path
+from aerial_rescue_broker.provisioning import (
+    Method,
+    Request,
+    queue_monitor_collection_path,
+    queue_tx_flow_monitor_path,
+)
 from aerial_rescue_broker.semp import SempEndpoint, SempError, SempFailure, SempSession, connect
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
-from solace.messaging.config.solace_properties import (
-    authentication_properties as auth,
-)
-from solace.messaging.config.solace_properties import (
-    service_properties as service_property,
-)
-from solace.messaging.config.solace_properties import (
-    transport_layer_properties as transport,
-)
-from solace.messaging.config.transport_security_strategy import TLS
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
-from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
+from tests.broker_live_support import DEPLOY_ROOT as DEPLOY
+from tests.broker_live_support import LOCAL_BROKER_ENDPOINT, role_credential
+from tests.broker_live_support import native_service as _service
+
 pytestmark = [pytest.mark.security, pytest.mark.docker, pytest.mark.broker]
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEPLOY = REPOSITORY_ROOT / "deploy"
 TRUST_STORE = DEPLOY / "certs"
-BROKER_URL = "tcps://localhost:55443"
-VPN = "default"
+VPN = LOCAL_BROKER_ENDPOINT.vpn
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 5000
 SEMP_PORT = 1943
 
@@ -83,6 +76,13 @@ CONNECTIVITY_LIFECYCLE = format_topic(
         {"droneId": "d-1", "eventType": "connectivity-changed"},
     )
 )
+SALIENT_DRONE_EVENT = format_topic(
+    Topic(
+        Family.DRONE_EVENT,
+        MISSION,
+        {"droneId": "d-1", "eventType": "salient"},
+    )
+)
 MISSION_LIFECYCLE = _lifecycle_topic("MISSION_EVENT", {"eventType": "lifecycle"})
 SECTOR_LIFECYCLE = _lifecycle_topic(
     "SECTOR_EVENT", {"sectorId": "sector-01", "eventType": "lifecycle"}
@@ -97,28 +97,6 @@ class Outcome(Enum):
     SUBSCRIBED = "the identity connected and the broker accepted the subscription"
     SUBSCRIBE_DENIED = "the identity connected and the broker refused the subscription"
     CONNECT_DENIED = "the broker refused the connection"
-
-
-def _service(username: str, credential: str) -> MessagingService:
-    """Return a service bound to the container, validating the per-checkout authority."""
-    properties = {
-        transport.HOST: BROKER_URL,
-        service_property.VPN_NAME: VPN,
-        auth.SCHEME_BASIC_USER_NAME: username,
-        auth.SCHEME_BASIC_PASSWORD: credential,
-        transport.CONNECTION_RETRIES: 0,
-        transport.RECONNECTION_ATTEMPTS: 0,
-    }
-    return (
-        MessagingService.builder()
-        .from_properties(properties)
-        .with_transport_security_strategy(
-            TLS.create().with_certificate_validation(
-                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
-            )
-        )
-        .build()
-    )
 
 
 def _attempt(username: str, credential: str, topic: str) -> Outcome:
@@ -152,19 +130,14 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
         service.disconnect()
 
 
-def _credential(role: Principal) -> str:
-    """Return the credential the generator wrote for ``role``."""
-    return credential_path(DEPLOY, role).read_text(encoding="utf-8").strip()
-
-
 def _publish_as(role: Principal, topic: str) -> Outcome:
     """Return what the broker does when ``role`` publishes ``topic``."""
-    return _attempt(role.value, _credential(role), topic)
+    return _attempt(role.value, role_credential(role), topic)
 
 
 def _subscribe_as(role: Principal, topic: str) -> Outcome:
     """Connect as ``role`` and return the broker's answer to one direct subscription."""
-    service = _service(role.value, _credential(role))
+    service = _service(role.value, role_credential(role))
     try:
         service.connect()
     except PubSubPlusClientError:
@@ -296,7 +269,11 @@ class DenialTests(unittest.TestCase):
 
     def test_every_role_but_the_command_gateway_is_denied_the_drone_command_family(self) -> None:
         # Arrange
-        roles = tuple(role for role in Principal if role is not Principal.COMMAND_GATEWAY)
+        roles = tuple(
+            role
+            for role in Principal
+            if role not in {Principal.COMMAND_GATEWAY, Principal.DISCOVERY}
+        )
 
         # Act
         outcomes = tuple(_publish_as(role, DRONE_COMMAND) for role in roles)
@@ -346,6 +323,19 @@ class SubscriptionAuthorizationTests(unittest.TestCase):
         # Assert
         self.assertEqual((Outcome.SUBSCRIBE_DENIED, Outcome.SUBSCRIBED), (denied, allowed))
 
+    def test_recorder_subscription_covers_the_application_stream_but_not_rpc_or_a2a(self) -> None:
+        # Arrange
+        allowed_topics = (MISSION_LIFECYCLE, SALIENT_DRONE_EVENT, DRONE_COMMAND)
+        denied_topics = (GATEWAY_REQUEST, A2A_REQUEST)
+
+        # Act
+        allowed = tuple(_subscribe_as(Principal.RECORDER, topic) for topic in allowed_topics)
+        denied = tuple(_subscribe_as(Principal.RECORDER, topic) for topic in denied_topics)
+
+        # Assert
+        self.assertEqual(tuple(Outcome.SUBSCRIBED for _ in allowed_topics), allowed)
+        self.assertEqual(tuple(Outcome.SUBSCRIBE_DENIED for _ in denied_topics), denied)
+
 
 class FactoryIdentityTests(unittest.TestCase):
     def test_the_factory_client_username_can_no_longer_connect(self) -> None:
@@ -370,7 +360,7 @@ class FactoryIdentityTests(unittest.TestCase):
 
 
 class SempMonitorAuthorizationTests(unittest.TestCase):
-    def test_the_dedicated_monitor_can_read_only_the_aggregate_queue_view(self) -> None:
+    def test_the_dedicated_monitor_can_read_parent_depth_and_active_flow_aggregates(self) -> None:
         # Arrange
         endpoint = _monitor_endpoint()
         connection = connect(endpoint)
@@ -379,11 +369,17 @@ class SempMonitorAuthorizationTests(unittest.TestCase):
         # Act
         try:
             rows = monitor.read_monitor_rows(queue_monitor_collection_path(VPN))
+            queue_name = next(
+                name for row in rows if isinstance((name := row.data.get("queueName")), str)
+            )
+            active_flows = monitor.read_monitor_count(queue_tx_flow_monitor_path(VPN, queue_name))
         finally:
             connection.close()
 
         # Assert
         self.assertIsInstance(rows, tuple)
+        self.assertGreater(len(rows), 0)
+        self.assertGreaterEqual(active_flows, 0)
         self.assertFalse(hasattr(monitor, "send"))
 
     def test_the_dedicated_monitor_is_denied_a_same_value_configuration_write(self) -> None:

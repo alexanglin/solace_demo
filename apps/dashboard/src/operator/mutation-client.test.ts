@@ -150,6 +150,23 @@ test("fails closed when a 202 response violates the committed response schema", 
   expect(fetcher).toHaveBeenCalledOnce();
 });
 
+test("refuses an accepted response whose media type is absent", async () => {
+  // Arrange
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 202 }));
+  const submit = createProposalDecisionSubmitter({
+    bearer: "synthetic-runtime-bearer",
+    fetcher,
+    newIdempotencyKey: () => "018f4a62-4bc5-4f31-8bd1-619b36fcf45d",
+  });
+
+  // Act
+  const result = await submit(REQUEST);
+
+  // Assert
+  expect(result).toEqual({ ok: false, reason: "CONTRACT_REFUSED" });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
 test("refuses every preflight and response-contract branch without a retry", async () => {
   // Arrange
   const neverFetch = vi.fn<typeof fetch>();

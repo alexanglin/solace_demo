@@ -1,7 +1,7 @@
 """Continuous, fail-closed composition for the VPN-scoped read-only SEMP monitor.
 
 The runtime deliberately owns no provisioning transport. Its session factory returns only
-the two monitor reads and ``close``; there is no configuration ``send`` capability to leak
+typed monitor reads and ``close``; there is no configuration ``send`` capability to leak
 into the polling loop. The broker identity itself is an external operator prerequisite
 because the pinned SEMP v2 configuration surface cannot express its global-none and
 single-VPN read-only grants (ADR-0157 and ADR-0181).
@@ -112,6 +112,10 @@ class OwnedReadOnlySession:
     def read_monitor_rows(self, path: str) -> tuple[MonitorRow, ...]:
         """Delegate the aligned aggregate monitor-plane read."""
         return self.adapter.read_monitor_rows(path)
+
+    def read_monitor_count(self, path: str) -> int:
+        """Delegate one aggregate child-collection count read."""
+        return self.adapter.read_monitor_count(path)
 
     def close(self) -> None:
         """Close the owned HTTPS connection exactly once."""

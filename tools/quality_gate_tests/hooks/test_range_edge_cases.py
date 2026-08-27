@@ -41,6 +41,85 @@ class RangeEdgeCaseTests(QualityGateTestCase):
             "feat: add feature", inspected_messages.read_text(encoding="utf-8").strip()
         )
 
+    def test_an_unrelated_remote_ref_does_not_admit_pre_convention_history(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        tracked = repository / "tracked.txt"
+        tracked.write_text("root\n", encoding="utf-8")
+        self.commit_all(repository, "Initial commit")
+        tracked.write_text("feature\n", encoding="utf-8")
+        self.commit_all(repository, "feat: add feature")
+        head = self.git(repository, "rev-parse", "HEAD").stdout.strip()
+        self.git(repository, "checkout", "--orphan", "unrelated")
+        unrelated = repository / "unrelated.txt"
+        unrelated.write_text("unrelated\n", encoding="utf-8")
+        self.commit_all(repository, "chore: unrelated root")
+        orphan = self.git(repository, "rev-parse", "HEAD").stdout.strip()
+        self.git(repository, "update-ref", "refs/remotes/origin/unrelated", orphan)
+        self.git(repository, "checkout", "--force", head)
+        executable_directory = repository / "bin"
+        executable_directory.mkdir()
+        inspected_messages = repository / "messages.txt"
+        self._write_pre_commit_recorder(executable_directory / "pre-commit", inspected_messages)
+
+        # Act
+        result = self.run_hook(
+            "check-commit-messages.sh",
+            repository,
+            environment={
+                "PATH": f"{executable_directory}:/usr/bin:/bin",
+                "PRE_COMMIT_FROM_REF": "0" * 40,
+                "PRE_COMMIT_TO_REF": head,
+                "PRE_COMMIT_REMOTE_NAME": "origin",
+            },
+        )
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("Initial commit", inspected_messages.read_text(encoding="utf-8"))
+
+    def test_a_shallow_clone_validates_the_tip_rather_than_unreachable_history(self) -> None:
+        # Arrange
+        origin = self.temporary_repository()
+        tracked = origin / "tracked.txt"
+        tracked.write_text("root\n", encoding="utf-8")
+        self.commit_all(origin, "Initial commit")
+        tracked.write_text("base\n", encoding="utf-8")
+        self.commit_all(origin, "feat: the base")
+        base_commit = self.git(origin, "rev-parse", "HEAD").stdout.strip()
+        tracked.write_text("feature\n", encoding="utf-8")
+        self.commit_all(origin, "feat: add feature")
+        # Depth two keeps the base object but cuts its ancestry, which is the state
+        # the push-stage job reaches: base_ancestors=1 against a real history.
+        self.git(
+            origin.parent, "clone", "--depth", "2", f"file://{origin}", f"shallow-{origin.name}"
+        )
+        shallow = origin.parent / f"shallow-{origin.name}"
+        head = self.git(shallow, "rev-parse", "HEAD").stdout.strip()
+        executable_directory = shallow / "bin"
+        executable_directory.mkdir()
+        inspected_messages = shallow / "messages.txt"
+        self._write_pre_commit_recorder(executable_directory / "pre-commit", inspected_messages)
+
+        # Act
+        result = self.run_hook(
+            "check-commit-messages.sh",
+            shallow,
+            environment={
+                "PATH": f"{executable_directory}:/usr/bin:/bin",
+                "QUALITY_DIFF_BASE": base_commit,
+                "QUALITY_DIFF_HEAD": head,
+                "QUALITY_DIFF_REMOTE_NAME": "origin",
+            },
+        )
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Shallow repository", result.stderr)
+        self.assertEqual(
+            "feat: add feature", inspected_messages.read_text(encoding="utf-8").strip()
+        )
+
     def test_quality_range_cannot_borrow_one_pre_commit_endpoint(self) -> None:
         # Arrange
         repository = self.temporary_repository()

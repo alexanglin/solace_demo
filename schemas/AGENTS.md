@@ -63,14 +63,16 @@ payload schema has its own `$id`, which the envelope `dataschema` and Python bin
 event schema has a distinct event-schema `$id` and constrains the payload, event type, and schema binding
 together.
 
-The version-one manifest currently owns 66 schemas. Twenty-three are dashboard schemas: 21 have
-server-facing dashboard-API Pydantic twins and two remain browser-only. ADR-0148 added twelve
-payload/event documents, the standalone `integration/agent-response` schema, and four dashboard HTTP
-documents. Agent Response has no payload/event pair and no CloudEvents `BINDINGS` row; wrapping it in an
-envelope would change its representation and authority. The fourteen topic families are not fourteen
-identical wire shapes: eleven are notification-only, two carry request/reply RPC, Agent Response is a
-direct integration body, and ADR-0149 additionally preserves a direct mission-scoped Gateway Response
-CloudEvent beside that family's reserved-topic raw RPC reply.
+The version-one manifest currently owns 68 schemas. Twenty-two are dashboard schemas: 20 have
+server-facing dashboard-API Pydantic twins and two remain browser-only. The reconciled inventory keeps
+ADR-0124's minimal dashboard wire, adds recording and scenario-recovery documents from the qualified
+dashboard runtime, and adds ADR-0148's application payload/event documents, standalone
+`integration/agent-response` schema, and four dashboard command/decision HTTP documents. Agent Response
+has no payload/event pair and no CloudEvents `BINDINGS` row; wrapping it in an envelope would change its
+representation and authority. The fifteen topic families are not fifteen identical wire shapes: twelve
+are notification-only, two carry request/reply RPC, Agent Response is a direct integration body, and
+ADR-0150 additionally preserves a direct mission-scoped Gateway Response CloudEvent beside that family's
+reserved-topic raw RPC reply.
 
 Schemas describe representation and structural validation. They do not own mission authorization,
 state-transition policy, broker subscriptions, persistence, or transport settlement. Dashboard event and

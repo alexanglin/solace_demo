@@ -291,7 +291,7 @@ def _fact_members(members: Sequence[object], event_id: str) -> StoredSourceEvide
         source_id=source_id,
         origin=origin,
         provenance_digest=cast("str", members[3]),
-        canonical_document=cast("bytes", members[4]),
+        canonical_document=members[4],
         document=MappingProxyType(dict(decoded)),
         observed_at=cast("str", members[5]),
     )

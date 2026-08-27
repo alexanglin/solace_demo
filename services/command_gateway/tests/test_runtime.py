@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from collections.abc import Mapping
 from datetime import timedelta
@@ -9,6 +10,7 @@ from typing import cast, override
 from unittest.mock import AsyncMock, patch
 
 from aerial_rescue_broker.messaging import (
+    DIRECT_INTEGRATION_RECEIVER_CAPACITY,
     BrokerLifecycle,
     GuaranteedMessage,
     InboundMessage,
@@ -24,9 +26,11 @@ from aerial_rescue_command_gateway.normalization import (
     NormalizationRefusal,
     NormalizationStamp,
 )
-from aerial_rescue_command_gateway.ports import DirectDelivery
+from aerial_rescue_command_gateway.ports import DirectDelivery, GuaranteedDelivery
 from aerial_rescue_command_gateway.progression import ProgressionError, ProgressionRefusal
 from aerial_rescue_command_gateway.publication import (
+    APPLICATION_PRODUCER,
+    COMMAND_PUBLICATION_BATCH_SIZE,
     ApplicationPublicationReport,
     PublicationReport,
 )
@@ -82,14 +86,17 @@ class _ApplicationOutbox:
         """Configure whether recovery still needs evidence."""
         self._order = order
         self._ambiguous = ambiguous
+        self.producers: list[str] = []
 
-    async def pending(self, _producer: str) -> tuple[StagedApplicationEvent, ...]:
+    async def pending(self, producer: str) -> tuple[StagedApplicationEvent, ...]:
         """Return an empty bounded staged batch."""
+        self.producers.append(producer)
         self._order.append("application-pending")
         return ()
 
-    async def reconciliation(self, _producer: str) -> tuple[StagedApplicationEvent, ...]:
+    async def reconciliation(self, producer: str) -> tuple[StagedApplicationEvent, ...]:
         """Return one opaque marker only when ambiguity remains."""
+        self.producers.append(producer)
         self._order.append("application-reconciliation")
         if not self._ambiguous:
             return ()
@@ -111,14 +118,17 @@ class _CommandOutbox:
         """Retain the shared recovery call order."""
         self._order = order
         self._ambiguous = ambiguous
+        self.limits: list[int] = []
 
-    async def pending(self, _limit: int) -> tuple[object, ...]:
+    async def pending(self, limit: int) -> tuple[object, ...]:
         """Return no staged commands."""
+        self.limits.append(limit)
         self._order.append("command-pending")
         return ()
 
-    async def reconciliation(self, _limit: int) -> tuple[object, ...]:
+    async def reconciliation(self, limit: int) -> tuple[object, ...]:
         """Return no ambiguous commands."""
+        self.limits.append(limit)
         self._order.append("command-reconciliation")
         return (object(),) if self._ambiguous else ()
 
@@ -295,8 +305,13 @@ class GatewayBindingsTests(unittest.TestCase):
                     subscription_for(Family.GATEWAY_REQUEST),
                     subscription_for(Family.AGENT_RESPONSE),
                 ),
+                DIRECT_INTEGRATION_RECEIVER_CAPACITY,
             ),
-            (dict(bindings.queues), tuple(bindings.direct_subscriptions)),
+            (
+                dict(bindings.queues),
+                tuple(bindings.direct_subscriptions),
+                bindings.direct_receiver_capacity,
+            ),
         )
 
 
@@ -305,14 +320,16 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         order: list[str] = []
         session = _Session(order)
+        application_outbox = _ApplicationOutbox(order, False)
+        command_outbox = _CommandOutbox(order)
         store = cast(
             "ApplicationStore",
             type(
                 "Store",
                 (),
                 {
-                    "application_outbox": _ApplicationOutbox(order, False),
-                    "outbox": _CommandOutbox(order),
+                    "application_outbox": application_outbox,
+                    "outbox": command_outbox,
                 },
             )(),
         )
@@ -337,11 +354,19 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                     "ready",
                 ],
                 True,
+                [APPLICATION_PRODUCER, APPLICATION_PRODUCER],
+                [COMMAND_PUBLICATION_BATCH_SIZE, COMMAND_PUBLICATION_BATCH_SIZE],
             ),
-            (recovered, order, session.readiness.is_ready()),
+            (
+                recovered,
+                order,
+                session.readiness.is_ready(),
+                application_outbox.producers,
+                command_outbox.limits,
+            ),
         )
 
-    async def test_recovery_drains_multiple_bounded_batches_before_readiness(self) -> None:
+    async def test_recovery_drains_one_bounded_batch_per_attempt_before_readiness(self) -> None:
         # Arrange
         order: list[str] = []
         session = _Session(order)
@@ -360,33 +385,65 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             "aerial_rescue_command_gateway.service.publish_application_batch",
             new_callable=AsyncMock,
             side_effect=(
-                ApplicationPublicationReport(1, 1, 0, 0),
+                ApplicationPublicationReport(2, 2, 0, 0),
+                ApplicationPublicationReport(0, 0, 0, 0),
                 ApplicationPublicationReport(0, 0, 0, 0),
             ),
         )
         commands = patch(
             "aerial_rescue_command_gateway.service.publish_batch",
             new_callable=AsyncMock,
-            side_effect=(PublicationReport(1, 0, 0), PublicationReport(0, 0, 0)),
+            side_effect=(PublicationReport(2, 0, 0), PublicationReport(0, 0, 0)),
+        )
+        router = _router(session)
+        instants = iter(
+            (
+                "2026-08-25T12:00:00.001Z",
+                "2026-08-25T12:00:00.002Z",
+                "2026-08-25T12:00:00.003Z",
+                "2026-08-25T12:00:00.004Z",
+                "2026-08-25T12:00:00.005Z",
+            )
         )
 
         # Act
         with application as application_worker, commands as command_worker:
-            recovered = await recover_application(
-                session,
-                store,
-                _router(session),
-                lambda: "2026-08-25T12:00:00.000Z",
-            )
+            recovered = []
+            ready = []
+            for _attempt in range(3):
+                recovered.append(
+                    await asyncio.wait_for(
+                        recover_application(
+                            session,
+                            store,
+                            router,
+                            lambda: next(instants),
+                        ),
+                        timeout=0.1,
+                    )
+                )
+                ready.append(session.readiness.is_ready())
 
         # Assert
         self.assertEqual(
-            (True, 2, 2, True),
+            (
+                [False, False, True],
+                [
+                    (store.application_outbox, router, "2026-08-25T12:00:00.001Z"),
+                    (store.application_outbox, router, "2026-08-25T12:00:00.002Z"),
+                    (store.application_outbox, router, "2026-08-25T12:00:00.004Z"),
+                ],
+                [
+                    (store.outbox, session.publisher, "2026-08-25T12:00:00.003Z"),
+                    (store.outbox, session.publisher, "2026-08-25T12:00:00.005Z"),
+                ],
+                [False, False, True],
+            ),
             (
                 recovered,
-                application_worker.await_count,
-                command_worker.await_count,
-                session.readiness.is_ready(),
+                [call.args for call in application_worker.await_args_list],
+                [call.args for call in command_worker.await_args_list],
+                ready,
             ),
         )
 
@@ -431,12 +488,12 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                 patch(
                     "aerial_rescue_command_gateway.service.publish_application_batch",
                     new_callable=AsyncMock,
-                    return_value=application_report,
+                    side_effect=(application_report, AssertionError("application drain repeated")),
                 ),
                 patch(
                     "aerial_rescue_command_gateway.service.publish_batch",
                     new_callable=AsyncMock,
-                    return_value=command_report,
+                    side_effect=(command_report, AssertionError("command drain repeated")),
                 ),
             ):
                 outcomes.append(
@@ -531,19 +588,21 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
             "aerial_rescue_command_gateway.service.handle_agent_response",
             new_callable=AsyncMock,
         )
+        router = cast("DeliveryRouter", object())
+        stamps = _Stamps()
 
         # Act
         with exchange as handle_request, normalization as handle_response:
             request_outcome = await dispatch_direct(
                 request,
-                cast("DeliveryRouter", object()),
-                _Stamps(),
+                router,
+                stamps,
                 store,
             )
             response_outcome = await dispatch_direct(
                 response,
-                cast("DeliveryRouter", object()),
-                _Stamps(),
+                router,
+                stamps,
                 store,
             )
 
@@ -557,6 +616,9 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                 store.normalization,
                 _Stamps.normalization,
                 response_properties,
+                (request, router, stamps.next_stamp()),
+                response.get_destination_name(),
+                response.get_payload_as_bytes(),
             ),
             (
                 request_outcome,
@@ -565,6 +627,9 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                 handle_response.await_args_list[0].args[2],
                 handle_response.await_args_list[0].args[1],
                 delivered_response.properties,
+                handle_request.call_args.args,
+                delivered_response.topic,
+                delivered_response.payload,
             ),
         )
 
@@ -601,7 +666,7 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         )
 
         # Act
-        with request, response:
+        with request as handle_request, response as handle_response:
             outcomes = [
                 await dispatch_direct(
                     message,
@@ -613,7 +678,10 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
             ]
 
         # Assert
-        self.assertEqual([DirectDispatchOutcome.REFUSED] * len(messages), outcomes)
+        self.assertEqual(
+            ([DirectDispatchOutcome.REFUSED] * len(messages), 1, 1),
+            (outcomes, handle_request.call_count, handle_response.await_count),
+        )
 
     async def test_bound_rejection_and_unknown_or_refused_guaranteed_channels_fail_closed(
         self,
@@ -664,6 +732,48 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
             (unknown, refused, settlement.outcomes),
         )
 
+    async def test_missing_guaranteed_members_reach_the_handler_as_exact_empty_sentinels(
+        self,
+    ) -> None:
+        # Arrange
+        store = cast(
+            "ApplicationStore",
+            type("Store", (), {"results": object()})(),
+        )
+        settlement = _Settlement()
+        received = GuaranteedMessage(
+            cast("InboundMessage", _Message(None, None)),
+            cast("MessageSettlement", settlement),
+        )
+        clock = AuthorizationClock(
+            ClockReading(parse_instant("2026-08-25T12:00:00.000Z"), timedelta(seconds=1)),
+            "epoch-1",
+        )
+
+        # Act
+        with patch(
+            "aerial_rescue_command_gateway.service.handle_command_result",
+            new_callable=AsyncMock,
+        ) as handler:
+            outcome = await dispatch_guaranteed(
+                Family.DRONE_COMMAND_RESULT.literal_suffix,
+                received,
+                _Stamps(),
+                clock,
+                store,
+            )
+
+        # Assert
+        self.assertEqual(
+            (
+                GuaranteedDispatchOutcome.COMMITTED,
+                GuaranteedDelivery("", b""),
+                store.results,
+                BoundSettlement(settlement),
+            ),
+            (outcome, *handler.await_args_list[0].args),
+        )
+
     async def test_each_guaranteed_channel_gets_only_its_store_port_and_bound_settlement(
         self,
     ) -> None:
@@ -695,13 +805,16 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
         )
 
         # Act
-        actual: list[tuple[GuaranteedDispatchOutcome, object, str]] = []
+        actual: list[tuple[GuaranteedDispatchOutcome, tuple[object, ...], str]] = []
+        settlements: list[_Settlement] = []
+        topics: list[str] = []
         for channel, handler in zip(channels, handlers, strict=True):
             settlement = _Settlement()
+            topic = f"aerial-rescue/v1/mission-1/{channel.replace('.', '/')}/x"
             guaranteed = GuaranteedMessage(
                 cast(
                     "InboundMessage",
-                    _Message(f"aerial-rescue/v1/mission-1/{channel.replace('.', '/')}/x", b"{}"),
+                    _Message(topic, b"{}"),
                 ),
                 cast("MessageSettlement", settlement),
             )
@@ -718,14 +831,43 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                 )
                 bound = called.await_args_list[0].args[-1]
                 await bound.accept("event-1")
-            actual.append((outcome, called.await_args_list[0].args[-2], settlement.outcomes[0]))
+            actual.append((outcome, called.await_args_list[0].args, settlement.outcomes[0]))
+            settlements.append(settlement)
+            topics.append(topic)
 
         # Assert
         self.assertEqual(
             [
-                (GuaranteedDispatchOutcome.COMMITTED, store.authorization, "accepted"),
-                (GuaranteedDispatchOutcome.COMMITTED, store.approval_ingress, "accepted"),
-                (GuaranteedDispatchOutcome.COMMITTED, store.results, "accepted"),
+                (
+                    GuaranteedDispatchOutcome.COMMITTED,
+                    (
+                        GuaranteedDelivery(topics[0], b"{}"),
+                        _Stamps.authorization,
+                        authority_clock,
+                        store.authorization,
+                        BoundSettlement(settlements[0]),
+                    ),
+                    "accepted",
+                ),
+                (
+                    GuaranteedDispatchOutcome.COMMITTED,
+                    (
+                        GuaranteedDelivery(topics[1], b"{}"),
+                        authority_clock,
+                        store.approval_ingress,
+                        BoundSettlement(settlements[1]),
+                    ),
+                    "accepted",
+                ),
+                (
+                    GuaranteedDispatchOutcome.COMMITTED,
+                    (
+                        GuaranteedDelivery(topics[2], b"{}"),
+                        store.results,
+                        BoundSettlement(settlements[2]),
+                    ),
+                    "accepted",
+                ),
             ],
             actual,
         )

@@ -28,6 +28,7 @@ from aerial_rescue_command_gateway.store_adapter import (
     StoreRefusalPersistence,
     StoreResultTransaction,
     StoreResultUnitOfWork,
+    _milliseconds,
     compose_application_store,
     map_approval_binding,
     map_authorization_approval,
@@ -128,10 +129,12 @@ class _Authorization:
     def __init__(self, authority: StoredAuthorizationApproval = AUTHORITY) -> None:
         """Configure the exact durable authority returned by the store."""
         self.authority = authority
+        self.requests: list[str] = []
         self.persisted: list[StoredApproval] = []
 
-    async def load_approval(self, _proposal_id: str) -> StoredAuthorizationApproval:
+    async def load_approval(self, proposal_id: str) -> StoredAuthorizationApproval:
         """Return the configured authority pair."""
+        self.requests.append(proposal_id)
         return self.authority
 
     async def persist_consumed(self, approval: StoredApproval) -> None:
@@ -144,10 +147,12 @@ class _ApprovalIngress:
 
     def __init__(self) -> None:
         """Start without a gateway authority bind."""
+        self.requests: list[str] = []
         self.authorities: list[tuple[str, StoredApprovalAuthority]] = []
 
-    async def load_binding(self, _approval_id: str) -> StoredAuthorizationApproval:
+    async def load_binding(self, approval_id: str) -> StoredAuthorizationApproval:
         """Return the configured authority pair."""
+        self.requests.append(approval_id)
         return AUTHORITY
 
     async def bind_authority(
@@ -165,14 +170,16 @@ class _Normalization:
 
     def __init__(self) -> None:
         """Start without a recorded transport context."""
+        self.requests: list[str] = []
         self.recorded: list[StoredPendingInvocation] = []
 
     async def record_pending(self, pending: StoredPendingInvocation) -> None:
         """Record the exact durable value delegated by the adapter."""
         self.recorded.append(pending)
 
-    async def load_pending(self, _invocation_id: str) -> StoredPendingInvocation:
+    async def load_pending(self, invocation_id: str) -> StoredPendingInvocation:
         """Return complete trusted invocation context."""
+        self.requests.append(invocation_id)
         return PENDING
 
 
@@ -181,14 +188,18 @@ class _Outbox:
 
     def __init__(self) -> None:
         """Start with no durable moves."""
+        self.pending_limits: list[int] = []
+        self.reconciliation_limits: list[int] = []
         self.moves: list[tuple[str, OutboxState, OutboxEvent]] = []
 
-    async def pending(self, _limit: int) -> tuple[CommandOutboxRecord, ...]:
+    async def pending(self, limit: int) -> tuple[CommandOutboxRecord, ...]:
         """Return one staged command."""
+        self.pending_limits.append(limit)
         return (CommandOutboxRecord(COMMAND, OutboxState.STAGED),)
 
-    async def reconciliation(self, _limit: int) -> tuple[CommandOutboxRecord, ...]:
+    async def reconciliation(self, limit: int) -> tuple[CommandOutboxRecord, ...]:
         """Return the same command in its ambiguous state."""
+        self.reconciliation_limits.append(limit)
         return (CommandOutboxRecord(COMMAND, OutboxState.RECONCILIATION_NEEDED),)
 
     async def record(
@@ -237,6 +248,57 @@ class _DurableSession:
 
 
 class AuthorityMappingTests(unittest.TestCase):
+    def test_millisecond_mapping_keeps_zero_negative_and_precision_policies_independent(
+        self,
+    ) -> None:
+        # Arrange
+        accepted = (
+            (timedelta(milliseconds=1), False, False, 1),
+            (timedelta(0), True, False, 0),
+            (timedelta(milliseconds=-1), False, True, -1),
+        )
+        refused = (
+            (timedelta(0), False, False),
+            (timedelta(milliseconds=-1), False, False),
+            (timedelta(microseconds=1), False, False),
+            (timedelta(microseconds=-1), False, True),
+            (timedelta(milliseconds=-1), True, False),
+            (timedelta(0), False, True),
+        )
+
+        # Act
+        default_mapped = _milliseconds(timedelta(milliseconds=1))
+        default_refusals = []
+        for duration in (timedelta(0), timedelta(milliseconds=-1)):
+            with pytest.raises(StoreAdapterError) as captured:
+                _milliseconds(duration)
+            default_refusals.append(captured.value.refusal)
+        mapped = [
+            _milliseconds(
+                duration,
+                allow_zero=allow_zero,
+                allow_negative=allow_negative,
+            )
+            for duration, allow_zero, allow_negative, _expected in accepted
+        ]
+        refusals = []
+        for duration, allow_zero, allow_negative in refused:
+            with pytest.raises(StoreAdapterError) as captured:
+                _milliseconds(
+                    duration,
+                    allow_zero=allow_zero,
+                    allow_negative=allow_negative,
+                )
+            refusals.append(captured.value.refusal)
+
+        # Assert
+        self.assertEqual(
+            (1, int, [expected for *_options, expected in accepted], [int, int, int]),
+            (default_mapped, type(default_mapped), mapped, [type(value) for value in mapped]),
+        )
+        self.assertEqual([StoreAdapterRefusal.EXPIRY] * 2, default_refusals)
+        self.assertEqual([StoreAdapterRefusal.EXPIRY] * len(refused), refusals)
+
     def test_complete_durable_authority_maps_without_defaults_or_coercion(self) -> None:
         # Arrange
         authority = AUTHORITY
@@ -248,24 +310,62 @@ class AuthorityMappingTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             (
+                DURABLE_BINDING.approval_id,
                 ApprovalState.APPROVED,
+                DURABLE_APPROVAL.operator_identity,
+                DURABLE_APPROVAL.mission_id,
+                DURABLE_APPROVAL.proposal_id,
+                DURABLE_APPROVAL.proposal_digest,
                 -59_000,
                 300_000,
                 ACTION,
                 DURABLE_BINDING.authority_runtime_epoch,
-                DURABLE_BINDING.expires_at,
                 DURABLE_BINDING.evidence_decision_id,
+                DURABLE_BINDING.evidence_decision_digest,
+                DURABLE_BINDING.evidence_decision_version,
+                DURABLE_BINDING.approval_id,
+                DURABLE_APPROVAL.mission_id,
+                DURABLE_APPROVAL.operator_identity,
+                DURABLE_BINDING.decision,
+                DURABLE_APPROVAL.issued_wall,
+                DURABLE_BINDING.expires_at,
+                DURABLE_APPROVAL.proposal_id,
+                DURABLE_APPROVAL.proposal_digest,
+                DURABLE_BINDING.proposal_version,
+                DURABLE_BINDING.evidence_decision_id,
+                DURABLE_BINDING.evidence_decision_digest,
+                DURABLE_BINDING.evidence_decision_version,
+                ACTION,
                 DURABLE_BINDING.decision_runtime_id,
                 DURABLE_APPROVAL.time_to_live_milliseconds,
             ),
             (
+                bound.approval_id,
                 bound.approval.state,
+                bound.approval.operator_identity,
+                bound.approval.mission_id,
+                bound.approval.proposal_id,
+                bound.approval.proposal_digest,
                 round(bound.approval.issued.monotonic.total_seconds() * 1_000),
                 round(bound.approval.time_to_live.total_seconds() * 1_000),
                 bound.action,
                 bound.runtime_epoch,
+                bound.evidence_decision_id,
+                bound.evidence_decision_digest,
+                bound.evidence_decision_version,
+                event_binding.approval_id,
+                event_binding.mission_id,
+                event_binding.operator_id,
+                event_binding.decision,
+                event_binding.issued_at,
                 event_binding.expires_at,
+                event_binding.proposal_id,
+                event_binding.proposal_digest,
+                event_binding.proposal_version,
                 event_binding.evidence_decision_id,
+                event_binding.evidence_decision_digest,
+                event_binding.evidence_decision_version,
+                event_binding.action,
                 event_binding.decision_runtime_id,
                 event_binding.time_to_live_milliseconds,
             ),
@@ -335,14 +435,28 @@ class AuthorityMappingTests(unittest.TestCase):
                     authority_issued_monotonic_milliseconds=None,
                 ),
             ),
+            replace(
+                AUTHORITY,
+                binding=replace(DURABLE_BINDING, authority_runtime_epoch=""),
+            ),
+            replace(
+                AUTHORITY,
+                approval=replace(DURABLE_APPROVAL, time_to_live_milliseconds=0),
+                binding=replace(
+                    DURABLE_BINDING,
+                    expires_at=DURABLE_APPROVAL.issued_wall,
+                ),
+            ),
         )
 
         # Act
         refusals = []
+        messages = []
         for authority in cases:
             with pytest.raises(StoreAdapterError) as captured:
                 map_authorization_approval(authority)
             refusals.append(captured.value.refusal)
+            messages.append(str(captured.value))
 
         # Assert
         self.assertEqual(
@@ -355,8 +469,41 @@ class AuthorityMappingTests(unittest.TestCase):
                 StoreAdapterRefusal.DECISION,
                 StoreAdapterRefusal.EXPIRY,
                 StoreAdapterRefusal.EXPIRY,
+                StoreAdapterRefusal.EXPIRY,
+                StoreAdapterRefusal.EXPIRY,
             ],
             refusals,
+        )
+        self.assertEqual([refusal.value for refusal in refusals], messages)
+
+    def test_zero_clock_origin_and_one_millisecond_ttl_are_valid_boundaries(self) -> None:
+        # Arrange
+        authority = replace(
+            AUTHORITY,
+            approval=replace(
+                DURABLE_APPROVAL,
+                issued_monotonic_milliseconds=0,
+                time_to_live_milliseconds=1,
+            ),
+            binding=replace(
+                DURABLE_BINDING,
+                authority_issued_monotonic_milliseconds=0,
+                expires_at="2026-08-25T12:00:00.001Z",
+            ),
+        )
+
+        # Act
+        bound = map_authorization_approval(authority)
+        event_binding = map_approval_binding(authority)
+
+        # Assert
+        self.assertEqual(
+            (0, 1, "2026-08-25T12:00:00.001Z"),
+            (
+                round(bound.approval.issued.monotonic.total_seconds() * 1_000),
+                round(bound.approval.time_to_live.total_seconds() * 1_000),
+                event_binding.expires_at,
+            ),
         )
 
 
@@ -375,11 +522,14 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            (ApprovalState.EXECUTED, DURABLE_APPROVAL.proposal_id),
-            (raw.persisted[0].state, raw.persisted[0].proposal_id),
+            replace(DURABLE_APPROVAL, state=ApprovalState.EXECUTED),
+            raw.persisted[0],
         )
+        self.assertEqual([DURABLE_BINDING.proposal_id], raw.requests)
+        self.assertIs(type(raw.persisted[0].issued_monotonic_milliseconds), int)
+        self.assertIs(type(raw.persisted[0].time_to_live_milliseconds), int)
 
-    async def test_negative_rebased_gateway_origin_round_trips_without_using_dashboard_clock(
+    async def test_negative_gateway_origin_never_rewrites_the_dashboard_diagnostic(
         self,
     ) -> None:
         # Arrange
@@ -397,7 +547,37 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
 
         # Assert
-        self.assertEqual(-59_000, raw.persisted[0].issued_monotonic_milliseconds)
+        self.assertEqual(
+            (999_999, -59_000),
+            (
+                raw.persisted[0].issued_monotonic_milliseconds,
+                round(bound.approval.issued.monotonic.total_seconds() * 1_000),
+            ),
+        )
+
+    async def test_consumed_write_preserves_the_dashboard_monotonic_diagnostic(self) -> None:
+        # Arrange
+        diagnostic = 999_999
+        authority = replace(
+            AUTHORITY,
+            approval=replace(DURABLE_APPROVAL, issued_monotonic_milliseconds=diagnostic),
+        )
+        raw = _Authorization(authority)
+        adapter = StoreAuthorizationTransaction(cast("CommandAuthorizationTransaction", raw))
+        bound = await adapter.load_approval(DURABLE_BINDING.proposal_id)
+        consumed = replace(bound, approval=replace(bound.approval, state=ApprovalState.EXECUTED))
+
+        # Act
+        await adapter.persist_consumed(consumed)
+
+        # Assert
+        self.assertEqual(
+            (diagnostic, -59_000),
+            (
+                raw.persisted[0].issued_monotonic_milliseconds,
+                round(bound.approval.issued.monotonic.total_seconds() * 1_000),
+            ),
+        )
 
     async def test_only_executed_approval_with_integral_milliseconds_can_be_persisted(self) -> None:
         # Arrange
@@ -414,6 +594,22 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
                     time_to_live=timedelta(microseconds=1),
                 ),
             ),
+            replace(
+                bound,
+                approval=replace(
+                    bound.approval,
+                    state=ApprovalState.EXECUTED,
+                    time_to_live=timedelta(0),
+                ),
+            ),
+            replace(
+                bound,
+                approval=replace(
+                    bound.approval,
+                    state=ApprovalState.EXECUTED,
+                    time_to_live=timedelta(milliseconds=-1),
+                ),
+            ),
         )
 
         # Act
@@ -425,9 +621,144 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            [StoreAdapterRefusal.DECISION, StoreAdapterRefusal.EXPIRY],
+            [
+                StoreAdapterRefusal.DECISION,
+                StoreAdapterRefusal.EXPIRY,
+                StoreAdapterRefusal.EXPIRY,
+                StoreAdapterRefusal.EXPIRY,
+            ],
             refusals,
         )
+
+    async def test_zero_issued_monotonic_and_one_millisecond_ttl_persist_exact_ints(self) -> None:
+        # Arrange
+        authority = replace(
+            AUTHORITY,
+            approval=replace(
+                DURABLE_APPROVAL,
+                issued_monotonic_milliseconds=0,
+                time_to_live_milliseconds=1,
+            ),
+            binding=replace(
+                DURABLE_BINDING,
+                authority_issued_monotonic_milliseconds=0,
+                expires_at="2026-08-25T12:00:00.001Z",
+            ),
+        )
+        raw = _Authorization(authority)
+        adapter = StoreAuthorizationTransaction(cast("CommandAuthorizationTransaction", raw))
+        bound = map_authorization_approval(authority)
+        consumed = replace(
+            bound,
+            approval=replace(bound.approval, state=ApprovalState.EXECUTED),
+        )
+
+        # Act
+        await adapter.persist_consumed(consumed)
+
+        # Assert
+        self.assertEqual(
+            (0, 1),
+            (
+                raw.persisted[0].issued_monotonic_milliseconds,
+                raw.persisted[0].time_to_live_milliseconds,
+            ),
+        )
+        self.assertIs(type(raw.persisted[0].issued_monotonic_milliseconds), int)
+        self.assertIs(type(raw.persisted[0].time_to_live_milliseconds), int)
+
+    async def test_consumed_write_refuses_durable_state_identity_or_expiry_drift(self) -> None:
+        # Arrange
+        raw = _Authorization()
+        adapter = StoreAuthorizationTransaction(cast("CommandAuthorizationTransaction", raw))
+        bound = map_authorization_approval(AUTHORITY)
+        consumed = replace(bound, approval=replace(bound.approval, state=ApprovalState.EXECUTED))
+        cases = (
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        state=ApprovalState.EXECUTED,
+                    ),
+                ),
+                StoreAdapterRefusal.DECISION,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        mission_id="mission-other",
+                    ),
+                ),
+                StoreAdapterRefusal.IDENTITY,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        proposal_id="proposal-other",
+                    ),
+                ),
+                StoreAdapterRefusal.IDENTITY,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        operator_identity="operator-other",
+                    ),
+                ),
+                StoreAdapterRefusal.IDENTITY,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        proposal_digest="9" * 64,
+                    ),
+                ),
+                StoreAdapterRefusal.IDENTITY,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        issued_wall="2026-08-25T12:00:00.001Z",
+                    ),
+                ),
+                StoreAdapterRefusal.EXPIRY,
+            ),
+            (
+                replace(
+                    consumed,
+                    durable_approval=replace(
+                        consumed.durable_approval,
+                        time_to_live_milliseconds=300_001,
+                    ),
+                ),
+                StoreAdapterRefusal.EXPIRY,
+            ),
+        )
+
+        # Act
+        observations = []
+        for approval, _expected in cases:
+            with pytest.raises(StoreAdapterError) as captured:
+                await adapter.persist_consumed(approval)
+            observations.append((captured.value.refusal, str(captured.value)))
+
+        # Assert
+        self.assertEqual(
+            [(expected, expected.value) for _approval, expected in cases],
+            observations,
+        )
+        self.assertEqual([], raw.persisted)
 
     async def test_approval_and_normalization_map_complete_store_authority_both_directions(
         self,
@@ -466,6 +797,8 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
                 PENDING.mission_id,
                 PENDING.source_event_digest,
                 [PENDING],
+                [DURABLE_BINDING.approval_id],
+                [PENDING.invocation_id],
                 ApprovalAuthorityDecision.BOUND,
                 [
                     (
@@ -480,6 +813,8 @@ class TransactionAdapterTests(unittest.IsolatedAsyncioTestCase):
                 pending.mission_id,
                 pending.source_event_digest,
                 raw_normalization.recorded,
+                raw_approval.requests,
+                raw_normalization.requests,
                 authority_outcome,
                 raw_approval.authorities,
             ),
@@ -738,12 +1073,24 @@ class OutboxAdapterTests(unittest.IsolatedAsyncioTestCase):
             (
                 OutboxState.STAGED,
                 OutboxState.RECONCILIATION_NEEDED,
+                COMMAND,
+                COMMAND,
+                [50],
+                [50],
                 [
                     (COMMAND.command_id, OutboxState.STAGED, OutboxEvent.CONFIRM),
                     (COMMAND.command_id, OutboxState.STAGED, OutboxEvent.AMBIGUOUS),
                 ],
             ),
-            (staged[0].state, ambiguous[0].state, raw.moves),
+            (
+                staged[0].state,
+                ambiguous[0].state,
+                staged[0].command,
+                ambiguous[0].command,
+                raw.pending_limits,
+                raw.reconciliation_limits,
+                raw.moves,
+            ),
         )
 
     async def test_confirmation_instants_and_ambiguity_are_not_interchangeable(self) -> None:
@@ -895,6 +1242,98 @@ class CompositionTests(unittest.TestCase):
                         application.refusals,
                     )
                 ),
+            ),
+        )
+
+    def test_composition_binds_each_repository_and_shared_refusal_dependency_exactly(self) -> None:
+        # Arrange
+        def unopened_factory() -> object:
+            return object()
+
+        def observed_at() -> str:
+            return "2026-08-25T12:00:00.000Z"
+
+        factory = cast("StoreSessionFactory", unopened_factory)
+        repositories = [object() for _ in range(7)]
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.CommandAuthorizationTransactions",
+                return_value=repositories[0],
+            ) as authorization_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.ApprovalIngressTransactions",
+                return_value=repositories[1],
+            ) as approval_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.CommandResultTransactions",
+                return_value=repositories[2],
+            ) as result_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.NormalizationTransactions",
+                return_value=repositories[3],
+            ) as normalization_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.CommandOutboxTransactions",
+                return_value=repositories[4],
+            ) as outbox_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.CommandProgressTransactions",
+                return_value=repositories[5],
+            ) as progress_constructor,
+            patch(
+                "aerial_rescue_command_gateway.store_adapter.BrokerRefusalRecorder",
+                return_value=repositories[6],
+            ) as refusal_constructor,
+        ):
+            application = compose_application_store(factory, observed_at)
+
+        # Assert
+        self.assertEqual(
+            [call(factory)] * 6,
+            [
+                *authorization_constructor.mock_calls,
+                *approval_constructor.mock_calls,
+                *result_constructor.mock_calls,
+                *normalization_constructor.mock_calls,
+                *outbox_constructor.mock_calls,
+                *progress_constructor.mock_calls,
+            ],
+        )
+        refusal_constructor.assert_called_once_with(factory, observed_at)
+        self.assertEqual(
+            (
+                {
+                    "_transactions": repositories[0],
+                    "_refusals": repositories[6],
+                },
+                {
+                    "_transactions": repositories[1],
+                    "_refusals": repositories[6],
+                },
+                {
+                    "_transactions": repositories[2],
+                    "_refusals": repositories[6],
+                },
+                {"_transactions": repositories[3]},
+                {"_transactions": repositories[4]},
+                {"_session_factory": factory},
+                {"_transactions": repositories[5]},
+                {"_refusals": repositories[6]},
+            ),
+            tuple(
+                vars(capability)
+                for capability in (
+                    application.authorization,
+                    application.approval_ingress,
+                    application.results,
+                    application.normalization,
+                    application.outbox,
+                    application.application_outbox,
+                    application.progress,
+                    application.refusals,
+                )
             ),
         )
 

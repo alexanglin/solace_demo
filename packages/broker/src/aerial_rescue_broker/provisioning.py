@@ -41,6 +41,7 @@ from enum import Enum
 from typing import Final, Protocol, cast, override
 from urllib.parse import quote
 
+from aerial_rescue_contracts.topics import Family
 from aerial_rescue_domain.principals import (
     Access,
     Principal,
@@ -69,7 +70,9 @@ from aerial_rescue_broker.queues import (
 )
 from aerial_rescue_broker.subscriptions import (
     a2a_subscription,
+    connectivity_subscription,
     reply_subscription,
+    salient_subscription,
     subscription_for,
 )
 
@@ -303,9 +306,21 @@ class MonitorTransport(Protocol):
         """Return monitor data aligned with each row's child-collection counts."""
         ...
 
+    def read_monitor_count(self, path: str) -> int:
+        """Return one monitor collection's aggregate count without enumerating rows."""
+        ...
+
 
 class ProvisioningTransport(SempTransport, MonitorTransport, Protocol):
     """The combined configuration and monitor capabilities safe retirement requires."""
+
+
+@dataclass(frozen=True)
+class QueueDepthState:
+    """One queue identity and its aligned aggregate message depth."""
+
+    name: str
+    message_count: int
 
 
 @dataclass(frozen=True)
@@ -387,7 +402,7 @@ _REJECT_THRESHOLD: Final[Mapping[str, int]] = {"clearPercent": 60, "setPercent":
 
 def queue_monitor_collection_path(vpn: str) -> str:
     """Return the narrow aggregate monitor collection used for queue inventory."""
-    select = quote("queueName,bindCount,msgs.count", safe="")
+    select = "queueName,msgs.count"
     return f"msgVpns/{quote(vpn, safe='')}/queues?select={select}"
 
 
@@ -397,6 +412,11 @@ def queue_monitor_path(vpn: str, queue: str) -> str:
     return f"{queue_monitor_collection_path(vpn)}&where={where}"
 
 
+def queue_tx_flow_monitor_path(vpn: str, queue: str) -> str:
+    """Return the exact transmit-flow collection whose count is the active bind state."""
+    return f"msgVpns/{quote(vpn, safe='')}/queues/{quote(queue, safe='')}/txFlows"
+
+
 def _nonnegative_integer(value: object) -> int | None:
     """Return a non-negative integer while refusing booleans and coercion."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -404,29 +424,51 @@ def _nonnegative_integer(value: object) -> int | None:
     return value
 
 
-def _runtime_from_monitor_row(row: MonitorRow, queue: str) -> QueueRuntimeState:
-    """Decode one aligned monitor row without coercing identity or counters."""
+def _depth_from_monitor_row(row: MonitorRow, queue: str) -> QueueDepthState:
+    """Decode one aligned queue/message aggregate without coercing either value."""
     name = row.data.get("queueName")
-    bind_count = _nonnegative_integer(row.data.get("bindCount"))
     messages = row.collections.get("msgs")
     message_count = (
         _nonnegative_integer(messages.get("count")) if isinstance(messages, Mapping) else None
     )
-    if name != queue or bind_count is None or message_count is None:
+    if name != queue or message_count is None:
         raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, queue)
-    return QueueRuntimeState(queue, message_count, bind_count)
+    return QueueDepthState(queue, message_count)
+
+
+def _runtime_from_monitor_row(row: MonitorRow, queue: str, bind_count: object) -> QueueRuntimeState:
+    """Decode one aligned monitor row without coercing identity or counters."""
+    validated_bind_count = _nonnegative_integer(bind_count)
+    if validated_bind_count is None:
+        raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, queue)
+    return QueueRuntimeState(
+        queue,
+        _depth_from_monitor_row(row, queue).message_count,
+        validated_bind_count,
+    )
+
+
+def _optional_queue_monitor_row(
+    transport: MonitorTransport, vpn: str, queue: str
+) -> MonitorRow | None:
+    """Return one exact aligned queue row, or ``None`` only when it is absent."""
+    rows = transport.read_monitor_rows(queue_monitor_path(vpn, queue))
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, queue)
+    return rows[0]
 
 
 def _optional_queue_runtime_state(
     transport: MonitorTransport, vpn: str, queue: str
 ) -> QueueRuntimeState | None:
     """Return one exact queue's runtime state, or ``None`` only for an empty result."""
-    rows = transport.read_monitor_rows(queue_monitor_path(vpn, queue))
-    if not rows:
+    row = _optional_queue_monitor_row(transport, vpn, queue)
+    if row is None:
         return None
-    if len(rows) != 1:
-        raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, queue)
-    return _runtime_from_monitor_row(rows[0], queue)
+    bind_count = transport.read_monitor_count(queue_tx_flow_monitor_path(vpn, queue))
+    return _runtime_from_monitor_row(row, queue, bind_count)
 
 
 def queue_runtime_state(transport: MonitorTransport, vpn: str, queue: str) -> QueueRuntimeState:
@@ -458,17 +500,16 @@ def message_count(transport: MonitorTransport, vpn: str, queue: str) -> int:
         SempError: With ``PAGING`` when the queue holds more than the page bound can walk,
             so a depth is never silently truncated into a smaller one.
     """
-    return queue_runtime_state(transport, vpn, queue).message_count
+    row = _optional_queue_monitor_row(transport, vpn, queue)
+    if row is None:
+        raise ProvisioningError(ProvisioningRefusal.QUEUE_MONITOR_MISSING, queue)
+    return _depth_from_monitor_row(row, queue).message_count
 
 
-def queue_runtime_states(transport: MonitorTransport, vpn: str) -> tuple[QueueRuntimeState, ...]:
-    """Return every queue's exact aggregate depth and bind state from one narrow read.
-
-    The queue collection can be large, so the injected transport owns bounded pagination.
-    This decoder keeps the collection row aligned with its ``msgs.count`` child and refuses
-    duplicate or ill-typed identities before a routine monitor can call a partial inventory
-    healthy.
-    """
+def _queue_monitor_rows(
+    transport: MonitorTransport, vpn: str
+) -> tuple[tuple[MonitorRow, str], ...]:
+    """Return validated, uniquely named queue rows from one aggregate inventory read."""
     path = queue_monitor_collection_path(vpn)
     rows = transport.read_monitor_rows(path)
     names = tuple(row.data.get("queueName") for row in rows)
@@ -477,14 +518,33 @@ def queue_runtime_states(transport: MonitorTransport, vpn: str) -> tuple[QueueRu
     typed_names = cast(tuple[str, ...], names)
     if len(frozenset(typed_names)) != len(typed_names):
         raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, path)
-    return tuple(
-        _runtime_from_monitor_row(row, name) for row, name in zip(rows, typed_names, strict=True)
-    )
+    return tuple(zip(rows, typed_names, strict=True))
+
+
+def queue_depth_states(
+    transport: MonitorTransport,
+    vpn: str,
+    *,
+    maximum_queues: int | None = None,
+) -> tuple[QueueDepthState, ...]:
+    """Return every queue's exact aligned depth without a per-queue child fan-out.
+
+    The queue collection can be large, so the injected transport owns bounded pagination.
+    A caller-supplied queue bound refuses an oversized inventory before returning a partial
+    observation. Active transmit-flow counts are deliberately a separate exact read.
+    """
+    named_rows = _queue_monitor_rows(transport, vpn)
+    if maximum_queues is not None and len(named_rows) > maximum_queues:
+        raise ProvisioningError(
+            ProvisioningRefusal.MALFORMED_READBACK,
+            queue_monitor_collection_path(vpn),
+        )
+    return tuple(_depth_from_monitor_row(row, name) for row, name in named_rows)
 
 
 def _queue_monitor_inventory(transport: MonitorTransport, vpn: str) -> frozenset[str]:
     """Return queue identities only from the aligned narrow aggregate monitor view."""
-    return frozenset(state.name for state in queue_runtime_states(transport, vpn))
+    return frozenset(state.name for state in queue_depth_states(transport, vpn))
 
 
 def _is_application_primary(name: str) -> bool:
@@ -583,9 +643,14 @@ def _exceptions_for(role: Principal, access: Access, namespace: object | None) -
 
     Two of them lie outside the family tables: the A2A namespace, which is withheld until a
     namespace is supplied, and the command-gateway reply channel, which is not, because it
-    is a fixed topic that no configuration varies (ADR-0070).
+    is a fixed topic that no configuration varies (ADR-0070). ADR-0120 also narrows the
+    recorder's otherwise-family-wide drone-event grant to connectivity alone.
     """
     topics = {subscription_for(family) for family in grants(role, access)}
+    if role is Principal.RECORDER and access is Access.SUBSCRIBE:
+        topics.remove(subscription_for(Family.DRONE_EVENT))
+        topics.add(connectivity_subscription())
+        topics.add(salient_subscription())
     if namespace is not None and may_use_a2a(role):
         topics.add(a2a_subscription(namespace))
     if access is Access.SUBSCRIBE and may_use_reply_channel(role):
@@ -865,7 +930,7 @@ def _present(transport: SempTransport, collection: _Collection) -> frozenset[str
 
     Read through ``read_all`` rather than one ``GET``: SEMP pages a collection at ten rows
     unless asked for more, and a partial read makes the reconcile look like a first apply
-    every time -- the recorder profile's eleventh subscribe exception is what proved it.
+    every time -- the recorder profile's exact narrowed subscribe set is what proves it.
     """
     rows = transport.read_all(collection.path)
     values = tuple(row.get(collection.member) for row in rows)

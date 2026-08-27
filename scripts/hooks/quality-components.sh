@@ -71,6 +71,42 @@ quality_dashboard_active() {
 	[ -f apps/dashboard/package.json ] || quality_dashboard_source_present
 }
 
+# Print a component's activation state after enforcing ADR-0019's required manifest.
+# The activation predicate and diagnostic are arguments so the three component families
+# share one fail-closed implementation without changing a caller's variables or shell state.
+quality_required_manifest_state() {
+	if "$1"; then
+		[ -f "$2" ] || {
+			printf '%s\n' "$3" >&2
+			exit 1
+		}
+		printf 'true\n'
+		return 0
+	fi
+	printf 'false\n'
+}
+
+quality_root_python_manifest_state() {
+	quality_required_manifest_state \
+		quality_root_python_active \
+		pyproject.toml \
+		'MISSING: pyproject.toml is required by owned root Python source'
+}
+
+quality_agent_python_manifest_state() {
+	quality_required_manifest_state \
+		quality_agent_python_active \
+		agent-mesh/pyproject.toml \
+		'MISSING: agent-mesh/pyproject.toml is required by owned Agent Mesh source'
+}
+
+quality_dashboard_manifest_state() {
+	quality_required_manifest_state \
+		quality_dashboard_active \
+		apps/dashboard/package.json \
+		'MISSING: apps/dashboard/package.json is required by owned dashboard source'
+}
+
 # Fail closed once the dashboard is active. ADR-0019 makes a missing manifest, lockfile, or
 # package manager a failure rather than a skip, and the dashboard gates need the identical
 # preamble -- copying it into every wrapper would trip the duplication gate. $1 names the

@@ -17,7 +17,6 @@ PASSWORD_HEX_LENGTH = 64
 STACK_PASSWORDS = (
     "secrets/broker-admin-password",
     "secrets/postgres-password",
-    "secrets/semp-discovery-password",
     "secrets/semp-monitor-password",
     "secrets/session-secret-key",
 )
@@ -28,7 +27,9 @@ PRIVATE_HTTP_BEARERS = (
 """Independent private-control credentials; neither value is a broker identity."""
 MESSAGING_ROLES = tuple(role for role in Principal if role is not Principal.DISCOVERY)
 ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in MESSAGING_ROLES)
-"""One per enabled messaging role; the SEMP discovery identity is separate (ADR-0153)."""
+"""One per enabled messaging role; management identities are separate (ADR-0153)."""
+UNUSED_SEMP_DISCOVERY_PATH = "secrets/semp-discovery-password"
+"""The optional external SEMP consumer has no repository-provisioned identity."""
 PRIVATE_FILES = (
     "secrets/ca.key",
     "secrets/broker-server.key",
@@ -91,7 +92,9 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         """Run the script inside ``repository`` against its ``deploy/`` directory."""
         return self.run_script(SCRIPT, repository, arguments, environment)
 
-    def test_it_creates_the_authority_certificate_server_pem_and_twelve_passwords(self) -> None:
+    def test_it_creates_the_authority_certificate_server_pem_and_twelve_used_passwords(
+        self,
+    ) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -100,8 +103,42 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(12, len((*STACK_PASSWORDS, *ROLE_PASSWORDS)))
         self.assertTrue(all((repository / "deploy" / name).is_file() for name in PRIVATE_FILES))
         self.assertTrue((repository / "deploy" / "certs" / "ca.pem").is_file())
+        self.assertFalse((repository / "deploy" / UNUSED_SEMP_DISCOVERY_PATH).exists())
+        self.assertNotIn("semp-discovery", result.stdout)
+
+    def test_private_control_hops_receive_distinct_256_bit_secrets(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+
+        # Act
+        result = self.generate(repository)
+        values = {
+            name: (repository / "deploy" / name).read_text(encoding="ascii").strip()
+            for name in PRIVATE_HTTP_BEARERS
+        }
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({PASSWORD_HEX_LENGTH}, {len(value) for value in values.values()})
+        self.assertEqual(2, len(set(values.values())))
+
+    def test_the_role_inventory_excludes_the_brokerless_scenario_service(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        credential_name = "secrets/broker-scenario-service-password"
+
+        # Act
+        result = self.generate(repository)
+        declarations = _role_environment(repository / "deploy")
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse((repository / "deploy" / credential_name).exists())
+        self.assertNotIn("SOLACE_SCENARIO_SERVICE_USERNAME", declarations)
+        self.assertNotIn("SOLACE_SCENARIO_SERVICE_PASSWORD", declarations)
 
     def test_it_generates_no_scenario_service_credential_or_environment_pair(self) -> None:
         # Arrange

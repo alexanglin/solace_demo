@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import unittest
 from collections.abc import Mapping
+from typing import cast
 
+import pytest
 from aerial_rescue_broker.monitoring import (
+    MAX_MONITORED_BIND_COUNTS,
     MAX_MONITORED_QUEUES,
     MONITOR_POLL_INTERVAL_SECONDS,
     MONITOR_USERNAME,
@@ -22,6 +25,7 @@ from aerial_rescue_broker.provisioning import (
     MonitorRow,
     Request,
     queue_monitor_collection_path,
+    queue_tx_flow_monitor_path,
 )
 from aerial_rescue_broker.queues import (
     APPLICATION_MAX_DELIVERED_UNACKED,
@@ -30,6 +34,8 @@ from aerial_rescue_broker.queues import (
     dead_message_queue_name,
 )
 from aerial_rescue_broker.semp import (
+    MAX_PAGES,
+    PAGE_SIZE,
     SEMP_CONFIG_PATH,
     SEMP_MONITOR_PATH,
     SempEndpoint,
@@ -70,6 +76,9 @@ class FakeMonitorTransport:
         """Consume one tuple of rows or one exception per aggregate read."""
         self.outcomes = outcomes
         self.paths: list[str] = []
+        self.count_paths: list[str] = []
+        self.bind_counts: dict[str, object] = {}
+        self.count_failures: dict[str, Exception] = {}
 
     def read_monitor_rows(self, path: str) -> tuple[MonitorRow, ...]:
         """Return the next aggregate outcome."""
@@ -77,7 +86,18 @@ class FakeMonitorTransport:
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
+        for row in outcome:
+            name = row.data.get("queueName")
+            if isinstance(name, str):
+                self.bind_counts[queue_tx_flow_monitor_path(VPN, name)] = row.data.get("bindCount")
         return outcome
+
+    def read_monitor_count(self, path: str) -> int:
+        """Return the separately observed active transmit-flow total."""
+        self.count_paths.append(path)
+        if failure := self.count_failures.get(path):
+            raise failure
+        return cast("int", self.bind_counts[path])
 
     def read_monitor(self, path: str) -> tuple[Mapping[str, object], ...]:
         """Refuse the less-structured read because the queue monitor must never use it."""
@@ -166,6 +186,21 @@ def _result(
 
 
 class QueueHealthTests(unittest.TestCase):
+    def test_monitor_bounds_cover_the_parent_pages_and_reference_bind_fan_out(self) -> None:
+        # Arrange
+        expected = (2_000, 89, 109)
+
+        # Act
+        observed = (
+            MAX_MONITORED_QUEUES,
+            MAX_MONITORED_BIND_COUNTS,
+            MAX_PAGES + MAX_MONITORED_BIND_COUNTS,
+        )
+
+        # Assert
+        self.assertEqual(expected, observed)
+        self.assertEqual(MAX_MONITORED_QUEUES, MAX_PAGES * PAGE_SIZE)
+
     def test_duplicate_or_over_bound_desired_inventories_fail_before_semp_io(self) -> None:
         # Arrange
         primary = _queue(PRIMARY_NAME, "recorder")
@@ -174,7 +209,7 @@ class QueueHealthTests(unittest.TestCase):
             (primary, primary),
             tuple(
                 _queue(f"aerial-rescue/v1/recorder/bounded-{index}", "recorder")
-                for index in range(MAX_MONITORED_QUEUES + 1)
+                for index in range(MAX_MONITORED_BIND_COUNTS + 1)
             ),
         )
         transport = FakeMonitorTransport([])
@@ -196,6 +231,7 @@ class QueueHealthTests(unittest.TestCase):
             refusals,
         )
         self.assertEqual([], transport.paths)
+        self.assertEqual([], transport.count_paths)
 
     def test_an_over_bound_observed_inventory_is_refused_as_incomplete(self) -> None:
         # Arrange
@@ -219,8 +255,9 @@ class QueueHealthTests(unittest.TestCase):
         # Assert
         self.assertEqual(MonitorRefusal.READ, captured.refusal)
         self.assertFalse(monitor.has_snapshot)
+        self.assertEqual([], transport.count_paths)
 
-    def test_one_narrow_aggregate_reports_depth_dmq_and_inventory_health(self) -> None:
+    def test_parent_depth_and_desired_flow_counts_report_complete_queue_health(self) -> None:
         # Arrange
         primary = _queue(PRIMARY_NAME, "recorder")
         dmq = _queue(DMQ_NAME, "")
@@ -239,6 +276,13 @@ class QueueHealthTests(unittest.TestCase):
         # Assert
         self.assertEqual([queue_monitor_collection_path(VPN)], transport.paths)
         self.assertNotIn("/msgs", transport.paths[0])
+        self.assertEqual(
+            [
+                queue_tx_flow_monitor_path(VPN, PRIMARY_NAME),
+                queue_tx_flow_monitor_path(VPN, DMQ_NAME),
+            ],
+            transport.count_paths,
+        )
         self.assertEqual(
             (
                 3,
@@ -276,6 +320,26 @@ class QueueHealthTests(unittest.TestCase):
         self.assertEqual((DMQ_NAME,), snapshot.missing)
         self.assertEqual((PRIMARY_NAME,), snapshot.bind_mismatches)
         self.assertFalse(snapshot.healthy)
+
+    def test_reference_inventory_bounds_and_sorts_the_bind_count_fan_out(self) -> None:
+        # Arrange
+        expected = tuple(
+            _queue(f"aerial-rescue/v1/recorder/reference-{index:02d}", "recorder")
+            for index in range(MAX_MONITORED_BIND_COUNTS)
+        )
+        rows = tuple(_row(queue.name, 0, 1) for queue in reversed(expected))
+        rows += (_row("another-project/unowned", 5, 7),)
+        transport = FakeMonitorTransport([rows])
+        monitor = QueueHealthMonitor(transport, VPN, expected, clock=ManualClock())
+
+        # Act
+        snapshot = monitor.poll()
+
+        # Assert
+        expected_paths = sorted(queue_tx_flow_monitor_path(VPN, queue.name) for queue in expected)
+        self.assertEqual(MAX_MONITORED_BIND_COUNTS, len(transport.count_paths))
+        self.assertEqual(expected_paths, transport.count_paths)
+        self.assertTrue(snapshot.healthy)
 
     def test_calls_inside_thirty_seconds_share_one_successful_snapshot(self) -> None:
         # Arrange
@@ -332,6 +396,37 @@ class QueueHealthTests(unittest.TestCase):
         self.assertNotIn(CREDENTIAL, str(captured[0]))
         self.assertNotIn(CREDENTIAL, repr(captured[0]))
         self.assertIs(first, monitor.last_snapshot)
+
+    def test_a_failed_bind_count_is_coalesced_and_retains_the_last_complete_snapshot(self) -> None:
+        # Arrange
+        primary = _queue(PRIMARY_NAME, "recorder")
+        dmq = _queue(DMQ_NAME, "")
+        healthy = (_row(PRIMARY_NAME, 0, 1), _row(DMQ_NAME, 0, 0))
+        clock = ManualClock()
+        transport = FakeMonitorTransport([healthy, healthy])
+        monitor = QueueHealthMonitor(transport, VPN, (primary, dmq), clock=clock)
+        first = monitor.poll()
+        failed_path = queue_tx_flow_monitor_path(VPN, PRIMARY_NAME)
+        transport.count_failures[failed_path] = SempError(SempFailure.TRANSPORT, "redacted")
+        clock.now = MONITOR_POLL_INTERVAL_SECONDS
+
+        # Act
+        captured = []
+        for instant in (MONITOR_POLL_INTERVAL_SECONDS, MONITOR_POLL_INTERVAL_SECONDS + 1):
+            clock.now = instant
+            with pytest.raises(MonitorError) as refusal:
+                monitor.poll()
+            captured.append(refusal.value)
+
+        # Assert
+        self.assertEqual(
+            [MonitorRefusal.READ, MonitorRefusal.READ],
+            [item.refusal for item in captured],
+        )
+        self.assertIs(captured[0], captured[1])
+        self.assertIs(first, monitor.last_snapshot)
+        self.assertEqual(2, len(transport.paths))
+        self.assertEqual(3, len(transport.count_paths))
 
     def test_malformed_aggregate_counts_fail_closed_and_are_not_cached_as_health(self) -> None:
         # Arrange
@@ -449,12 +544,12 @@ class RequestPacingTests(unittest.TestCase):
     def test_each_monitor_page_is_paced_but_configuration_reads_are_not(self) -> None:
         # Arrange
         first = _result(
-            [{"queueName": PRIMARY_NAME, "bindCount": 1}],
+            [{"queueName": PRIMARY_NAME}],
             [{"msgs": {"count": 0}}],
             cursor="next-page",
         )
         second = _result(
-            [{"queueName": DMQ_NAME, "bindCount": 0}],
+            [{"queueName": DMQ_NAME}],
             [{"msgs": {"count": 0}}],
         )
         config = {"data": {"msgVpnName": VPN}, "meta": {"responseCode": 200}}
@@ -480,7 +575,8 @@ class RequestPacingTests(unittest.TestCase):
         # Arrange
         clock = ManualClock()
         result = _result([], [])
-        connection = FakeConnection([FakeResponse(result)])
+        count_result = {"data": [], "meta": {"count": 0, "responseCode": 200}}
+        connection = FakeConnection([FakeResponse(result), FakeResponse(count_result)])
 
         # Act
         adapter = ReadOnlySempMonitor(
@@ -490,6 +586,7 @@ class RequestPacingTests(unittest.TestCase):
             sleeper=clock.sleep,
         )
         rows = adapter.read_monitor_rows(queue_monitor_collection_path(VPN))
+        count = adapter.read_monitor_count(queue_tx_flow_monitor_path(VPN, PRIMARY_NAME))
         try:
             ReadOnlySempMonitor(
                 connection,
@@ -505,6 +602,7 @@ class RequestPacingTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), rows)
+        self.assertEqual(0, count)
         self.assertFalse(hasattr(adapter, "send"))
         self.assertEqual(MonitorRefusal.IDENTITY, captured.refusal)
         self.assertTrue(MONITOR_USERNAME.isalnum())

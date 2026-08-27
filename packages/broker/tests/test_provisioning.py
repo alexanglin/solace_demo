@@ -61,10 +61,13 @@ from aerial_rescue_broker.queues import (
     primary_queues,
     queue_templates,
 )
+from aerial_rescue_broker.semp import SempError, SempFailure
 from aerial_rescue_broker.subscriptions import (
     a2a_subscription,
+    connectivity_subscription,
     drone_command_subscription,
     reply_subscription,
+    salient_subscription,
     subscription_for,
 )
 from aerial_rescue_contracts.topics import Family
@@ -82,11 +85,16 @@ CREDENTIAL = "fixture-not-a-real-credential"
 CREDENTIALS = {role: CREDENTIAL for role in Principal}
 
 EXPECTED_PUBLISH_EXCEPTIONS = 19
-EXPECTED_SUBSCRIBE_EXCEPTIONS = 35
+EXPECTED_SUBSCRIBE_EXCEPTIONS = 36
 
 DRONES = ("drone-vision-01", "drone-thermal-02")
-EXPECTED_QUEUES = 49
-EXPECTED_QUEUE_SUBSCRIPTIONS = 23
+EXPECTED_QUEUES = 47
+EXPECTED_QUEUE_SUBSCRIPTIONS = 24
+
+
+def _desired_state(drones: tuple[str, ...] = DRONES) -> DesiredState:
+    """Build the canonical fake-broker state for the requested probe drones."""
+    return desired_state(VPN, CREDENTIALS, NAMESPACE, drones)
 
 
 class FakeBroker:
@@ -95,6 +103,7 @@ class FakeBroker:
     def __init__(self) -> None:
         """Start with the one client username the broker image ships, and nothing owned."""
         self.collections: dict[str, list[dict[str, object]]] = {}
+        self.monitor_counts: dict[str, int] = {}
         self.objects: dict[str, dict[str, object]] = {
             f"msgVpns/{VPN}/clientUsernames/{FACTORY_CLIENT_USERNAME}": {
                 "clientUsername": FACTORY_CLIENT_USERNAME,
@@ -181,12 +190,17 @@ class FakeBroker:
             rows = tuple(self.collections.get(path, ()))
         return tuple(
             MonitorRow(
-                {"queueName": row["queueName"], "bindCount": row["bindCount"]},
+                {"queueName": row["queueName"]},
                 {"msgs": {"count": row["messageCount"]}},
             )
             for row in rows
             if row["queueName"] not in self.deleted_queues
         )
+
+    def read_monitor_count(self, path: str) -> int:
+        """Return one configured child-collection total without enumerating its rows."""
+        self.issued.append(Request(Method.GET, path, {}))
+        return self.monitor_counts.get(path, 0)
 
     def _remove(self, path: str) -> None:
         """Drop the row a ``collection/syntax,topic`` path names."""
@@ -251,7 +265,17 @@ class ReappearingQueueBroker(FakeBroker):
         self.primary_reads += 1
         if self.primary_reads == 1:
             return ()
-        return (MonitorRow({"queueName": self.queue, "bindCount": 0}, {"msgs": {"count": 0}}),)
+        return (MonitorRow({"queueName": self.queue}, {"msgs": {"count": 0}}),)
+
+
+class FailingMonitorCountBroker(FakeBroker):
+    """Refuse active-flow observation after returning a valid queue depth row."""
+
+    @override
+    def read_monitor_count(self, path: str) -> int:
+        """Raise one typed monitor transport failure before queue deletion."""
+        self.issued.append(Request(Method.GET, path, {}))
+        raise SempError(SempFailure.TRANSPORT, "redacted")
 
 
 def _encoded_topic(row: Mapping[str, object]) -> str:
@@ -271,6 +295,10 @@ def _exceptions_of(state: DesiredState, role: Principal, access: Access) -> froz
 def _expected_exceptions(role: Principal, access: Access) -> frozenset[str]:
     """Return the exceptions the matrix and the subscription renderer imply for ``role``."""
     topics = {subscription_for(family) for family in grants(role, access)}
+    if role is Principal.RECORDER and access is Access.SUBSCRIBE:
+        topics.remove(subscription_for(Family.DRONE_EVENT))
+        topics.add(connectivity_subscription())
+        topics.add(salient_subscription())
     if may_use_a2a(role):
         topics.add(a2a_subscription(NAMESPACE))
     if access is Access.SUBSCRIBE and may_use_reply_channel(role):
@@ -297,7 +325,7 @@ class DesiredStateTests(unittest.TestCase):
         enabled = expected - {Principal.DISCOVERY.value}
 
         # Act
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Assert
         self.assertEqual(
@@ -311,7 +339,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_every_profile_carries_exactly_the_exceptions_the_matrix_implies(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         rendered = {
@@ -330,9 +358,9 @@ class DesiredStateTests(unittest.TestCase):
             rendered,
         )
 
-    def test_the_profiles_total_nineteen_publish_and_thirty_five_subscribe_exceptions(self) -> None:
+    def test_the_profiles_total_nineteen_publish_and_thirty_six_subscribe_exceptions(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         totals = tuple(
@@ -340,11 +368,11 @@ class DesiredStateTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((19, 35), totals)
+        self.assertEqual((EXPECTED_PUBLISH_EXCEPTIONS, EXPECTED_SUBSCRIBE_EXCEPTIONS), totals)
 
     def test_only_the_three_agent_mesh_roles_carry_the_a2a_exception(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         a2a = a2a_subscription(NAMESPACE)
 
         # Act
@@ -396,7 +424,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_only_the_event_mesh_tool_carries_the_reply_channel_exception(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         reply = reply_subscription()
 
         # Act
@@ -412,7 +440,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_the_reply_channel_exception_is_a_subscribe_grant_only(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         reply = reply_subscription()
 
         # Act
@@ -428,7 +456,7 @@ class DesiredStateTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         published = _exceptions_of(state, Principal.COMMAND_GATEWAY, Access.PUBLISH)
@@ -451,7 +479,7 @@ class DesiredStateTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         subscribed = _exceptions_of(state, Principal.EVENT_MESH_TOOL, Access.SUBSCRIBE)
@@ -471,7 +499,7 @@ class DesiredStateTests(unittest.TestCase):
 
     def test_the_recorder_profile_reads_every_non_rpc_family_and_writes_none(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         held = (
@@ -480,7 +508,7 @@ class DesiredStateTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((frozenset(), len(tuple(Family)) - 2), held)
+        self.assertEqual((frozenset(), len(tuple(Family)) - 1), held)
 
     def test_role_client_profiles_apply_the_audited_capability_and_resource_matrix(self) -> None:
         # Arrange
@@ -528,7 +556,7 @@ class DesiredStateTests(unittest.TestCase):
             ),
             Principal.DISCOVERY: (False, False, False, 0, 0, 0, 0, 0, False, None),
         }
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         actual = {
@@ -561,7 +589,7 @@ class DesiredStateTests(unittest.TestCase):
                 Principal.RECORDER,
             }
         )
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         ceilings = {
@@ -589,6 +617,20 @@ class DesiredStateTests(unittest.TestCase):
             Principal.DISCOVERY.value,
             {username.name for username in state.usernames},
         )
+
+    def test_the_recorder_profile_splits_drone_events_without_duplicate_lifecycle_delivery(
+        self,
+    ) -> None:
+        # Arrange
+        state = _desired_state()
+
+        # Act
+        subscribed = _exceptions_of(state, Principal.RECORDER, Access.SUBSCRIBE)
+
+        # Assert
+        self.assertIn(connectivity_subscription(), subscribed)
+        self.assertIn(salient_subscription(), subscribed)
+        self.assertNotIn(subscription_for(Family.DRONE_EVENT), subscribed)
 
     def test_lifecycle_acl_exceptions_are_projected_offline_for_the_runtime_roles(self) -> None:
         # Arrange
@@ -633,7 +675,8 @@ class DesiredStateTests(unittest.TestCase):
                         "aerial-rescue/v1/*/operator/command/*",
                         "aerial-rescue/v1/*/operator/approval/*",
                         "aerial-rescue/v1/*/drone/*/telemetry",
-                        "aerial-rescue/v1/*/drone/*/event/*",
+                        "aerial-rescue/v1/*/drone/*/event/connectivity-changed",
+                        "aerial-rescue/v1/*/drone/*/event/salient",
                         "aerial-rescue/v1/*/drone/*/command/*",
                         "aerial-rescue/v1/*/drone/*/command-result/*",
                         "aerial-rescue/v1/*/gateway/record/*",
@@ -702,7 +745,7 @@ class ApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -730,7 +773,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_first_apply_creates_every_profile_username_and_exception(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         apply(broker, state)
@@ -765,7 +808,7 @@ class ApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -812,7 +855,7 @@ class ApplyTests(unittest.TestCase):
         }
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -834,7 +877,7 @@ class ApplyTests(unittest.TestCase):
         }
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertNotIn(path, broker.objects)
@@ -859,7 +902,7 @@ class ApplyTests(unittest.TestCase):
 
         # Act
         with pytest.raises(ProvisioningError) as captured:
-            apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+            apply(broker, _desired_state())
 
         # Assert
         retired_paths = captured.value.value
@@ -891,7 +934,7 @@ class ApplyTests(unittest.TestCase):
 
         # Act
         with pytest.raises(ProvisioningError) as captured:
-            apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+            apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(ProvisioningRefusal.MALFORMED_READBACK, captured.value.refusal)
@@ -901,7 +944,7 @@ class ApplyTests(unittest.TestCase):
     def test_every_profile_is_written_deny_by_default_in_all_three_directions(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         apply(broker, state)
@@ -923,7 +966,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_second_apply_writes_no_exception_and_deletes_none(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
         broker.issued.clear()
 
@@ -936,7 +979,7 @@ class ApplyTests(unittest.TestCase):
     def test_an_exception_the_matrix_no_longer_grants_is_removed(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
         stray = "aerial-rescue/v1/*/drone/*/command/*"
         path = f"msgVpns/{VPN}/aclProfiles/{Principal.RECORDER.value}/publishTopicExceptions"
@@ -957,7 +1000,7 @@ class ApplyTests(unittest.TestCase):
     def test_the_factory_client_username_is_left_disabled(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         path = f"msgVpns/{VPN}/clientUsernames/{FACTORY_CLIENT_USERNAME}"
 
         # Act
@@ -976,7 +1019,7 @@ class ApplyTests(unittest.TestCase):
     def test_every_client_username_binds_to_its_own_acl_profile(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         apply(broker, state)
@@ -1006,7 +1049,7 @@ class ApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         bodies = tuple(
@@ -1057,7 +1100,7 @@ class ApplyTests(unittest.TestCase):
         }
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1074,7 +1117,7 @@ class ApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1104,7 +1147,7 @@ class ApplyTests(unittest.TestCase):
         expected_names = {template.name for template in queue_templates()}
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         templates = {
@@ -1165,7 +1208,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_write_whose_readback_disagrees_fails_closed(self) -> None:
         # Arrange
         broker = LyingReadbackBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         try:
@@ -1195,6 +1238,43 @@ class MessageCountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(137, counted)
+        self.assertEqual([path], [request.path for request in broker.issued])
+        self.assertFalse(any("/txFlows" in request.path for request in broker.issued))
+
+    def test_queue_bind_state_comes_from_the_transmit_flow_collection_count(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+        queue = drone_queue_name("drone-backlog-01")
+        broker.collections[queue_monitor_path(VPN, queue)] = [
+            {"queueName": queue, "bindCount": 0, "messageCount": 0}
+        ]
+        tx_flows = f"msgVpns/{VPN}/queues/{quote(queue, safe='')}/txFlows"
+        broker.monitor_counts[tx_flows] = 1
+
+        # Act
+        state = provisioning_adapter.queue_runtime_state(broker, VPN, queue)
+
+        # Assert
+        self.assertEqual(1, state.bind_count)
+        self.assertEqual(tx_flows, broker.issued[-1].path)
+        self.assertEqual(2, len(broker.issued))
+
+    def test_an_absent_queue_never_triggers_a_transmit_flow_read(self) -> None:
+        # Arrange
+        broker = FakeBroker()
+        queue = drone_queue_name("drone-absent-01")
+
+        # Act
+        with pytest.raises(ProvisioningError) as captured:
+            provisioning_adapter.queue_runtime_state(broker, VPN, queue)
+
+        # Assert
+        self.assertIs(ProvisioningRefusal.QUEUE_MONITOR_MISSING, captured.value.refusal)
+        self.assertEqual(
+            [queue_monitor_path(VPN, queue)],
+            [request.path for request in broker.issued],
+        )
+        self.assertFalse(any("/txFlows" in request.path for request in broker.issued))
 
     def test_a_queue_holding_nothing_counts_zero_rather_than_refusing(self) -> None:
         # Arrange
@@ -1210,7 +1290,9 @@ class MessageCountTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, counted)
 
-    def test_the_monitor_read_is_narrowed_to_the_exact_queue_and_three_fields(self) -> None:
+    def test_the_monitor_read_is_narrowed_to_the_exact_queue_and_supported_data_fields(
+        self,
+    ) -> None:
         # Arrange
         broker = FakeBroker()
         queue = DEAD_MESSAGE_QUEUE
@@ -1227,16 +1309,36 @@ class MessageCountTests(unittest.TestCase):
             broker.issued[-1].path,
         )
         self.assertNotIn("/msgs", broker.issued[-1].path)
-        self.assertIn("select=queueName%2CbindCount%2Cmsgs.count", broker.issued[-1].path)
+        self.assertIn("select=queueName,msgs.count", broker.issued[-1].path)
+        self.assertNotIn("bindCount", broker.issued[-1].path)
+
+    def test_the_monitor_select_uses_the_broker_supported_literal_collection_projection(
+        self,
+    ) -> None:
+        # Arrange
+        broker = FakeBroker()
+        queue = DEAD_MESSAGE_QUEUE
+        broker.collections[queue_monitor_path("default", queue)] = [
+            {"queueName": queue, "bindCount": 0, "messageCount": 23}
+        ]
+
+        # Act
+        counted = message_count(broker, "default", queue)
+
+        # Assert
+        self.assertEqual(23, counted)
+        self.assertIn("select=queueName,msgs.count", broker.issued[-1].path)
+        self.assertNotIn("bindCount", broker.issued[-1].path)
+        self.assertNotIn("/msgs", broker.issued[-1].path)
 
     def test_malformed_or_ambiguous_queue_monitor_rows_are_refused(self) -> None:
         # Arrange
         queue = drone_queue_name("drone-backlog-01")
         malformed = (
-            MonitorRow({"queueName": "other", "bindCount": 0}, {"msgs": {"count": 0}}),
-            MonitorRow({"queueName": queue, "bindCount": True}, {"msgs": {"count": 0}}),
-            MonitorRow({"queueName": queue, "bindCount": 0}, {"msgs": []}),
-            MonitorRow({"queueName": queue, "bindCount": 0}, {"msgs": {"count": -1}}),
+            (MonitorRow({"queueName": "other"}, {"msgs": {"count": 0}}), 0),
+            (MonitorRow({"queueName": queue}, {"msgs": {"count": 0}}), True),
+            (MonitorRow({"queueName": queue}, {"msgs": []}), 0),
+            (MonitorRow({"queueName": queue}, {"msgs": {"count": -1}}), 0),
         )
         duplicate = FakeBroker()
         duplicate.collections[queue_monitor_path(VPN, queue)] = [
@@ -1246,9 +1348,9 @@ class MessageCountTests(unittest.TestCase):
 
         # Act
         refusals = []
-        for row in malformed:
+        for row, bind_count in malformed:
             with pytest.raises(ProvisioningError) as captured:
-                provisioning_adapter._runtime_from_monitor_row(row, queue)
+                provisioning_adapter._runtime_from_monitor_row(row, queue, bind_count)
             refusals.append(captured.value.refusal)
         with pytest.raises(ProvisioningError) as ambiguous:
             message_count(duplicate, VPN, queue)
@@ -1389,7 +1491,7 @@ class DescribeTests(unittest.TestCase):
     def test_a_description_never_carries_the_password(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
 
         # Act
@@ -1415,7 +1517,7 @@ class DescribeTests(unittest.TestCase):
     def test_provisioning_object_representations_never_carry_a_password(self) -> None:
         # Arrange
         request = Request(Method.PUT, "resource", {"password": CREDENTIAL})
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
 
         # Act
         represented = (repr(request), repr(state))
@@ -1466,6 +1568,7 @@ def _runtime(broker: FakeBroker, queue: str, *, messages: int = 0, binds: int = 
     broker.collections[queue_monitor_path(VPN, queue)] = [
         {"queueName": queue, "bindCount": binds, "messageCount": messages}
     ]
+    broker.monitor_counts[provisioning_adapter.queue_tx_flow_monitor_path(VPN, queue)] = binds
 
 
 class QueueApplyTests(unittest.TestCase):
@@ -1476,7 +1579,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1493,7 +1596,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1515,7 +1618,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1532,7 +1635,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1552,7 +1655,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1567,7 +1670,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         self.assertEqual(
@@ -1584,7 +1687,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         bodies = _queue_bodies(broker)
@@ -1612,7 +1715,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         bodies = _queue_bodies(broker)
@@ -1640,7 +1743,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         written = [
@@ -1663,7 +1766,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         bodies = {
@@ -1700,7 +1803,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         usernames = [
@@ -1722,7 +1825,7 @@ class QueueApplyTests(unittest.TestCase):
         broker = FakeBroker()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
 
         # Assert
         subscribed = {
@@ -1736,7 +1839,7 @@ class QueueApplyTests(unittest.TestCase):
     def test_a_second_apply_writes_no_queue_subscription_and_deletes_none(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
         broker.issued.clear()
 
@@ -1750,7 +1853,7 @@ class QueueApplyTests(unittest.TestCase):
         """The desired state wins over an edit made outside it, as it does for exceptions."""
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
         stray = "aerial-rescue/v1/*/audit/*"
         collection = next(path for path in broker.collections if "/queues/" in path)
@@ -1771,11 +1874,11 @@ class QueueApplyTests(unittest.TestCase):
     ) -> None:
         # Arrange
         broker = FakeBroker()
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
         broker.issued.clear()
 
         # Act
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1]))
+        apply(broker, _desired_state(DRONES[:1]))
 
         # Assert
         self.assertEqual(
@@ -1791,10 +1894,10 @@ class QueueRetirementTests(unittest.TestCase):
     def test_the_plan_names_only_an_exact_stale_primary_and_its_paired_dmq(self) -> None:
         # Arrange
         broker = FakeBroker()
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
+        apply(broker, _desired_state())
         unrelated = "another-team/queue"
         broker.objects[_queue_path(unrelated)] = {"queueName": unrelated}
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1])
+        state = _desired_state(DRONES[:1])
         stale = drone_queue_name(DRONES[1])
         broker.issued.clear()
 
@@ -1810,17 +1913,19 @@ class QueueRetirementTests(unittest.TestCase):
         self.assertTrue(
             any(
                 request.method is Method.GET
-                and "select=queueName%2CbindCount%2Cmsgs.count" in request.path
+                and "select=queueName,msgs.count" in request.path
+                and "bindCount" not in request.path
                 and "/msgs" not in request.path
                 for request in broker.issued
             )
         )
+        self.assertFalse(any("/txFlows" in request.path for request in broker.issued))
 
     def test_safe_retirement_deletes_primary_then_dmq_after_immediate_zero_readbacks(self) -> None:
         # Arrange
         broker = FakeBroker()
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1])
+        apply(broker, _desired_state())
+        state = _desired_state(DRONES[:1])
         plan = plan_queue_retirement(broker, state)
         pair = plan.pairs[0]
         _runtime(broker, pair.primary)
@@ -1842,8 +1947,8 @@ class QueueRetirementTests(unittest.TestCase):
     def test_a_stale_primary_with_messages_is_refused_without_deleting_either_queue(self) -> None:
         # Arrange
         broker = FakeBroker()
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1])
+        apply(broker, _desired_state())
+        state = _desired_state(DRONES[:1])
         plan = plan_queue_retirement(broker, state)
         pair = plan.pairs[0]
         _runtime(broker, pair.primary, messages=1)
@@ -1873,8 +1978,8 @@ class QueueRetirementTests(unittest.TestCase):
     def test_a_stale_primary_with_a_consumer_bind_is_refused(self) -> None:
         # Arrange
         broker = FakeBroker()
-        apply(broker, desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES))
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES[:1])
+        apply(broker, _desired_state())
+        state = _desired_state(DRONES[:1])
         plan = plan_queue_retirement(broker, state)
         pair = plan.pairs[0]
         _runtime(broker, pair.primary, binds=1)
@@ -1892,10 +1997,29 @@ class QueueRetirementTests(unittest.TestCase):
         # Assert
         self.assertIs(ProvisioningRefusal.UNSAFE_RETIREMENT, captured.refusal)
 
+    def test_a_failed_transmit_flow_count_refuses_before_any_queue_delete(self) -> None:
+        # Arrange
+        broker = FailingMonitorCountBroker()
+        apply(broker, _desired_state())
+        state = _desired_state(DRONES[:1])
+        plan = plan_queue_retirement(broker, state)
+        pair = plan.pairs[0]
+        _runtime(broker, pair.primary)
+        broker.issued.clear()
+
+        # Act
+        with pytest.raises(SempError) as captured:
+            retire_stale_queues(broker, state, plan)
+
+        # Assert
+        self.assertIs(SempFailure.TRANSPORT, captured.value.failure)
+        self.assertEqual(0, broker.counts()[Method.DELETE])
+        self.assertTrue(any("/txFlows" in request.path for request in broker.issued))
+
     def test_a_plan_cannot_delete_a_queue_that_is_still_desired(self) -> None:
         # Arrange
         broker = FakeBroker()
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         apply(broker, state)
         desired = drone_queue_name(DRONES[0])
         plan = QueueRetirementPlan(
@@ -1919,7 +2043,7 @@ class QueueRetirementTests(unittest.TestCase):
 
     def test_absent_pair_is_idempotent_but_a_reappearing_primary_is_refused(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         primary = drone_queue_name("drone-retired-99")
         pair = QueueRetirementPair(primary, dead_message_queue_name(primary))
         plan = QueueRetirementPlan(VPN, (pair,))
@@ -1939,7 +2063,7 @@ class QueueRetirementTests(unittest.TestCase):
 
     def test_a_nonempty_or_bound_dead_message_queue_is_never_retired(self) -> None:
         # Arrange
-        state = desired_state(VPN, CREDENTIALS, NAMESPACE, DRONES)
+        state = _desired_state()
         primary = drone_queue_name("drone-retired-99")
         dead_message = dead_message_queue_name(primary)
         plan = QueueRetirementPlan(VPN, (QueueRetirementPair(primary, dead_message),))
@@ -1952,6 +2076,9 @@ class QueueRetirementTests(unittest.TestCase):
                     "messageCount": messages,
                 }
             ]
+            broker.monitor_counts[
+                provisioning_adapter.queue_tx_flow_monitor_path(VPN, dead_message)
+            ] = binds
 
         # Act
         refusals = []

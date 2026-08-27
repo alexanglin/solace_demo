@@ -23,10 +23,8 @@ from typing import ClassVar, Final, Never, cast, override
 from uuid import uuid4
 
 import pytest
-from aerial_rescue_broker.deployment import DEFAULT_VPN, read_credential
 from aerial_rescue_broker.ingress import PayloadSchemaExecutor, load_runtime_schema_registry
 from aerial_rescue_broker.messaging import (
-    BrokerEndpoint,
     BrokerLifecycle,
     BrokerLifecycleState,
     CommandGatewaySession,
@@ -37,7 +35,6 @@ from aerial_rescue_broker.messaging import (
     InboundMessage,
     MessageSettlement,
     SolaceDirectPublisher,
-    build_service,
     open_command_gateway_session,
     open_dashboard_session,
     open_fleet_session,
@@ -92,17 +89,17 @@ from aerial_rescue_contracts.integration import (
     agent_response_document,
 )
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
-from aerial_rescue_dashboard_api.application import AuthorizedMutation
+from aerial_rescue_dashboard_api.boundary.ingress import MutationIngressError, parse_mutation
+from aerial_rescue_dashboard_api.boundary.mutation_boundary import AuthorizedMutation
 from aerial_rescue_dashboard_api.console import dashboard_bindings
-from aerial_rescue_dashboard_api.ingress import MutationIngressError, parse_mutation
-from aerial_rescue_dashboard_api.mutations import (
+from aerial_rescue_dashboard_api.messaging.mutations import (
     DashboardMutationService,
     MutationStamp,
 )
-from aerial_rescue_dashboard_api.outbox import (
+from aerial_rescue_dashboard_api.messaging.outbox import (
     DashboardOutboxPublisher,
 )
-from aerial_rescue_dashboard_api.outbox import (
+from aerial_rescue_dashboard_api.messaging.outbox import (
     PublicationOutcome as DashboardPublicationOutcome,
 )
 from aerial_rescue_domain.approvals import ClockReading
@@ -214,23 +211,20 @@ from aerial_rescue_store.processing.source_ingress import SourceProcessingTransa
 from aerial_rescue_store.session import StoreSessionFactory, create_session_factory, transaction
 from aerial_rescue_store.settings import DatabaseSettings, database_settings
 from alembic import command
-from solace.messaging.messaging_service import MessagingService
 from sqlalchemy import ColumnElement, Table, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tests.broker_live_support import DEPLOY_ROOT as DEPLOY
+from tests.broker_live_support import LOCAL_BROKER_ENDPOINT as ENDPOINT
+from tests.broker_live_support import REPOSITORY_ROOT, SHARED_PROBE_DRONES, role_credential
+from tests.broker_live_support import connected_service as _service
+
 pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
 SCHEMAS: Final = REPOSITORY_ROOT / "schemas"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443",
-    vpn=DEFAULT_VPN,
-    trust_store=str(DEPLOY / "certs"),
-)
 MAINTENANCE_DATABASE: Final = "postgres"
 PROBE_DATABASE_PREFIX: Final = "aerial_rescue_app_probe_"
-PROBE_DRONE: Final = "drone-dispatch-probe"
+PROBE_DRONE: Final = SHARED_PROBE_DRONES[1]
 AGENT_NAME: Final = "VisionAgent"
 OPERATOR_ID: Final = "operator-live-probe"
 APPROVAL_TTL_MILLISECONDS: Final = 60_000
@@ -583,13 +577,6 @@ async def _migrate(engine: AsyncEngine) -> None:
         await connection.run_sync(lambda sync: command.upgrade(live_config(sync), "head"))
 
 
-def _service(role: Principal) -> MessagingService:
-    """Connect one production Solace service under the role's generated credential."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
-
-
 def _router_for_gateway(session: CommandGatewaySession) -> DeliveryRouter:
     """Construct the gateway's exact Direct, Guaranteed, and response capabilities."""
     direct = session.direct_publisher
@@ -886,35 +873,35 @@ async def _open_live_graph(
         gateway = open_command_gateway_session(
             ENDPOINT,
             Principal.COMMAND_GATEWAY,
-            read_credential(DEPLOY, Principal.COMMAND_GATEWAY),
+            role_credential(Principal.COMMAND_GATEWAY),
             gateway_bindings(),
         )
         resources.callback(gateway.close)
         evidence = open_guaranteed_processing_session(
             ENDPOINT,
             Principal.EVIDENCE_SERVICE,
-            read_credential(DEPLOY, Principal.EVIDENCE_SERVICE),
+            role_credential(Principal.EVIDENCE_SERVICE),
             evidence_bindings(),
         )
         resources.callback(evidence.close)
         dashboard = open_dashboard_session(
             ENDPOINT,
             Principal.DASHBOARD_API,
-            read_credential(DEPLOY, Principal.DASHBOARD_API),
+            role_credential(Principal.DASHBOARD_API),
             dashboard_bindings(),
         )
         resources.callback(dashboard.close)
         fleet = open_fleet_session(
             ENDPOINT,
             Principal.FLEET_SIMULATOR,
-            read_credential(DEPLOY, Principal.FLEET_SIMULATOR),
+            role_credential(Principal.FLEET_SIMULATOR),
             {PROBE_DRONE: drone_queue_name(PROBE_DRONE)},
         )
         resources.callback(fleet.close)
         recorder_session = open_receiver_only_session(
             ENDPOINT,
             Principal.RECORDER,
-            read_credential(DEPLOY, Principal.RECORDER),
+            role_credential(Principal.RECORDER),
             recorder_bindings(),
         )
         recorder = RecorderRuntime(

@@ -10,7 +10,7 @@ import httpx
 import pytest
 from aerial_rescue_contracts import canonical
 from aerial_rescue_dashboard_api import scenario_http as scenario_module
-from aerial_rescue_dashboard_api.ingress import MAX_MUTATION_BODY_BYTES
+from aerial_rescue_dashboard_api.boundary.ingress import MAX_MUTATION_BODY_BYTES
 
 _ROOT = Path(__file__).parents[3]
 _BEARER: Final = "scenario-private-bearer"
@@ -24,11 +24,6 @@ _STATUS: Final = canonical.canonical_bytes(
         "missionId": _MISSION,
         "runId": _RUN,
         "state": "PLANNED",
-        "declaredCount": 23,
-        "simulatedCount": 20,
-        "declaredOnlyCount": 3,
-        "completedTickCount": 0,
-        "telemetryPublicationCount": 0,
     }
 )
 

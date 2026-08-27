@@ -16,18 +16,18 @@ from aerial_rescue_store.migration import (
 from sqlalchemy import String, Table
 
 PROBE_URL = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
-SEVENTH_REVISION = "0007_command_gateway_authority"
-EIGHTH_REVISION = "0008_broker_refusal"
-SEVENTH_TO_EIGHTH = f"{SEVENTH_REVISION}:{EIGHTH_REVISION}"
+EIGHTH_REVISION = "0008_command_gateway_authority"
+NINTH_REVISION = "0009_broker_refusal"
+EIGHTH_TO_NINTH = f"{EIGHTH_REVISION}:{NINTH_REVISION}"
 
 
-class EighthRevisionTests(unittest.TestCase):
+class NinthRevisionTests(unittest.TestCase):
     def test_the_additive_step_creates_only_the_bounded_refusal_table(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, SEVENTH_TO_EIGHTH)
+        emitted = upgrade_statements(config, EIGHTH_TO_NINTH)
 
         # Assert
         self.assertEqual(
@@ -44,7 +44,7 @@ class EighthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, SEVENTH_TO_EIGHTH)
+        emitted = upgrade_statements(config, EIGHTH_TO_NINTH)
 
         # Assert
         self.assertEqual(
@@ -62,7 +62,7 @@ class EighthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = downgrade_statements(config, SEVENTH_REVISION)
+        emitted = downgrade_statements(config, EIGHTH_REVISION)
 
         # Assert
         self.assertEqual(

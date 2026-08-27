@@ -31,7 +31,9 @@ from aerial_rescue_store.application_outbox import (
 )
 from aerial_rescue_store.outbox import StagedCommand
 
-ROOT = Path(__file__).parents[3]
+from .fixture_paths import repository_root
+
+ROOT = repository_root(Path(__file__))
 
 
 def _payload() -> bytes:
@@ -56,6 +58,27 @@ def _command(command_id: str = "command-synthetic-0002") -> StagedCommand:
         correlation_id="correlation-synthetic-0001",
         causation_id=None,
         traceparent="00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01",
+        staged_at="2026-08-25T12:05:00.000Z",
+    )
+
+
+def _assign_sector_command() -> StagedCommand:
+    """Return one staged assign-sector row bound to its committed fixture."""
+    payload = (
+        ROOT / "fixtures/golden/v1/event/drone-command-assign-sector/baseline.json"
+    ).read_bytes()
+    document = canonical.decode(payload)
+    assert isinstance(document, dict)
+    data = document["data"]
+    assert isinstance(data, dict)
+    return StagedCommand(
+        command_id=str(data["commandId"]),
+        mission_id=str(data["missionId"]),
+        drone_id=str(data["droneId"]),
+        payload=payload,
+        correlation_id=str(document["correlationid"]),
+        causation_id=None,
+        traceparent=str(document["traceparent"]),
         staged_at="2026-08-25T12:05:00.000Z",
     )
 
@@ -150,24 +173,181 @@ class FakeApplicationOutbox:
 
 def _application_event(event_id: str = "event-audit-1") -> StagedApplicationEvent:
     """Return one exact command-gateway audit publication."""
+    document = canonical.decode(
+        (
+            ROOT / "fixtures/golden/v1/event/audit/command-authorization/escalate-authorized.json"
+        ).read_bytes()
+    )
+    assert isinstance(document, dict)
+    document["id"] = event_id
+    document["causationid"] = "operator-event-synthetic-0001"
+    document["tracestate"] = "vendor=value"
     return StagedApplicationEvent(
         producer=APPLICATION_PRODUCER,
         event_id=event_id,
         family="audit",
         topic="aerial-rescue/v1/mission-synthetic-0001/audit/command-authorization",
         headers=b'{"correlation":"correlation-synthetic-0001"}',
-        payload=(
-            ROOT / "fixtures/golden/v1/event/audit/command-authorization/escalate-authorized.json"
-        ).read_bytes(),
-        traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203336-01",
-        tracestate=None,
-        correlation_id="correlation-synthetic-0001",
-        causation_id=None,
-        staged_at="2026-08-25T12:05:00.000Z",
+        payload=canonical.canonical_bytes(document),
+        traceparent=str(document["traceparent"]),
+        tracestate=str(document["tracestate"]),
+        correlation_id=str(document["correlationid"]),
+        causation_id=str(document["causationid"]),
+        staged_at=str(document["time"]),
     )
 
 
+def _payload_with(
+    event: StagedApplicationEvent,
+    **members: object,
+) -> StagedApplicationEvent:
+    """Return a row whose exact payload carries selected replacement members."""
+    document = canonical.decode(event.payload)
+    assert isinstance(document, dict)
+    document.update(members)
+    return replace(event, payload=canonical.canonical_bytes(document))
+
+
+def _payload_with_audit_type(
+    event: StagedApplicationEvent,
+    *,
+    event_type: str,
+    record_type: str,
+) -> bytes:
+    """Return canonical event bytes with one internally consistent audit subtype."""
+    document = canonical.decode(event.payload)
+    assert isinstance(document, dict)
+    data = document["data"]
+    assert isinstance(data, dict)
+    document["type"] = event_type
+    data["recordType"] = record_type
+    return canonical.canonical_bytes(document)
+
+
 class ApplicationPublicationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_batch_limit_and_each_outcome_count_remain_independent(self) -> None:
+        # Arrange
+        rows = tuple(
+            _application_event(f"event-audit-{index:02d}")
+            for index in range(APPLICATION_OUTBOX_BATCH_SIZE)
+        )
+        outcomes = (
+            MessagingRefusal.PUBLISH_REFUSED,
+            None,
+            MessagingRefusal.PUBLISH_AMBIGUOUS,
+            MessagingRefusal.PUBLISH_REFUSED,
+            None,
+            MessagingRefusal.PUBLISH_AMBIGUOUS,
+            *((None,) * (APPLICATION_OUTBOX_BATCH_SIZE - 6)),
+        )
+        store = FakeApplicationOutbox(rows)
+        publisher = FakePublisher(outcomes)
+        confirmed_at = "2026-08-25T12:05:01.000Z"
+
+        # Act
+        report = await publish_application_batch(store, publisher, confirmed_at)
+
+        # Assert
+        self.assertEqual(
+            (
+                APPLICATION_OUTBOX_BATCH_SIZE,
+                APPLICATION_OUTBOX_BATCH_SIZE - 4,
+                2,
+                2,
+                APPLICATION_OUTBOX_BATCH_SIZE - 4,
+                APPLICATION_OUTBOX_BATCH_SIZE - 2,
+                rows[1].topic,
+                rows[1].payload,
+                {"correlation": "correlation-synthetic-0001"},
+            ),
+            (
+                report.visited,
+                report.confirmed,
+                report.ambiguous,
+                report.refused,
+                len(publisher.sent),
+                len(store.recorded),
+                publisher.sent[0][0],
+                publisher.sent[0][1],
+                publisher.sent[0][2],
+            ),
+        )
+
+    async def test_every_staged_row_member_binds_to_the_exact_cloudevent_before_io(self) -> None:
+        # Arrange
+        event = _application_event()
+        cases = (
+            ("event-id", replace(event, event_id="event-audit-other")),
+            ("producer", replace(event, producer="evidence-service")),
+            (
+                "source",
+                _payload_with(
+                    event,
+                    source="urn:aerial-rescue:evidence-service:evidence-runtime-1",
+                ),
+            ),
+            ("family", replace(event, family="agent-proposal")),
+            (
+                "event-type",
+                replace(
+                    event,
+                    payload=_payload_with_audit_type(
+                        event,
+                        event_type="aerial-rescue.v1.audit.proposal-normalization",
+                        record_type="proposal-normalization",
+                    ),
+                ),
+            ),
+            (
+                "topic",
+                replace(
+                    event,
+                    topic="aerial-rescue/v1/mission-synthetic-0001/audit/proposal-normalization",
+                ),
+            ),
+            ("traceparent", replace(event, traceparent="00-" + "1" * 32 + "-" + "2" * 16 + "-01")),
+            ("tracestate", replace(event, tracestate=None)),
+            ("correlation", replace(event, correlation_id="correlation-other")),
+            ("causation", replace(event, causation_id=None)),
+            ("staged-at", replace(event, staged_at="2026-08-25T12:08:02.000Z")),
+        )
+
+        # Act
+        outcomes = []
+        for name, mismatched in cases:
+            store = FakeApplicationOutbox((mismatched,))
+            publisher = FakePublisher()
+            with pytest.raises(ApplicationPublicationError) as captured:
+                await publish_application_batch(
+                    store,
+                    publisher,
+                    "2026-08-25T12:09:01.000Z",
+                )
+            outcomes.append(
+                (
+                    name,
+                    captured.value.refusal,
+                    publisher.sent,
+                    store.recorded,
+                    store.producers,
+                )
+            )
+
+        # Assert
+        self.assertEqual(
+            [
+                (
+                    name,
+                    ApplicationPublicationRefusal.IDENTITY,
+                    [],
+                    [],
+                    [APPLICATION_PRODUCER],
+                )
+                for name, _event in cases
+            ],
+            outcomes,
+        )
+
     async def test_confirmation_ambiguity_and_refusal_preserve_each_row_independently(
         self,
     ) -> None:
@@ -232,8 +412,13 @@ class ApplicationPublicationTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            (ApplicationPublicationRefusal.HEADERS, [], []),
-            (captured.value.refusal, publisher.sent, store.recorded),
+            (
+                ApplicationPublicationRefusal.HEADERS,
+                ApplicationPublicationRefusal.HEADERS.value,
+                [],
+                [],
+            ),
+            (captured.value.refusal, str(captured.value), publisher.sent, store.recorded),
         )
 
     async def test_topic_producer_family_and_header_identity_fail_closed_before_io(self) -> None:
@@ -273,14 +458,20 @@ class ApplicationPublicationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_text_property_keys_are_refused_at_the_decoded_boundary(self) -> None:
         # Arrange
-        store = FakeApplicationOutbox((_application_event(),))
+        event = _application_event()
+        store = FakeApplicationOutbox((event,))
         publisher = FakePublisher()
+        decode = canonical.decode
+
+        def decode_with_hostile_headers(value: str | bytes) -> object:
+            """Keep the event valid while violating only the decoded header boundary."""
+            return {1: "value"} if value == event.headers else decode(value)
 
         # Act
         with (
             patch(
                 "aerial_rescue_command_gateway.publication.canonical.decode",
-                return_value={1: "value"},
+                side_effect=decode_with_hostile_headers,
             ),
             pytest.raises(ApplicationPublicationError) as captured,
         ):
@@ -332,6 +523,57 @@ class ApplicationPublicationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PublicationOutcomeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_empty_and_exact_limit_batches_preserve_zero_and_total_counts(self) -> None:
+        # Arrange
+        empty_store = FakeCommandOutbox(())
+        full_rows = tuple(
+            CommandPublication(_command(f"command-synthetic-{index:04d}"), OutboxState.STAGED)
+            for index in range(COMMAND_PUBLICATION_BATCH_SIZE)
+        )
+        full_store = FakeCommandOutbox(full_rows)
+
+        # Act
+        empty = await publish_batch(empty_store, FakePublisher(), "2026-08-25T12:05:01.000Z")
+        full = await publish_batch(full_store, FakePublisher(), "2026-08-25T12:05:02.000Z")
+
+        # Assert
+        self.assertEqual(
+            (
+                (0, 0, 0),
+                (COMMAND_PUBLICATION_BATCH_SIZE, 0, 0),
+                [COMMAND_PUBLICATION_BATCH_SIZE],
+                COMMAND_PUBLICATION_BATCH_SIZE,
+            ),
+            (
+                (empty.confirmed, empty.ambiguous, empty.refused),
+                (full.confirmed, full.ambiguous, full.refused),
+                full_store.requested_limits,
+                len(full_store.recorded),
+            ),
+        )
+
+    async def test_assign_sector_publication_preserves_exact_broker_arguments(self) -> None:
+        # Arrange
+        command = _assign_sector_command()
+        store = FakeCommandOutbox((CommandPublication(command, OutboxState.STAGED),))
+        publisher = FakePublisher()
+
+        # Act
+        report = await publish_batch(store, publisher, "2026-08-25T12:05:01.000Z")
+
+        # Assert
+        self.assertEqual(
+            (
+                (1, 0, 0),
+                (
+                    "aerial-rescue/v1/m-2026-0001/drone/drone-vision-01/command/assign-sector",
+                    command.payload,
+                    {},
+                ),
+            ),
+            ((report.confirmed, report.ambiguous, report.refused), publisher.sent[0]),
+        )
+
     async def test_confirmation_ambiguity_and_refusal_have_distinct_durable_effects(self) -> None:
         # Arrange
         confirmed = CommandPublication(_command(), OutboxState.STAGED)
@@ -339,15 +581,32 @@ class PublicationOutcomeTests(unittest.IsolatedAsyncioTestCase):
             _command("command-synthetic-ambiguous"),
             OutboxState.STAGED,
         )
+        second_ambiguous = CommandPublication(
+            _command("command-synthetic-ambiguous-2"),
+            OutboxState.STAGED,
+        )
         refused = CommandPublication(
             _command("command-synthetic-refused"),
             OutboxState.STAGED,
         )
-        store = FakeCommandOutbox((confirmed, ambiguous, refused))
+        second_refused = CommandPublication(
+            _command("command-synthetic-refused-2"),
+            OutboxState.STAGED,
+        )
+        third_refused = CommandPublication(
+            _command("command-synthetic-refused-3"),
+            OutboxState.STAGED,
+        )
+        store = FakeCommandOutbox(
+            (confirmed, ambiguous, second_ambiguous, refused, second_refused, third_refused)
+        )
         publisher = FakePublisher(
             (
                 None,
                 MessagingRefusal.PUBLISH_AMBIGUOUS,
+                MessagingRefusal.PUBLISH_AMBIGUOUS,
+                MessagingRefusal.PUBLISH_REFUSED,
+                MessagingRefusal.PUBLISH_REFUSED,
                 MessagingRefusal.PUBLISH_REFUSED,
             )
         )
@@ -358,7 +617,7 @@ class PublicationOutcomeTests(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual(
             (
-                (1, 1, 1),
+                (1, 2, 3),
                 [COMMAND_PUBLICATION_BATCH_SIZE],
                 [
                     (
@@ -373,12 +632,24 @@ class PublicationOutcomeTests(unittest.IsolatedAsyncioTestCase):
                         OutboxEvent.AMBIGUOUS,
                         None,
                     ),
+                    (
+                        second_ambiguous.command.command_id,
+                        OutboxState.STAGED,
+                        OutboxEvent.AMBIGUOUS,
+                        None,
+                    ),
                 ],
+                (
+                    "aerial-rescue/v1/mission-synthetic-0001/drone/drone-synthetic-01/command/escalate-rescue",
+                    confirmed.command.payload,
+                    {},
+                ),
             ),
             (
                 (report.confirmed, report.ambiguous, report.refused),
                 store.requested_limits,
                 store.recorded,
+                publisher.sent[0],
             ),
         )
 
@@ -400,8 +671,13 @@ class PublicationOutcomeTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            (PublicationRefusal.BATCH_EXCEEDED, [], []),
-            (captured.value.refusal, publisher.sent, store.recorded),
+            (
+                PublicationRefusal.BATCH_EXCEEDED,
+                PublicationRefusal.BATCH_EXCEEDED.value,
+                [],
+                [],
+            ),
+            (captured.value.refusal, str(captured.value), publisher.sent, store.recorded),
         )
 
     async def test_invalid_rows_states_and_broker_outcomes_fail_closed(self) -> None:
@@ -471,12 +747,16 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
                         "2026-08-25T12:06:01.000Z",
                     )
                 ],
+                [publication.command.command_id],
+                [publication.command.command_id],
             ),
             (
                 still_ambiguous,
                 unconfirmed_store.recorded,
                 confirmed,
                 confirmed_store.recorded,
+                absent.probed,
+                present.probed,
             ),
         )
 

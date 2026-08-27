@@ -6,6 +6,7 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "aerial-rescue-broker",
     "aerial-rescue-contracts",
+    "aerial-rescue-observability",
     "aerial-rescue-store",
 ]
 

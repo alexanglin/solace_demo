@@ -7,11 +7,8 @@ script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 . "$script_directory/../quality-components.sh"
 
-quality_root_python_active || exit 0
-[ -f pyproject.toml ] || {
-	printf 'MISSING: pyproject.toml is required by owned root Python source\n' >&2
-	exit 1
-}
+root_active=$(quality_root_python_manifest_state)
+[ "$root_active" = true ] || exit 0
 [ -f uv.lock ] || {
 	printf 'MISSING: uv.lock is required for root type checking\n' >&2
 	exit 1

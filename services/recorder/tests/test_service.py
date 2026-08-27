@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import pytest
 from aerial_rescue_broker.messaging import BrokerLifecycle
-from aerial_rescue_broker.queues import family_queue_name
+from aerial_rescue_broker.queues import queues_for
 from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts.topics import Family
 from aerial_rescue_domain.principals import Principal
@@ -46,21 +46,7 @@ class RecorderBindingTests(unittest.TestCase):
     def test_only_recordable_families_are_bound_with_their_required_delivery(self) -> None:
         # Arrange
         role = Principal.RECORDER
-        expected_queues = {
-            family.name: family_queue_name(role, family)
-            for family in (
-                Family.OPERATOR_COMMAND,
-                Family.OPERATOR_APPROVAL,
-                Family.DRONE_EVENT,
-                Family.DRONE_COMMAND,
-                Family.DRONE_COMMAND_RESULT,
-                Family.AGENT_PROPOSAL,
-                Family.EVIDENCE_DECISION,
-                Family.AUDIT,
-                Family.MISSION_EVENT,
-                Family.SECTOR_EVENT,
-            )
-        }
+        expected_queues = {queue.name: queue.name for queue in queues_for(role, ())}
         expected_direct = (
             subscription_for(Family.DRONE_TELEMETRY),
             subscription_for(Family.GATEWAY_RECORD),

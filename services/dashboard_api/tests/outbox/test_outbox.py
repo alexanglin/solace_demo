@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import pytest
-from aerial_rescue_dashboard_api.outbox import (
+from aerial_rescue_dashboard_api.messaging.outbox import (
     DashboardOutboxPublisher,
     PublicationOutcome,
     PublicationResult,

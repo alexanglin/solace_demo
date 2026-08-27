@@ -22,6 +22,7 @@ from aerial_rescue_broker.queues import (
     DMQ_SUFFIX,
     MAX_QUEUE_NAME_LENGTH,
     MAX_SPOOL_MEGABYTES,
+    RECORDER_LIFECYCLE_QUEUE,
     UPSTREAM_MAX_DELIVERED_UNACKED,
     UPSTREAM_MAX_MESSAGE_BYTES,
     Endpoint,
@@ -37,7 +38,11 @@ from aerial_rescue_broker.queues import (
     queue_templates,
     queues_for,
 )
-from aerial_rescue_broker.subscriptions import drone_command_subscription, subscription_for
+from aerial_rescue_broker.subscriptions import (
+    connectivity_subscription,
+    drone_command_subscription,
+    subscription_for,
+)
 from aerial_rescue_contracts.topics import (
     MAX_IDENTIFIER_LENGTH,
     Delivery,
@@ -146,15 +151,40 @@ class DerivationTests(unittest.TestCase):
 
     def test_the_recorder_is_owed_the_ten_guaranteed_families(self) -> None:
         # Arrange
-        expected = frozenset(
-            family for family in Family if delivery_for(family) is Delivery.GUARANTEED
-        )
+        expected = frozenset({Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT})
 
         # Act
         owed = guaranteed_grants(Principal.RECORDER)
 
         # Assert
-        self.assertEqual((expected, 10), (owed, len(owed)))
+        self.assertEqual(10, len(owed))
+        self.assertTrue(expected <= owed)
+
+    def test_the_recorder_combines_lifecycle_families_in_one_causally_ordered_queue(self) -> None:
+        # Arrange
+        role = Principal.RECORDER
+
+        # Act
+        queues = queues_for(role, ())
+
+        # Assert
+        lifecycle = next(queue for queue in queues if queue.name == RECORDER_LIFECYCLE_QUEUE)
+        self.assertEqual(
+            (
+                RECORDER_LIFECYCLE_QUEUE,
+                role.value,
+                frozenset(
+                    {
+                        connectivity_subscription(),
+                        subscription_for(Family.MISSION_EVENT),
+                        subscription_for(Family.SECTOR_EVENT),
+                    }
+                ),
+            ),
+            (lifecycle.name, lifecycle.owner, lifecycle.subscriptions),
+        )
+        connectivity = connectivity_subscription()
+        self.assertEqual(1, sum(connectivity in queue.subscriptions for queue in queues))
 
 
 class FamilyQueueTests(unittest.TestCase):
@@ -361,7 +391,7 @@ class DesiredSetTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        primary = 21 + len(DRONES)
+        primary = 20 + len(DRONES)
         expected = primary * 2 + 3
 
         # Act
@@ -370,9 +400,9 @@ class DesiredSetTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, len(queues))
 
-    def test_the_reference_fleet_reserves_ninety_one_queues_and_910_megabytes(self) -> None:
+    def test_the_reference_fleet_reserves_eighty_nine_queues_and_890_megabytes(self) -> None:
         # Arrange
-        expected = (91, 910)
+        expected = (89, 890)
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)

@@ -17,11 +17,8 @@ script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 . "$script_directory/quality-components.sh"
 
-quality_agent_python_active || exit 0
-[ -f agent-mesh/pyproject.toml ] || {
-	printf 'MISSING: agent-mesh/pyproject.toml is required by owned Agent Mesh source\n' >&2
-	exit 1
-}
+agent_active=$(quality_agent_python_manifest_state)
+[ "$agent_active" = true ] || exit 0
 [ -f agent-mesh/uv.lock ] || {
 	printf 'MISSING: agent-mesh/uv.lock is required for Agent Mesh tests\n' >&2
 	exit 1

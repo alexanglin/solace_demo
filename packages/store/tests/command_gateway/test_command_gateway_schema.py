@@ -18,18 +18,18 @@ from aerial_rescue_store.migration import (
 from sqlalchemy import LargeBinary, String, Table
 
 PROBE_URL = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
-SIXTH_REVISION = "0006_durable_fleet_processing"
-SEVENTH_REVISION = "0007_command_gateway_authority"
-SIXTH_TO_SEVENTH = f"{SIXTH_REVISION}:{SEVENTH_REVISION}"
+SEVENTH_REVISION = "0007_durable_fleet_processing"
+EIGHTH_REVISION = "0008_command_gateway_authority"
+SEVENTH_TO_EIGHTH = f"{SEVENTH_REVISION}:{EIGHTH_REVISION}"
 
 
-class SeventhRevisionTests(unittest.TestCase):
+class EighthRevisionTests(unittest.TestCase):
     def test_the_additive_step_creates_only_the_two_missing_authority_tables(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, SIXTH_TO_SEVENTH)
+        emitted = upgrade_statements(config, SEVENTH_TO_EIGHTH)
 
         # Assert
         self.assertEqual(
@@ -47,7 +47,7 @@ class SeventhRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, SIXTH_TO_SEVENTH)
+        emitted = upgrade_statements(config, SEVENTH_TO_EIGHTH)
 
         # Assert
         self.assertEqual(
@@ -73,7 +73,7 @@ class SeventhRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = downgrade_statements(config, SIXTH_REVISION)
+        emitted = downgrade_statements(config, SEVENTH_REVISION)
 
         # Assert
         self.assertEqual(

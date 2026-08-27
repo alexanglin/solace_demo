@@ -34,6 +34,7 @@ In priority order. The ordering matters: it is what to trade away first under pr
 | Agent proposal → executable command | Everything an agent emits | The deterministic command gateway is the sole publisher of executable commands; agent identities are ACL-denied on those topics ([ADR-0005](../adr/0005-deterministic-command-gateway.md)) |
 | Event Mesh Gateway ingress → A2A task | Any allowlisted CloudEvent | Schema validation, then a deterministic domain service normalizes before anything affects state |
 | Browser → local API | The browser, and anything that can reach loopback | IPv4/IPv6 loopback-only binding; an exact Host allowlist on every request; the exact configured dashboard Origin on browser mutations; and a per-runtime bearer on state-changing endpoints ([ADR-0024](../adr/0024-local-operator-api-boundary.md)) |
+| Host loopback → published container | Any local process able to reach a published port | Explicit `127.0.0.1` mappings plus one single-member, non-masquerading bridge for each of broker, PostgreSQL, and Caddy; application traffic stays on separate need-to-know internal networks or the dashboard Unix socket ([ADR-0131](../adr/0131-isolate-loopback-publishers-and-forward-startup-flags.md)) |
 | Recorded fixture → live run | Any NDJSON on disk | Replay is structurally isolated; recorded evidence is never decision-eligible in a live run ([ADR-0009](../adr/0009-isolated-side-effect-free-replay.md)) |
 | Upstream dependency → runtime | Agent Mesh and its transitive tree | Pinned versions, locked files, advisories audited on every push and again daily, a recorded override or an expiring waiver for every reported finding, and the authority boundary above |
 | Container image → runtime | Every pulled base image and the layers the two Dockerfiles add | Tag-plus-digest pins held by the compose policy gate; Trivy image scans daily in continuous integration, which report every advisory and enforce none, because the only lever on a third-party image is its pin; the enforced control is that each pinned digest is still the newest its tag carries. A separately validated CycloneDX inventory binds packages to that exact image without external publication ([ADR-0048](../adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md), [ADR-0162](../adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md)) |
@@ -58,25 +59,29 @@ generated in memory for one API process lifetime and is never persisted or logge
 `.env.example` carries placeholders only; gitleaks runs on the staged diff and again over full history at
 pre-push; CI asserts no credential secrets are configured; recorded fixtures are sanitized by a
 deny-by-default field allowlist with deterministic pseudonymisation of broker host, message-VPN, client,
-and queue names; screenshots are redacted before commit; the stack's own secrets — the broker admin
-password, the Postgres password, the Event Management Agent's read-only SEMP credential, and the
-per-checkout certificate authority — are files under the ignored `deploy/secrets/` mounted as compose
-secrets rather than passed as environment literals, which the compose policy gate enforces
+and queue names; screenshots are redacted before commit; the stack's generated broker administrator,
+Postgres, role, session, and private-control credentials and per-checkout certificate authority stay
+under ignored `deploy/secrets/`. The optional Event Management Agent SEMP values remain empty until an
+operator supplies an independently provisioned read-only identity through an ignored environment file;
+the repository neither provisions that user nor generates an unconsumed password for it
 ([ADR-0045](../adr/0045-fail-closed-compose-policy-gate.md),
-[ADR-0046](../adr/0046-generated-local-certificate-authority.md)). **Residual risk:** the fixture sanitizer is
-project-owned code, and a field added to the envelope without updating the allowlist would leak by
-default — which is why the allowlist denies by default rather than permitting by default.
+[ADR-0046](../adr/0046-generated-local-certificate-authority.md),
+[ADR-0129](../adr/0129-generate-only-consumed-local-secrets.md)). **Residual risk:** the fixture
+sanitizer is project-owned code, and a field added to the envelope without updating the allowlist would
+leak by default — which is why the allowlist denies by default rather than permitting by default.
 
 ### T3 — Unauthorized topic access
 
 A component publishing or subscribing outside its remit — an edge agent on a command topic, the recorder
-on anything, replay credentials on a live topic. Mitigations: separate least-privilege broker identities
+outside direct telemetry and the three dashboard lifecycle families, or replay credentials on a live
+topic. Mitigations: separate least-privilege broker identities
 for the simulator, dashboard, Agent Mesh gateways and agents, recorder, and command gateway, each with an
 explicit ACL, plus negative tests asserting denial. **The ACL matrix is load-bearing and must be specified
 before the components that depend on it are built** ([ADR-0005](../adr/0005-deterministic-command-gateway.md)).
 
 [ADR-0061](../adr/0061-least-privilege-broker-principals-and-topic-authorization.md) is that
-specification: nine authorization roles, two total publish and subscribe tables over the eleven topic
+specification, as extended by ADR-0111 and narrowed by ADR-0120: ten authorization roles, two total
+publish and subscribe tables over thirteen topic
 families, a separate A2A grant, `disallow` as every owned ACL profile's default action, and the factory
 `default` client username disabled so no denial is bypassable by connecting as it. The negative tests
 are catalogue cases B17, B18, and B19; their status is tracked in
@@ -84,8 +89,13 @@ are catalogue cases B17, B18, and B19; their status is tracked in
 running container, with the matrix applied and the factory identity disabled
 ([`release-evidence/phase-0/broker-authorization.md`](../../release-evidence/phase-0/broker-authorization.md)).
 **Residual risks:** the roles are coarser than the processes, so three edge agents share one
-authority; no test yet asserts that a *subscription* outside a role's grants is refused; and no
-durable queue exists, so the guaranteed-delivery half of this mitigation is unenforced.
+authority. The live authorization suite now contains recorder positive and cross-family subscription
+denials, and the global plus mission-control durable projections are asserted offline. At revision
+`db2b640`, its selected local controls passed 16 of 16 cases in 0.57 seconds against the shared broker
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That result does not establish complete ACL or queue behavior, TLS-downgrade resistance, Solace Cloud
+parity, or narrower per-edge-agent authority
+([ADR-0120](../adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
 
 ### T4 — Event spoofing and replay on the data plane
 
@@ -148,12 +158,27 @@ bounds with a droppable-class allowlist that never includes audit or approval ev
 timeouts everywhere. **Failure must be safe:** loss of the agent runtime or the models degrades to
 abstention and preserves telemetry, operator visibility, replay, and the approval boundary.
 
+The committed post-mission soak passed all 61 samples over 30.3 minutes with a stable dashboard API
+container/PID, both process-growth bounds satisfied, READY and CONNECTED browser state, a visible map,
+zero alerts, and zero remote-origin requests
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+The retained record does not contain numeric baseline or maximum values; its post-soak point sample is
+not either value. The soak measured the dashboard API process after mission exhaustion, not the browser,
+broker, PostgreSQL, other services, an active workload, or whole-stack resources.
+
 ### T9 — Misleading the operator
 
 Presenting replayed or degraded state as live, showing a proposal that differs from the one being
 consumed, or hiding the mode. Mitigations: the mode badge cannot be hidden or confused; the operator is
 shown the exact digest and the server re-checks it on submission; abstention is visually distinct from a
 low evidence score; and the plan forbids claiming that replay or simulated behaviour is operationally live.
+
+At revision `db2b640`, the eight production workflows directly observed explicit degraded-live and replay
+labels, stale-runtime lockout with reload, offline-to-recovered transport behavior, and replay digest
+verification on the shared local stack
+([wilderness-dashboard-production-first-run.md](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+That current-slice evidence contains no proposal, approval, command, model, evidence, rescue, or
+escalation control and therefore does not establish those presentation or authority paths.
 
 ## Out of scope for the initial release
 

@@ -14,6 +14,7 @@ from aerial_rescue_store.approval_bindings import (
     ApprovalAuthorityDecision,
     StoredApprovalAuthority,
 )
+from aerial_rescue_store.approvals import StoredApproval
 from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate, BrokerRefusalOutcome
 from aerial_rescue_store.command_progress import (
@@ -29,6 +30,13 @@ from aerial_rescue_store.proposals import StoredProposal
 
 from aerial_rescue_command_gateway.ingress import ApprovalAction
 from aerial_rescue_command_gateway.normalization import PendingInvocation
+
+
+def _require_approval_id(approval_id: str) -> None:
+    """Refuse an authority record that has no durable approval identity."""
+    if not approval_id:
+        message = "approval_id must not be blank"
+        raise ValueError(message)
 
 
 @dataclass(frozen=True)
@@ -58,11 +66,16 @@ class BoundApproval:
 
     approval_id: str
     approval: Approval
+    durable_approval: StoredApproval
     evidence_decision_id: str
     evidence_decision_digest: str
     evidence_decision_version: int
     action: ApprovalAction
     runtime_epoch: str | None
+
+    def __post_init__(self) -> None:
+        """Refuse an authority record that has no durable approval identity."""
+        _require_approval_id(self.approval_id)
 
 
 @dataclass(frozen=True)

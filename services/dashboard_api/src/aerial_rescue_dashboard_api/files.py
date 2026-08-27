@@ -11,8 +11,8 @@ from typing import cast
 
 from aerial_rescue_contracts import canonical
 
-from aerial_rescue_dashboard_api.application import AssetMediaType, AssetOutcome
-from aerial_rescue_dashboard_api.wire import parse_wire_document
+from aerial_rescue_dashboard_api.boundary.application import AssetMediaType, AssetOutcome
+from aerial_rescue_dashboard_api.boundary.wire import parse_wire_document
 
 _CATALOG = "catalog.v1.json"
 _DASHBOARD_SCHEMA = "https://aerial-rescue.invalid/schemas/v1/dashboard/"
@@ -244,8 +244,6 @@ def _replay_index(root: Path, maximum: int) -> dict[tuple[str, int], bytes]:
             raise DashboardFileError
         body = _validated_replay(path, maximum)
         document = _mapping(canonical.decode(body))
-        if path.stem != _text(document, "sessionId"):
-            raise DashboardFileError
         key = (_text(document, "scenarioId"), _integer(document, "scenarioRevision"))
         if key in result:
             raise DashboardFileError

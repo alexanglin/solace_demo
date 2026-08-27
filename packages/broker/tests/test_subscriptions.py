@@ -22,6 +22,7 @@ from aerial_rescue_broker.subscriptions import (
     SubscriptionError,
     SubscriptionRefusal,
     a2a_subscription,
+    connectivity_subscription,
     reply_subscription,
     subscription_for,
 )
@@ -189,6 +190,34 @@ class SubscriptionForTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), tuple(size for size in sizes if size > MAX_TOPIC_BYTES))
+
+
+class ConnectivitySubscriptionTests(unittest.TestCase):
+    def test_the_connectivity_subscription_narrows_the_drone_event_family(self) -> None:
+        # Arrange
+        expected = "aerial-rescue/v1/*/drone/*/event/connectivity-changed"
+
+        # Act
+        rendered = connectivity_subscription()
+
+        # Assert
+        self.assertEqual(expected, rendered)
+
+    def test_the_connectivity_subscription_refuses_salient_drone_events(self) -> None:
+        # Arrange
+        salient = format_topic(
+            Topic(
+                Family.DRONE_EVENT,
+                "m-2026-0001",
+                {"droneId": "drone-vision-01", "eventType": "salient"},
+            )
+        )
+
+        # Act
+        covered = _matches(connectivity_subscription(), salient)
+
+        # Assert
+        self.assertFalse(covered)
 
 
 class ReplySubscriptionTests(unittest.TestCase):

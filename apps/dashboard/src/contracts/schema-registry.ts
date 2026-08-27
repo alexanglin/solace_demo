@@ -69,13 +69,48 @@ const validatorBySchemaId = {
     validators.validateStreamOverloaded,
 } as const satisfies Record<DashboardSchemaId, (candidate: unknown) => boolean>;
 
+function isRecord(candidate: unknown): candidate is Readonly<Record<string, unknown>> {
+  return typeof candidate === "object" && candidate !== null && !Array.isArray(candidate);
+}
+
+function checkpointStateMember(schemaId: DashboardSchemaId): "initialState" | "state" | null {
+  if (
+    schemaId === "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json"
+  ) {
+    return "state";
+  }
+  if (schemaId === "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json") {
+    return "initialState";
+  }
+  return null;
+}
+
+function hasMatchingOrdinalWitness(schemaId: DashboardSchemaId, candidate: unknown): boolean {
+  const stateMember = checkpointStateMember(schemaId);
+  if (stateMember === null) {
+    return true;
+  }
+  if (!isRecord(candidate) || !isRecord(candidate[stateMember])) {
+    return false;
+  }
+  const ordinal = candidate[stateMember]["latestAuditOrdinal"];
+  const witness = candidate["latestEventDigest"];
+  return (
+    typeof ordinal === "number" &&
+    ((ordinal === 0 && witness === null) || (ordinal > 0 && typeof witness === "string"))
+  );
+}
+
 export function createDashboardSchemaRegistry(): DashboardSchemaRegistry {
   return {
     validate<SchemaId extends DashboardSchemaId>(
       schemaId: SchemaId,
       candidate: unknown,
     ): DashboardSchemaValidationResult<DashboardDocumentBySchemaId[SchemaId]> {
-      if (validatorBySchemaId[schemaId](candidate)) {
+      if (
+        hasMatchingOrdinalWitness(schemaId, candidate) &&
+        validatorBySchemaId[schemaId](candidate)
+      ) {
         return {
           ok: true,
           value: candidate as DashboardDocumentBySchemaId[SchemaId],

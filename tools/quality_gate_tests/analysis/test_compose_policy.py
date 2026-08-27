@@ -329,6 +329,29 @@ class PublishedPortTests(QualityGateTestCase):
         # Assert
         self.assertEqual([], findings)
 
+    def test_a_loopback_short_syntax_port_with_a_decimal_default_passes(self) -> None:
+        # Arrange
+        compose = stack(web=service(ports=["127.0.0.1:${WEB_HOST_PORT:-9443}:9443"]))
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_loopback_short_syntax_port_without_a_decimal_default_fails(self) -> None:
+        # Arrange
+        compose = stack(web=service(ports=["127.0.0.1:${WEB_HOST_PORT}:9443"]))
+
+        # Act
+        findings = diagnostics(compose)
+
+        # Assert
+        self.assertIn(
+            "services.web.ports[0] must be 127.0.0.1:<host>:<container> with single integer ports",
+            findings,
+        )
+
     def test_a_loopback_long_syntax_port_passes(self) -> None:
         # Arrange
         compose = stack(
@@ -696,7 +719,7 @@ class HealthcheckTests(QualityGateTestCase):
                 "depends_on": {"postgres": {"condition": "service_healthy"}},
             }
         )
-        compose = stack(**{"schema-migration": migration})
+        compose = stack(migration=migration)
 
         # Act
         findings = diagnostics(compose)
@@ -717,13 +740,13 @@ class HealthcheckTests(QualityGateTestCase):
                 "depends_on": {"postgres": {"condition": "service_healthy"}},
             }
         )
-        compose = stack(**{"schema-migration": migration})
+        compose = stack(migration=migration)
 
         # Act
         findings = diagnostics(compose)
 
         # Assert
-        self.assertIn("services.schema-migration lacks a healthcheck.test", findings)
+        self.assertIn("services.migration lacks a healthcheck.test", findings)
 
     def test_a_service_without_a_healthcheck_fails(self) -> None:
         # Arrange

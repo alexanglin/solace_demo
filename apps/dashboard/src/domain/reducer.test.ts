@@ -951,6 +951,31 @@ describe("event semantic refusals", () => {
     });
   });
 
+  test("refuses malformed timeline-only application data at its closed event boundary", async () => {
+    // Arrange
+    const baseline = missionEvent(1);
+    const malformed = {
+      ...baseline,
+      event: {
+        ...baseline.event,
+        data: { proposalId: "proposal-synthetic-0001" },
+        eventClass: "EVIDENCE",
+        kind: "agentProposal",
+      },
+    } as unknown as OrderedDashboardEvent;
+
+    // Act
+    const result = await foldOrderedDashboardEvent(initialCheckpoint(), malformed);
+
+    // Assert
+    expect(refusalOf(result)).toEqual({
+      attribute: "data",
+      code: "EVENT_DATA",
+      value: malformed.event.data,
+    });
+    expect(result.checkpoint).toEqual(initialCheckpoint());
+  });
+
   test("refuses a sector event with inexact lifecycle data", async () => {
     // Arrange
     const baseline = sectorEvent(1);

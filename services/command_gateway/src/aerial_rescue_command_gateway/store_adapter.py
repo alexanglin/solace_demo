@@ -8,10 +8,10 @@ records into its domain ports without defaults, coercion, or connection side eff
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from enum import Enum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.canonical import CanonicalizationError
@@ -21,7 +21,6 @@ from aerial_rescue_domain.commands import CommandEvent, SendBudget
 from aerial_rescue_domain.outbox import OutboxEvent, OutboxState
 from aerial_rescue_store.application_outbox import (
     ApplicationEventIdentity,
-    ApplicationOutboxSession,
     StagedApplicationEvent,
 )
 from aerial_rescue_store.application_outbox import (
@@ -134,19 +133,17 @@ def _milliseconds(
 ) -> int:
     """Return exact integral milliseconds, refusing precision loss or invalid sign."""
     microseconds = duration // timedelta(microseconds=1)
-    invalid_sign = (microseconds < 0 and not allow_negative) or (
-        microseconds == 0 and not allow_zero
-    )
-    if invalid_sign or microseconds % 1_000 != 0:
+    milliseconds, remainder = divmod(microseconds, 1_000)
+    if remainder != 0:
         raise StoreAdapterError(StoreAdapterRefusal.EXPIRY)
-    return microseconds // 1_000
+    if milliseconds < 0 and not allow_negative:
+        raise StoreAdapterError(StoreAdapterRefusal.EXPIRY)
+    if milliseconds == 0 and not allow_zero:
+        raise StoreAdapterError(StoreAdapterRefusal.EXPIRY)
+    return milliseconds
 
 
-def _approval(
-    authority: StoredAuthorizationApproval,
-    *,
-    use_gateway_authority: bool,
-) -> Approval:
+def _approval(authority: StoredAuthorizationApproval) -> Approval:
     """Map and cross-check one complete durable approval authority pair."""
     approval = authority.approval
     binding = authority.binding
@@ -185,13 +182,11 @@ def _approval(
     except InstantError:
         raise StoreAdapterError(StoreAdapterRefusal.EXPIRY) from None
     time_to_live = timedelta(milliseconds=approval.time_to_live_milliseconds)
-    issued_monotonic_milliseconds = approval.issued_monotonic_milliseconds
-    if use_gateway_authority:
-        issued_monotonic_milliseconds = (
-            binding.authority_issued_monotonic_milliseconds
-            if binding.authority_issued_monotonic_milliseconds is not None
-            else 0
-        )
+    issued_monotonic_milliseconds = (
+        binding.authority_issued_monotonic_milliseconds
+        if binding.authority_issued_monotonic_milliseconds is not None
+        else 0
+    )
     mapped = Approval(
         state=approval.state,
         operator_identity=approval.operator_identity,
@@ -215,7 +210,8 @@ def map_authorization_approval(authority: StoredAuthorizationApproval) -> BoundA
     binding = authority.binding
     return BoundApproval(
         approval_id=binding.approval_id,
-        approval=_approval(authority, use_gateway_authority=True),
+        approval=_approval(authority),
+        durable_approval=authority.approval,
         evidence_decision_id=binding.evidence_decision_id,
         evidence_decision_digest=binding.evidence_decision_digest,
         evidence_decision_version=binding.evidence_decision_version,
@@ -226,7 +222,7 @@ def map_authorization_approval(authority: StoredAuthorizationApproval) -> BoundA
 
 def map_approval_binding(authority: StoredAuthorizationApproval) -> StoredApprovalBinding:
     """Assemble the event-verification authority from both exact durable records."""
-    approval = _approval(authority, use_gateway_authority=False)
+    approval = _approval(authority)
     binding = authority.binding
     return StoredApprovalBinding(
         approval_id=binding.approval_id,
@@ -252,20 +248,30 @@ def _stored_approval(bound: BoundApproval) -> StoredApproval:
     approval = bound.approval
     if approval.state is not ApprovalState.EXECUTED:
         raise StoreAdapterError(StoreAdapterRefusal.DECISION)
-    return StoredApproval(
-        mission_id=approval.mission_id,
-        proposal_id=approval.proposal_id,
-        state=approval.state,
-        operator_identity=approval.operator_identity,
-        issued_wall=format_instant(approval.issued.wall),
-        issued_monotonic_milliseconds=_milliseconds(
-            approval.issued.monotonic,
-            allow_zero=True,
-            allow_negative=True,
-        ),
-        time_to_live_milliseconds=_milliseconds(approval.time_to_live),
-        proposal_digest=approval.proposal_digest,
-    )
+    durable = bound.durable_approval
+    if durable.state is not ApprovalState.APPROVED:
+        raise StoreAdapterError(StoreAdapterRefusal.DECISION)
+    if (
+        durable.mission_id,
+        durable.proposal_id,
+        durable.operator_identity,
+        durable.proposal_digest,
+    ) != (
+        approval.mission_id,
+        approval.proposal_id,
+        approval.operator_identity,
+        approval.proposal_digest,
+    ):
+        raise StoreAdapterError(StoreAdapterRefusal.IDENTITY)
+    if (
+        durable.issued_wall,
+        durable.time_to_live_milliseconds,
+    ) != (
+        format_instant(approval.issued.wall),
+        _milliseconds(approval.time_to_live),
+    ):
+        raise StoreAdapterError(StoreAdapterRefusal.EXPIRY)
+    return replace(durable, state=ApprovalState.EXECUTED)
 
 
 class StoreAuthorizationTransaction:
@@ -600,14 +606,12 @@ class StoreApplicationOutbox:
     async def pending(self, producer: str) -> tuple[StagedApplicationEvent, ...]:
         """Return one bounded oldest-first staged application batch."""
         async with transaction(self._session_factory) as session:
-            return await pending_application(cast("ApplicationOutboxSession", session), producer)
+            return await pending_application(session, producer)
 
     async def reconciliation(self, producer: str) -> tuple[StagedApplicationEvent, ...]:
         """Return ambiguous rows for evidence-only reconciliation."""
         async with transaction(self._session_factory) as session:
-            return await reconciliation_application(
-                cast("ApplicationOutboxSession", session), producer
-            )
+            return await reconciliation_application(session, producer)
 
     async def record(
         self,
@@ -618,7 +622,7 @@ class StoreApplicationOutbox:
         """Commit one staged row's broker outcome independently."""
         async with transaction(self._session_factory) as session:
             await record_application_publication(
-                cast("ApplicationOutboxSession", session),
+                session,
                 identity,
                 OutboxState.STAGED,
                 event,

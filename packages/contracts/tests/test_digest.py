@@ -365,13 +365,11 @@ class ApplicationDigestFixtureTests(unittest.TestCase):
             with self.subTest(path=path, mapping=mapping):
                 proposal_id = mapping.get("proposalId")
                 if proposal_id in proposal_digests:
-                    self.assertEqual(
-                        proposal_digests[cast("str", proposal_id)], mapping["proposalDigest"]
-                    )
+                    self.assertEqual(proposal_digests[proposal_id], mapping["proposalDigest"])
                 decision_id = mapping.get("evidenceDecisionId")
                 if decision_id in decision_digests:
                     self.assertEqual(
-                        decision_digests[cast("str", decision_id)],
+                        decision_digests[decision_id],
                         mapping["evidenceDecisionDigest"],
                     )
 

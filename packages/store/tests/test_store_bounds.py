@@ -43,6 +43,7 @@ from aerial_rescue_store.bounds import (
     BoundsError,
     BoundsRefusal,
     EngineBounds,
+    production_bounds,
 )
 
 SUPPLIED: Final = EngineBounds(
@@ -198,6 +199,16 @@ class NestingTests(unittest.TestCase):
 
 
 class SuppliedConstantTests(unittest.TestCase):
+    def test_the_canonical_factory_returns_every_supplied_bound(self) -> None:
+        # Arrange
+        expected = SUPPLIED
+
+        # Act
+        bounds = production_bounds()
+
+        # Assert
+        self.assertEqual(expected, bounds)
+
     def test_the_constants_this_module_publishes_satisfy_every_relation(self) -> None:
         # Arrange
         supplied = SUPPLIED

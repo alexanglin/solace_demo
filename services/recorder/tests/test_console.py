@@ -23,6 +23,7 @@ from aerial_rescue_broker.messaging import (
     ReceiverOnlyBindings,
     open_receiver_only_session,
 )
+from aerial_rescue_broker.queues import queues_for
 from aerial_rescue_domain.principals import Principal
 from aerial_rescue_recorder.console import (
     DEFAULT_SCHEMA_DIRECTORY,
@@ -276,7 +277,7 @@ class RecorderConsoleTests(unittest.IsolatedAsyncioTestCase):
                 BrokerEndpoint("tcps://broker:55443", "default", "/etc/aerial-rescue/certs"),
                 Principal.RECORDER,
                 "recorder-credential",
-                10,
+                len(queues_for(Principal.RECORDER, ())),
                 ["signals-enter", "broker-close", "store-close", "signals-exit"],
             ),
             (

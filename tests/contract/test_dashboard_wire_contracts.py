@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from aerial_rescue_contracts.view import (
+    DashboardEvent,
+    EventClass,
+    OrderedDashboardEvent,
+    ordered_event_digest,
+)
 from jsonschema import validators
 from jsonschema.protocols import Validator
 from referencing import Registry, Resource
@@ -35,7 +41,6 @@ PUBLIC_SCHEMA_NAMES = (
     "dashboard-snapshot",
     "error",
     "health",
-    "mutation-outcome",
     "ordered-dashboard-event",
     "operator-command-request",
     "proposal-decision-request",
@@ -71,6 +76,7 @@ DASHBOARD_EXTRA_INVALID_FIXTURES = {
 }
 
 DASHBOARD_EXTRA_VALID_FIXTURES = {
+    "ordered-dashboard-event": ("snapshot-anchor-telemetry",),
     "replay-bundle": ("reducer-parity",),
 }
 
@@ -210,6 +216,40 @@ class DashboardWireInventoryTests(unittest.TestCase):
 
 
 class DashboardStateAuthorityTests(unittest.TestCase):
+    def test_ordered_event_witness_lives_only_on_snapshot_and_replay_anchors(self) -> None:
+        # Arrange
+        snapshot = _load(_schema_path("dashboard-snapshot"))
+        replay = _load(_schema_path("replay-bundle"))
+        reduced_state = _load(_schema_path("dashboard-reduced-state"))
+        event_frame = _load(_schema_path("dashboard-event-frame"))
+        replay_integrity = _load(_schema_path("replay-integrity"))
+        source_signal = _load(_schema_path("source-signal"))
+
+        # Act
+        anchor_members = (
+            frozenset(_properties(snapshot)),
+            frozenset(_properties(replay)),
+        )
+        forbidden_members = tuple(
+            frozenset(_all_property_names(schema))
+            for schema in (reduced_state, event_frame, replay_integrity, source_signal)
+        )
+
+        # Assert
+        self.assertTrue(all("latestEventDigest" in members for members in anchor_members))
+        self.assertTrue(all("latestEventDigest" not in members for members in forbidden_members))
+
+    def test_source_signals_contain_only_transport_observations(self) -> None:
+        # Arrange
+        source_signal = _load(_schema_path("source-signal"))
+        signal = cast("dict[str, object]", _properties(source_signal)["signal"])
+
+        # Act
+        values = signal["enum"]
+
+        # Assert
+        self.assertEqual(["connecting", "disconnected", "offline", "recovered"], values)
+
     def test_declared_only_members_have_no_connectivity_telemetry_or_sector_state(self) -> None:
         # Arrange
         reduced_state = _load(_schema_path("dashboard-reduced-state"))
@@ -417,6 +457,112 @@ class DashboardEventContractTests(unittest.TestCase):
         # Assert
         self.assertTrue(errors)
 
+    def test_snapshot_and_replay_require_a_nullable_lowercase_digest_witness(self) -> None:
+        # Arrange
+        schemas = tuple(
+            _load(_schema_path(name)) for name in ("dashboard-snapshot", "replay-bundle")
+        )
+        expected_reference = (
+            "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        )
+
+        # Act
+        witness_contracts = tuple(
+            (
+                "latestEventDigest" in cast("list[str]", schema["required"]),
+                cast("dict[str, object]", _properties(schema)["latestEventDigest"]),
+            )
+            for schema in schemas
+        )
+
+        # Assert
+        self.assertEqual(
+            (
+                (
+                    True,
+                    {
+                        "anyOf": [
+                            {"type": "null"},
+                            {"$ref": expected_reference},
+                        ]
+                    },
+                ),
+            )
+            * 2,
+            witness_contracts,
+        )
+
+    def test_snapshot_and_replay_schema_refuse_a_missing_witness(self) -> None:
+        # Arrange
+        cases = tuple(
+            (
+                _validator_for(name),
+                _load(_fixture_path(name, "baseline")),
+            )
+            for name in ("dashboard-snapshot", "replay-bundle")
+        )
+        for _, document in cases:
+            document.pop("latestEventDigest", None)
+
+        # Act
+        error_counts = tuple(
+            len(tuple(validator.iter_errors(cast("contract_gate.JsonObject", document))))
+            for validator, document in cases
+        )
+
+        # Assert
+        self.assertEqual((1, 1), error_counts)
+
+    def test_snapshot_anchor_witness_is_manifest_backed_by_ordinal_four_telemetry(self) -> None:
+        # Arrange
+        fixture = _fixture_path("ordered-dashboard-event", "snapshot-anchor-telemetry")
+        manifest = tomllib.loads(
+            (REPO_ROOT / "schemas/contract-manifest.toml").read_text(encoding="utf-8")
+        )
+        entries = cast("list[dict[str, object]]", manifest["contracts"])
+        ordered_entry = next(
+            entry
+            for entry in entries
+            if entry["schema"] == "schemas/v1/dashboard/ordered-dashboard-event.schema.json"
+        )
+
+        # Act
+        registered = fixture.relative_to(REPO_ROOT).as_posix() in cast(
+            "list[str]", ordered_entry["valid"]
+        )
+        event = _load(fixture)
+
+        # Assert
+        self.assertTrue(registered)
+        self.assertEqual(4, event["auditOrdinal"])
+        self.assertEqual("droneTelemetry", cast("dict[str, object]", event["event"])["kind"])
+
+    def test_snapshot_and_replay_witnesses_equal_the_production_ordered_event_digest(self) -> None:
+        # Arrange
+        document = _load(_fixture_path("ordered-dashboard-event", "snapshot-anchor-telemetry"))
+        event_document = cast("dict[str, object]", document["event"])
+        ordered_event = OrderedDashboardEvent(
+            cast("int", document["auditOrdinal"]),
+            DashboardEvent(
+                cast("str", event_document["kind"]),
+                EventClass[cast("str", event_document["eventClass"])],
+                cast("str", event_document["mission"]),
+                cast("str", event_document["time"]),
+                cast("dict[str, object]", event_document["data"]),
+            ),
+        )
+        snapshot = _load(_fixture_path("dashboard-snapshot", "baseline"))
+        replay = _load(_fixture_path("replay-bundle", "baseline"))
+
+        # Act
+        computed = ordered_event_digest(ordered_event)
+
+        # Assert
+        self.assertEqual(
+            (computed, computed),
+            (snapshot["latestEventDigest"], replay["latestEventDigest"]),
+        )
+
 
 class DashboardCollectionBoundTests(unittest.TestCase):
     def test_every_browser_collection_has_its_owned_upper_bound(self) -> None:
@@ -483,15 +629,20 @@ class DashboardMutationContractTests(unittest.TestCase):
         # Assert
         self.assertEqual((1, 1), revisions)
 
-    def test_mutation_outcomes_carry_no_reducer_owned_current_mission(self) -> None:
+    def test_generic_mutation_outcome_contract_is_absent(self) -> None:
         # Arrange
-        outcome = _load(_schema_path("mutation-outcome"))
+        removed = (
+            _schema_path("mutation-outcome"),
+            _fixture_path("mutation-outcome", "baseline"),
+            _fixture_path("mutation-outcome", "unknown-member"),
+            REPO_ROOT / "apps/dashboard/src/contracts/generated/mutation-outcome.ts",
+        )
 
         # Act
-        members = _all_property_names(outcome)
+        present = tuple(path.relative_to(REPO_ROOT).as_posix() for path in removed if path.exists())
 
         # Assert
-        self.assertNotIn("currentMission", members)
+        self.assertEqual((), present)
 
     def test_reset_request_is_exactly_an_empty_object(self) -> None:
         # Arrange

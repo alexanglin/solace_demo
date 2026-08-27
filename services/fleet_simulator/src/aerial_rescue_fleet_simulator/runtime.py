@@ -50,7 +50,7 @@ from aerial_rescue_store.application_outbox import (
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate
 
 from aerial_rescue_fleet_simulator import FleetSimulatorError
-from aerial_rescue_fleet_simulator.control_wire import (
+from aerial_rescue_fleet_simulator.control_plane.wire import (
     FleetControlRunStatus,
     FleetControlStartRequest,
 )

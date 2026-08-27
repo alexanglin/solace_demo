@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import unittest
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -13,7 +14,10 @@ from aerial_rescue_command_gateway.ingress import IngressError
 from aerial_rescue_command_gateway.operator_approval import handle_operator_approval
 from aerial_rescue_command_gateway.ports import GuaranteedDelivery
 from aerial_rescue_command_gateway.progression import handle_command_result
+from aerial_rescue_command_gateway.refusal import candidate
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate
+
+from .fixture_paths import repository_root
 
 if TYPE_CHECKING:
     from aerial_rescue_command_gateway.authorization import AuthorizationClock
@@ -26,6 +30,7 @@ if TYPE_CHECKING:
 
 MISSION = "mission-synthetic-0001"
 MALFORMED = b'{"authorization":"Bearer must-never-be-logged"'
+ROOT = repository_root(Path(__file__))
 
 
 @dataclass
@@ -96,6 +101,56 @@ async def _handle(
 
 
 class GuaranteedRefusalTests(unittest.IsolatedAsyncioTestCase):
+    def test_refusal_candidate_recovers_each_safe_field_independently(self) -> None:
+        # Arrange
+        valid_payload = (
+            ROOT / "fixtures/golden/v1/event/operator-approval/baseline.json"
+        ).read_bytes()
+        cases = (
+            (
+                GuaranteedDelivery("hostile/topic", valid_payload),
+                None,
+                "urn:aerial-rescue:dashboard-api:dashboard-synthetic-01",
+            ),
+            (
+                GuaranteedDelivery(
+                    "aerial-rescue/v1/mission-synthetic-0001/operator/approval/approve",
+                    MALFORMED,
+                ),
+                "operator.approval",
+                None,
+            ),
+        )
+
+        # Act
+        observed = [candidate(delivery, "approval-channel", "payload") for delivery, *_ in cases]
+
+        # Assert
+        self.assertEqual(
+            [
+                (
+                    "command-gateway",
+                    source,
+                    family,
+                    "approval-channel",
+                    "payload",
+                    hashlib.sha256(delivery.payload).hexdigest(),
+                )
+                for delivery, family, source in cases
+            ],
+            [
+                (
+                    fact.consumer,
+                    fact.source,
+                    fact.family,
+                    fact.channel,
+                    fact.refusal_code,
+                    fact.raw_digest,
+                )
+                for fact in observed
+            ],
+        )
+
     async def test_all_three_guaranteed_routes_commit_body_free_evidence_before_rejection(
         self,
     ) -> None:

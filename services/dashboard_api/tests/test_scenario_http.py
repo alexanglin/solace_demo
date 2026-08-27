@@ -23,11 +23,6 @@ STATUS: Final = canonical.canonical_bytes(
         "missionId": "mission-synthetic-0001",
         "runId": "run-synthetic-0001",
         "state": "PLANNED",
-        "declaredCount": 23,
-        "simulatedCount": 20,
-        "declaredOnlyCount": 3,
-        "completedTickCount": 0,
-        "telemetryPublicationCount": 0,
     }
 )
 

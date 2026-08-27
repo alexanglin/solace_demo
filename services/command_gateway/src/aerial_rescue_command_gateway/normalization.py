@@ -213,6 +213,7 @@ def _event(
         "data": spec.payload,
         "sequence": sequence,
         "correlationid": pending.correlation_id,
+        "causationid": pending.source_event_id,
         "traceparent": stamp.traceparent,
     }
     if stamp.tracestate is not None:
@@ -264,7 +265,7 @@ def _stored_proposal(
         issued_at=stamp.occurred_at,
         sequence=stamp.proposal_sequence,
         correlation_id=pending.correlation_id,
-        causation_id=None,
+        causation_id=event.causation_id,
         traceparent=event.traceparent,
     )
 

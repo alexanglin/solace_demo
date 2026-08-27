@@ -25,7 +25,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
-from typing import TYPE_CHECKING, Final, Protocol, override
+from typing import TYPE_CHECKING, Final, Never, Protocol, override
 
 from aerial_rescue_contracts.envelope import decode_envelope
 from aerial_rescue_contracts.topics import parse_topic
@@ -151,11 +151,13 @@ __all__ = [
     "CommandGatewayBindings",
     "CommandGatewaySession",
     "ConsumingSession",
+    "DirectConsumingSession",
     "DirectPublisher",
     "FleetSession",
     "GuaranteedMessage",
     "GuaranteedProcessingBindings",
     "GuaranteedProcessingSession",
+    "GuaranteedPublishingSession",
     "InboundMessage",
     "InvalidDirectMessageError",
     "MessagePublisher",
@@ -179,13 +181,17 @@ __all__ = [
     "build_service",
     "command_gateway_session",
     "connection_properties",
+    "direct_consuming_session",
     "fleet_session",
     "guaranteed_processing_session",
+    "guaranteed_publishing_session",
     "install_lifecycle_listeners",
     "open_command_gateway_session",
     "open_consuming_session",
+    "open_direct_consuming_session",
     "open_fleet_session",
     "open_guaranteed_processing_session",
+    "open_guaranteed_publishing_session",
     "open_publishing_session",
     "open_receiver_only_session",
     "open_requesting_session",
@@ -806,6 +812,107 @@ class _PublisherReadinessListener(_PublisherReadinessListenerBase):
         self._lifecycle.publisher_available(self._publisher)
 
 
+class _ManagedPublisher(Protocol):
+    """The lifecycle operations shared by every pinned SDK publisher shape."""
+
+    def set_termination_notification_listener(self, listener: object) -> None:
+        """Install one endpoint-termination listener."""
+
+    def start(self) -> None:
+        """Start publication."""
+
+    def set_publisher_readiness_listener(self, listener: object) -> None:
+        """Install one back-pressure recovery listener."""
+
+    def is_ready(self) -> bool:
+        """Return whether the SDK can publish immediately."""
+
+    def notify_when_ready(self) -> None:
+        """Request a readiness callback after buffer recovery."""
+
+    def terminate(self, *, grace_period: int) -> None:
+        """Stop publication within the supplied bound."""
+
+
+class _ManagedReceiver(Protocol):
+    """The lifecycle operations shared by Direct and Guaranteed SDK receivers."""
+
+    def set_termination_notification_listener(self, listener: object) -> None:
+        """Install one endpoint-termination listener."""
+
+    def start(self) -> None:
+        """Start delivery."""
+
+    def terminate(self, *, grace_period: int) -> None:
+        """Stop delivery within the supplied bound."""
+
+
+def _start_receiver(
+    receiver: _ManagedReceiver,
+    lifecycle: BrokerLifecycle,
+    label: str,
+) -> None:
+    """Start one receiver and preserve one owned refusal through bounded cleanup."""
+    receiver.set_termination_notification_listener(_EndpointTerminationListener(lifecycle))
+    try:
+        receiver.start()
+    except PubSubPlusClientError as error:
+        try:
+            receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
+        except PubSubPlusClientError as cleanup_error:
+            raise MessagingError(MessagingRefusal.BIND_REFUSED, label) from cleanup_error
+        raise MessagingError(MessagingRefusal.BIND_REFUSED, label) from error
+
+
+def _terminate_receiver(receiver: _ManagedReceiver, label: str) -> None:
+    """Stop one receiver and translate its bounded-shutdown refusal."""
+    try:
+        receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
+    except PubSubPlusClientError as error:
+        raise MessagingError(MessagingRefusal.SHUTDOWN_REFUSED, label) from error
+
+
+def _start_publisher(
+    publisher: _ManagedPublisher,
+    lifecycle: BrokerLifecycle,
+    identity: object,
+) -> None:
+    """Start one publisher and bind all of its lifecycle signals."""
+    publisher.set_termination_notification_listener(_EndpointTerminationListener(lifecycle))
+    publisher.start()
+    publisher.set_publisher_readiness_listener(_PublisherReadinessListener(lifecycle, identity))
+    if publisher.is_ready():
+        lifecycle.publisher_available(identity)
+
+
+def _raise_publication_error(
+    error: PubSubPlusClientError,
+    publisher: _ManagedPublisher,
+    lifecycle: BrokerLifecycle,
+    identity: object,
+    topic: str,
+) -> Never:
+    """Translate one publisher failure and update shared readiness exactly once."""
+    refusal = _publication_refusal(error)
+    if isinstance(error, PublisherOverflowError):
+        lifecycle.publisher_blocked(identity)
+        try:
+            publisher.notify_when_ready()
+        except PubSubPlusClientError as notification_error:
+            raise MessagingError(refusal, topic) from notification_error
+    else:
+        lifecycle.recovery_required()
+    raise MessagingError(refusal, topic) from error
+
+
+def _terminate_publisher(publisher: _ManagedPublisher, label: str) -> None:
+    """Stop one publisher and translate its bounded-shutdown refusal."""
+    try:
+        publisher.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
+    except PubSubPlusClientError as error:
+        raise MessagingError(MessagingRefusal.SHUTDOWN_REFUSED, label) from error
+
+
 class SolacePublisher:
     """A :class:`MessagePublisher` backed by a guaranteed Solace publisher."""
 
@@ -826,15 +933,7 @@ class SolacePublisher:
             .on_back_pressure_reject(buffer_capacity=PERSISTENT_BUFFER_CAPACITY)
             .build()
         )
-        self._publisher.set_termination_notification_listener(
-            _EndpointTerminationListener(self._lifecycle)
-        )
-        self._publisher.start()
-        self._publisher.set_publisher_readiness_listener(
-            _PublisherReadinessListener(self._lifecycle, self._identity)
-        )
-        if self._publisher.is_ready():
-            self._lifecycle.publisher_available(self._identity)
+        _start_publisher(self._publisher, self._lifecycle, self._identity)
 
     def publish(self, topic: str, payload: bytes, properties: Mapping[str, object]) -> None:
         """Publish one message and wait for the broker to acknowledge it.
@@ -858,25 +957,11 @@ class SolacePublisher:
                 message, SolaceTopic.of(topic), PUBLISH_TIMEOUT_MILLISECONDS
             )
         except PubSubPlusClientError as error:
-            refusal = _publication_refusal(error)
-            if isinstance(error, PublisherOverflowError):
-                self._lifecycle.publisher_blocked(self._identity)
-                try:
-                    self._publisher.notify_when_ready()
-                except PubSubPlusClientError as notification_error:
-                    raise MessagingError(refusal, topic) from notification_error
-            else:
-                self._lifecycle.recovery_required()
-            raise MessagingError(refusal, topic) from error
+            _raise_publication_error(error, self._publisher, self._lifecycle, self._identity, topic)
 
     def close(self) -> None:
         """Terminate the publisher, so shutdown is explicit rather than collected."""
-        try:
-            self._publisher.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-        except PubSubPlusClientError as error:
-            raise MessagingError(
-                MessagingRefusal.SHUTDOWN_REFUSED, "persistent-publisher"
-            ) from error
+        _terminate_publisher(self._publisher, "persistent-publisher")
 
 
 class SolaceRequestReplyRequester:
@@ -897,15 +982,7 @@ class SolaceRequestReplyRequester:
         self._publisher = (
             service.request_reply().create_request_reply_message_publisher_builder().build()
         )
-        self._publisher.set_termination_notification_listener(
-            _EndpointTerminationListener(self._lifecycle)
-        )
-        self._publisher.start()
-        self._publisher.set_publisher_readiness_listener(
-            _PublisherReadinessListener(self._lifecycle, self._identity)
-        )
-        if self._publisher.is_ready():
-            self._lifecycle.publisher_available(self._identity)
+        _start_publisher(self._publisher, self._lifecycle, self._identity)
 
     def request(
         self,
@@ -929,27 +1006,13 @@ class SolaceRequestReplyRequester:
                 message, SolaceTopic.of(topic), timeout_milliseconds
             )
         except PubSubPlusClientError as error:
-            refusal = _publication_refusal(error)
-            if isinstance(error, PublisherOverflowError):
-                self._lifecycle.publisher_blocked(self._identity)
-                try:
-                    self._publisher.notify_when_ready()
-                except PubSubPlusClientError as notification_error:
-                    raise MessagingError(refusal, topic) from notification_error
-            else:
-                self._lifecycle.recovery_required()
-            raise MessagingError(refusal, topic) from error
+            _raise_publication_error(error, self._publisher, self._lifecycle, self._identity, topic)
         _validate_trace(self._tracing, response)
         return response
 
     def close(self) -> None:
         """Terminate the requester within the same process shutdown grace."""
-        try:
-            self._publisher.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-        except PubSubPlusClientError as error:
-            raise MessagingError(
-                MessagingRefusal.SHUTDOWN_REFUSED, "request-reply-requester"
-            ) from error
+        _terminate_publisher(self._publisher, "request-reply-requester")
 
 
 class SolaceDirectPublisher:
@@ -977,15 +1040,7 @@ class SolaceDirectPublisher:
             .on_back_pressure_reject(buffer_capacity=DIRECT_BUFFER_CAPACITY)
             .build()
         )
-        self._publisher.set_termination_notification_listener(
-            _EndpointTerminationListener(self._lifecycle)
-        )
-        self._publisher.start()
-        self._publisher.set_publisher_readiness_listener(
-            _PublisherReadinessListener(self._lifecycle, self._identity)
-        )
-        if self._publisher.is_ready():
-            self._lifecycle.publisher_available(self._identity)
+        _start_publisher(self._publisher, self._lifecycle, self._identity)
 
     def publish_unacknowledged(
         self, topic: str, payload: bytes, properties: Mapping[str, object]
@@ -1007,23 +1062,11 @@ class SolaceDirectPublisher:
         try:
             self._publisher.publish(message, SolaceTopic.of(topic))
         except PubSubPlusClientError as error:
-            refusal = _publication_refusal(error)
-            if isinstance(error, PublisherOverflowError):
-                self._lifecycle.publisher_blocked(self._identity)
-                try:
-                    self._publisher.notify_when_ready()
-                except PubSubPlusClientError as notification_error:
-                    raise MessagingError(refusal, topic) from notification_error
-            else:
-                self._lifecycle.recovery_required()
-            raise MessagingError(refusal, topic) from error
+            _raise_publication_error(error, self._publisher, self._lifecycle, self._identity, topic)
 
     def close(self) -> None:
         """Terminate the publisher, so shutdown is explicit rather than collected."""
-        try:
-            self._publisher.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-        except PubSubPlusClientError as error:
-            raise MessagingError(MessagingRefusal.SHUTDOWN_REFUSED, "direct-publisher") from error
+        _terminate_publisher(self._publisher, "direct-publisher")
 
 
 class SolaceReceiver:
@@ -1057,19 +1100,7 @@ class SolaceReceiver:
             .with_subscriptions([TopicSubscription.of(pattern) for pattern in subscriptions])
             .build()
         )
-        self._receiver.set_termination_notification_listener(
-            _EndpointTerminationListener(self._lifecycle)
-        )
-        try:
-            self._receiver.start()
-        except PubSubPlusClientError as error:
-            try:
-                self._receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-            except PubSubPlusClientError as cleanup_error:
-                raise MessagingError(
-                    MessagingRefusal.BIND_REFUSED, "direct-receiver"
-                ) from cleanup_error
-            raise MessagingError(MessagingRefusal.BIND_REFUSED, "direct-receiver") from error
+        _start_receiver(self._receiver, self._lifecycle, "direct-receiver")
 
     def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
         """Return the next message, or ``None`` when the window passes with none."""
@@ -1116,10 +1147,7 @@ class SolaceReceiver:
 
     def close(self) -> None:
         """Terminate the receiver, so shutdown is explicit rather than collected."""
-        try:
-            self._receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-        except PubSubPlusClientError as error:
-            raise MessagingError(MessagingRefusal.SHUTDOWN_REFUSED, "direct-receiver") from error
+        _terminate_receiver(self._receiver, "direct-receiver")
 
 
 class SolacePersistentReceiver:
@@ -1165,17 +1193,7 @@ class SolacePersistentReceiver:
             .with_message_client_acknowledgement()
             .build(SolaceQueue.durable_exclusive_queue(queue))
         )
-        self._receiver.set_termination_notification_listener(
-            _EndpointTerminationListener(self._lifecycle)
-        )
-        try:
-            self._receiver.start()
-        except PubSubPlusClientError as error:
-            try:
-                self._receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-            except PubSubPlusClientError as cleanup_error:
-                raise MessagingError(MessagingRefusal.BIND_REFUSED, queue) from cleanup_error
-            raise MessagingError(MessagingRefusal.BIND_REFUSED, queue) from error
+        _start_receiver(self._receiver, self._lifecycle, queue)
 
     def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
         """Return the next message, or ``None`` when the window passes with none."""
@@ -1210,12 +1228,7 @@ class SolacePersistentReceiver:
 
     def close(self) -> None:
         """Terminate the receiver, so shutdown is explicit rather than collected."""
-        try:
-            self._receiver.terminate(grace_period=SHUTDOWN_GRACE_PERIOD_MILLISECONDS)
-        except PubSubPlusClientError as error:
-            raise MessagingError(
-                MessagingRefusal.SHUTDOWN_REFUSED, "persistent-receiver"
-            ) from error
+        _terminate_receiver(self._receiver, "persistent-receiver")
 
 
 class MessageSettlement:
@@ -1325,6 +1338,63 @@ class GuaranteedMessage:
     settlement: MessageSettlement
 
 
+class _DurableDirectReceivingSession:
+    """Shared named-Guaranteed and bounded-Direct behavior for mixed sessions."""
+
+    _direct_receiver: SolaceReceiver
+    _guaranteed_receivers: Mapping[str, SolacePersistentReceiver]
+    readiness: BrokerLifecycle
+
+    @property
+    def receiver_names(self) -> tuple[str, ...]:
+        """Return the stable names through which Guaranteed inputs are selected."""
+        return _receiver_names(self._guaranteed_receivers)
+
+    def receive_direct(self, timeout_milliseconds: int, /) -> InboundMessage | None:
+        """Return one native-trace-validated Direct input or an idle window."""
+        return self._direct_receiver.receive(timeout_milliseconds)
+
+    def receive_guaranteed(
+        self, receiver_name: str, timeout_milliseconds: int, /
+    ) -> GuaranteedMessage | None:
+        """Return one validated Guaranteed input with its one-shot settlement."""
+        return _receive_guaranteed(self._guaranteed_receivers, receiver_name, timeout_milliseconds)
+
+    def rebind_complete(self) -> None:
+        """Restore readiness after SDK rebind and application reconciliation complete."""
+        self.readiness.mark_ready()
+
+
+def _connect_owned_service(
+    endpoint: BrokerEndpoint,
+    role: Principal,
+    credential: str,
+) -> tuple[MessagingService, BrokerLifecycle]:
+    """Connect one role and publish the initial connected lifecycle signal."""
+    lifecycle = BrokerLifecycle()
+    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
+    service.connect()
+    lifecycle.connected()
+    return service, lifecycle
+
+
+def _direct_receiver(
+    service: MessagingService,
+    subscriptions: Sequence[str],
+    capacity: int,
+    lifecycle: BrokerLifecycle,
+    tracing: MessageTraceContext,
+) -> SolaceReceiver:
+    """Bind one bounded Direct receiver for a mixed durable session."""
+    return SolaceReceiver(
+        service,
+        subscriptions,
+        buffer_capacity=capacity,
+        lifecycle=lifecycle,
+        tracing=tracing,
+    )
+
+
 def _complete_cleanup(actions: Sequence[Callable[[], None]]) -> None:
     """Run every cleanup action and re-raise the first failure after continuation."""
     first_failure: Exception | None = None
@@ -1336,6 +1406,74 @@ def _complete_cleanup(actions: Sequence[Callable[[], None]]) -> None:
                 first_failure = error
     if first_failure is not None:
         raise first_failure
+
+
+def _receiver_names(
+    receivers: Mapping[str, SolacePersistentReceiver],
+) -> tuple[str, ...]:
+    """Return stable names for one set of durable receivers."""
+    return tuple(sorted(receivers))
+
+
+def _receive_guaranteed(
+    receivers: Mapping[str, SolacePersistentReceiver],
+    receiver_name: str,
+    timeout_milliseconds: int,
+) -> GuaranteedMessage | None:
+    """Receive one named durable delivery and bind its one-shot settlement."""
+    try:
+        receiver = receivers[receiver_name]
+    except KeyError as error:
+        raise MessagingError(MessagingRefusal.RECEIVER_NOT_FOUND, receiver_name) from error
+    message = receiver.receive(timeout_milliseconds)
+    if message is None:
+        return None
+    return GuaranteedMessage(message, MessageSettlement(receiver, message))
+
+
+def _receiver_close_actions(
+    receivers: Mapping[str, SolacePersistentReceiver],
+) -> tuple[Callable[[], None], ...]:
+    """Return receiver closes in reverse stable construction order."""
+    return tuple(receivers[name].close for name in reversed(_receiver_names(receivers)))
+
+
+def _bind_guaranteed_receivers(
+    receivers: dict[str, SolacePersistentReceiver],
+    service: MessagingService,
+    queues: Mapping[str, str],
+    lifecycle: BrokerLifecycle,
+    tracing: MessageTraceContext,
+) -> None:
+    """Bind named durable queues in stable order into a caller-owned partial graph."""
+    for receiver_name in sorted(queues):
+        receivers[receiver_name] = SolacePersistentReceiver(
+            service,
+            queues[receiver_name],
+            lifecycle=lifecycle,
+            tracing=tracing,
+        )
+
+
+def _abort_session_construction(
+    construction_error: Exception,
+    receivers: Mapping[str, SolacePersistentReceiver],
+    endpoint_closes: Sequence[Callable[[], None]],
+    service: MessagingService,
+    lifecycle: BrokerLifecycle,
+) -> Never:
+    """Unwind one partial graph completely, preserving its construction refusal."""
+    actions = (
+        *_receiver_close_actions(receivers),
+        *endpoint_closes,
+        service.disconnect,
+        lifecycle.closed,
+    )
+    try:
+        _complete_cleanup(actions)
+    except Exception as cleanup_error:
+        raise construction_error from cleanup_error
+    raise construction_error
 
 
 @dataclass(frozen=True)
@@ -1398,6 +1536,51 @@ class RequestingSession:
         _complete_cleanup((self.requester.close, self._service.disconnect, self.readiness.closed))
 
 
+@dataclass(frozen=True)
+class GuaranteedPublishingSession:
+    """A connected acknowledged publisher with no receiver authority."""
+
+    publisher: SolacePublisher
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the publisher before disconnecting its service."""
+        self.publisher.close()
+        self._service.disconnect()
+
+
+def guaranteed_publishing_session(service: MessagingService) -> GuaranteedPublishingSession:
+    """Compose one acknowledged publisher without constructing any receiver."""
+    return GuaranteedPublishingSession(
+        publisher=SolacePublisher(service),
+        _service=service,
+    )
+
+
+@dataclass(frozen=True)
+class DirectConsumingSession:
+    """A connected direct receiver with no publisher construction or authority."""
+
+    receiver: SolaceReceiver
+    _service: MessagingService
+
+    def close(self) -> None:
+        """Terminate the receiver before disconnecting its service."""
+        self.receiver.close()
+        self._service.disconnect()
+
+
+def direct_consuming_session(
+    service: MessagingService,
+    subscriptions: Sequence[str],
+) -> DirectConsumingSession:
+    """Compose a direct receiver without constructing either publisher type."""
+    return DirectConsumingSession(
+        receiver=SolaceReceiver(service, subscriptions, buffer_capacity=DIRECT_BUFFER_CAPACITY),
+        _service=service,
+    )
+
+
 def open_publishing_session(
     endpoint: BrokerEndpoint, role: Principal, credential: str
 ) -> PublishingSession:
@@ -1411,10 +1594,7 @@ def open_publishing_session(
     Returns:
         The session. Shutting it down is the caller's job and is explicit.
     """
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return PublishingSession(
         publisher=SolaceDirectPublisher(service, lifecycle=lifecycle),
         _service=service,
@@ -1436,15 +1616,41 @@ def open_requesting_session(
         The request-only session. The caller explicitly completes readiness after any
         application recovery and closes the session at shutdown.
     """
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return RequestingSession(
         requester=SolaceRequestReplyRequester(service, lifecycle=lifecycle),
         _service=service,
         readiness=lifecycle,
     )
+
+
+def open_guaranteed_publishing_session(
+    endpoint: BrokerEndpoint, role: Principal, credential: str
+) -> GuaranteedPublishingSession:
+    """Connect one role as an acknowledged publisher that consumes nothing."""
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    try:
+        return guaranteed_publishing_session(service)
+    except Exception:
+        service.disconnect()
+        raise
+
+
+def open_direct_consuming_session(
+    endpoint: BrokerEndpoint,
+    role: Principal,
+    credential: str,
+    subscriptions: Sequence[str],
+) -> DirectConsumingSession:
+    """Connect one role as a direct receiver without constructing a publisher."""
+    service = build_service(endpoint, role, credential)
+    service.connect()
+    try:
+        return direct_consuming_session(service, subscriptions)
+    except Exception:
+        service.disconnect()
+        raise
 
 
 def open_session(
@@ -1469,10 +1675,7 @@ def open_session(
     Returns:
         The session. Shutting it down is the caller's job and is explicit.
     """
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     direct_publisher: SolaceDirectPublisher | None = None
     publisher: SolacePublisher | None = None
     try:
@@ -1540,10 +1743,7 @@ def open_consuming_session(
     Returns:
         The session. Shutting it down is the caller's job and is explicit.
     """
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return ConsumingSession(
         receiver=SolacePersistentReceiver(service, queue, lifecycle=lifecycle),
         _service=service,
@@ -1561,7 +1761,7 @@ class ReceiverOnlyBindings:
 
 
 @dataclass(frozen=True)
-class ReceiverOnlySession:
+class ReceiverOnlySession(_DurableDirectReceivingSession):
     """One long-lived receiver-only connection for recorder-style consumers.
 
     Named Guaranteed receivers remain private so a service can settle only through the
@@ -1575,41 +1775,12 @@ class ReceiverOnlySession:
     _service: MessagingService = field(repr=False)
     readiness: BrokerLifecycle = field(default_factory=BrokerLifecycle)
 
-    @property
-    def receiver_names(self) -> tuple[str, ...]:
-        """Return the stable names through which Guaranteed inputs are selected."""
-        return tuple(sorted(self._guaranteed_receivers))
-
-    def receive_direct(self, timeout_milliseconds: int, /) -> InboundMessage | None:
-        """Return one native-trace-validated Direct input or an idle window."""
-        return self._direct_receiver.receive(timeout_milliseconds)
-
-    def receive_guaranteed(
-        self, receiver_name: str, timeout_milliseconds: int, /
-    ) -> GuaranteedMessage | None:
-        """Return one validated Guaranteed input with an exact one-shot settlement."""
-        try:
-            receiver = self._guaranteed_receivers[receiver_name]
-        except KeyError as error:
-            raise MessagingError(MessagingRefusal.RECEIVER_NOT_FOUND, receiver_name) from error
-        message = receiver.receive(timeout_milliseconds)
-        if message is None:
-            return None
-        return GuaranteedMessage(message, MessageSettlement(receiver, message))
-
-    def rebind_complete(self) -> None:
-        """Restore readiness after SDK rebind and application reconciliation complete."""
-        self.readiness.mark_ready()
-
     def close(self) -> None:
         """Close endpoints in reverse construction order and continue through refusals."""
-        guaranteed_closes = tuple(
-            self._guaranteed_receivers[name].close for name in reversed(self.receiver_names)
-        )
         _complete_cleanup(
             (
                 self._direct_receiver.close,
-                *guaranteed_closes,
+                *_receiver_close_actions(self._guaranteed_receivers),
                 self._service.disconnect,
                 self.readiness.closed,
             )
@@ -1634,27 +1805,28 @@ def receiver_only_session(
     guaranteed: dict[str, SolacePersistentReceiver] = {}
     try:
         shared_tracing = tracing or default_solace_trace_context()
-        for receiver_name in sorted(bindings.queues):
-            guaranteed[receiver_name] = SolacePersistentReceiver(
-                service,
-                bindings.queues[receiver_name],
-                lifecycle=session_lifecycle,
-                tracing=shared_tracing,
-            )
-        direct = SolaceReceiver(
+        _bind_guaranteed_receivers(
+            guaranteed,
+            service,
+            bindings.queues,
+            session_lifecycle,
+            shared_tracing,
+        )
+        direct = _direct_receiver(
             service,
             bindings.direct_subscriptions,
-            buffer_capacity=bindings.direct_receiver_capacity,
-            lifecycle=session_lifecycle,
-            tracing=shared_tracing,
+            bindings.direct_receiver_capacity,
+            session_lifecycle,
+            shared_tracing,
         )
     except Exception as construction_error:
-        cleanup = tuple(guaranteed[name].close for name in reversed(tuple(guaranteed)))
-        try:
-            _complete_cleanup((*cleanup, service.disconnect, session_lifecycle.closed))
-        except Exception as cleanup_error:
-            raise construction_error from cleanup_error
-        raise
+        _abort_session_construction(
+            construction_error,
+            guaranteed,
+            (),
+            service,
+            session_lifecycle,
+        )
     return ReceiverOnlySession(
         _direct_receiver=direct,
         _guaranteed_receivers=guaranteed,
@@ -1670,10 +1842,7 @@ def open_receiver_only_session(
     bindings: ReceiverOnlyBindings,
 ) -> ReceiverOnlySession:
     """Connect once and expose only named Guaranteed and bounded Direct receivers."""
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return receiver_only_session(
         service,
         bindings,
@@ -1691,7 +1860,7 @@ class CommandGatewayBindings:
 
 
 @dataclass(frozen=True)
-class CommandGatewaySession:
+class CommandGatewaySession(_DurableDirectReceivingSession):
     """One owned connection with only the command gateway's required capabilities."""
 
     direct_publisher: SolaceDirectPublisher
@@ -1701,41 +1870,12 @@ class CommandGatewaySession:
     _service: MessagingService = field(repr=False)
     readiness: BrokerLifecycle = field(default_factory=BrokerLifecycle)
 
-    @property
-    def receiver_names(self) -> tuple[str, ...]:
-        """Return the stable names through which Guaranteed inputs are selected."""
-        return tuple(sorted(self._guaranteed_receivers))
-
-    def receive_direct(self, timeout_milliseconds: int, /) -> InboundMessage | None:
-        """Return one native-trace-validated Direct input or an idle window."""
-        return self._direct_receiver.receive(timeout_milliseconds)
-
-    def receive_guaranteed(
-        self, receiver_name: str, timeout_milliseconds: int, /
-    ) -> GuaranteedMessage | None:
-        """Return one validated Guaranteed input with its one-shot settlement."""
-        try:
-            receiver = self._guaranteed_receivers[receiver_name]
-        except KeyError as error:
-            raise MessagingError(MessagingRefusal.RECEIVER_NOT_FOUND, receiver_name) from error
-        message = receiver.receive(timeout_milliseconds)
-        if message is None:
-            return None
-        return GuaranteedMessage(message, MessageSettlement(receiver, message))
-
-    def rebind_complete(self) -> None:
-        """Restore readiness only after bindings and durable outboxes recover."""
-        self.readiness.mark_ready()
-
     def close(self) -> None:
         """Stop intake, publishers, and the owned connection in reverse order."""
-        guaranteed_closes = tuple(
-            self._guaranteed_receivers[name].close for name in reversed(self.receiver_names)
-        )
         _complete_cleanup(
             (
                 self._direct_receiver.close,
-                *guaranteed_closes,
+                *_receiver_close_actions(self._guaranteed_receivers),
                 self.publisher.close,
                 self.direct_publisher.close,
                 self._service.disconnect,
@@ -1763,34 +1903,30 @@ def command_gateway_session(
             service, lifecycle=session_lifecycle, tracing=shared_tracing
         )
         publisher = SolacePublisher(service, lifecycle=session_lifecycle, tracing=shared_tracing)
-        for receiver_name in sorted(bindings.queues):
-            guaranteed[receiver_name] = SolacePersistentReceiver(
-                service,
-                bindings.queues[receiver_name],
-                lifecycle=session_lifecycle,
-                tracing=shared_tracing,
-            )
-        direct_receiver = SolaceReceiver(
+        _bind_guaranteed_receivers(
+            guaranteed,
+            service,
+            bindings.queues,
+            session_lifecycle,
+            shared_tracing,
+        )
+        direct_receiver = _direct_receiver(
             service,
             bindings.direct_subscriptions,
-            buffer_capacity=bindings.direct_receiver_capacity,
-            lifecycle=session_lifecycle,
-            tracing=shared_tracing,
+            bindings.direct_receiver_capacity,
+            session_lifecycle,
+            shared_tracing,
         )
     except Exception as construction_error:
-        cleanup: list[Callable[[], None]] = [
-            guaranteed[name].close for name in reversed(tuple(guaranteed))
-        ]
-        if publisher is not None:
-            cleanup.append(publisher.close)
-        if direct_publisher is not None:
-            cleanup.append(direct_publisher.close)
-        cleanup.extend((service.disconnect, session_lifecycle.closed))
-        try:
-            _complete_cleanup(cleanup)
-        except Exception as cleanup_error:
-            raise construction_error from cleanup_error
-        raise
+        _abort_session_construction(
+            construction_error,
+            guaranteed,
+            tuple(
+                endpoint.close for endpoint in (publisher, direct_publisher) if endpoint is not None
+            ),
+            service,
+            session_lifecycle,
+        )
     return CommandGatewaySession(
         direct_publisher,
         publisher,
@@ -1808,10 +1944,7 @@ def open_command_gateway_session(
     bindings: CommandGatewayBindings,
 ) -> CommandGatewaySession:
     """Connect once and expose only the command gateway's mixed capabilities."""
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return command_gateway_session(service, bindings, lifecycle=lifecycle)
 
 
@@ -1825,7 +1958,7 @@ class DashboardBindings:
 
 
 @dataclass(frozen=True)
-class DashboardSession:
+class DashboardSession(_DurableDirectReceivingSession):
     """One connection with only the dashboard's publish and receive capabilities."""
 
     publisher: SolacePublisher
@@ -1834,41 +1967,12 @@ class DashboardSession:
     _service: MessagingService = field(repr=False)
     readiness: BrokerLifecycle = field(default_factory=BrokerLifecycle)
 
-    @property
-    def receiver_names(self) -> tuple[str, ...]:
-        """Return stable names through which Guaranteed inputs are selected."""
-        return tuple(sorted(self._guaranteed_receivers))
-
-    def receive_direct(self, timeout_milliseconds: int, /) -> InboundMessage | None:
-        """Return one native-trace-validated Direct input or an idle window."""
-        return self._direct_receiver.receive(timeout_milliseconds)
-
-    def receive_guaranteed(
-        self, receiver_name: str, timeout_milliseconds: int, /
-    ) -> GuaranteedMessage | None:
-        """Return one validated Guaranteed input with its one-shot settlement."""
-        try:
-            receiver = self._guaranteed_receivers[receiver_name]
-        except KeyError as error:
-            raise MessagingError(MessagingRefusal.RECEIVER_NOT_FOUND, receiver_name) from error
-        message = receiver.receive(timeout_milliseconds)
-        if message is None:
-            return None
-        return GuaranteedMessage(message, MessageSettlement(receiver, message))
-
-    def rebind_complete(self) -> None:
-        """Restore readiness only after bindings and durable projection recovery."""
-        self.readiness.mark_ready()
-
     def close(self) -> None:
         """Stop intake, confirmed publication, and the connection in reverse order."""
-        guaranteed_closes = tuple(
-            self._guaranteed_receivers[name].close for name in reversed(self.receiver_names)
-        )
         _complete_cleanup(
             (
                 self._direct_receiver.close,
-                *guaranteed_closes,
+                *_receiver_close_actions(self._guaranteed_receivers),
                 self.publisher.close,
                 self._service.disconnect,
                 self.readiness.closed,
@@ -1891,32 +1995,28 @@ def dashboard_session(
     try:
         shared_tracing = tracing or default_solace_trace_context()
         publisher = SolacePublisher(service, lifecycle=session_lifecycle, tracing=shared_tracing)
-        for receiver_name in sorted(bindings.queues):
-            guaranteed[receiver_name] = SolacePersistentReceiver(
-                service,
-                bindings.queues[receiver_name],
-                lifecycle=session_lifecycle,
-                tracing=shared_tracing,
-            )
-        direct_receiver = SolaceReceiver(
+        _bind_guaranteed_receivers(
+            guaranteed,
+            service,
+            bindings.queues,
+            session_lifecycle,
+            shared_tracing,
+        )
+        direct_receiver = _direct_receiver(
             service,
             bindings.direct_subscriptions,
-            buffer_capacity=bindings.direct_receiver_capacity,
-            lifecycle=session_lifecycle,
-            tracing=shared_tracing,
+            bindings.direct_receiver_capacity,
+            session_lifecycle,
+            shared_tracing,
         )
     except Exception as construction_error:
-        cleanup: list[Callable[[], None]] = [
-            guaranteed[name].close for name in reversed(tuple(guaranteed))
-        ]
-        if publisher is not None:
-            cleanup.append(publisher.close)
-        cleanup.extend((service.disconnect, session_lifecycle.closed))
-        try:
-            _complete_cleanup(cleanup)
-        except Exception as cleanup_error:
-            raise construction_error from cleanup_error
-        raise
+        _abort_session_construction(
+            construction_error,
+            guaranteed,
+            (publisher.close,) if publisher is not None else (),
+            service,
+            session_lifecycle,
+        )
     return DashboardSession(
         publisher,
         direct_receiver,
@@ -1933,10 +2033,7 @@ def open_dashboard_session(
     bindings: DashboardBindings,
 ) -> DashboardSession:
     """Connect once and expose only the dashboard's required broker capabilities."""
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return dashboard_session(service, bindings, lifecycle=lifecycle)
 
 
@@ -1959,20 +2056,13 @@ class GuaranteedProcessingSession:
     @property
     def receiver_names(self) -> tuple[str, ...]:
         """Return stable names through which Guaranteed inputs are selected."""
-        return tuple(sorted(self._receivers))
+        return _receiver_names(self._receivers)
 
     def receive_guaranteed(
         self, receiver_name: str, timeout_milliseconds: int, /
     ) -> GuaranteedMessage | None:
         """Return one validated input with its exact one-shot settlement."""
-        try:
-            receiver = self._receivers[receiver_name]
-        except KeyError as error:
-            raise MessagingError(MessagingRefusal.RECEIVER_NOT_FOUND, receiver_name) from error
-        message = receiver.receive(timeout_milliseconds)
-        if message is None:
-            return None
-        return GuaranteedMessage(message, MessageSettlement(receiver, message))
+        return _receive_guaranteed(self._receivers, receiver_name, timeout_milliseconds)
 
     def rebind_complete(self) -> None:
         """Restore readiness only after bindings and durable outboxes recover."""
@@ -1980,12 +2070,9 @@ class GuaranteedProcessingSession:
 
     def close(self) -> None:
         """Stop intake, publication, and the connection in reverse construction order."""
-        receiver_closes = tuple(
-            self._receivers[name].close for name in reversed(self.receiver_names)
-        )
         _complete_cleanup(
             (
-                *receiver_closes,
+                *_receiver_close_actions(self._receivers),
                 self.publisher.close,
                 self._service.disconnect,
                 self.readiness.closed,
@@ -2008,25 +2095,21 @@ def guaranteed_processing_session(
     try:
         shared_tracing = tracing or default_solace_trace_context()
         publisher = SolacePublisher(service, lifecycle=session_lifecycle, tracing=shared_tracing)
-        for receiver_name in sorted(bindings.queues):
-            receivers[receiver_name] = SolacePersistentReceiver(
-                service,
-                bindings.queues[receiver_name],
-                lifecycle=session_lifecycle,
-                tracing=shared_tracing,
-            )
+        _bind_guaranteed_receivers(
+            receivers,
+            service,
+            bindings.queues,
+            session_lifecycle,
+            shared_tracing,
+        )
     except Exception as construction_error:
-        cleanup: list[Callable[[], None]] = [
-            receivers[name].close for name in reversed(tuple(receivers))
-        ]
-        if publisher is not None:
-            cleanup.append(publisher.close)
-        cleanup.extend((service.disconnect, session_lifecycle.closed))
-        try:
-            _complete_cleanup(cleanup)
-        except Exception as cleanup_error:
-            raise construction_error from cleanup_error
-        raise
+        _abort_session_construction(
+            construction_error,
+            receivers,
+            (publisher.close,) if publisher is not None else (),
+            service,
+            session_lifecycle,
+        )
     return GuaranteedProcessingSession(publisher, receivers, service, session_lifecycle)
 
 
@@ -2037,10 +2120,7 @@ def open_guaranteed_processing_session(
     bindings: GuaranteedProcessingBindings,
 ) -> GuaranteedProcessingSession:
     """Connect once and expose only the Guaranteed capabilities a role requires."""
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return guaranteed_processing_session(service, bindings, lifecycle=lifecycle)
 
 
@@ -2051,8 +2131,9 @@ class FleetSession:
     One connection rather than one per queue. ``MAX_BIND_COUNT`` and the exclusive access
     type of ``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md`` bound
     the flows on a queue, not the services in a process, so every receiver here can share a
-    service and each queue still has exactly one flow. The reference fleet is 23 drones, and
-    a session per drone would spend 25 connections against a message VPN that permits 100.
+    service and each queue still has exactly one flow. ADR-0118 projects only the twenty
+    executable simulations into this session; the three declared-only members receive no queue,
+    receiver, or connection.
 
     The two publishers stay distinct types rather than one: routine telemetry is direct and
     supersedable while a command result is guaranteed, and a caller that held one port for
@@ -2072,12 +2153,9 @@ class FleetSession:
         taken and not yet settled; the broker redelivers it, but only after the flow times
         out rather than at once.
         """
-        receiver_closes = tuple(
-            self.receivers[key].close for key in reversed(sorted(self.receivers))
-        )
         _complete_cleanup(
             (
-                *receiver_closes,
+                *_receiver_close_actions(self.receivers),
                 self.results.close,
                 self.telemetry.close,
                 self._service.disconnect,
@@ -2124,19 +2202,13 @@ def fleet_session(
                 service, queues[key], lifecycle=session_lifecycle
             )
     except Exception as construction_error:
-        cleanup: list[Callable[[], None]] = [
-            receivers[key].close for key in reversed(tuple(receivers))
-        ]
-        if results is not None:
-            cleanup.append(results.close)
-        if telemetry is not None:
-            cleanup.append(telemetry.close)
-        cleanup.extend((service.disconnect, session_lifecycle.closed))
-        try:
-            _complete_cleanup(cleanup)
-        except Exception as cleanup_error:
-            raise construction_error from cleanup_error
-        raise
+        _abort_session_construction(
+            construction_error,
+            receivers,
+            tuple(endpoint.close for endpoint in (results, telemetry) if endpoint is not None),
+            service,
+            session_lifecycle,
+        )
     return FleetSession(
         telemetry=telemetry,
         results=results,
@@ -2164,8 +2236,5 @@ def open_fleet_session(
     Returns:
         The session. Shutting it down is the caller's job and is explicit.
     """
-    lifecycle = BrokerLifecycle()
-    service = build_service(endpoint, role, credential, lifecycle=lifecycle)
-    service.connect()
-    lifecycle.connected()
+    service, lifecycle = _connect_owned_service(endpoint, role, credential)
     return fleet_session(service, queues, lifecycle=lifecycle)

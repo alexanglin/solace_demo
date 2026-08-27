@@ -37,13 +37,13 @@ digraph DashboardBuildIncrements {
     color="#2F6FB7";
     style="rounded";
     a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
-    a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
-    a3 [label="A3 — in progress\nbrowser canonical digest green\nR3 parity oracle pending", fillcolor="#E8F1FB", color="#2F6FB7"];
-    a4 [label="A4\npure reducer\n+ timeline model"];
-    a5 [label="A5\nevent-source interface\nfixture / live / replay adapters"];
-    a6 [label="A6\nmutation client"];
-    a7 [label="A7\npresentation state\nmap adapter + components"];
-    a8 [label="A8 — blocked\nscreenshot baselines\nfixture + production acceptance", fillcolor="#FDEBD0", color="#B7791F"];
+    a2 [label="A2 — complete\n22 generated schema modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
+    a3 [label="A3 — complete\ncanonical browser digests\n10-run parity oracle", fillcolor="#DFF7EE", color="#008F6B"];
+    a4 [label="A4 — complete\nimmutable ordered reducer\n+ verified timeline append", fillcolor="#DFF7EE", color="#008F6B"];
+    a5 [label="A5 — complete\nfixture / live / replay adapters\nproduction endpoints connected", fillcolor="#DFF7EE", color="#008F6B"];
+    a6 [label="A6 — complete\nguarded mutation client\nproduction workflow green", fillcolor="#DFF7EE", color="#008F6B"];
+    a7 [label="A7 — complete\nmap-first presentation\nfixture + production sources", fillcolor="#DFF7EE", color="#008F6B"];
+    a8 [label="A8 — complete\n6 baselines inspected • 64/64 fixture\n8/8 production • 61-sample soak\nclean committed evidence", fillcolor="#DFF7EE", color="#008F6B"];
     a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8;
   }
 
@@ -53,19 +53,33 @@ digraph DashboardBuildIncrements {
     color="#8193A6";
     style="rounded,dashed";
     r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
-    r2 [label="R2\nscenario catalog + loader\nADR-0100"];
-    r3 [label="R3 — in progress\nlifecycle bindings + projections green\nfold + digest parity pending\nADR-0111 / 0112", fillcolor="#E8F1FB", color="#2F6FB7"];
-    r4 [label="R4\nstore timeline + ordinal witness\nUI-slice revision (ADR-0095)"];
-    r5 [label="R5\ndashboard API behind Caddy\nADR-0096 / 0097 / 0101 / 0112"];
-    r6 [label="R6\nreceiver + 2 recorder queues\n46 endpoints / 460 MB nominal\nreplay validator\nADR-0094 / 0111"];
-    r7 [label="R7 — in progress\ncanonical-doc propagation"];
-    r8 [label="R8\nlive control + lifecycle publishers\nsource identity + sequence\n14 ticks / 280 publications\nADR-0111"];
-    r9 [label="R9\nexact production closure\npackaging + production E2E", fillcolor="#FDEBD0", color="#B7791F"];
+    r2 [label="R2 — complete\nscenario catalog + bounded loader\n20 simulated-only fleet projection\nADR-0100", fillcolor="#DFF7EE", color="#008F6B"];
+    r3 [label="R3 — complete\nPython checkpoint + ordered fold\nstate/event digest parity\nADR-0111 / 0112", fillcolor="#DFF7EE", color="#008F6B"];
+    r4 [label="R4 — base qualified\n0005 runtime store + ordered reads\n0006–0010 adoption code\nlive upgrade still pending\nADR-0113 / 0189", fillcolor="#FFF2CC", color="#B58900"];
+    r5 [label="R5 — complete\ndashboard API + Caddy / UDS\nclean production E2E evidence\nADR-0096 / 0116 / 0143", fillcolor="#DFF7EE", color="#008F6B"];
+    r6 [label="R6 — base qualified\nreceiver-only recorder + combined lifecycle\ncomplete applicable adoption stream\nbounded replay validator\nnew live capture pending", fillcolor="#FFF2CC", color="#B58900"];
+    r7 [label="R7 — complete\ncanonical docs + release evidence\ncurrent editable diagrams", fillcolor="#DFF7EE", color="#008F6B"];
+    r8 [label="R8 — base qualified\nbrokerless private scenario control\nfleet telemetry + critical sources\n14 ticks / 280 publications\nADR-0111 / 0158 / 0189", fillcolor="#DFF7EE", color="#008F6B"];
+    r9 [label="R9 — base qualified\nshared project + guarded state\n8/8 production + 61-sample soak\nfull adoption services pending\nADR-0139 / 0189", fillcolor="#FFF2CC", color="#B58900"];
   }
 
+  solace_layer [
+    shape=note,
+    label="Solace application layer — deterministic green, live pending\nOperationCoordinator + Solace supervisor\nproposal/evidence/decision projection • durable command flow\nreconnect, rebind, outbox drain, and shared-stack browser acceptance owed",
+    fillcolor="#FFF2CC",
+    color="#B58900"
+  ];
+
+  initial_release_gaps [
+    shape=note,
+    label="Initial-release gaps remain\ncurrent qualified slice: 20 simulated + 3 declared only\nexecutable edge-agent/model evidence still owed\ngeneral command UI + prepared-artifact panels still owed",
+    fillcolor="#F2F4F7",
+    color="#697586"
+  ];
+
   r1 -> a2 [label="contract delivered", color="#008F6B", penwidth=1.6];
-  r3 -> a3 [label="state + event digest parity", style=dashed];
-  r3 -> a4 [label="witnessed fold parity", style=dashed];
+  r3 -> a3 [label="state + event digest parity", color="#008F6B", penwidth=1.6];
+  r3 -> a4 [label="witnessed fold parity", color="#008F6B", penwidth=1.6];
   r3 -> r6 [label="validated projections", style=dashed];
   r3 -> r8 [label="source contracts", style=dashed];
   r2 -> r5 [label="catalog data", style=dashed];
@@ -76,5 +90,8 @@ digraph DashboardBuildIncrements {
   r5 -> r9 [label="packaged API", style=dashed];
   r6 -> r9 [label="validated replay", style=dashed];
   r8 -> r9 [label="live runtime", style=dashed];
-  r9 -> a8 [label="production E2E evidence", color="#B7791F", penwidth=1.4];
+  r7 -> a8 [label="release record + current diagrams", color="#008F6B", penwidth=1.4];
+  r9 -> a8 [label="production E2E evidence", color="#008F6B", penwidth=1.4];
+  a8 -> solace_layer [label="preserved base", color="#B58900", fontcolor="#8A6500"];
+  solace_layer -> initial_release_gaps [label="acceptance boundary", style=dashed, color="#697586"];
 }

@@ -1,6 +1,5 @@
 {
   "bundleVersion": "dashboard-replay-bundle/v1",
-  "sessionId": "session-reducer-parity",
   "scenarioId": "wilderness-missing-person",
   "scenarioRevision": 1,
   "initialState": {
@@ -217,7 +216,7 @@
   "integrity": {
     "integrityVersion": "dashboard-replay-integrity/v1",
     "algorithm": "sha256",
-    "checksum": "7cb1e9c44062a95353a6520011a83b81ac40720fbd55c934a5dbcc0900c323bc",
+    "checksum": "af127cbe744f5d2003f9415cf2d947f2655e101c09fded21a8f184ef0aab902f",
     "expectedFinalDigest": "03fdb85dfded6c6914cfea269934716d619510f638cae3b7bc67adcedbcbc357"
   }
 }

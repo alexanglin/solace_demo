@@ -18,7 +18,7 @@ from aerial_rescue_contracts.envelope import (
     parse_envelope,
     sequence_text,
 )
-from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
+from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic, parse_topic
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
 from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.command_progress import CommandIdentity
@@ -96,7 +96,8 @@ def _event(
     sequence = sequence_text(spec.sequence)
     if sequence is None:
         raise ArtifactError(ArtifactRefusal.SEQUENCE)
-    kind = event_type(spec.topic)
+    topic = parse_topic(format_topic(spec.topic))
+    kind = event_type(topic)
     document: dict[str, object] = {
         "specversion": "1.0",
         "id": spec.event_id,
@@ -115,7 +116,7 @@ def _event(
     if stamp.tracestate is not None:
         document["tracestate"] = stamp.tracestate
     envelope = parse_envelope(document)
-    check_topic_binding(envelope, spec.topic)
+    check_topic_binding(envelope, topic)
     return canonical.canonical_bytes(document)
 
 
@@ -134,7 +135,7 @@ def _audit_payload(
         "recordType": AUDIT_RECORD_TYPE,
         "commandId": ingress.payload.command_id,
         "operatorId": ingress.payload.operator_id,
-        "action": ingress.payload.action.model_dump(by_alias=True),
+        "action": ingress.payload.action.model_dump(),
         "outcome": "authorized" if authorized else "refused",
     }
     if authorized and approval_id is not None:

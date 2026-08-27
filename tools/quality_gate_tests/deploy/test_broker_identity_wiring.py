@@ -64,6 +64,16 @@ def _services() -> dict[str, dict[str, str]]:
     }
 
 
+def _secret_files() -> dict[str, str]:
+    """Return every file-backed Compose secret declaration."""
+    document = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    return {
+        name: declaration["file"]
+        for name, declaration in document["secrets"].items()
+        if "file" in declaration
+    }
+
+
 class BrokerIdentityWiringTests(QualityGateTestCase):
     def test_the_template_fixes_an_a2a_namespace_the_subscription_builder_accepts(self) -> None:
         # Arrange

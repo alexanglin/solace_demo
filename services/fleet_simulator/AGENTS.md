@@ -69,10 +69,11 @@ guide.
 | `pyproject.toml` | Python 3.14, Tier 2, four workspace dependencies, exact FastAPI, Pydantic, and Uvicorn pins, and the concrete console entry point |
 | `src/aerial_rescue_fleet_simulator/__init__.py` | `FleetSimulatorError`, the structured refusal base every module here raises |
 | `src/aerial_rescue_fleet_simulator/bounds.py` | The telemetry payload bounds, a copy pinned to `schemas/v1/canonical.schema.json` by `tests/test_bounds.py` |
-| `src/aerial_rescue_fleet_simulator/control_wire.py` | The four strict fleet-control server models and canonical-first validation owned by this process |
-| `src/aerial_rescue_fleet_simulator/control_http_contract.py` | The framework-free three-route private request, response, and default-refusal expectations |
-| `src/aerial_rescue_fleet_simulator/http_runtime.py` | The authenticated private FastAPI boundary, exact refusal order, bounded lifecycle, liveness, and readiness |
-| `src/aerial_rescue_fleet_simulator/control.py` | Stable run reconciliation, bounded capacity and cancellation over the injected executable runtime |
+| `src/aerial_rescue_fleet_simulator/control_plane/wire.py` | The four strict fleet-control server models and canonical-first validation owned by this process |
+| `src/aerial_rescue_fleet_simulator/control_plane/http_contract.py` | The framework-free three-route private request, response, and default-refusal expectations |
+| `src/aerial_rescue_fleet_simulator/control_plane/runtime.py` | The authenticated private FastAPI boundary, exact refusal order, bounded lifecycle, liveness, and readiness |
+| `src/aerial_rescue_fleet_simulator/control_plane/control.py` | Stable run reconciliation, bounded capacity and cancellation over the injected executable runtime |
+| `src/aerial_rescue_fleet_simulator/control_plane/http.py` | The private Uvicorn application composition and listener seam |
 | `src/aerial_rescue_fleet_simulator/console.py` | Secret-file admission and the private Uvicorn listener composition seam; it deliberately requires an injected fleet runtime |
 | `src/aerial_rescue_fleet_simulator/scenario.py` | The frozen `FleetScenario` value of [ADR-0077](../../docs/adr/0077-fleet-scenario-is-a-frozen-composition-boundary-value.md) and every refusal it carries |
 | `src/aerial_rescue_fleet_simulator/intake.py` | What a drone accepts off its own command queue, and the order it refuses in |

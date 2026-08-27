@@ -7,12 +7,32 @@ import re
 import unittest
 from pathlib import Path
 
-from aerial_rescue_store import approvals, audit, idempotency, outbox
+from aerial_rescue_store import (
+    approvals,
+    audit,
+    idempotency,
+    outbox,
+)
+from aerial_rescue_store.dashboard import (
+    events as dashboard_events,
+)
+from aerial_rescue_store.dashboard import (
+    operations as dashboard_operations,
+)
+from aerial_rescue_store.dashboard import (
+    runs as dashboard_runs,
+)
 from aerial_rescue_store.database.schema import (
     APPROVAL,
     AUDIT_RECORD,
     AUDIT_SEQUENCE,
     COMMAND_OUTBOX,
+    DASHBOARD_BROKER_EVENT,
+    DASHBOARD_BROKER_SOURCE,
+    DASHBOARD_CURRENT_RUN,
+    DASHBOARD_MISSION,
+    DASHBOARD_OPERATION,
+    DASHBOARD_RUN,
     IDEMPOTENCY_CLAIM,
 )
 
@@ -147,6 +167,12 @@ class RepositoryMetadataTests(unittest.TestCase):
             APPROVAL,
             IDEMPOTENCY_CLAIM,
             COMMAND_OUTBOX,
+            DASHBOARD_MISSION,
+            DASHBOARD_RUN,
+            DASHBOARD_CURRENT_RUN,
+            DASHBOARD_OPERATION,
+            DASHBOARD_BROKER_SOURCE,
+            DASHBOARD_BROKER_EVENT,
         )
 
         # Act
@@ -156,6 +182,12 @@ class RepositoryMetadataTests(unittest.TestCase):
             approvals._APPROVAL_ROWS,
             idempotency._CLAIM_ROWS,
             outbox._OUTBOX_ROWS,
+            dashboard_runs._MISSION_ROWS,
+            dashboard_runs._RUN_ROWS,
+            dashboard_runs._POINTER_ROWS,
+            dashboard_operations._OPERATION_ROWS,
+            dashboard_events._SOURCE_ROWS,
+            dashboard_events._BROKER_ROWS,
         )
 
         # Assert

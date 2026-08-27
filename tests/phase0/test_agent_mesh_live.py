@@ -24,23 +24,12 @@ import json
 import time
 import unittest
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
-from aerial_rescue_broker.deployment import credential_path
 from aerial_rescue_domain.principals import Principal
-from solace.messaging.config.solace_properties import (
-    authentication_properties as auth,
-)
-from solace.messaging.config.solace_properties import (
-    service_properties as service_property,
-)
-from solace.messaging.config.solace_properties import (
-    transport_layer_properties as transport,
-)
-from solace.messaging.config.transport_security_strategy import TLS
-from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic_subscription import TopicSubscription
+
+from tests.broker_live_support import native_role_service
 
 pytestmark = [
     pytest.mark.phase0,
@@ -49,11 +38,6 @@ pytestmark = [
     pytest.mark.ollama,
 ]
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEPLOY = REPOSITORY_ROOT / "deploy"
-TRUST_STORE = DEPLOY / "certs"
-BROKER_URL = "tcps://localhost:55443"
-VPN = "default"
 NAMESPACE = "aerial-rescue-mesh"
 WEB_UI_HOST = "127.0.0.1"
 WEB_UI_PORT = 8000
@@ -70,29 +54,6 @@ DELEGATION_WINDOW_SECONDS = 180
 """A local model has to run before a delegation can happen at all."""
 
 
-def _service() -> MessagingService:
-    """Return a service bound to the container on the Agent Mesh role's own identity."""
-    credential = credential_path(DEPLOY, Principal.AGENT_MESH_AGENT).read_text(encoding="utf-8")
-    properties = {
-        transport.HOST: BROKER_URL,
-        service_property.VPN_NAME: VPN,
-        auth.SCHEME_BASIC_USER_NAME: Principal.AGENT_MESH_AGENT.value,
-        auth.SCHEME_BASIC_PASSWORD: credential.strip(),
-        transport.CONNECTION_RETRIES: 0,
-        transport.RECONNECTION_ATTEMPTS: 0,
-    }
-    return (
-        MessagingService.builder()
-        .from_properties(properties)
-        .with_transport_security_strategy(
-            TLS.create().with_certificate_validation(
-                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
-            )
-        )
-        .build()
-    )
-
-
 def _observe(
     subscription: str, seconds: int, trigger: Callable[[], None] | None = None
 ) -> list[tuple[str, bytes]]:
@@ -103,7 +64,7 @@ def _observe(
     blocking receive rather than a callback, so nothing here subclasses the untyped upstream
     handler (``docs/adr/0028-untyped-solace-client-boundary.md``).
     """
-    service = _service()
+    service = native_role_service(Principal.AGENT_MESH_AGENT)
     service.connect()
     received: list[tuple[str, bytes]] = []
     receiver = (

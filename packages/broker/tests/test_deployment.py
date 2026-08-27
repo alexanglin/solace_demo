@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import unquote
 
+import pytest
 from aerial_rescue_broker.deployment import (
     ADMIN_CREDENTIAL,
     CERTIFICATE_AUTHORITY,
@@ -233,7 +234,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            DRONES,
+        )
 
         # Assert
         self.assertEqual(
@@ -242,8 +249,8 @@ class ProvisionTests(unittest.TestCase):
                 "9 client profiles",
                 "8 enabled client usernames; discovery omitted",
                 "3 upstream queue templates",
-                "54 topic exceptions",
-                "49 durable queues, 23 subscriptions",
+                "55 topic exceptions",
+                "47 durable queues, 24 subscriptions",
                 True,
             ),
             (
@@ -263,7 +270,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", ())
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            (),
+        )
 
         # Assert
         self.assertTrue(any("no drone command queues" in part for part in lines), lines)
@@ -274,7 +287,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", None, DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            None,
+            DRONES,
+        )
 
         # Assert
         self.assertTrue(any("no A2A grant" in part for part in lines), lines)
@@ -285,7 +304,13 @@ class ProvisionTests(unittest.TestCase):
         transport = RecordingTransport()
 
         # Act
-        lines = provision(transport, deploy, "default", "acme/dev", DRONES)
+        lines = provision(
+            transport,
+            deploy,
+            "default",
+            "acme/dev",
+            DRONES,
+        )
 
         # Assert
         self.assertEqual((), tuple(part for part in lines if CREDENTIAL in part))
@@ -370,7 +395,24 @@ class MainTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual((0, True), (code, "49 durable queues" in out.getvalue()))
+        self.assertEqual((0, True), (code, "47 durable queues" in out.getvalue()))
+
+    def test_the_obsolete_mission_control_projection_argument_is_not_exposed(self) -> None:
+        # Arrange
+        deploy = _material(self)
+        arguments = (
+            "--deploy-directory",
+            str(deploy),
+            "--queue-projection",
+            "mission-control",
+        )
+
+        # Act
+        with pytest.raises(SystemExit) as raised:
+            main(arguments, session=lambda _: RecordingTransport())
+
+        # Assert
+        self.assertEqual(2, raised.value.code)
 
     def test_a_drone_identifier_the_grammar_refuses_reports_one(self) -> None:
         # Arrange

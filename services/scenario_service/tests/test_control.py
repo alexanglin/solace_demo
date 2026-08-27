@@ -213,8 +213,17 @@ class ScenarioCoordinatorTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(status.state, "SEARCHING")
-        self.assertEqual(status.completed_tick_count, 4)
-        self.assertEqual(status.telemetry_publication_count, 80)
+        self.assertEqual(
+            {
+                "controlVersion": 1,
+                "scenarioId": "wilderness-missing-person",
+                "scenarioRevision": 1,
+                "missionId": "mission-2026-0001",
+                "runId": "run-2026-0001",
+                "state": "SEARCHING",
+            },
+            status.model_dump(mode="json", by_alias=True),
+        )
         self.assertEqual(definitions.calls[-1], ("load", (SCENARIO_ID, 1)))
         operation, value = fleet.calls[-1]
         fleet_request = cast("FleetControlStartRequest", value)

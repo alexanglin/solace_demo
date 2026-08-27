@@ -186,7 +186,67 @@ class FakeTraceContext:
             raise NativeTraceError(self._inbound_refusal)
 
 
-class FakePublisher:
+class _FakePublisherLifecycle:
+    """Lifecycle recorder shared by the three pinned publisher shapes."""
+
+    def __init__(
+        self,
+        *,
+        notify_failing: bool,
+        terminate_failing: bool,
+        order: list[str] | None = None,
+    ) -> None:
+        """Record the common lifecycle script and optional shutdown-order log."""
+        self.started = 0
+        self.terminated: list[int] = []
+        self.readiness_listener: object | None = None
+        self.termination_listener: object | None = None
+        self.readiness_notifications = 0
+        self._notify_failing = notify_failing
+        self._terminate_failing = terminate_failing
+        self._order = order
+
+    @property
+    def ready_notifications(self) -> int:
+        """Return the persistent-publisher spelling of the shared counter."""
+        return self.readiness_notifications
+
+    def start(self) -> None:
+        """Record that the publisher was started."""
+        self.started += 1
+
+    def set_publisher_readiness_listener(self, listener: object) -> None:
+        """Record the listener for publisher capacity recovery."""
+        self.readiness_listener = listener
+
+    def set_termination_notification_listener(self, listener: object) -> None:
+        """Record the listener for independently terminated publication."""
+        self.termination_listener = listener
+
+    def is_ready(self) -> bool:
+        """Report the started fake as ready."""
+        return self.started > 0
+
+    def notify_when_ready(self) -> None:
+        """Record one requested callback after capacity becomes available."""
+        self.readiness_notifications += 1
+        if self._notify_failing:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
+
+    def refuse_ready_notification(self) -> None:
+        """Make the next readiness-notification request fail."""
+        self._notify_failing = True
+
+    def terminate(self, grace_period: int) -> None:
+        """Record bounded termination and its optional shared shutdown order."""
+        self.terminated.append(grace_period)
+        if self._order is not None:
+            self._order.append("terminate")
+        if self._terminate_failing:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
+
+
+class FakePublisher(_FakePublisherLifecycle):
     """The client's persistent publisher, recording its lifecycle and publications."""
 
     def __init__(
@@ -197,19 +257,12 @@ class FakePublisher:
         terminate_failing: bool = False,
     ) -> None:
         """Record the client failure type this publisher reports, if any."""
-        self.started = 0
-        self.terminated: list[int] = []
+        super().__init__(
+            notify_failing=notify_failing,
+            terminate_failing=terminate_failing,
+        )
         self.published: list[tuple[object, object, int]] = []
-        self.readiness_listener: object | None = None
-        self.termination_listener: object | None = None
-        self.ready_notifications = 0
         self._failure = failure
-        self._notify_failing = notify_failing
-        self._terminate_failing = terminate_failing
-
-    def start(self) -> None:
-        """Record that the publisher was started."""
-        self.started += 1
 
     def publish_await_acknowledgement(
         self, message: object, destination: object, time_out: int
@@ -218,30 +271,6 @@ class FakePublisher:
         if self._failure is not None:
             raise self._failure(CLIENT_FAILURE)
         self.published.append((message, destination, time_out))
-
-    def set_publisher_readiness_listener(self, listener: object) -> None:
-        """Record the listener that observes recovery from bounded back pressure."""
-        self.readiness_listener = listener
-
-    def set_termination_notification_listener(self, listener: object) -> None:
-        """Record the listener for an independently terminated publisher."""
-        self.termination_listener = listener
-
-    def notify_when_ready(self) -> None:
-        """Record a request for a race-free ready callback."""
-        self.ready_notifications += 1
-        if self._notify_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
-
-    def is_ready(self) -> bool:
-        """Report the started fake as ready."""
-        return self.started > 0
-
-    def terminate(self, grace_period: int) -> None:
-        """Record that the publisher was terminated within the supplied bound."""
-        self.terminated.append(grace_period)
-        if self._terminate_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
 
 
 class FakePersistentPublisherBuilder:
@@ -262,30 +291,23 @@ class FakePersistentPublisherBuilder:
         return self._publisher
 
 
-class FakeReceiver:
-    """The client's direct receiver, answering from a scripted list."""
+class _FakeReceiverLifecycle:
+    """Receive, termination-listener, and shutdown recording shared by receiver fakes."""
 
     def __init__(
         self,
         scripted: Sequence[object],
         *,
-        start_failing: bool = False,
-        terminate_failing: bool = False,
+        terminate_failing: bool,
+        order: list[str] | None = None,
     ) -> None:
-        """Record what this receiver will yield, in order."""
-        self.started = 0
+        """Record the delivery script and optional shared shutdown-order log."""
         self.terminated: list[int] = []
         self.timeouts: list[int] = []
         self.termination_listener: object | None = None
         self._scripted = list(scripted)
-        self._start_failing = start_failing
         self._terminate_failing = terminate_failing
-
-    def start(self) -> None:
-        """Record that the receiver was started."""
-        self.started += 1
-        if self._start_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
+        self._order = order
 
     def receive_message(self, timeout: int) -> object:
         """Return the next scripted message, or ``None`` when the script is exhausted."""
@@ -297,9 +319,33 @@ class FakeReceiver:
         self.termination_listener = listener
 
     def terminate(self, grace_period: int) -> None:
-        """Record that the receiver was terminated within the supplied bound."""
+        """Record bounded termination and its optional shared shutdown order."""
         self.terminated.append(grace_period)
+        if self._order is not None:
+            self._order.append("receiver-terminate")
         if self._terminate_failing:
+            raise PubSubPlusClientError(CLIENT_FAILURE)
+
+
+class FakeReceiver(_FakeReceiverLifecycle):
+    """The client's direct receiver, answering from a scripted list."""
+
+    def __init__(
+        self,
+        scripted: Sequence[object],
+        *,
+        start_failing: bool = False,
+        terminate_failing: bool = False,
+    ) -> None:
+        """Record what this receiver will yield, in order."""
+        super().__init__(scripted, terminate_failing=terminate_failing)
+        self.started = 0
+        self._start_failing = start_failing
+
+    def start(self) -> None:
+        """Record that the receiver was started."""
+        self.started += 1
+        if self._start_failing:
             raise PubSubPlusClientError(CLIENT_FAILURE)
 
 
@@ -327,7 +373,7 @@ class FakeReceiverBuilder:
         return self._receiver
 
 
-class FakeDirectPublisher:
+class FakeDirectPublisher(_FakePublisherLifecycle):
     """The client's direct publisher, recording its lifecycle and publications."""
 
     def __init__(
@@ -339,42 +385,13 @@ class FakeDirectPublisher:
         terminate_failing: bool = False,
     ) -> None:
         """Record the shared order log and whether this publisher reports a failure."""
-        self.started = 0
-        self.terminated: list[int] = []
+        super().__init__(
+            notify_failing=notify_failing,
+            terminate_failing=terminate_failing,
+            order=order,
+        )
         self.published: list[tuple[object, SolaceTopic, Mapping[str, object] | None]] = []
-        self.readiness_listener: object | None = None
-        self.termination_listener: object | None = None
-        self.readiness_notifications = 0
-        self._order = order
         self._failure = failure
-        self._notify_failing = notify_failing
-        self._terminate_failing = terminate_failing
-
-    def start(self) -> None:
-        """Record that the publisher was started."""
-        self.started += 1
-
-    def set_publisher_readiness_listener(self, listener: object) -> None:
-        """Record the listener for publisher capacity recovery."""
-        self.readiness_listener = listener
-
-    def set_termination_notification_listener(self, listener: object) -> None:
-        """Record the listener for an independently terminated publisher."""
-        self.termination_listener = listener
-
-    def is_ready(self) -> bool:
-        """Report the started fake as ready."""
-        return self.started > 0
-
-    def notify_when_ready(self) -> None:
-        """Record one requested callback after capacity becomes available."""
-        self.readiness_notifications += 1
-        if self._notify_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
-
-    def refuse_ready_notification(self) -> None:
-        """Make the next readiness-notification request fail."""
-        self._notify_failing = True
 
     def publish(
         self,
@@ -386,13 +403,6 @@ class FakeDirectPublisher:
         if self._failure is not None:
             raise self._failure(CLIENT_FAILURE)
         self.published.append((message, destination, additional_message_properties))
-
-    def terminate(self, grace_period: int) -> None:
-        """Record that the publisher was terminated, and when."""
-        self.terminated.append(grace_period)
-        self._order.append("terminate")
-        if self._terminate_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
 
 
 class FakeDirectPublisherBuilder:
@@ -413,7 +423,7 @@ class FakeDirectPublisherBuilder:
         return self._publisher
 
 
-class FakeRequestReplyPublisher:
+class FakeRequestReplyPublisher(_FakePublisherLifecycle):
     """The official request/reply publisher, returning one correlated response."""
 
     def __init__(
@@ -425,38 +435,13 @@ class FakeRequestReplyPublisher:
         terminate_failing: bool = False,
     ) -> None:
         """Record the response or typed client failure this publisher yields."""
-        self.started = 0
-        self.terminated: list[int] = []
+        super().__init__(
+            notify_failing=notify_failing,
+            terminate_failing=terminate_failing,
+        )
         self.requests: list[tuple[object, SolaceTopic, int]] = []
-        self.readiness_listener: object | None = None
-        self.termination_listener: object | None = None
-        self.readiness_notifications = 0
         self._response = response
         self._failure = failure
-        self._notify_failing = notify_failing
-        self._terminate_failing = terminate_failing
-
-    def start(self) -> None:
-        """Record that request/reply publishing started."""
-        self.started += 1
-
-    def set_publisher_readiness_listener(self, listener: object) -> None:
-        """Record the listener for publisher capacity recovery."""
-        self.readiness_listener = listener
-
-    def set_termination_notification_listener(self, listener: object) -> None:
-        """Record the listener for an independently terminated requester."""
-        self.termination_listener = listener
-
-    def is_ready(self) -> bool:
-        """Report the started fake as ready."""
-        return self.started > 0
-
-    def notify_when_ready(self) -> None:
-        """Record one requested callback after capacity becomes available."""
-        self.readiness_notifications += 1
-        if self._notify_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
 
     def publish_await_response(
         self, message: object, destination: SolaceTopic, reply_timeout: int
@@ -466,12 +451,6 @@ class FakeRequestReplyPublisher:
             raise self._failure(CLIENT_FAILURE)
         self.requests.append((message, destination, reply_timeout))
         return self._response
-
-    def terminate(self, grace_period: int) -> None:
-        """Record bounded graceful termination."""
-        self.terminated.append(grace_period)
-        if self._terminate_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
 
 
 class FakeRequestReplyPublisherBuilder:
@@ -536,7 +515,7 @@ class _PayloadlessMessage(FakeMessage):
         """Return the absent body exactly as the SDK permits."""
 
 
-class FakePersistentReceiver:
+class FakePersistentReceiver(_FakeReceiverLifecycle):
     """The client's persistent receiver, recording every settlement it was asked for."""
 
     def __init__(
@@ -548,17 +527,16 @@ class FakePersistentReceiver:
         order: list[str] | None = None,
     ) -> None:
         """Record what this receiver yields, and whether binding or settling refuses."""
+        super().__init__(
+            scripted,
+            terminate_failing=terminate_failing,
+            order=order,
+        )
         self.started = 0
-        self.terminated: list[int] = []
-        self.timeouts: list[int] = []
         self.settled: list[tuple[object, Outcome]] = []
-        self.termination_listener: object | None = None
         self.state_change_listener: object | None = None
-        self._scripted = list(scripted)
         self._failing = failing
         self._unbindable = unbindable
-        self._terminate_failing = terminate_failing
-        self._order = order
 
     def start(self) -> None:
         """Record the start, or raise the way the client does for a refused binding."""
@@ -572,28 +550,11 @@ class FakePersistentReceiver:
                 0.0,
             )
 
-    def receive_message(self, timeout: int) -> object:
-        """Return the next scripted message, or ``None`` when the script is exhausted."""
-        self.timeouts.append(timeout)
-        return self._scripted.pop(0) if self._scripted else None
-
-    def set_termination_notification_listener(self, listener: object) -> None:
-        """Record the listener for an independently terminated receiver flow."""
-        self.termination_listener = listener
-
     def settle(self, message: object, outcome: Outcome) -> None:
         """Record one settlement, or raise the way the client does when it cannot send one."""
         if self._failing:
             raise PubSubPlusClientError(CLIENT_FAILURE)
         self.settled.append((message, outcome))
-
-    def terminate(self, grace_period: int) -> None:
-        """Record that the receiver was terminated, and when if a shared order was given."""
-        self.terminated.append(grace_period)
-        if self._order is not None:
-            self._order.append("receiver-terminate")
-        if self._terminate_failing:
-            raise PubSubPlusClientError(CLIENT_FAILURE)
 
 
 class FakePersistentReceiverBuilder:
@@ -786,6 +747,29 @@ class FakeServiceEvent:
     def get_broker_uri(self) -> str:
         """Return a non-secret local URI."""
         return ENDPOINT.url
+
+
+def _active_persistent_lifecycle() -> tuple[
+    FakeService,
+    BrokerLifecycle,
+    ReceiverStateChangeListener,
+    ReconnectionAttemptListener,
+    ReconnectionListener,
+]:
+    """Return one ready durable flow and its deterministic SDK callbacks."""
+    service = FakeService()
+    lifecycle = BrokerLifecycle()
+    install_lifecycle_listeners(service, lifecycle)
+    lifecycle.connected()
+    SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
+    lifecycle.mark_ready()
+    state = cast(
+        ReceiverStateChangeListener,
+        service.persistent_receiver_builder.activation_listeners[0],
+    )
+    reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
+    reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
+    return service, lifecycle, state, reconnecting, reconnected
 
 
 class ConnectionPropertyTests(unittest.TestCase):
@@ -1034,18 +1018,9 @@ class BrokerLifecycleTests(unittest.TestCase):
 
     def test_fresh_flow_activation_survives_delayed_transport_callbacks(self) -> None:
         # Arrange
-        service = FakeService()
-        lifecycle = BrokerLifecycle()
-        install_lifecycle_listeners(service, lifecycle)
-        lifecycle.connected()
-        SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
-        lifecycle.mark_ready()
-        state_listener = cast(
-            ReceiverStateChangeListener,
-            service.persistent_receiver_builder.activation_listeners[0],
+        _service, lifecycle, state_listener, reconnecting, reconnected = (
+            _active_persistent_lifecycle()
         )
-        reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
-        reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
 
         # Act
         state_listener.on_change(ReceiverState.PASSIVE, ReceiverState.ACTIVE, 1_500.0)
@@ -1061,18 +1036,9 @@ class BrokerLifecycleTests(unittest.TestCase):
 
     def test_service_and_flow_callbacks_share_integer_millisecond_precision(self) -> None:
         # Arrange
-        service = FakeService()
-        lifecycle = BrokerLifecycle()
-        install_lifecycle_listeners(service, lifecycle)
-        lifecycle.connected()
-        SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
-        lifecycle.mark_ready()
-        state_listener = cast(
-            ReceiverStateChangeListener,
-            service.persistent_receiver_builder.activation_listeners[0],
+        _service, lifecycle, state_listener, reconnecting, reconnected = (
+            _active_persistent_lifecycle()
         )
-        reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
-        reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
 
         # Act
         reconnecting.on_reconnecting(FakeServiceEvent(2.0009))
@@ -1088,18 +1054,9 @@ class BrokerLifecycleTests(unittest.TestCase):
 
     def test_stale_flow_activation_cannot_satisfy_a_new_transport_epoch(self) -> None:
         # Arrange
-        service = FakeService()
-        lifecycle = BrokerLifecycle()
-        install_lifecycle_listeners(service, lifecycle)
-        lifecycle.connected()
-        SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
-        lifecycle.mark_ready()
-        state_listener = cast(
-            ReceiverStateChangeListener,
-            service.persistent_receiver_builder.activation_listeners[0],
+        _service, lifecycle, state_listener, reconnecting, reconnected = (
+            _active_persistent_lifecycle()
         )
-        reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
-        reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
 
         # Act
         reconnecting.on_reconnecting(FakeServiceEvent(2.0))
@@ -1120,18 +1077,9 @@ class BrokerLifecycleTests(unittest.TestCase):
 
     def test_stale_passivation_cannot_erase_a_newer_flow_activation(self) -> None:
         # Arrange
-        service = FakeService()
-        lifecycle = BrokerLifecycle()
-        install_lifecycle_listeners(service, lifecycle)
-        lifecycle.connected()
-        SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
-        lifecycle.mark_ready()
-        state_listener = cast(
-            ReceiverStateChangeListener,
-            service.persistent_receiver_builder.activation_listeners[0],
+        _service, lifecycle, state_listener, reconnecting, reconnected = (
+            _active_persistent_lifecycle()
         )
-        reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
-        reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
 
         # Act
         reconnecting.on_reconnecting(FakeServiceEvent(2.0))
@@ -1148,18 +1096,9 @@ class BrokerLifecycleTests(unittest.TestCase):
 
     def test_stale_reconnected_callback_cannot_end_a_newer_recovery_epoch(self) -> None:
         # Arrange
-        service = FakeService()
-        lifecycle = BrokerLifecycle()
-        install_lifecycle_listeners(service, lifecycle)
-        lifecycle.connected()
-        SolacePersistentReceiver(service, QUEUE, lifecycle=lifecycle)
-        lifecycle.mark_ready()
-        state_listener = cast(
-            ReceiverStateChangeListener,
-            service.persistent_receiver_builder.activation_listeners[0],
+        _service, lifecycle, state_listener, reconnecting, reconnected = (
+            _active_persistent_lifecycle()
         )
-        reconnecting = cast(ReconnectionAttemptListener, service.reconnection_attempt_listeners[0])
-        reconnected = cast(ReconnectionListener, service.reconnection_listeners[0])
 
         # Act
         reconnecting.on_reconnecting(FakeServiceEvent(1.0))
@@ -2238,23 +2177,9 @@ class FleetSessionTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         order = service.order
-
-        def publisher(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("results", order)
-
-        def telemetry(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("telemetry", order)
-
-        def receiver(
-            _service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-        ) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver(queue, order)
+        publisher = _PublisherEndpointFactory("results", order)
+        telemetry = _PublisherEndpointFactory("telemetry", order)
+        receiver = _ReceiverEndpointFactory(order)
 
         # Act
         with (
@@ -2275,23 +2200,9 @@ class FleetSessionTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         order = service.order
-
-        def publisher(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("results", order, failing=True)
-
-        def telemetry(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("telemetry", order)
-
-        def receiver(
-            _service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-        ) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver(queue, order, failing=queue == LATER_QUEUE)
+        publisher = _PublisherEndpointFactory("results", order, failing=True)
+        telemetry = _PublisherEndpointFactory("telemetry", order)
+        receiver = _ReceiverEndpointFactory(order, failing=(LATER_QUEUE,))
 
         with (
             patch("aerial_rescue_broker.messaging.SolaceDirectPublisher", side_effect=telemetry),
@@ -2358,25 +2269,9 @@ class FleetSessionTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         order = service.order
-
-        def publisher(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("results", order)
-
-        def telemetry(_service: object, *, lifecycle: BrokerLifecycle) -> _ClosingReceiver:
-            del _service, lifecycle
-            return _ClosingReceiver("telemetry", order)
-
-        def receiver(
-            _service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-        ) -> _ClosingReceiver:
-            del _service, lifecycle
-            if queue == LATER_QUEUE:
-                raise MessagingError(MessagingRefusal.BIND_REFUSED, queue)
-            return _ClosingReceiver(queue, order)
+        publisher = _PublisherEndpointFactory("results", order)
+        telemetry = _PublisherEndpointFactory("telemetry", order)
+        receiver = _ReceiverEndpointFactory(order, refuse=LATER_QUEUE)
 
         # Act
         with (
@@ -2783,6 +2678,57 @@ class _ClosingReceiver:
             raise MessagingError(MessagingRefusal.SHUTDOWN_REFUSED, self._name)
 
 
+class _PublisherEndpointFactory:
+    """Build patched publishers with one named close effect."""
+
+    def __init__(self, name: str, order: list[str], *, failing: bool = False) -> None:
+        """Retain the endpoint effect independently from the SDK constructor shape."""
+        self._name = name
+        self._order = order
+        self._failing = failing
+
+    def __call__(
+        self,
+        service: object,
+        *,
+        lifecycle: BrokerLifecycle,
+        tracing: object | None = None,
+    ) -> _ClosingReceiver:
+        """Return the configured patched endpoint."""
+        del service, lifecycle, tracing
+        return _ClosingReceiver(self._name, self._order, failing=self._failing)
+
+
+class _ReceiverEndpointFactory:
+    """Build patched durable receivers with controlled construction and close refusals."""
+
+    def __init__(
+        self,
+        order: list[str],
+        *,
+        refuse: str | None = None,
+        failing: Collection[str] = (),
+    ) -> None:
+        """Retain only the exact queue identities that exercise a refusal path."""
+        self._order = order
+        self._refuse = refuse
+        self._failing = frozenset(failing)
+
+    def __call__(
+        self,
+        service: object,
+        queue: str,
+        *,
+        lifecycle: BrokerLifecycle,
+        tracing: object | None = None,
+    ) -> _ClosingReceiver:
+        """Build one receiver or raise its injected binding refusal."""
+        del service, lifecycle, tracing
+        if queue == self._refuse:
+            raise MessagingError(MessagingRefusal.BIND_REFUSED, queue)
+        return _ClosingReceiver(queue, self._order, failing=queue in self._failing)
+
+
 class ReceiverOnlySessionTests(unittest.TestCase):
     def test_one_service_binds_named_guaranteed_queues_and_one_bounded_direct_receiver(
         self,
@@ -2948,23 +2894,7 @@ class ReceiverOnlySessionTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         lifecycle = BrokerLifecycle()
-        opened: dict[str, _ClosingReceiver] = {}
-
-        def persistent(
-            ignored_service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-            tracing: object,
-        ) -> _ClosingReceiver:
-            del ignored_service, lifecycle, tracing
-            endpoint = _ClosingReceiver(
-                queue,
-                service.order,
-                failing=queue == LATER_QUEUE,
-            )
-            opened[queue] = endpoint
-            return endpoint
+        persistent = _ReceiverEndpointFactory(service.order, failing=(LATER_QUEUE,))
 
         direct = _ClosingReceiver("direct", service.order, failing=True)
         with (
@@ -2998,18 +2928,7 @@ class ReceiverOnlySessionTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         lifecycle = BrokerLifecycle()
-
-        def persistent(
-            ignored_service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-            tracing: object,
-        ) -> _ClosingReceiver:
-            del ignored_service, lifecycle, tracing
-            if queue == LATER_QUEUE:
-                raise MessagingError(MessagingRefusal.BIND_REFUSED, queue)
-            return _ClosingReceiver(queue, service.order)
+        persistent = _ReceiverEndpointFactory(service.order, refuse=LATER_QUEUE)
 
         # Act
         with (
@@ -3318,16 +3237,7 @@ class DashboardSessionTests(unittest.TestCase):
         service = FakeService()
         lifecycle = BrokerLifecycle()
         binding_refusal = MessagingError(MessagingRefusal.BIND_REFUSED, "direct")
-
-        def persistent(
-            ignored_service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-            tracing: object,
-        ) -> _ClosingReceiver:
-            del ignored_service, lifecycle, tracing
-            return _ClosingReceiver(queue, service.order, failing=True)
+        persistent = _ReceiverEndpointFactory(service.order, failing=(QUEUE,))
 
         # Act
         with (
@@ -3682,18 +3592,11 @@ class MessagingFailureBranchTests(unittest.TestCase):
         # Arrange
         service = FakeService()
         lifecycle = BrokerLifecycle()
-
-        def persistent(
-            ignored_service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-            tracing: object,
-        ) -> _ClosingReceiver:
-            del ignored_service, lifecycle, tracing
-            if queue == LATER_QUEUE:
-                raise MessagingError(MessagingRefusal.BIND_REFUSED, queue)
-            return _ClosingReceiver(queue, service.order, failing=True)
+        persistent = _ReceiverEndpointFactory(
+            service.order,
+            refuse=LATER_QUEUE,
+            failing=(EARLIER_QUEUE,),
+        )
 
         # Act
         with (
@@ -3729,17 +3632,11 @@ class MessagingFailureBranchTests(unittest.TestCase):
     def test_fleet_cleanup_failure_does_not_hide_the_binding_refusal(self) -> None:
         # Arrange
         service = FakeService()
-
-        def persistent(
-            ignored_service: object,
-            queue: str,
-            *,
-            lifecycle: BrokerLifecycle,
-        ) -> _ClosingReceiver:
-            del ignored_service, lifecycle
-            if queue == LATER_QUEUE:
-                raise MessagingError(MessagingRefusal.BIND_REFUSED, queue)
-            return _ClosingReceiver(queue, service.order, failing=True)
+        persistent = _ReceiverEndpointFactory(
+            service.order,
+            refuse=LATER_QUEUE,
+            failing=(EARLIER_QUEUE,),
+        )
 
         # Act
         with (

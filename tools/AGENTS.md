@@ -36,7 +36,7 @@ preserve both the cross-cutting rules above and the policy that gate makes execu
 | `aaa_checker/` | Cross-language AAA discovery, syntax analysis, self-tests, and the whole-tree entry point |
 | `quality_gate_tests/analysis/` | Complexity, mutation, waiver, subprocess, and policy-regression tests |
 | `quality_gate_tests/contracts/` | Contract artifacts, import boundaries, environment templates, and TypeScript policy tests |
-| `quality_gate_tests/coverage/` | Per-member coverage and scaffold behavior |
+| `quality_gate_tests/coverage/` | Per-member coverage, per-file dashboard tiers, and scaffold behavior |
 | `quality_gate_tests/deploy/` | Image inventory, image pins, broker secrets, and deployment wiring |
 | `quality_gate_tests/hooks/` | Hook activation, registration, range, terminal, and missing-tool behavior |
 | `quality_gate_tests/support.py` | Hermetic repositories, minimal process environments, and shared fixture writers |

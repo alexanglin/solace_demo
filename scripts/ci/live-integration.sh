@@ -45,7 +45,6 @@ broker-server.crt
 broker-server.pem
 broker-admin-password
 postgres-password
-semp-discovery-password
 semp-monitor-password
 session-secret-key
 scenario-control-bearer

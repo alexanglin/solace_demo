@@ -1,4 +1,4 @@
-"""Current SQLAlchemy metadata matches revision 0009's closed kind set."""
+"""Current SQLAlchemy metadata matches revision 0010's closed kind set."""
 
 from __future__ import annotations
 
@@ -35,8 +35,8 @@ class DashboardIdempotencySchemaTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             (
-                "kind IN ('command', 'approval consumption', 'dashboard start', "
-                "'dashboard reset', 'dashboard command', 'dashboard decision')",
+                "kind IN ('command', 'approval consumption', 'dashboard command', "
+                "'dashboard decision')",
             ),
             rendered,
         )

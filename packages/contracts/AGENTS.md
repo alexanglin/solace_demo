@@ -23,6 +23,7 @@ Read the authority for the concern before editing it:
 | Dashboard event projection and reduced state | [ADR-0067](../../docs/adr/0067-normalized-dashboard-events-and-reduced-state.md) |
 | Dashboard generated types and independent runtime validation | [ADR-0058](../../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
 | Schema-bound dashboard lifecycle sources, families, and projections | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
+| Ordered dashboard-event checkpoint witness | [ADR-0112](../../docs/adr/0112-witness-ordered-dashboard-events-outside-reduced-state.md) |
 | Durable application processing and application family representation | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md), [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md) |
 | Closed application documents and timeline projections | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
 | Reserved-topic RPC versus mission-scoped Gateway Record | [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md) |

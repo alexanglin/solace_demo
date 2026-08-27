@@ -1,4 +1,4 @@
-"""Revision 0009 closes durable idempotency over public dashboard mutations."""
+"""Revision 0010 closes generic idempotency over dashboard command and decision mutations."""
 
 from __future__ import annotations
 
@@ -13,12 +13,10 @@ from aerial_rescue_store.migration import (
 )
 
 PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
-EIGHTH_REVISION: Final = "0008_broker_refusal"
-NINTH_REVISION: Final = "0009_dashboard_idempotency"
-EIGHTH_TO_NINTH: Final = f"{EIGHTH_REVISION}:{NINTH_REVISION}"
+NINTH_REVISION: Final = "0009_broker_refusal"
+TENTH_REVISION: Final = "0010_dashboard_idempotency"
+NINTH_TO_TENTH: Final = f"{NINTH_REVISION}:{TENTH_REVISION}"
 DASHBOARD_KINDS: Final = (
-    "dashboard start",
-    "dashboard reset",
     "dashboard command",
     "dashboard decision",
 )
@@ -26,7 +24,7 @@ ESTABLISHED_KINDS: Final = ("command", "approval consumption")
 
 
 class DashboardIdempotencyMigrationTests(unittest.TestCase):
-    def test_revision_0009_is_the_single_linear_head(self) -> None:
+    def test_revision_0010_is_the_single_linear_head(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
@@ -34,14 +32,14 @@ class DashboardIdempotencyMigrationTests(unittest.TestCase):
         actual = heads(config)
 
         # Assert
-        self.assertEqual((NINTH_REVISION,), actual)
+        self.assertEqual((TENTH_REVISION,), actual)
 
     def test_upgrade_replaces_only_the_kind_constraint_with_the_closed_total_set(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, EIGHTH_TO_NINTH)
+        emitted = upgrade_statements(config, NINTH_TO_TENTH)
 
         # Assert
         self.assertIn(
@@ -58,7 +56,7 @@ class DashboardIdempotencyMigrationTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = downgrade_statements(config, EIGHTH_REVISION)
+        emitted = downgrade_statements(config, NINTH_REVISION)
 
         # Assert
         self.assertIn(

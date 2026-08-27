@@ -126,10 +126,6 @@ class DecisionTests(unittest.TestCase):
                 IdempotencyDecision.RETURN_PRIOR_RESULT,
                 IdempotencyDecision.EXECUTE,
                 IdempotencyDecision.RETURN_PRIOR_RESULT,
-                IdempotencyDecision.EXECUTE,
-                IdempotencyDecision.RETURN_PRIOR_RESULT,
-                IdempotencyDecision.EXECUTE,
-                IdempotencyDecision.RETURN_PRIOR_RESULT,
             ),
             decisions,
         )

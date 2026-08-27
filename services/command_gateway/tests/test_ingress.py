@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import aerial_rescue_command_gateway.ingress as ingress_module
 import pytest
 from aerial_rescue_command_gateway.ingress import (
     AgentResponseIngress,
@@ -27,7 +29,9 @@ from aerial_rescue_command_gateway.ingress import (
     accept_ingress,
 )
 
-ROOT = Path(__file__).parents[3]
+from .fixture_paths import repository_root
+
+ROOT = repository_root(Path(__file__))
 
 
 def _fixture(relative: str) -> bytes:
@@ -48,9 +52,17 @@ class NotificationIngressTests(unittest.TestCase):
         assert isinstance(accepted, OperatorCommandIngress)
         assert isinstance(accepted.payload.action, AssignSectorAction)
         self.assertEqual(
-            (OperatorCommandIngress, "command-synthetic-0001", "sector-synthetic-01"),
+            (
+                OperatorCommandIngress,
+                "mission-synthetic-0001",
+                "operator.command",
+                "command-synthetic-0001",
+                "sector-synthetic-01",
+            ),
             (
                 type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
                 accepted.payload.command_id,
                 accepted.payload.action.sector_id,
             ),
@@ -70,12 +82,16 @@ class NotificationIngressTests(unittest.TestCase):
         self.assertEqual(
             (
                 OperatorCommandIngress,
+                "mission-synthetic-0001",
+                "operator.command",
                 "proposal-synthetic-0001",
                 "decision-synthetic-0001",
                 45123456,
             ),
             (
                 type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
                 accepted.payload.action.proposal_id,
                 accepted.payload.action.evidence_decision_id,
                 accepted.payload.action.latitude_microdegrees,
@@ -95,12 +111,16 @@ class NotificationIngressTests(unittest.TestCase):
         self.assertEqual(
             (
                 OperatorApprovalIngress,
+                "mission-synthetic-0001",
+                "operator.approval",
                 "approval-synthetic-0001",
                 "2026-08-25T12:06:00.000Z",
                 "escalate-rescue",
             ),
             (
                 type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
                 accepted.payload.approval_id,
                 accepted.payload.expires_at,
                 accepted.payload.action.command_type,
@@ -118,8 +138,20 @@ class NotificationIngressTests(unittest.TestCase):
         # Assert
         assert isinstance(accepted, CommandResultIngress)
         self.assertEqual(
-            (CommandResultIngress, "cmd-2026-0001", "acknowledged"),
-            (type(accepted), accepted.payload.command_id, accepted.payload.outcome),
+            (
+                CommandResultIngress,
+                "m-2026-0001",
+                "drone.command-result",
+                "cmd-2026-0001",
+                "acknowledged",
+            ),
+            (
+                type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
+                accepted.payload.command_id,
+                accepted.payload.outcome,
+            ),
         )
 
 
@@ -135,8 +167,20 @@ class IntegrationIngressTests(unittest.TestCase):
         # Assert
         assert isinstance(accepted, AgentResponseIngress)
         self.assertEqual(
-            (AgentResponseIngress, "invocation-synthetic-0001", "candidate"),
-            (type(accepted), accepted.response.invocation_id, accepted.response.outcome.value),
+            (
+                AgentResponseIngress,
+                "mission-synthetic-0001",
+                "agent.response",
+                "invocation-synthetic-0001",
+                "candidate",
+            ),
+            (
+                type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
+                accepted.response.invocation_id,
+                accepted.response.outcome.value,
+            ),
         )
 
     def test_a_gateway_request_uses_the_schema_bound_rpc_parser(self) -> None:
@@ -151,9 +195,37 @@ class IntegrationIngressTests(unittest.TestCase):
         # Assert
         assert isinstance(accepted, GatewayRequestIngress)
         self.assertEqual(
-            (GatewayRequestIngress, document["commandType"]),
-            (type(accepted), accepted.request.command_type),
+            (
+                GatewayRequestIngress,
+                document["missionId"],
+                "gateway.request",
+                document["commandType"],
+            ),
+            (
+                type(accepted),
+                accepted.topic.mission_id,
+                accepted.topic.family.literal_suffix,
+                accepted.request.command_type,
+            ),
         )
+
+    def test_payload_validation_explicitly_requests_strict_pydantic_mode(self) -> None:
+        # Arrange
+        payload = _fixture("event/operator-command/baseline.json")
+        topic = "aerial-rescue/v1/mission-synthetic-0001/operator/command/assign-sector"
+        validator = ingress_module.OperatorCommandPayload.model_validate
+
+        # Act
+        with patch.object(
+            ingress_module.OperatorCommandPayload,
+            "model_validate",
+            wraps=validator,
+        ) as observed:
+            accepted = accept_ingress(payload, topic)
+
+        # Assert
+        self.assertIsInstance(accepted, OperatorCommandIngress)
+        self.assertEqual({"strict": True}, observed.call_args.kwargs)
 
 
 class FailClosedIngressTests(unittest.TestCase):
@@ -237,6 +309,17 @@ class FailClosedIngressTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(IngressRefusal.PAYLOAD, captured.value.refusal)
+
+    def test_the_strict_version_validator_has_one_exact_internal_refusal(self) -> None:
+        # Arrange
+        invalid_version = False
+
+        # Act
+        with pytest.raises(ValueError, match=r"^version must be the integer one$") as captured:
+            ingress_module._strict_one(invalid_version)
+
+        # Assert
+        self.assertEqual("version must be the integer one", str(captured.value))
 
     def test_an_approval_branch_with_the_wrong_expiry_shape_is_refused(self) -> None:
         # Arrange

@@ -7,15 +7,26 @@ import unittest
 
 from aerial_rescue_store.database.schema import (
     APPLICATION_OUTBOX,
+    APPROVAL,
     APPROVAL_BINDING,
+    AUDIT_RECORD,
+    AUDIT_SEQUENCE,
     BROKER_INBOX,
     BROKER_REFUSAL,
+    COMMAND_OUTBOX,
     COMMAND_PROGRESS,
+    DASHBOARD_BROKER_EVENT,
+    DASHBOARD_BROKER_SOURCE,
+    DASHBOARD_CURRENT_RUN,
+    DASHBOARD_MISSION,
+    DASHBOARD_OPERATION,
+    DASHBOARD_RUN,
     DRONE_COMMAND_EFFECT,
     DRONE_COMMAND_RECEIPT,
     DRONE_STREAM_STATE,
     EVIDENCE_DECISION,
     EVIDENCE_ITEM,
+    IDEMPOTENCY_CLAIM,
     METADATA,
     PENDING_INVOCATION,
     PROPOSAL,
@@ -32,6 +43,12 @@ from aerial_rescue_store.migration import (
     BROKER_REFUSAL_TABLE,
     COMMAND_OUTBOX_TABLE,
     COMMAND_PROGRESS_TABLE,
+    DASHBOARD_BROKER_EVENT_TABLE,
+    DASHBOARD_BROKER_SOURCE_TABLE,
+    DASHBOARD_CURRENT_RUN_TABLE,
+    DASHBOARD_MISSION_TABLE,
+    DASHBOARD_OPERATION_TABLE,
+    DASHBOARD_RUN_TABLE,
     DRONE_COMMAND_EFFECT_TABLE,
     DRONE_COMMAND_RECEIPT_TABLE,
     DRONE_STREAM_STATE_TABLE,
@@ -70,6 +87,12 @@ class MetadataOwnershipTests(unittest.TestCase):
             APPROVAL_TABLE,
             IDEMPOTENCY_CLAIM_TABLE,
             COMMAND_OUTBOX_TABLE,
+            DASHBOARD_MISSION_TABLE,
+            DASHBOARD_RUN_TABLE,
+            DASHBOARD_CURRENT_RUN_TABLE,
+            DASHBOARD_OPERATION_TABLE,
+            DASHBOARD_BROKER_SOURCE_TABLE,
+            DASHBOARD_BROKER_EVENT_TABLE,
             BROKER_INBOX_TABLE,
             BROKER_REFUSAL_TABLE,
             SOURCE_EVENT_TABLE,
@@ -90,11 +113,22 @@ class MetadataOwnershipTests(unittest.TestCase):
         actual = set(METADATA.tables)
 
         # Assert
-        self.assertEqual((MetaData, expected), (type(METADATA), actual))
+        self.assertEqual((MetaData, expected, 25), (type(METADATA), actual, len(actual)))
 
     def test_every_repository_table_is_a_full_sqlalchemy_table(self) -> None:
         # Arrange
         application_tables = (
+            AUDIT_SEQUENCE,
+            AUDIT_RECORD,
+            APPROVAL,
+            IDEMPOTENCY_CLAIM,
+            COMMAND_OUTBOX,
+            DASHBOARD_MISSION,
+            DASHBOARD_RUN,
+            DASHBOARD_CURRENT_RUN,
+            DASHBOARD_OPERATION,
+            DASHBOARD_BROKER_SOURCE,
+            DASHBOARD_BROKER_EVENT,
             BROKER_INBOX,
             BROKER_REFUSAL,
             SOURCE_EVENT,

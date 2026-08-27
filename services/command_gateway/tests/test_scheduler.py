@@ -7,7 +7,7 @@ import unittest
 from collections.abc import Mapping
 from datetime import timedelta
 from typing import ClassVar, cast, override
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from aerial_rescue_broker.messaging import (
@@ -32,6 +32,11 @@ from aerial_rescue_command_gateway.service import (
     ApplicationStampSource,
     GatewayApplication,
     ServiceExit,
+    _dispatch_channel,
+    _drain_application,
+    _publish_connected,
+    _restore_readiness,
+    _yield_control,
     serve_application,
 )
 from aerial_rescue_command_gateway.store_adapter import ApplicationStore
@@ -166,13 +171,19 @@ class _Session:
         if ready:
             self.readiness.mark_ready()
         self.publisher = _Publisher()
+        self.direct_publisher = object()
         self.polls: list[tuple[str, int]] = []
         self._messages = messages
+        self.direct_message = _Message()
+        self.guaranteed_message = GuaranteedMessage(
+            cast("InboundMessage", _Message()),
+            cast("MessageSettlement", object()),
+        )
 
     def receive_direct(self, timeout_milliseconds: int, /) -> InboundMessage | None:
         """Record and return one Direct message."""
         self.polls.append(("direct", timeout_milliseconds))
-        return _Message() if self._messages else None
+        return self.direct_message if self._messages else None
 
     def receive_guaranteed(
         self,
@@ -184,10 +195,7 @@ class _Session:
         self.polls.append((receiver_name, timeout_milliseconds))
         if not self._messages:
             return None
-        return GuaranteedMessage(
-            cast("InboundMessage", _Message()),
-            cast("MessageSettlement", object()),
-        )
+        return self.guaranteed_message
 
     def rebind_complete(self) -> None:
         """Restore readiness after recovery."""
@@ -273,6 +281,238 @@ def _application(store: ApplicationStore | None = None) -> GatewayApplication:
         authority_clock=_authority_clock,
         observed_at=lambda: "2026-08-25T12:00:00.000Z",
     )
+
+
+class SchedulerBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_channel_forwards_the_exact_composed_capabilities(self) -> None:
+        # Arrange
+        session = _Session()
+        application = _application()
+        channel = Family.OPERATOR_COMMAND.literal_suffix
+        direct = patch(
+            "aerial_rescue_command_gateway.service.dispatch_direct",
+            new_callable=AsyncMock,
+        )
+        guaranteed = patch(
+            "aerial_rescue_command_gateway.service.dispatch_guaranteed",
+            new_callable=AsyncMock,
+        )
+
+        # Act
+        with direct as direct_dispatch, guaranteed as guaranteed_dispatch:
+            await _dispatch_channel("direct", cast("ApplicationSessionPort", session), application)
+            await _dispatch_channel(
+                channel,
+                cast("ApplicationSessionPort", session),
+                application,
+            )
+
+        # Assert
+        self.assertEqual(
+            (
+                (
+                    session.direct_message,
+                    application.router,
+                    application.stamps,
+                    application.store,
+                ),
+                (
+                    channel,
+                    session.guaranteed_message,
+                    application.stamps,
+                    application.authority_clock(),
+                    application.store,
+                ),
+                [("direct", POLL_MILLISECONDS), (channel, POLL_MILLISECONDS)],
+            ),
+            (
+                direct_dispatch.await_args_list[0].args,
+                guaranteed_dispatch.await_args_list[0].args,
+                session.polls,
+            ),
+        )
+
+    async def test_connected_publication_forwards_exact_ports_and_removes_uncertain_readiness(
+        self,
+    ) -> None:
+        # Arrange
+        session = _Session(messages=False)
+        application = _application()
+        instants = iter(("2026-08-25T12:00:00.001Z", "2026-08-25T12:00:00.002Z"))
+        application = GatewayApplication(
+            store=application.store,
+            router=application.router,
+            stamps=application.stamps,
+            authority_clock=application.authority_clock,
+            observed_at=lambda: next(instants),
+        )
+        application_worker = patch(
+            "aerial_rescue_command_gateway.service.publish_application_batch",
+            new_callable=AsyncMock,
+            return_value=ApplicationPublicationReport(0, 0, 0, 0),
+        )
+        command_worker = patch(
+            "aerial_rescue_command_gateway.service.publish_batch",
+            new_callable=AsyncMock,
+            return_value=PublicationReport(0, 1, 0),
+        )
+
+        # Act
+        with application_worker as publish_application, command_worker as publish_commands:
+            ready = await _publish_connected(cast("ApplicationSessionPort", session), application)
+
+        # Assert
+        self.assertEqual(
+            (
+                False,
+                False,
+                (
+                    application.store.application_outbox,
+                    application.router,
+                    "2026-08-25T12:00:00.001Z",
+                ),
+                (
+                    application.store.outbox,
+                    session.publisher,
+                    "2026-08-25T12:00:00.002Z",
+                ),
+            ),
+            (
+                ready,
+                session.readiness.is_ready(),
+                publish_application.await_args_list[0].args,
+                publish_commands.await_args_list[0].args,
+            ),
+        )
+
+    async def test_application_drain_refuses_independent_uncertain_flags(self) -> None:
+        # Arrange
+        application_outbox = AsyncMock()
+        application_outbox.reconciliation.return_value = ()
+        store = cast(
+            "ApplicationStore",
+            type("Store", (), {"application_outbox": application_outbox})(),
+        )
+        reports = (
+            ApplicationPublicationReport(0, 0, 1, 0),
+            ApplicationPublicationReport(0, 0, 0, 1),
+        )
+
+        # Act
+        outcomes = []
+        for report in reports:
+            with patch(
+                "aerial_rescue_command_gateway.service.publish_application_batch",
+                new_callable=AsyncMock,
+                return_value=report,
+            ):
+                outcomes.append(
+                    await _drain_application(
+                        store,
+                        cast("DeliveryRouter", object()),
+                        lambda: "2026-08-25T12:00:00.000Z",
+                    )
+                )
+
+        # Assert
+        self.assertEqual(
+            ([False, False], 0), (outcomes, application_outbox.reconciliation.await_count)
+        )
+
+    async def test_unready_connected_epoch_forwards_the_router_without_owning_pause(self) -> None:
+        # Arrange
+        session = _Session(ready=False, messages=False)
+        application = _application()
+        recovery = patch(
+            "aerial_rescue_command_gateway.service.recover_application",
+            new_callable=AsyncMock,
+            return_value=False,
+        )
+
+        # Act
+        with recovery as recover:
+            ready = await _restore_readiness(
+                cast("ApplicationSessionPort", session),
+                application,
+            )
+
+        # Assert
+        self.assertEqual(
+            (
+                False,
+                (
+                    session,
+                    application.store,
+                    application.router,
+                    application.observed_at,
+                ),
+            ),
+            (ready, recover.await_args_list[0].args),
+        )
+
+    async def test_unready_scheduler_turn_restores_then_pauses_once(self) -> None:
+        # Arrange
+        session = _Session(ready=False, messages=False)
+        remaining = iter((True, False))
+        pause = AsyncMock()
+        recovery = patch(
+            "aerial_rescue_command_gateway.service._restore_readiness",
+            new_callable=AsyncMock,
+            return_value=False,
+        )
+
+        # Act
+        with recovery as restore:
+            outcome = await serve_application(
+                cast("ApplicationSessionPort", session),
+                _application(),
+                lambda: next(remaining),
+                pause=pause,
+            )
+
+        # Assert
+        self.assertEqual(
+            (ServiceExit.STOPPED, 1, 1, []),
+            (outcome, restore.await_count, pause.await_count, session.polls),
+        )
+
+    async def test_default_scheduler_yield_has_no_wall_clock_delay(self) -> None:
+        # Arrange
+        sleep = patch("aerial_rescue_command_gateway.service.asyncio.sleep", new_callable=AsyncMock)
+
+        # Act
+        with sleep as pause:
+            await _yield_control()
+
+        # Assert
+        pause.assert_awaited_once_with(0)
+
+    async def test_ready_turn_skips_recovery_even_when_recovery_would_refuse(self) -> None:
+        # Arrange
+        session = _Session(messages=False)
+        remaining = iter((True, False))
+        recovery = patch(
+            "aerial_rescue_command_gateway.service._restore_readiness",
+            new_callable=AsyncMock,
+            return_value=False,
+        )
+
+        # Act
+        with recovery as restore:
+            outcome = await asyncio.wait_for(
+                serve_application(
+                    cast("ApplicationSessionPort", session),
+                    _application(),
+                    lambda: next(remaining),
+                ),
+                timeout=0.1,
+            )
+
+        # Assert
+        self.assertEqual(
+            (ServiceExit.STOPPED, 0, 4),
+            (outcome, restore.await_count, len(session.polls)),
+        )
 
 
 class SchedulerTests(unittest.IsolatedAsyncioTestCase):
@@ -380,13 +620,14 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             UnsettledMessageMetadata(None, None, "1" * 64),
         )
         session = _NativeTracePoisonSession(error)
+        remaining = iter((True, False))
 
         # Act
         with pytest.raises(RuntimeError, match="refusal-store-unavailable"):
             await serve_application(
                 cast("ApplicationSessionPort", session),
                 _application(_store(_Refusals(failing=True))),
-                lambda: True,
+                lambda: next(remaining),
             )
 
         # Assert
@@ -438,17 +679,24 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         session = _Session()
         session.readiness.exhausted()
+        running = Mock(return_value=False)
 
         # Act
-        outcome = await serve_application(
-            cast("ApplicationSessionPort", session),
-            _application(),
-            lambda: True,
-            pause=lambda: asyncio.sleep(0),
+        outcome = await asyncio.wait_for(
+            serve_application(
+                cast("ApplicationSessionPort", session),
+                _application(),
+                running,
+                pause=lambda: asyncio.sleep(0),
+            ),
+            timeout=0.1,
         )
 
         # Assert
-        self.assertEqual((ServiceExit.BROKER_EXHAUSTED, []), (outcome, session.polls))
+        self.assertEqual(
+            (ServiceExit.BROKER_EXHAUSTED, [], 0),
+            (outcome, session.polls, running.call_count),
+        )
 
     async def test_initial_recovery_completes_before_idle_channels_are_polled(self) -> None:
         # Arrange
@@ -456,10 +704,13 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         remaining = iter((True, False))
 
         # Act
-        outcome = await serve_application(
-            cast("ApplicationSessionPort", session),
-            _application(),
-            lambda: next(remaining),
+        outcome = await asyncio.wait_for(
+            serve_application(
+                cast("ApplicationSessionPort", session),
+                _application(),
+                lambda: next(remaining),
+            ),
+            timeout=0.1,
         )
 
         # Assert
@@ -472,16 +723,20 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         session = _Session(messages=False)
         session.readiness.reconnecting()
+        remaining = iter((True, False))
 
         async def exhaust() -> None:
             session.readiness.exhausted()
 
         # Act
-        outcome = await serve_application(
-            cast("ApplicationSessionPort", session),
-            _application(),
-            lambda: True,
-            pause=exhaust,
+        outcome = await asyncio.wait_for(
+            serve_application(
+                cast("ApplicationSessionPort", session),
+                _application(),
+                lambda: next(remaining),
+                pause=exhaust,
+            ),
+            timeout=0.1,
         )
 
         # Assert
@@ -521,16 +776,20 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         session = _Session(messages=False)
         session.readiness.closed()
+        running = Mock(return_value=False)
 
         # Act
-        outcome = await serve_application(
-            cast("ApplicationSessionPort", session),
-            _application(),
-            lambda: True,
+        outcome = await asyncio.wait_for(
+            serve_application(
+                cast("ApplicationSessionPort", session),
+                _application(),
+                running,
+            ),
+            timeout=0.1,
         )
 
         # Assert
-        self.assertEqual(ServiceExit.STOPPED, outcome)
+        self.assertEqual((ServiceExit.STOPPED, 0), (outcome, running.call_count))
 
     async def test_cancellation_propagates_without_becoming_a_successful_stop(self) -> None:
         # Arrange

@@ -1,6 +1,5 @@
 {
   "bundleVersion": "dashboard-replay-bundle/v1",
-  "sessionId": "replay-session-synthetic-0001",
   "scenarioId": "wilderness-missing-person",
   "scenarioRevision": 1,
   "initialState": {

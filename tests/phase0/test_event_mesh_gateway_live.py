@@ -28,10 +28,8 @@ Markers keep these out of every blocking suite: they need Docker, the broker, an
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
 import pytest
-from aerial_rescue_broker.deployment import credential_path
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.digest import source_event_digest
 from aerial_rescue_contracts.envelope import (
@@ -43,32 +41,18 @@ from aerial_rescue_contracts.envelope import (
 )
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
 from aerial_rescue_domain.principals import Principal
-from solace.messaging.config.solace_properties import (
-    authentication_properties as auth,
-)
 from solace.messaging.config.solace_properties import message_properties
-from solace.messaging.config.solace_properties import (
-    service_properties as service_property,
-)
-from solace.messaging.config.solace_properties import (
-    transport_layer_properties as transport,
-)
-from solace.messaging.config.transport_security_strategy import TLS
-from solace.messaging.messaging_service import MessagingService
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
+from tests.broker_live_support import SHARED_PROBE_DRONES, connected_native_role_service
+
 pytestmark = [pytest.mark.phase0, pytest.mark.docker, pytest.mark.broker, pytest.mark.ollama]
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEPLOY = REPOSITORY_ROOT / "deploy"
-TRUST_STORE = DEPLOY / "certs"
-BROKER_URL = "tcps://localhost:55443"
-VPN = "default"
 NAMESPACE = "aerial-rescue-mesh"
 
 MISSION = "m-2026-0001"
-DRONE = "drone-vision-01"
+DRONE = SHARED_PROBE_DRONES[2]
 EVENT_TYPE = "salient"
 TARGET_AGENT = "MissionCoordinator"
 
@@ -91,35 +75,6 @@ SOURCE_DIGEST_PROPERTY = "aerial-rescue-source-event-digest"
 
 class _UnpublishableEventError(RuntimeError):
     """The event this test intends to publish is not one the contract accepts."""
-
-
-def _properties(role: Principal) -> dict[str, object]:
-    """Return the connection properties binding one authorization role to the container."""
-    credential = credential_path(DEPLOY, role).read_text(encoding="utf-8").strip()
-    return {
-        transport.HOST: BROKER_URL,
-        service_property.VPN_NAME: VPN,
-        auth.SCHEME_BASIC_USER_NAME: role.value,
-        auth.SCHEME_BASIC_PASSWORD: credential,
-        transport.CONNECTION_RETRIES: 0,
-        transport.RECONNECTION_ATTEMPTS: 0,
-    }
-
-
-def _connected(role: Principal) -> MessagingService:
-    """Return a connected service on ``role``'s identity, validating the checkout's authority."""
-    service = (
-        MessagingService.builder()
-        .from_properties(_properties(role))
-        .with_transport_security_strategy(
-            TLS.create().with_certificate_validation(
-                False, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
-            )
-        )
-        .build()
-    )
-    service.connect()
-    return service
 
 
 def _salient_event() -> tuple[str, bytes, str]:
@@ -162,7 +117,7 @@ def _salient_event() -> tuple[str, bytes, str]:
 def _publish(publication: tuple[str, bytes, str]) -> None:
     """Publish one guaranteed message as the fleet simulator and wait for the broker's answer."""
     topic, payload, digest = publication
-    service = _connected(Principal.FLEET_SIMULATOR)
+    service = connected_native_role_service(Principal.FLEET_SIMULATOR)
     try:
         publisher = service.create_persistent_message_publisher_builder().build()
         publisher.start()
@@ -197,14 +152,14 @@ def _observe_while_publishing(
     nothing here subclasses the untyped upstream handler
     (``docs/adr/0028-untyped-solace-client-boundary.md``).
     """
-    service = _connected(role)
+    service = connected_native_role_service(role)
     receiver = service.create_direct_message_receiver_builder().with_subscriptions(
         [TopicSubscription.of(subscription)]
     )
     seen: list[str] = []
     built = receiver.build()
-    built.start()
     try:
+        built.start()
         _publish(publication)
         for _ in range(seconds):
             message = built.receive_message(timeout=RECEIVE_POLL_MILLISECONDS)

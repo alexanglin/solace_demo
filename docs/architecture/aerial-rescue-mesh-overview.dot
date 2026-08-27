@@ -36,7 +36,7 @@ digraph AerialRescueMesh {
     label="Operator browser — loopback only";
     color="#B7C3D0";
     style="rounded,dashed";
-    dashboard [label="Aerial Rescue dashboard\nmap • evidence • approval • audit", fillcolor="#E8F7F1"];
+    dashboard [label="Wilderness mission dashboard :8080\nmap • fleet • timeline • replay\nproposal + evidence decisions", fillcolor="#E8F7F1"];
     sam_ui [label="Agent Mesh Web UI :8000\nActivity • Agents • tasks", fillcolor="#E8F7F1"];
     broker_ui [label="PubSub+ Broker Manager :1943\nclients • queues • Try Me", fillcolor="#E8F7F1"];
   }
@@ -47,12 +47,12 @@ digraph AerialRescueMesh {
     style="rounded";
 
     subgraph cluster_compose {
-      label="Docker Compose — deploy/compose.yaml (ADR-0044) — every port published on 127.0.0.1";
+      label="One shared aerial-rescue-mesh Compose project — 8 networks • 5 volumes — published endpoints bind only 127.0.0.1";
       color="#2F6FB7";
       style="rounded";
 
       local_broker [label="PubSub+ Standard 10.26.0 container\ntcps 55443 • SEMP/TLS 1943\nthe broker for every gated path (ADR-0043)", shape=cylinder, fillcolor="#DFF7EE", color="#008F6B"];
-      postgres [label="PostgreSQL 18 container\ndurable application store • 9 Alembic revisions\n(ADR-0003, ADR-0151)", shape=cylinder, fillcolor="#EEF2F6"];
+      postgres [label="PostgreSQL 18 container\n25 SQLAlchemy tables • Alembic 0001–0010\n(ADR-0003, ADR-0151, ADR-0189)", shape=cylinder, fillcolor="#EEF2F6"];
 
       subgraph cluster_sam {
         label="Agent Mesh 1.28.7 — official image + pinned plugins — default profile";
@@ -67,16 +67,17 @@ digraph AerialRescueMesh {
       }
 
       subgraph cluster_app {
-        label="Application data plane — profile services — code complete, live qualification pending";
+        label="Application services — qualified base; Solace adoption live pending";
         color="#6B86A5";
         style="rounded";
-        caddy [label="Caddy :8080\npackaged dashboard • same-origin relay", fillcolor="#E8F7F1"];
-        api [label="Dashboard API\nFastAPI on private Unix socket\nprojection • SSE • operator mutations"];
-        scenario [label="Scenario service :8081 internal\ncatalog • authenticated lifecycle\nbrokerless", fillcolor="#F7F9FC"];
-        fleet [label="Fleet simulator :8082 internal\n23-member control • Direct telemetry\ndurable command receipts"];
+        caddy [label="Caddy 2.11.4 :8080\nsecurity headers • unbuffered SSE\npackaged dashboard", fillcolor="#E8F7F1"];
+        api [label="Dashboard API on private Unix socket\nOperationCoordinator + Solace supervisor\nprojection • SSE • exact mutations"];
+        scenario [label="Scenario service :8081 internal\ncatalog • authenticated run control\nno broker identity", fillcolor="#F7F9FC"];
+        fleet [label="Fleet simulator :8082 internal\n20 simulated + 3 declared only\nDirect telemetry • durable command receipts"];
         command [label="Deterministic command gateway\nnormalization • approval • dispatch", fillcolor="#FFF2CC", color="#B58900"];
         evidence [label="Evidence service\nprovenance • scoring • durable decisions"];
-        recorder [label="Recorder / replay\nreceiver-only capture • isolated replay"];
+        recorder [label="Recorder / replay\ncomplete applicable stream • receiver only\nordered capture • isolated replay"];
+        support [label="Migration 0010 • replay validator\nreadiness leases • bounded monitors", fillcolor="#F7F9FC"];
         app_adapter [label="Typed Solace PubSub+ sessions\nDirect • Guaranteed • request/reply\nreceiver-only • mixed", fillcolor="#DFF7EE", color="#008F6B"];
 
         caddy -> api [label="Unix socket", dir=both];
@@ -87,6 +88,8 @@ digraph AerialRescueMesh {
         command -> app_adapter [label="authorized commands", dir=both, color="#B58900", fontcolor="#8A6500"];
         evidence -> app_adapter [dir=both];
         recorder -> app_adapter [label="receive only", dir=back];
+        support -> api [label="startup / readiness", style=dashed];
+        support -> recorder [label="validated replay", style=dashed];
       }
 
       ema [label="Event Management Agent 1.9.9\nprofile event-portal • amd64, emulated\nnon-gating", style="dashed,filled", fillcolor="#F7F9FC"];
@@ -94,11 +97,12 @@ digraph AerialRescueMesh {
       sam_runtime -> local_broker [label="A2A over tcps", dir=both];
       sam_gateways -> local_broker [label="salient events + tool request/reply", dir=both];
       app_adapter -> local_broker [label="CloudEvents + commands", dir=both];
-      api -> postgres [label="mutations • audit recovery", dir=both];
+      api -> postgres [label="operations • outbox • audit recovery", dir=both];
       fleet -> postgres [label="receipts • critical outbox", dir=both];
       command -> postgres [label="approvals • progress • outbox", dir=both];
       evidence -> postgres [label="provenance • decisions • outbox", dir=both];
       recorder -> postgres [label="inbox • ordered audit", dir=both];
+      support -> postgres [label="Alembic + replay reads", dir=both, style=dashed];
       ema -> local_broker [label="SEMP discovery\n(in-network only)", style=dashed];
     }
 

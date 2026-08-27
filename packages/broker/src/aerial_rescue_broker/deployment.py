@@ -173,7 +173,7 @@ def provision(
         deploy: The deploy directory holding the generated authority and credentials.
         vpn: The message VPN to write to.
         namespace: The A2A namespace, or ``None`` when it is not yet fixed.
-        drones: The drone identifiers the scenario declares. An empty fleet provisions no
+        drones: The drone identifiers. An empty fleet provisions no
             command queue, and the summary says so rather than leaving it to be inferred:
             a command published for a drone with no queue is discarded and not refused
             (``docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md``).

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import Final, Protocol
 
 from aerial_rescue_broker.messaging import (
     DIRECT_INTEGRATION_RECEIVER_CAPACITY,
@@ -253,7 +253,7 @@ def _direct_parts(message: InboundMessage) -> tuple[str, bytes, Mapping[str, obj
     """Return typed broker members without coercing an absent topic or payload."""
     topic = message.get_destination_name()
     payload = message.get_payload_as_bytes()
-    properties = cast(object, message.get_properties())
+    properties: object = message.get_properties()
     if (
         not isinstance(topic, str)
         or not isinstance(payload, bytes)
@@ -261,7 +261,7 @@ def _direct_parts(message: InboundMessage) -> tuple[str, bytes, Mapping[str, obj
     ):
         return None
     validated_properties: dict[str, object] = {}
-    for name, value in cast("Mapping[object, object]", properties).items():
+    for name, value in properties.items():
         if not isinstance(name, str):
             return None
         validated_properties[name] = value
@@ -390,17 +390,14 @@ async def _drain_application(
     router: DeliveryRouter,
     observed_at: Callable[[], str],
 ) -> bool:
-    """Drain staged general events and refuse unresolved application ambiguity."""
-    while True:
-        application = await publish_application_batch(
-            store.application_outbox,
-            router,
-            observed_at(),
-        )
-        if application.ambiguous or application.refused:
-            return False
-        if application.visited == 0:
-            break
+    """Run one general-event batch and require a later empty readback."""
+    application = await publish_application_batch(
+        store.application_outbox,
+        router,
+        observed_at(),
+    )
+    if application.ambiguous or application.refused or application.visited != 0:
+        return False
     return not await store.application_outbox.reconciliation(APPLICATION_PRODUCER)
 
 
@@ -409,13 +406,10 @@ async def _drain_commands(
     session: ApplicationSessionPort,
     observed_at: Callable[[], str],
 ) -> bool:
-    """Drain the established command outbox without blindly retrying ambiguity."""
-    while True:
-        commands = await publish_batch(store.outbox, session.publisher, observed_at())
-        if commands.ambiguous or commands.refused:
-            return False
-        if commands.confirmed == 0:
-            break
+    """Run one command batch and require a later empty readback."""
+    commands = await publish_batch(store.outbox, session.publisher, observed_at())
+    if commands.ambiguous or commands.refused or commands.confirmed != 0:
+        return False
     return not await store.outbox.reconciliation(COMMAND_PUBLICATION_BATCH_SIZE)
 
 
@@ -489,9 +483,8 @@ async def _yield_control() -> None:
 async def _restore_readiness(
     session: ApplicationSessionPort,
     application: GatewayApplication,
-    pause: Callable[[], Awaitable[None]],
 ) -> bool:
-    """Recover one connected epoch or yield while the transport remains unavailable."""
+    """Recover one connected epoch and report readiness to the owning scheduler."""
     if session.readiness.state in {
         BrokerLifecycleState.CONNECTED,
         BrokerLifecycleState.RECOVERY_PENDING,
@@ -502,10 +495,7 @@ async def _restore_readiness(
             application.router,
             application.observed_at,
         )
-    ready = session.readiness.is_ready()
-    if not ready:
-        await pause()
-    return ready
+    return session.readiness.is_ready()
 
 
 async def serve_application(
@@ -521,13 +511,15 @@ async def serve_application(
         state = session.readiness.state
         if state is BrokerLifecycleState.EXHAUSTED:
             return ServiceExit.BROKER_EXHAUSTED
-        if state is BrokerLifecycleState.CLOSED or not running():
+        if state is BrokerLifecycleState.CLOSED:
             return ServiceExit.STOPPED
-        if not session.readiness.is_ready() and not await _restore_readiness(
-            session,
-            application,
-            pause,
-        ):
+        if not running():
+            return ServiceExit.STOPPED
+        ready = session.readiness.is_ready()
+        if not ready:
+            ready = await _restore_readiness(session, application)
+        if not ready:
+            await pause()
             continue
         channels = ("direct", *session.receiver_names)
         for offset in range(len(channels)):

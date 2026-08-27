@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 import unittest
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from types import TracebackType
+from typing import cast
 from unittest.mock import patch
 
 import aerial_rescue_command_gateway.operator_approval as operator_approval_module
 import pytest
 from aerial_rescue_command_gateway.authorization import AuthorizationClock
-from aerial_rescue_command_gateway.ingress import OperatorApprovalIngress, accept_ingress
+from aerial_rescue_command_gateway.ingress import (
+    IngressError,
+    OperatorApprovalIngress,
+    accept_ingress,
+)
 from aerial_rescue_command_gateway.operator_approval import (
     ApprovalIngressError,
     ApprovalIngressOutcome,
@@ -23,6 +29,7 @@ from aerial_rescue_command_gateway.ports import (
     GuaranteedDelivery,
     StoredApprovalBinding,
 )
+from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.instant import InstantError, InstantRefusal, parse_instant
 from aerial_rescue_domain.approvals import ClockReading
 from aerial_rescue_store.approval_bindings import (
@@ -37,7 +44,9 @@ from aerial_rescue_store.broker_refusals import (
 )
 from aerial_rescue_store.inbox import InboxDecision, InboxIdentity, InboxOutcome
 
-ROOT = Path(__file__).parents[3]
+from .fixture_paths import repository_root
+
+ROOT = repository_root(Path(__file__))
 APPROVAL_TOPIC = "aerial-rescue/v1/mission-synthetic-0001/operator/approval/approve"
 GATEWAY_NOW = AuthorizationClock(
     ClockReading(
@@ -93,27 +102,33 @@ class FakeApprovalTransaction:
         self.failure = failure
         self.authority_decision = authority_decision
         self.authorities: list[StoredApprovalAuthority] = []
+        self.claimed_identities: list[InboxIdentity] = []
+        self.loaded_approval_ids: list[str] = []
+        self.bound_requests: list[tuple[str, StoredApprovalAuthority]] = []
         self.completed: list[tuple[InboxIdentity, bytes, str]] = []
         self.order: list[str] = []
 
-    async def claim(self, _identity: InboxIdentity) -> InboxOutcome:
+    async def claim(self, identity: InboxIdentity) -> InboxOutcome:
         """Return the configured inbox decision."""
         self.order.append("claim")
+        self.claimed_identities.append(identity)
         return self.claim_outcome
 
-    async def load_binding(self, _approval_id: str) -> StoredApprovalBinding:
+    async def load_binding(self, approval_id: str) -> StoredApprovalBinding:
         """Return the authoritative dashboard/store binding."""
         self.order.append("load-binding")
+        self.loaded_approval_ids.append(approval_id)
         return self.binding
 
     async def bind_authority(
         self,
-        _approval_id: str,
+        approval_id: str,
         authority: StoredApprovalAuthority,
     ) -> ApprovalAuthorityDecision:
         """Record the gateway-owned epoch and rebased monotonic issue reading."""
         self.order.append("bind-authority")
         self.authorities.append(authority)
+        self.bound_requests.append((approval_id, authority))
         return self.authority_decision
 
     async def complete(
@@ -201,6 +216,23 @@ class ApprovalVerificationTests(unittest.IsolatedAsyncioTestCase):
         transaction = FakeApprovalTransaction()
         unit = FakeApprovalUnitOfWork(transaction)
         settlement = FakeSettlement(transaction.order)
+        ingress = cast("OperatorApprovalIngress", accept_ingress(_payload(), APPROVAL_TOPIC))
+        expected_result = canonical.canonical_bytes(
+            {
+                "approvalIngress": "verified",
+                "approvalId": "approval-synthetic-0001",
+            }
+        )
+        expected_identity = InboxIdentity(
+            consumer="command-gateway",
+            source="urn:aerial-rescue:dashboard-api:dashboard-synthetic-01",
+            event_id="event-operator-approval-approve-0001",
+            mission_id="mission-synthetic-0001",
+            canonical_digest=hashlib.sha256(
+                canonical.canonical_bytes(canonical.decode(_payload()))
+            ).hexdigest(),
+        )
+        expected_authority = StoredApprovalAuthority("gateway-start-0001", -50_000)
 
         # Act
         result = await handle_operator_approval(
@@ -212,8 +244,11 @@ class ApprovalVerificationTests(unittest.IsolatedAsyncioTestCase):
             (
                 ApprovalIngressOutcome.VERIFIED,
                 True,
-                1,
-                [StoredApprovalAuthority("gateway-start-0001", -50_000)],
+                [expected_identity],
+                ["approval-synthetic-0001"],
+                [("approval-synthetic-0001", expected_authority)],
+                [(expected_identity, expected_result, ingress.envelope.time)],
+                expected_result,
                 ["claim", "load-binding", "bind-authority", "complete", "commit", "settle"],
                 ["commit", "settle"],
                 ["event-operator-approval-approve-0001"],
@@ -221,11 +256,83 @@ class ApprovalVerificationTests(unittest.IsolatedAsyncioTestCase):
             (
                 result.outcome,
                 unit.committed,
-                len(transaction.completed),
-                transaction.authorities,
+                transaction.claimed_identities,
+                transaction.loaded_approval_ids,
+                transaction.bound_requests,
+                transaction.completed,
+                result.result,
                 transaction.order,
                 transaction.order[-2:],
                 settlement.accepted,
+            ),
+        )
+
+    async def test_zero_elapsed_zero_monotonic_and_one_millisecond_ttl_remain_valid(self) -> None:
+        # Arrange
+        expires_at = "2026-08-25T12:01:00.001Z"
+        document = cast("dict[str, object]", canonical.decode(_payload()))
+        payload_data = cast("dict[str, object]", document["data"])
+        payload_data["expiresAt"] = expires_at
+        payload = canonical.canonical_bytes(document)
+        binding = replace(
+            _binding(),
+            expires_at=expires_at,
+            time_to_live_milliseconds=1,
+        )
+        clock = AuthorizationClock(
+            ClockReading(parse_instant(binding.issued_at), timedelta(0)),
+            "gateway-zero-origin",
+        )
+        transaction = FakeApprovalTransaction(binding)
+
+        # Act
+        result = await handle_operator_approval(
+            GuaranteedDelivery(APPROVAL_TOPIC, payload),
+            clock,
+            FakeApprovalUnitOfWork(transaction),
+            FakeSettlement(transaction.order),
+        )
+
+        # Assert
+        authority = transaction.authorities[0]
+        self.assertEqual(
+            (ApprovalIngressOutcome.VERIFIED, "gateway-zero-origin", 0, int),
+            (
+                result.outcome,
+                authority.runtime_epoch,
+                authority.issued_monotonic_milliseconds,
+                type(authority.issued_monotonic_milliseconds),
+            ),
+        )
+
+    async def test_multiword_ingress_refusal_commits_its_exact_bounded_code(self) -> None:
+        # Arrange
+        transaction = FakeApprovalTransaction()
+        unit = FakeApprovalUnitOfWork(transaction)
+        settlement = FakeSettlement(transaction.order)
+        delivery = GuaranteedDelivery(
+            "aerial-rescue/v1/mission-synthetic-0001/agent/proposal/VisionAgent/candidate-location",
+            b"payload-is-not-inspected-for-an-unauthorized-family",
+        )
+
+        # Act
+        with pytest.raises(IngressError) as captured:
+            await handle_operator_approval(delivery, GATEWAY_NOW, unit, settlement)
+
+        # Assert
+        fact = unit.refusals[0]
+        self.assertEqual(
+            (
+                "topic family is not command-gateway ingress authority",
+                "command-gateway-operator-approval",
+                "unauthorized-family",
+                ["refusal-commit", "settle-rejected"],
+            ),
+            (
+                str(captured.value),
+                fact.channel,
+                fact.refusal_code,
+                transaction.order,
             ),
         )
 
@@ -484,15 +591,35 @@ class ApprovalVerificationTests(unittest.IsolatedAsyncioTestCase):
         ):
             with pytest.raises(ApprovalIngressError) as captured:
                 await handle_operator_approval(delivery, clock, unit, settlement)
-            refusals.append(captured.value.refusal)
+            refusals.append((captured.value.refusal, str(captured.value)))
 
         # Assert
         self.assertEqual(
             (
-                [ApprovalIngressRefusal.DUPLICATE_RESULT, ApprovalIngressRefusal.INGRESS_KIND],
-                ["refusal-commit", "settle-rejected"],
+                [
+                    (
+                        ApprovalIngressRefusal.DUPLICATE_RESULT,
+                        ApprovalIngressRefusal.DUPLICATE_RESULT.value,
+                    ),
+                    (
+                        ApprovalIngressRefusal.INGRESS_KIND,
+                        ApprovalIngressRefusal.INGRESS_KIND.value,
+                    ),
+                ],
+                (
+                    "command-gateway-operator-approval",
+                    "unexpected-family",
+                    ["refusal-commit", "settle-rejected"],
+                ),
             ),
-            (refusals, wrong_transaction.order),
+            (
+                refusals,
+                (
+                    wrong_unit.refusals[0].channel,
+                    wrong_unit.refusals[0].refusal_code,
+                    wrong_transaction.order,
+                ),
+            ),
         )
 
     async def test_completion_crash_rolls_back_and_leaves_delivery_unsettled(self) -> None:

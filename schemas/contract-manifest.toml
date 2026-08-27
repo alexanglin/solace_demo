@@ -345,13 +345,11 @@ valid = ["fixtures/golden/v1/dashboard/health/baseline.json"]
 invalid = ["fixtures/golden/v1/dashboard/health/unknown-member.json"]
 
 [[contracts]]
-schema = "schemas/v1/dashboard/mutation-outcome.schema.json"
-valid = ["fixtures/golden/v1/dashboard/mutation-outcome/baseline.json"]
-invalid = ["fixtures/golden/v1/dashboard/mutation-outcome/unknown-member.json"]
-
-[[contracts]]
 schema = "schemas/v1/dashboard/ordered-dashboard-event.schema.json"
-valid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/baseline.json"]
+valid = [
+  "fixtures/golden/v1/dashboard/ordered-dashboard-event/baseline.json",
+  "fixtures/golden/v1/dashboard/ordered-dashboard-event/snapshot-anchor-telemetry.json",
+]
 invalid = ["fixtures/golden/v1/dashboard/ordered-dashboard-event/unknown-member.json"]
 
 [[contracts]]
@@ -421,6 +419,16 @@ valid = ["fixtures/golden/v1/scenario/definition/baseline.json"]
 invalid = ["fixtures/golden/v1/scenario/definition/unknown-member.json"]
 
 [[contracts]]
+schema = "schemas/v1/recording/header.schema.json"
+valid = ["fixtures/golden/v1/recording/header/baseline.json"]
+invalid = ["fixtures/golden/v1/recording/header/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/recording/record.schema.json"
+valid = ["fixtures/golden/v1/recording/record/baseline.json"]
+invalid = ["fixtures/golden/v1/recording/record/unknown-member.json"]
+
+[[contracts]]
 schema = "schemas/v1/rpc/fleet-control-cancel-request.schema.json"
 valid = ["fixtures/golden/v1/rpc/fleet-control-cancel-request/baseline.json"]
 invalid = ["fixtures/golden/v1/rpc/fleet-control-cancel-request/unknown-member.json"]
@@ -449,6 +457,11 @@ invalid = ["fixtures/golden/v1/rpc/scenario-control-cancel-request/unknown-membe
 schema = "schemas/v1/rpc/scenario-control-refusal.schema.json"
 valid = ["fixtures/golden/v1/rpc/scenario-control-refusal/baseline.json"]
 invalid = ["fixtures/golden/v1/rpc/scenario-control-refusal/unknown-member.json"]
+
+[[contracts]]
+schema = "schemas/v1/rpc/scenario-control-recovery-request.schema.json"
+valid = ["fixtures/golden/v1/rpc/scenario-control-recovery-request/baseline.json"]
+invalid = ["fixtures/golden/v1/rpc/scenario-control-recovery-request/unknown-member.json"]
 
 [[contracts]]
 schema = "schemas/v1/rpc/scenario-control-run-status.schema.json"

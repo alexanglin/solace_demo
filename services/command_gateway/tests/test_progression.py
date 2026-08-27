@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -9,6 +10,7 @@ from types import TracebackType
 from typing import override
 
 import pytest
+from aerial_rescue_command_gateway.ingress import IngressError, IngressRefusal
 from aerial_rescue_command_gateway.ports import GuaranteedDelivery
 from aerial_rescue_command_gateway.progression import (
     CommandResultOutcome,
@@ -41,7 +43,9 @@ from aerial_rescue_store.command_progress import (
 )
 from aerial_rescue_store.inbox import InboxDecision, InboxIdentity, InboxOutcome
 
-ROOT = Path(__file__).parents[3]
+from .fixture_paths import repository_root
+
+ROOT = repository_root(Path(__file__))
 RESULT_TOPIC = "aerial-rescue/v1/m-2026-0001/drone/drone-vision-01/command-result/cmd-2026-0001"
 
 
@@ -74,7 +78,7 @@ class FakeProgressRecorder:
     def __init__(self, failure: Exception | None = None) -> None:
         """Configure an optional persistence failure after the pure decision."""
         self.failure = failure
-        self.recorded: list[tuple[CommandEvent, TransitionFacts]] = []
+        self.recorded: list[tuple[CommandEvent, SendBudget, TransitionFacts]] = []
 
     async def transition(
         self,
@@ -87,7 +91,7 @@ class FakeProgressRecorder:
         became = advance(current.progress, event, budget)
         if self.failure is not None:
             raise self.failure
-        self.recorded.append((event, facts))
+        self.recorded.append((event, budget, facts))
         return StoredCommandProgress(
             current.identity,
             became,
@@ -111,17 +115,21 @@ class FakeResultTransaction(FakeProgressRecorder):
         super().__init__(failure)
         self.current = current
         self.claim_outcome = claim or InboxOutcome(InboxDecision.CLAIMED, None)
+        self.claimed: list[InboxIdentity] = []
+        self.loaded: list[str] = []
         self.completed: list[tuple[InboxIdentity, bytes, str]] = []
         self.order: list[str] = []
 
-    async def claim(self, _identity: InboxIdentity) -> InboxOutcome:
+    async def claim(self, identity: InboxIdentity) -> InboxOutcome:
         """Return the configured inbox result."""
         self.order.append("claim")
+        self.claimed.append(identity)
         return self.claim_outcome
 
-    async def load_progress(self, _command_id: str) -> StoredCommandProgress:
+    async def load_progress(self, command_id: str) -> StoredCommandProgress:
         """Return the configured authoritative command progress."""
         self.order.append("load")
+        self.loaded.append(command_id)
         return self.current
 
     @override
@@ -260,6 +268,59 @@ class FiveSendProgressionTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
+    async def test_send_and_retry_preserve_every_transition_fact(self) -> None:
+        # Arrange
+        recorder = FakeProgressRecorder()
+        current = replace(
+            _stored(CommandState.ACCEPTED, 0),
+            result_id="result-before-retry",
+        )
+        clock = SendClock(
+            sent_at="2026-08-23T07:31:00.000Z",
+            deadline_at="2026-08-23T07:31:06.000Z",
+            updated_at="2026-08-23T07:31:01.000Z",
+        )
+
+        # Act
+        sent = await record_send(current, clock, recorder)
+        timed_out = await record_timeout(
+            sent,
+            "2026-08-23T07:31:07.000Z",
+            17,
+            recorder,
+        )
+
+        # Assert
+        self.assertEqual(
+            [
+                (
+                    CommandEvent.SEND,
+                    SendBudget(5),
+                    TransitionFacts(
+                        last_sent_at=clock.sent_at,
+                        deadline_at=clock.deadline_at,
+                        result_id="result-before-retry",
+                        updated_at=clock.updated_at,
+                    ),
+                ),
+                (
+                    CommandEvent.TIME_OUT,
+                    SendBudget(5),
+                    TransitionFacts(
+                        last_sent_at=clock.sent_at,
+                        deadline_at=None,
+                        result_id="result-before-retry",
+                        updated_at="2026-08-23T07:31:07.000Z",
+                    ),
+                ),
+            ],
+            recorder.recorded,
+        )
+        self.assertEqual(
+            (TimeoutOutcome.RETRY, 6_017),
+            (timed_out.outcome, timed_out.wait_milliseconds),
+        )
+
 
 class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
     async def test_acknowledgement_commits_progress_and_inbox_before_settlement(self) -> None:
@@ -268,6 +329,20 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
         unit = FakeResultUnitOfWork(transaction)
         settlement = FakeSettlement(transaction.order)
         delivery = GuaranteedDelivery(RESULT_TOPIC, _result_payload())
+        expected_identity = InboxIdentity(
+            consumer="command-gateway",
+            source="urn:aerial-rescue:drone:drone-vision-01",
+            event_id="0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6f",
+            mission_id="m-2026-0001",
+            canonical_digest=hashlib.sha256(delivery.payload).hexdigest(),
+        )
+        expected_result = canonical.canonical_bytes(
+            {
+                "commandResult": "updated",
+                "commandId": "cmd-2026-0001",
+                "state": "acknowledged",
+            }
+        )
 
         # Act
         result = await handle_command_result(delivery, unit, settlement)
@@ -280,6 +355,28 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
                 True,
                 ["commit", "settle"],
                 ["0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6f"],
+                [expected_identity],
+                ["cmd-2026-0001"],
+                [
+                    (
+                        expected_identity,
+                        expected_result,
+                        "2026-08-23T07:31:05.117Z",
+                    )
+                ],
+                [
+                    (
+                        CommandEvent.ACKNOWLEDGE,
+                        SendBudget(5),
+                        TransitionFacts(
+                            last_sent_at="2026-08-23T07:31:04.000Z",
+                            deadline_at=None,
+                            result_id="0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6f",
+                            updated_at="2026-08-23T07:31:05.117Z",
+                        ),
+                    )
+                ],
+                expected_result,
             ),
             (
                 result.outcome,
@@ -287,6 +384,11 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
                 unit.committed,
                 transaction.order[-2:],
                 settlement.accepted,
+                transaction.claimed,
+                transaction.loaded,
+                transaction.completed,
+                transaction.recorded,
+                result.result,
             ),
         )
 
@@ -296,18 +398,35 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
         unit = FakeResultUnitOfWork(transaction)
         settlement = FakeSettlement(transaction.order)
         delivery = GuaranteedDelivery(RESULT_TOPIC, _result_payload("succeeded"))
+        expected_result = canonical.canonical_bytes(
+            {
+                "commandResult": "stale",
+                "commandId": "cmd-2026-0001",
+                "state": "in-flight",
+            }
+        )
 
         # Act
         result = await handle_command_result(delivery, unit, settlement)
 
         # Assert
         self.assertEqual(
-            (CommandResultOutcome.STALE, CommandState.IN_FLIGHT, [], 1, True),
+            (
+                CommandResultOutcome.STALE,
+                CommandState.IN_FLIGHT,
+                expected_result,
+                [],
+                1,
+                expected_result,
+                True,
+            ),
             (
                 result.outcome,
                 result.state,
+                result.result,
                 transaction.recorded,
                 len(transaction.completed),
+                transaction.completed[0][1],
                 unit.committed,
             ),
         )
@@ -322,6 +441,13 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
         transaction = FakeResultTransaction(current)
         unit = FakeResultUnitOfWork(transaction)
         settlement = FakeSettlement(transaction.order)
+        expected_result = canonical.canonical_bytes(
+            {
+                "commandResult": "identity-mismatch",
+                "commandId": "cmd-2026-0001",
+                "state": "in-flight",
+            }
+        )
 
         # Act
         result = await handle_command_result(
@@ -330,21 +456,37 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            (CommandResultOutcome.MISMATCH, CommandState.IN_FLIGHT, [], 1, True),
+            (
+                CommandResultOutcome.MISMATCH,
+                CommandState.IN_FLIGHT,
+                expected_result,
+                [],
+                1,
+                expected_result,
+                True,
+            ),
             (
                 result.outcome,
                 result.state,
+                result.result,
                 transaction.recorded,
                 len(transaction.completed),
+                transaction.completed[0][1],
                 unit.committed,
             ),
         )
 
     async def test_exact_redelivery_returns_prior_result_without_a_second_transition(self) -> None:
         # Arrange
-        prior = b'{"commandResult":"updated"}'
+        prior = canonical.canonical_bytes(
+            {
+                "commandResult": "updated",
+                "commandId": "cmd-2026-0001",
+                "state": "acknowledged",
+            }
+        )
         transaction = FakeResultTransaction(
-            _stored(CommandState.ACKNOWLEDGED, 1),
+            _stored(CommandState.SUCCEEDED, 1),
             InboxOutcome(InboxDecision.DUPLICATE, prior),
         )
         unit = FakeResultUnitOfWork(transaction)
@@ -357,14 +499,143 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            (CommandResultOutcome.DUPLICATE, prior, [], [], True),
+            (
+                CommandResultOutcome.DUPLICATE,
+                CommandState.ACKNOWLEDGED,
+                prior,
+                [],
+                [],
+                [],
+                True,
+            ),
             (
                 result.outcome,
+                result.state,
                 result.result,
+                transaction.loaded,
                 transaction.recorded,
                 transaction.completed,
                 unit.committed,
             ),
+        )
+
+    async def test_duplicate_prior_result_is_closed_and_bound_to_the_command(self) -> None:
+        # Arrange
+        valid = {
+            "commandResult": "updated",
+            "commandId": "cmd-2026-0001",
+            "state": "acknowledged",
+        }
+        documents = (
+            {"state": "acknowledged"},
+            {**valid, "commandId": "cmd-another"},
+            {**valid, "commandResult": "duplicate"},
+            {**valid, "untrusted": True},
+            {**valid, "state": "unknown"},
+            {**valid, "state": 1},
+            {**valid, "state": "accepted"},
+            {**valid, "state": "in-flight"},
+            {**valid, "state": "abandoned"},
+            None,
+        )
+        prior_results = (
+            *(canonical.canonical_bytes(document) for document in documents),
+            b"not-json",
+            b'{ "commandResult":"updated","commandId":"cmd-2026-0001","state":"acknowledged"}',
+        )
+
+        # Act
+        observations = []
+        for prior in prior_results:
+            transaction = FakeResultTransaction(
+                _stored(CommandState.SUCCEEDED, 1),
+                InboxOutcome(InboxDecision.DUPLICATE, prior),
+            )
+            unit = FakeResultUnitOfWork(transaction)
+            settlement = FakeSettlement(transaction.order)
+            with pytest.raises(ProgressionError) as captured:
+                await handle_command_result(
+                    GuaranteedDelivery(RESULT_TOPIC, _result_payload()),
+                    unit,
+                    settlement,
+                )
+            observations.append(
+                (
+                    captured.value.refusal,
+                    str(captured.value),
+                    transaction.order,
+                    transaction.loaded,
+                    transaction.completed,
+                    settlement.accepted,
+                )
+            )
+
+        # Assert
+        self.assertEqual(
+            [
+                (
+                    ProgressionRefusal.DUPLICATE_RESULT,
+                    ProgressionRefusal.DUPLICATE_RESULT.value,
+                    ["claim", "rollback"],
+                    [],
+                    [],
+                    [],
+                )
+            ]
+            * len(prior_results),
+            observations,
+        )
+
+    async def test_every_handler_generated_duplicate_result_pair_remains_accepted(self) -> None:
+        # Arrange
+        pairs = (
+            ("updated", "acknowledged"),
+            ("updated", "succeeded"),
+            ("updated", "failed"),
+            ("stale", "accepted"),
+            ("identity-mismatch", "abandoned"),
+        )
+
+        # Act
+        observations = []
+        for outcome, state in pairs:
+            prior = canonical.canonical_bytes(
+                {
+                    "commandResult": outcome,
+                    "commandId": "cmd-2026-0001",
+                    "state": state,
+                }
+            )
+            transaction = FakeResultTransaction(
+                _stored(CommandState.SUCCEEDED, 1),
+                InboxOutcome(InboxDecision.DUPLICATE, prior),
+            )
+            unit = FakeResultUnitOfWork(transaction)
+            settlement = FakeSettlement(transaction.order)
+            result = await handle_command_result(
+                GuaranteedDelivery(RESULT_TOPIC, _result_payload()),
+                unit,
+                settlement,
+            )
+            observations.append((result.state.value, result.result, settlement.accepted))
+
+        # Assert
+        self.assertEqual(
+            [
+                (
+                    state,
+                    canonical.canonical_bytes(
+                        {
+                            "commandResult": outcome,
+                            "commandId": "cmd-2026-0001",
+                            "state": state,
+                        }
+                    ),
+                    ["0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6f"],
+                )
+                for outcome, state in pairs
+            ],
+            observations,
         )
 
     async def test_incomplete_duplicate_stays_unsettled_and_wrong_ingress_is_durably_rejected(
@@ -387,6 +658,7 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
 
         # Act
         refusals = []
+        messages = []
         for delivery, unit, settlement in (
             (
                 GuaranteedDelivery(RESULT_TOPIC, _result_payload()),
@@ -398,14 +670,72 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
             with pytest.raises(ProgressionError) as captured:
                 await handle_command_result(delivery, unit, settlement)
             refusals.append(captured.value.refusal)
+            messages.append(str(captured.value))
 
         # Assert
         self.assertEqual(
             (
                 [ProgressionRefusal.DUPLICATE_RESULT, ProgressionRefusal.INGRESS_KIND],
+                [
+                    ProgressionRefusal.DUPLICATE_RESULT.value,
+                    ProgressionRefusal.INGRESS_KIND.value,
+                ],
                 ["refusal-commit", "settle-rejected"],
             ),
-            (refusals, wrong_transaction.order),
+            (refusals, messages, wrong_transaction.order),
+        )
+        self.assertEqual(
+            (
+                "command-gateway-command-result",
+                "unexpected-family",
+            ),
+            (
+                wrong_unit.refusals[0].channel,
+                wrong_unit.refusals[0].refusal_code,
+            ),
+        )
+
+    async def test_failed_result_and_unauthorized_family_keep_closed_wire_vocabulary(self) -> None:
+        # Arrange
+        failed_transaction = FakeResultTransaction(_stored(CommandState.ACKNOWLEDGED, 1))
+        failed_unit = FakeResultUnitOfWork(failed_transaction)
+        failed_settlement = FakeSettlement(failed_transaction.order)
+        refused_transaction = FakeResultTransaction(_stored(CommandState.IN_FLIGHT, 1))
+        refused_unit = FakeResultUnitOfWork(refused_transaction)
+        refused_settlement = FakeSettlement(refused_transaction.order)
+        refused_delivery = GuaranteedDelivery(
+            "aerial-rescue/v1/m-2026-0001/drone/drone-vision-01/telemetry",
+            b"{}",
+        )
+
+        # Act
+        failed = await handle_command_result(
+            GuaranteedDelivery(RESULT_TOPIC, _result_payload("failed")),
+            failed_unit,
+            failed_settlement,
+        )
+        with pytest.raises(IngressError) as captured:
+            await handle_command_result(
+                refused_delivery,
+                refused_unit,
+                refused_settlement,
+            )
+
+        # Assert
+        self.assertEqual(CommandResultOutcome.UPDATED, failed.outcome)
+        self.assertEqual(CommandState.FAILED, failed.state)
+        self.assertEqual(IngressRefusal.UNAUTHORIZED_FAMILY, captured.value.refusal)
+        self.assertEqual(
+            (
+                "command-gateway-command-result",
+                "unauthorized-family",
+                1,
+            ),
+            (
+                refused_unit.refusals[0].channel,
+                refused_unit.refusals[0].refusal_code,
+                refused_settlement.rejected,
+            ),
         )
 
     async def test_transition_crash_rolls_back_and_leaves_the_delivery_unsettled(self) -> None:
@@ -425,8 +755,14 @@ class ResultHandlingTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            ("injected progress crash", True, False, []),
-            (str(captured.value), unit.rolled_back, unit.committed, settlement.accepted),
+            ("injected progress crash", True, False, [], []),
+            (
+                str(captured.value),
+                unit.rolled_back,
+                unit.committed,
+                settlement.accepted,
+                transaction.completed,
+            ),
         )
 
 

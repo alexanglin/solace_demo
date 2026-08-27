@@ -6,7 +6,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import os
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -16,7 +15,6 @@ from pathlib import Path
 from typing import Final, cast
 from uuid import uuid4
 
-import uvicorn
 from aerial_rescue_broker.deployment import DEFAULT_DEPLOY_DIRECTORY, read_credential
 from aerial_rescue_broker.ingress import PayloadSchemaExecutor, load_runtime_schema_registry
 from aerial_rescue_broker.messaging import (
@@ -58,33 +56,25 @@ from aerial_rescue_store.processing.dashboard import (
 )
 from aerial_rescue_store.session import Disposable, close, create_session_factory
 from aerial_rescue_store.settings import CONTAINER_HOST, database_settings
-from fastapi import FastAPI
 
-from aerial_rescue_dashboard_api.application import ApplicationSettings, create_live_application
-from aerial_rescue_dashboard_api.broker_runtime import DashboardDataPlane, DataPlanePorts
-from aerial_rescue_dashboard_api.files import (
-    DashboardFileSettings,
-    FilesystemDashboardData,
-    discover_asset_entrypoint,
+from aerial_rescue_dashboard_api.lifecycle import RuntimeReadiness
+from aerial_rescue_dashboard_api.messaging.broker_runtime import DashboardDataPlane, DataPlanePorts
+from aerial_rescue_dashboard_api.messaging.mutations import DashboardMutationService, MutationStamp
+from aerial_rescue_dashboard_api.messaging.outbox import DashboardOutboxPublisher
+from aerial_rescue_dashboard_api.messaging.projection import (
+    DashboardProjectionHub,
+    ProjectionHubSettings,
 )
-from aerial_rescue_dashboard_api.lifecycle import RunMode, RuntimeReadiness
-from aerial_rescue_dashboard_api.mutations import DashboardMutationService, MutationStamp
-from aerial_rescue_dashboard_api.operations import LiveDashboardOperations, LiveOperationPorts
-from aerial_rescue_dashboard_api.outbox import DashboardOutboxPublisher
-from aerial_rescue_dashboard_api.projection import DashboardProjectionHub, ProjectionHubSettings
-from aerial_rescue_dashboard_api.runtime_context import new_runtime_context
-from aerial_rescue_dashboard_api.scenario_http import (
-    ScenarioControlHttpClient,
-    ScenarioControlHttpSettings,
-)
-from aerial_rescue_dashboard_api.supervisor import (
+from aerial_rescue_dashboard_api.messaging.supervisor import (
     DashboardBrokerSupervisor,
     OwnedDashboardSession,
     SupervisorPorts,
     SupervisorSettings,
 )
+from aerial_rescue_dashboard_api.scenario_http import (
+    ScenarioControlHttpSettings,
+)
 
-_MAXIMUM_FILE_BYTES: Final = 262_144
 _MAXIMUM_SECRET_BYTES: Final = 129
 _MAXIMUM_SSE_CLIENTS: Final = 8
 _SSE_KEEPALIVE_MILLISECONDS: Final = 15_000
@@ -164,12 +154,13 @@ class _StoreResources:
 
 
 @dataclass(frozen=True, slots=True)
-class DashboardProcess:
-    """One already-composed application and its exhaustion signal."""
+class DashboardSolaceRuntime:
+    """The Solace consumer, projection, durable outbox, and mutation capabilities."""
 
-    application: FastAPI
     broker: DashboardBrokerSupervisor
-    listener: ListenerOptions
+    mutations: DashboardMutationService
+    hub: DashboardProjectionHub
+    store: _StoreResources
 
 
 class _StampSource:
@@ -267,28 +258,21 @@ def production_bounds() -> EngineBounds:
     )
 
 
-def build_process(settings: RuntimeSettings) -> DashboardProcess:
-    """Compose the lazy live graph; no socket, pool connection, or task opens here."""
+def build_solace_runtime(
+    settings: RuntimeSettings,
+    *,
+    runtime_id: str,
+    cursor_secret: str,
+    readiness: RuntimeReadiness,
+) -> DashboardSolaceRuntime:
+    """Compose the lazy Solace data plane shared by the reconciled HTTP runtime."""
     role = Principal.DASHBOARD_API
-    readiness = RuntimeReadiness(RunMode.DEGRADED_LIVE)
-    context = new_runtime_context(
-        runtime_id=f"runtime-{uuid4().hex[:24]}",
-        operator_id=settings.operator_id,
-    )
     schemas = load_runtime_schema_registry(settings.schema_root)
-    files = FilesystemDashboardData(
-        DashboardFileSettings(
-            settings.scenario_root,
-            settings.asset_root,
-            settings.replay_root,
-            _MAXIMUM_FILE_BYTES,
-        )
-    )
     hub = DashboardProjectionHub(
-        runtime_id=context.runtime_id,
+        runtime_id=runtime_id,
         checkpoint=EMPTY_CHECKPOINT,
         current_run=None,
-        cursor=_cursor_issuer(context.bearer),
+        cursor=_cursor_issuer(cursor_secret),
         settings=ProjectionHubSettings(
             max_clients=_MAXIMUM_SSE_CLIENTS,
             keepalive_milliseconds=_SSE_KEEPALIVE_MILLISECONDS,
@@ -310,68 +294,14 @@ def build_process(settings: RuntimeSettings) -> DashboardProcess:
         ),
         settings=SupervisorSettings(RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS),
     )
-    mutation_service = DashboardMutationService(
+    mutations = DashboardMutationService(
         transactions=store.mutations,
-        runtime_id=context.runtime_id,
+        runtime_id=runtime_id,
         stamps=_StampSource().next,
         schemas=schemas,
         approval_time_to_live_milliseconds=_APPROVAL_TIME_TO_LIVE_MILLISECONDS,
     )
-    operations = LiveDashboardOperations(
-        ports=LiveOperationPorts(
-            files,
-            ScenarioControlHttpClient(settings.scenario),
-            supervisor,
-            hub,
-            mutation_service,
-            store.mutations,
-        ),
-        readiness=readiness,
-        claimed_at=_observed_at,
-    )
-    application = create_live_application(
-        ApplicationSettings(
-            settings.allowed_hosts,
-            settings.allowed_origin,
-            discover_asset_entrypoint(settings.asset_root, _MAXIMUM_FILE_BYTES),
-        ),
-        context,
-        readiness,
-        operations,
-    )
-    return DashboardProcess(application, supervisor, listener_options(settings))
-
-
-async def run_process(settings: RuntimeSettings) -> int:
-    """Serve the UDS and exit nonzero if active-session broker recovery exhausts."""
-    process = build_process(settings)
-    configuration = uvicorn.Config(
-        process.application,
-        uds=str(process.listener.uds),
-        access_log=process.listener.access_log,
-        proxy_headers=process.listener.proxy_headers,
-        server_header=process.listener.server_header,
-        timeout_graceful_shutdown=process.listener.graceful_shutdown_seconds,
-    )
-    server = uvicorn.Server(configuration)
-    serving = asyncio.create_task(server.serve())
-    exhaustion = asyncio.create_task(process.broker.wait_for_exhaustion())
-    done, _pending = await asyncio.wait({serving, exhaustion}, return_when=asyncio.FIRST_COMPLETED)
-    if exhaustion in done:
-        await exhaustion
-        server.should_exit = True
-        await serving
-    else:
-        await serving
-        exhaustion.cancel()
-        await asyncio.gather(exhaustion, return_exceptions=True)
-    return process.broker.exit_status
-
-
-def main(environment: Mapping[str, str] | None = None) -> int:
-    """Run the concrete live dashboard API and preserve terminal broker status."""
-    selected = os.environ if environment is None else environment
-    return asyncio.run(run_process(settings_from_environment(selected)))
+    return DashboardSolaceRuntime(supervisor, mutations, hub, store)
 
 
 def _plane_factory(

@@ -17,6 +17,7 @@ agent-mesh/*
 apps/dashboard/coverage
 apps/dashboard/dist
 apps/dashboard/node_modules
+apps/dashboard/playwright-report
 apps/dashboard/test-results
 dist
 docs

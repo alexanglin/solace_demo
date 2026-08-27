@@ -21,18 +21,18 @@ from aerial_rescue_store.migration import (
 from sqlalchemy import BigInteger, LargeBinary, String, Table
 
 PROBE_URL = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
-FIFTH_REVISION = "0005_application_processing"
-SIXTH_REVISION = "0006_durable_fleet_processing"
-FIFTH_TO_SIXTH = f"{FIFTH_REVISION}:{SIXTH_REVISION}"
+SIXTH_REVISION = "0006_application_processing"
+SEVENTH_REVISION = "0007_durable_fleet_processing"
+SIXTH_TO_SEVENTH = f"{SIXTH_REVISION}:{SEVENTH_REVISION}"
 
 
-class SixthRevisionTests(unittest.TestCase):
+class SeventhRevisionTests(unittest.TestCase):
     def test_the_additive_step_creates_only_the_fleet_authority_tables(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+        emitted = upgrade_statements(config, SIXTH_TO_SEVENTH)
 
         # Assert
         self.assertEqual(
@@ -50,7 +50,7 @@ class SixthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+        emitted = upgrade_statements(config, SIXTH_TO_SEVENTH)
 
         # Assert
         self.assertEqual(
@@ -71,7 +71,7 @@ class SixthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+        emitted = upgrade_statements(config, SIXTH_TO_SEVENTH)
 
         # Assert
         self.assertEqual(
@@ -89,7 +89,7 @@ class SixthRevisionTests(unittest.TestCase):
         config = migration_config(PROBE_URL)
 
         # Act
-        emitted = downgrade_statements(config, FIFTH_REVISION)
+        emitted = downgrade_statements(config, SIXTH_REVISION)
 
         # Assert
         self.assertEqual(

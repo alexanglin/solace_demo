@@ -237,6 +237,15 @@ def _monitor_rows(request: Request, document: Mapping[str, object]) -> tuple[Mon
     )
 
 
+def _monitor_count(request: Request, document: Mapping[str, object]) -> int:
+    """Return one exact non-negative monitor collection count."""
+    meta = document.get("meta")
+    count = meta.get("count") if isinstance(meta, Mapping) else None
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise SempError(SempFailure.MALFORMED, describe(request))
+    return count
+
+
 class SempSession:
     """A ``SempTransport`` over one injected HTTPS connection."""
 
@@ -370,6 +379,12 @@ class SempSession:
                 return tuple(rows)
             query = self._page_query(path, cursor)
         raise SempError(SempFailure.PAGING, path)
+
+    def read_monitor_count(self, path: str) -> int:
+        """Return a monitor collection's total from one response without enumerating it."""
+        separator = "&" if "?" in path else "?"
+        request = Request(Method.GET, f"{path}{separator}count=1", {})
+        return _monitor_count(request, self._perform(request, SEMP_MONITOR_PATH))
 
     def _read_paged(self, path: str, root: str) -> tuple[Mapping[str, object], ...]:
         """Walk one collection's cursor to its end, or refuse at the page bound."""

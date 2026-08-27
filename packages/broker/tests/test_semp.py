@@ -113,6 +113,18 @@ class PagingConnection(FakeConnection):
         return FakeResponse(200, self.pages[len(self.calls) - 1])
 
 
+class RecordingPacer:
+    """Count each monitor-plane request without sleeping."""
+
+    def __init__(self) -> None:
+        """Start before any monitor request."""
+        self.calls = 0
+
+    def pace(self) -> None:
+        """Record one paced monitor request."""
+        self.calls += 1
+
+
 def _failure_of(connection: FakeConnection, request: Request) -> tuple[Enum, object]:
     """Return the failure sending ``request`` raises, failing the test if it succeeds."""
     try:
@@ -580,13 +592,13 @@ class ReadMonitorTests(unittest.TestCase):
 
     def test_queue_monitor_rows_preserve_the_alignment_of_data_and_child_counts(self) -> None:
         # Arrange
-        data = [{"queueName": "q1", "bindCount": 1}, {"queueName": "q2", "bindCount": 0}]
+        data = [{"queueName": "q1"}, {"queueName": "q2"}]
         collections = [{"msgs": {"count": 50}}, {"msgs": {"count": 75}}]
         connection = FakeConnection(FakeResponse(200, _document(data, collections=collections)))
 
         # Act
         rows = SempSession(connection, ENDPOINT).read_monitor_rows(
-            "msgVpns/default/queues?select=queueName%2CbindCount%2Cmsgs.count"
+            "msgVpns/default/queues?select=queueName,msgs.count"
         )
 
         # Assert
@@ -594,6 +606,56 @@ class ReadMonitorTests(unittest.TestCase):
             ((data[0], collections[0]), (data[1], collections[1])),
             tuple((row.data, row.collections) for row in rows),
         )
+
+    def test_monitor_collection_count_reads_the_total_without_walking_child_rows(self) -> None:
+        # Arrange
+        document = {
+            "data": [{"flowId": "first-page-only"}],
+            "meta": {"count": 7, "responseCode": 200},
+        }
+        connection = FakeConnection(FakeResponse(200, json.dumps(document).encode()))
+        session = SempSession(connection, ENDPOINT)
+
+        # Act
+        count = session.read_monitor_count("msgVpns/default/queues/q/txFlows")
+
+        # Assert
+        self.assertEqual(7, count)
+        self.assertTrue(connection.calls[0][1].startswith(f"{SEMP_MONITOR_PATH}/"))
+        self.assertTrue(connection.calls[0][1].endswith("/txFlows?count=1"))
+
+    def test_monitor_collection_count_refuses_every_non_exact_nonnegative_integer(self) -> None:
+        # Arrange
+        counts = (None, True, "1", 1.0, -1)
+
+        # Act
+        failures = []
+        for count in counts:
+            document = {"data": [], "meta": {"count": count, "responseCode": 200}}
+            connection = FakeConnection(FakeResponse(200, json.dumps(document).encode()))
+            with pytest.raises(SempError) as captured:
+                SempSession(connection, ENDPOINT).read_monitor_count(
+                    "msgVpns/default/queues/q/txFlows"
+                )
+            failures.append(captured.value.failure)
+
+        # Assert
+        self.assertEqual([SempFailure.MALFORMED] * len(counts), failures)
+
+    def test_monitor_collection_count_preserves_an_existing_query_and_is_paced(self) -> None:
+        # Arrange
+        document = {"data": [], "meta": {"count": 0, "responseCode": 200}}
+        connection = FakeConnection(FakeResponse(200, json.dumps(document).encode()))
+        pacer = RecordingPacer()
+        session = SempSession(connection, ENDPOINT, monitor_pacer=pacer)
+
+        # Act
+        count = session.read_monitor_count("msgVpns/default/queues/q/txFlows?where=x")
+
+        # Assert
+        self.assertEqual(0, count)
+        self.assertEqual(1, pacer.calls)
+        self.assertTrue(connection.calls[0][1].endswith("/txFlows?where=x&count=1"))
 
     def test_queue_monitor_rows_refuse_misaligned_child_counts(self) -> None:
         # Arrange
@@ -666,7 +728,7 @@ class ReadMonitorTests(unittest.TestCase):
     def test_an_existing_monitor_select_is_preserved_when_the_page_bound_is_added(self) -> None:
         # Arrange
         connection = FakeConnection(FakeResponse(200, _document([], collections=[])))
-        path = "msgVpns/default/queues?select=queueName%2CbindCount%2Cmsgs.count"
+        path = "msgVpns/default/queues?select=queueName,msgs.count"
 
         # Act
         SempSession(connection, ENDPOINT).read_monitor_rows(path)

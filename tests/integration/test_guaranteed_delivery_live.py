@@ -25,52 +25,44 @@ it (``docs/TESTING.md``).
 
 from __future__ import annotations
 
-import time
 import unittest
-from pathlib import Path
 from typing import Final, override
 
 import pytest
-from aerial_rescue_broker.deployment import (
-    ADMIN_CREDENTIAL,
-    ADMIN_USERNAME,
-    CERTIFICATE_AUTHORITY,
-    DEFAULT_HOST,
-    DEFAULT_PORT,
-    DEFAULT_VPN,
-    read_credential,
-)
 from aerial_rescue_broker.messaging import (
-    BrokerEndpoint,
     MessagingError,
     MessagingRefusal,
     SolacePersistentReceiver,
     SolacePublisher,
-    build_service,
 )
-from aerial_rescue_broker.provisioning import message_count
 from aerial_rescue_broker.queues import (
     MAX_REDELIVERY_COUNT,
     dead_message_queue_name,
     drone_queue_name,
     family_queue_name,
+    queues_for,
 )
-from aerial_rescue_broker.semp import SempEndpoint, SempSession, connect
+from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.config.message_acknowledgement_configuration import Outcome
-from solace.messaging.messaging_service import MessagingService
+
+from tests.broker_live_support import (
+    SHARED_PROBE_DRONES,
+    drain_queue,
+    settled_queue_depth,
+)
+from tests.broker_live_support import (
+    connected_service as _service,
+)
+from tests.broker_live_support import (
+    queue_depth as _depth,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn=DEFAULT_VPN, trust_store=str(DEPLOY / "certs")
-)
-
 MISSION: Final = "m-delivery-probe"
-PROBE_DRONE: Final = "drone-delivery-probe"
+PROBE_DRONE: Final = SHARED_PROBE_DRONES[0]
 COMMAND_TOPIC: Final = format_topic(
     Topic(
         Family.DRONE_COMMAND,
@@ -82,9 +74,23 @@ COMMAND_BODY: Final = b'{"probe":1}'
 
 PROBE_QUEUE: Final = drone_queue_name(PROBE_DRONE)
 PROBE_DEAD_MESSAGE_QUEUE: Final = dead_message_queue_name(PROBE_QUEUE)
+
+
+def _projected_family_queue(role: Principal, family: Family) -> str:
+    """Return the role's one projected queue carrying the exact family subscription."""
+    expected_subscription = subscription_for(family)
+    matches = tuple(
+        queue.name for queue in queues_for(role, ()) if expected_subscription in queue.subscriptions
+    )
+    if len(matches) != 1:
+        message = f"expected one {role.value} queue for {family.name}, found {len(matches)}"
+        raise AssertionError(message)
+    return matches[0]
+
+
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
-    (Principal.RECORDER, family_queue_name(Principal.RECORDER, Family.DRONE_COMMAND)),
+    (Principal.RECORDER, _projected_family_queue(Principal.RECORDER, Family.DRONE_COMMAND)),
 )
 FILLED_QUEUES: Final = ((Principal.FLEET_SIMULATOR, PROBE_QUEUE), *COLLATERAL_QUEUES)
 
@@ -96,39 +102,6 @@ SETTLE_POLLS: Final = 20
 SETTLE_INTERVAL_SECONDS: Final = 0.2
 
 
-def _semp_endpoint() -> SempEndpoint:
-    """Return the administrator SEMP endpoint, over the per-checkout authority."""
-    return SempEndpoint(
-        host=DEFAULT_HOST,
-        port=DEFAULT_PORT,
-        username=ADMIN_USERNAME,
-        password=(DEPLOY / ADMIN_CREDENTIAL).read_text().strip(),
-        certificate_authority=str(DEPLOY / CERTIFICATE_AUTHORITY),
-    )
-
-
-def _depth(queue: str) -> int:
-    """Return how many messages are on ``queue`` right now, by counting them.
-
-    Deliberately not ``spooledMsgCount``, which reads like the depth and is not: it is a
-    cumulative counter that never falls, so a drained queue still reports every message it
-    ever held. Measured on 2026-08-23, a queue reporting ``spooledMsgCount`` 17 held zero
-    messages. ``msgSpoolUsage`` is the current figure but is bytes rather than messages, so
-    the queue's own message collection is the only instrument that answers the question
-    asked here.
-
-    Counted through ``packages/broker`` rather than here, so the cursor is followed to the
-    collection's end and a depth larger than one page is a real number rather than the page
-    size. The member refuses with ``PAGING`` past its bound instead of truncating.
-    """
-    endpoint = _semp_endpoint()
-    connection = connect(endpoint)
-    try:
-        return message_count(SempSession(connection, endpoint), DEFAULT_VPN, queue)
-    finally:
-        connection.close()
-
-
 def _settled_depth(queue: str, expected: int) -> int:
     """Return the depth once it reaches ``expected``, or the last reading within the bound.
 
@@ -136,20 +109,12 @@ def _settled_depth(queue: str, expected: int) -> int:
     read immediately after settling is a race. This waits for the value rather than
     sleeping a fixed time, and gives up after a bound so a genuine mismatch still fails.
     """
-    depth = _depth(queue)
-    for _ in range(SETTLE_POLLS):
-        if depth == expected:
-            return depth
-        time.sleep(SETTLE_INTERVAL_SECONDS)
-        depth = _depth(queue)
-    return depth
-
-
-def _service(role: Principal) -> MessagingService:
-    """Return a connected service on one role's own least-privilege identity."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
+    return settled_queue_depth(
+        queue,
+        expected,
+        polls=SETTLE_POLLS,
+        interval_seconds=SETTLE_INTERVAL_SECONDS,
+    )
 
 
 def _publish_one_command() -> None:
@@ -202,30 +167,13 @@ def _fail_until_abandoned() -> int:
 
 
 def _drain(role: Principal, queue: str) -> int:
-    """Accept every message on ``queue`` and return how many were taken.
-
-    One binding for the whole drain rather than one per message: the queue is exclusive,
-    so a reconnect per message would pay the bind cost each time for no gain.
-
-    The first window is the long one and every later window is short. A freshly bound flow
-    does not deliver instantly, so a short first window reads an empty queue that is not
-    empty -- which is what it did before this waited.
-    """
-    service = _service(role)
-    receiver = SolacePersistentReceiver(service, queue)
-    taken = 0
-    window = RECEIVE_WINDOW_MILLISECONDS
-    try:
-        message = receiver.receive(window)
-        while message is not None:
-            receiver.settle(message, Outcome.ACCEPTED)
-            taken += 1
-            window = DRAIN_WINDOW_MILLISECONDS
-            message = receiver.receive(window)
-    finally:
-        receiver.close()
-        service.disconnect()
-    return taken
+    """Accept every message on ``queue`` and return how many were taken."""
+    return drain_queue(
+        role,
+        queue,
+        first_window_milliseconds=RECEIVE_WINDOW_MILLISECONDS,
+        subsequent_window_milliseconds=DRAIN_WINDOW_MILLISECONDS,
+    )
 
 
 class GuaranteedDeliveryTests(unittest.TestCase):

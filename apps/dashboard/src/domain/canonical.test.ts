@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { CanonicalizationError, canonicalBytes } from "./canonical";
 
@@ -246,6 +246,34 @@ test("emits NFC-normalized, minimally escaped UTF-8 bytes in canonical key order
   // Assert
   expect(encoded).toEqual(new TextEncoder().encode(expectedText));
   expect(new TextDecoder().decode(encoded)).toBe(expectedText);
+});
+
+test("keeps identical sort operands equal at the defensive object-key boundary", () => {
+  // Arrange
+  const nativeSort = Array.prototype.sort;
+  const identicalComparisons: number[] = [];
+  const sort = vi.spyOn(Array.prototype, "sort").mockImplementation(function (
+    this: unknown[],
+    compare: ((left: unknown, right: unknown) => number) | undefined,
+  ): unknown[] {
+    const first = this[0];
+    if (compare !== undefined && first !== undefined) {
+      identicalComparisons.push(compare(first, first));
+    }
+    return nativeSort.call(this, compare);
+  });
+  let encoded: Uint8Array;
+
+  // Act
+  try {
+    encoded = canonicalBytes({ alpha: 1, beta: 2 });
+  } finally {
+    sort.mockRestore();
+  }
+
+  // Assert
+  expect(identicalComparisons).toContain(0);
+  expect(new TextDecoder().decode(encoded)).toBe('{"alpha":1,"beta":2}');
 });
 
 test("emits exact lowercase canonical bytes for both booleans", () => {

@@ -1,79 +1,28 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import type { DashboardEvent, DashboardSnapshot } from "./contracts/generated";
+import type { DashboardSnapshot } from "./contracts/generated";
 import type { ProposalDecisionSubmitter } from "./operator/mutation-client";
+import {
+  evidenceFixture,
+  PROPOSAL_DIGEST,
+  proposalFixture,
+  type ApprovalEvent,
+  type EvidenceEvent,
+  type ProposalEvent,
+} from "../tests/unit-support/proposal-fixtures";
 import { ApplicationShell, currentProposalBinding } from "./application-shell";
-
-type ProposalEvent = Extract<DashboardEvent, { kind: "agentProposal" }>;
-type EvidenceEvent = Extract<DashboardEvent, { kind: "evidenceDecision" }>;
-type ApprovalEvent = Extract<DashboardEvent, { kind: "operatorApproval" }>;
-
-const PROPOSAL_DIGEST = "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761";
 
 afterEach(() => {
   cleanup();
 });
 
 function proposal(): ProposalEvent {
-  return {
-    kind: "agentProposal",
-    eventClass: "EVIDENCE",
-    mission: "mission-synthetic-0001",
-    time: "2026-08-25T12:03:00.000Z",
-    data: {
-      canonicalizationVersion: 1,
-      proposalVersion: 1,
-      proposalId: "proposal-synthetic-0001",
-      proposalType: "candidate-location",
-      agentName: "VisionAgent",
-      sourceInvocationId: "invocation-synthetic-0001",
-      sourceEventId: "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6c",
-      sourceEventDigest: "9".repeat(64),
-      commandType: "escalate-rescue",
-      droneId: "drone-sim-01",
-      latitudeMicrodegrees: 45_123_456,
-      longitudeMicrodegrees: -75_123_456,
-      proposalDigest: PROPOSAL_DIGEST,
-    },
-  };
+  return proposalFixture({ fleetBound: true });
 }
 
 function evidence(): EvidenceEvent {
-  return {
-    kind: "evidenceDecision",
-    eventClass: "EVIDENCE",
-    mission: "mission-synthetic-0001",
-    time: "2026-08-25T12:04:00.000Z",
-    data: {
-      canonicalizationVersion: 1,
-      evidenceDecisionVersion: 1,
-      proposalId: "proposal-synthetic-0001",
-      proposalDigest: PROPOSAL_DIGEST,
-      proposalVersion: 1,
-      evidenceDecisionId: "decision-synthetic-0001",
-      outcome: "contributing",
-      scoreVersion: 1,
-      score: 75,
-      band: "corroborated",
-      contributors: [
-        {
-          evidenceItemId: "evidence-item-01",
-          sourceId: "source-01",
-          origin: "live-sensor",
-          weight: 40,
-          provenanceDigest: "3".repeat(64),
-        },
-        {
-          evidenceItemId: "evidence-item-02",
-          sourceId: "source-02",
-          origin: "live-model",
-          weight: 35,
-          provenanceDigest: "5".repeat(64),
-        },
-      ],
-    },
-  };
+  return evidenceFixture({ fleetBound: true });
 }
 
 function approval(proposalDigest = PROPOSAL_DIGEST): ApprovalEvent {

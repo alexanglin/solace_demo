@@ -1,6 +1,6 @@
 # ADR-0095: Persist only the UI slice lifecycle, idempotency, and audit facts
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0113
 - **Date:** 2026-08-24
 - **Deciders:** Alex Anglin
 - **Supersedes:** none

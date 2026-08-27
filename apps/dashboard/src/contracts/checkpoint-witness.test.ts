@@ -31,17 +31,24 @@ test.each(checkpointCases)(
   async ({ schemaId, surface }) => {
     // Arrange
     const raw = await readFile(resolve(FIXTURE_ROOT, surface, "baseline.json"), "utf8");
+    const mismatchRaw = await readFile(
+      resolve(FIXTURE_ROOT, surface, "ordinal-witness-mismatch.json"),
+      "utf8",
+    );
     const witnessed = JSON.parse(raw) as Record<string, unknown>;
+    const mismatched = JSON.parse(mismatchRaw) as Record<string, unknown>;
     const missing = { ...witnessed };
     delete missing["latestEventDigest"];
     const registry = createDashboardSchemaRegistry();
 
     // Act
     const refused = registry.validate(schemaId, missing);
+    const mismatchRefused = registry.validate(schemaId, mismatched);
     const accepted = registry.validate(schemaId, witnessed);
 
     // Assert
     expect(refused.ok).toBe(false);
+    expect(mismatchRefused.ok).toBe(false);
     expect(accepted).toMatchObject({ ok: true, value: { latestEventDigest: WITNESS } });
   },
 );

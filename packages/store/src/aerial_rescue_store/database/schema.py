@@ -19,6 +19,12 @@ from aerial_rescue_store.migration import (
     BROKER_REFUSAL_TABLE,
     COMMAND_OUTBOX_TABLE,
     COMMAND_PROGRESS_TABLE,
+    DASHBOARD_BROKER_EVENT_TABLE,
+    DASHBOARD_BROKER_SOURCE_TABLE,
+    DASHBOARD_CURRENT_RUN_TABLE,
+    DASHBOARD_MISSION_TABLE,
+    DASHBOARD_OPERATION_TABLE,
+    DASHBOARD_RUN_TABLE,
     DRONE_COMMAND_EFFECT_TABLE,
     DRONE_COMMAND_RECEIPT_TABLE,
     DRONE_STREAM_STATE_TABLE,
@@ -41,6 +47,12 @@ TRACEPARENT_LENGTH = 55
 TRACESTATE_LENGTH = 512
 STATE_LENGTH = 24
 AGENT_NAME_LENGTH = 64
+UUID_LENGTH = 36
+DASHBOARD_SOURCE_LENGTH = 128
+MODE_LENGTH = 16
+OPERATION_LENGTH = 8
+DASHBOARD_STATE_LENGTH = 16
+MAXIMUM_PRODUCER_SEQUENCE = 999_999_999_999_999
 
 METADATA = sa.MetaData()
 """The one metadata collection for every table this package may read or write."""
@@ -99,8 +111,7 @@ IDEMPOTENCY_CLAIM = sa.Table(
     sa.Column("claimed_at", sa.String(INSTANT_LENGTH), nullable=False),
     sa.PrimaryKeyConstraint("idempotency_key", name="pk_idempotency_claim"),
     sa.CheckConstraint(
-        "kind IN ('command', 'approval consumption', 'dashboard start', "
-        "'dashboard reset', 'dashboard command', 'dashboard decision')",
+        "kind IN ('command', 'approval consumption', 'dashboard command', 'dashboard decision')",
         name="ck_idempotency_claim_kind",
     ),
 )
@@ -121,6 +132,202 @@ COMMAND_OUTBOX = sa.Table(
     sa.CheckConstraint(
         "state IN ('staged', 'reconciliation needed', 'confirmed')",
         name="ck_command_outbox_state",
+    ),
+)
+
+DASHBOARD_MISSION = sa.Table(
+    DASHBOARD_MISSION_TABLE,
+    METADATA,
+    sa.Column("mission_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("scenario_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("scenario_revision", sa.Integer(), nullable=False),
+    sa.Column("lifecycle", sa.String(DASHBOARD_STATE_LENGTH), nullable=False),
+    sa.Column("predecessor_mission_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.PrimaryKeyConstraint("mission_id", name="pk_dashboard_mission"),
+    sa.ForeignKeyConstraint(
+        ("predecessor_mission_id",),
+        ("dashboard_mission.mission_id",),
+        name="fk_dashboard_mission_predecessor",
+    ),
+    sa.UniqueConstraint("predecessor_mission_id", name="uq_dashboard_mission_one_successor"),
+    sa.UniqueConstraint(
+        "mission_id",
+        "scenario_id",
+        "scenario_revision",
+        name="uq_dashboard_mission_scenario_identity",
+    ),
+    sa.CheckConstraint(
+        "lifecycle IN ('PLANNED', 'SEARCHING', 'EXHAUSTED', 'ABORTED')",
+        name="ck_dashboard_mission_lifecycle",
+    ),
+    sa.CheckConstraint(
+        "scenario_revision >= 1", name="ck_dashboard_mission_scenario_revision_positive"
+    ),
+    sa.CheckConstraint(
+        "predecessor_mission_id IS NULL OR predecessor_mission_id <> mission_id",
+        name="ck_dashboard_mission_not_own_predecessor",
+    ),
+)
+
+DASHBOARD_RUN = sa.Table(
+    DASHBOARD_RUN_TABLE,
+    METADATA,
+    sa.Column("run_identity", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("mode", sa.String(MODE_LENGTH), nullable=False),
+    sa.Column("scenario_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("scenario_revision", sa.Integer(), nullable=False),
+    sa.Column("mission_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("run_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("session_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("prepared_initial_state", sa.LargeBinary(), nullable=False),
+    sa.PrimaryKeyConstraint("run_identity", name="pk_dashboard_run"),
+    sa.ForeignKeyConstraint(
+        ("mission_id", "scenario_id", "scenario_revision"),
+        (
+            "dashboard_mission.mission_id",
+            "dashboard_mission.scenario_id",
+            "dashboard_mission.scenario_revision",
+        ),
+        name="fk_dashboard_run_mission_scenario",
+    ),
+    sa.UniqueConstraint("mission_id", name="uq_dashboard_run_mission"),
+    sa.UniqueConstraint("run_id", name="uq_dashboard_run_live_identity"),
+    sa.UniqueConstraint("session_id", name="uq_dashboard_run_replay_identity"),
+    sa.CheckConstraint("mode IN ('degradedLive', 'replay')", name="ck_dashboard_run_mode"),
+    sa.CheckConstraint(
+        "scenario_revision >= 1", name="ck_dashboard_run_scenario_revision_positive"
+    ),
+    sa.CheckConstraint(
+        "(mode = 'degradedLive' AND mission_id IS NOT NULL AND run_id IS NOT NULL "
+        "AND session_id IS NULL AND run_identity = run_id) OR "
+        "(mode = 'replay' AND mission_id IS NULL AND run_id IS NULL "
+        "AND session_id IS NOT NULL AND run_identity = session_id)",
+        name="ck_dashboard_run_identity_for_mode",
+    ),
+)
+
+DASHBOARD_CURRENT_RUN = sa.Table(
+    DASHBOARD_CURRENT_RUN_TABLE,
+    METADATA,
+    sa.Column("singleton_key", sa.SmallInteger(), nullable=False),
+    sa.Column("run_identity", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.PrimaryKeyConstraint("singleton_key", name="pk_dashboard_current_run"),
+    sa.ForeignKeyConstraint(
+        ("run_identity",),
+        ("dashboard_run.run_identity",),
+        name="fk_dashboard_current_run_run",
+    ),
+    sa.CheckConstraint("singleton_key = 1", name="ck_dashboard_current_run_singleton"),
+)
+
+DASHBOARD_OPERATION = sa.Table(
+    DASHBOARD_OPERATION_TABLE,
+    METADATA,
+    sa.Column("idempotency_key", sa.String(UUID_LENGTH), nullable=False),
+    sa.Column("operation_kind", sa.String(OPERATION_LENGTH), nullable=False),
+    sa.Column("mode", sa.String(MODE_LENGTH), nullable=False),
+    sa.Column("request_digest", sa.String(DIGEST_LENGTH), nullable=False),
+    sa.Column("scenario_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("scenario_revision", sa.Integer(), nullable=False),
+    sa.Column("mission_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("run_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("session_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("predecessor_mission_id", sa.String(IDENTIFIER_LENGTH), nullable=True),
+    sa.Column("state", sa.String(DASHBOARD_STATE_LENGTH), nullable=False),
+    sa.Column("response_status", sa.SmallInteger(), nullable=True),
+    sa.Column("response_body", sa.LargeBinary(), nullable=True),
+    sa.PrimaryKeyConstraint("idempotency_key", name="pk_dashboard_operation"),
+    sa.ForeignKeyConstraint(
+        ("predecessor_mission_id",),
+        ("dashboard_mission.mission_id",),
+        name="fk_dashboard_operation_predecessor",
+    ),
+    sa.CheckConstraint("operation_kind IN ('start', 'reset')", name="ck_dashboard_operation_kind"),
+    sa.CheckConstraint("mode IN ('degradedLive', 'replay')", name="ck_dashboard_operation_mode"),
+    sa.CheckConstraint("state IN ('pending', 'completed')", name="ck_dashboard_operation_state"),
+    sa.CheckConstraint(
+        "idempotency_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'",
+        name="ck_dashboard_operation_uuid4",
+    ),
+    sa.CheckConstraint(
+        "request_digest ~ '^[0-9a-f]{64}$'", name="ck_dashboard_operation_request_digest"
+    ),
+    sa.CheckConstraint(
+        "scenario_revision >= 1", name="ck_dashboard_operation_scenario_revision_positive"
+    ),
+    sa.CheckConstraint(
+        "(mode = 'degradedLive' AND mission_id IS NOT NULL AND run_id IS NOT NULL "
+        "AND session_id IS NULL) OR (mode = 'replay' AND mission_id IS NULL "
+        "AND run_id IS NULL AND session_id IS NOT NULL)",
+        name="ck_dashboard_operation_identity_for_mode",
+    ),
+    sa.CheckConstraint(
+        "(operation_kind = 'start' AND predecessor_mission_id IS NULL) OR "
+        "(operation_kind = 'reset' AND ((mode = 'degradedLive' "
+        "AND predecessor_mission_id IS NOT NULL) OR (mode = 'replay' "
+        "AND predecessor_mission_id IS NULL)))",
+        name="ck_dashboard_operation_predecessor_for_kind",
+    ),
+    sa.CheckConstraint(
+        "(state = 'pending' AND response_status IS NULL AND response_body IS NULL) OR "
+        "(state = 'completed' AND response_status BETWEEN 100 AND 599 "
+        "AND response_body IS NOT NULL)",
+        name="ck_dashboard_operation_result_for_state",
+    ),
+    sa.Index(
+        "uq_dashboard_operation_one_pending",
+        sa.text("(1)"),
+        unique=True,
+        postgresql_where=sa.text("state = 'pending'"),
+    ),
+)
+
+DASHBOARD_BROKER_SOURCE = sa.Table(
+    DASHBOARD_BROKER_SOURCE_TABLE,
+    METADATA,
+    sa.Column("source", sa.String(DASHBOARD_SOURCE_LENGTH), nullable=False),
+    sa.Column("high_water_sequence", sa.BigInteger(), nullable=True),
+    sa.PrimaryKeyConstraint("source", name="pk_dashboard_broker_source"),
+    sa.CheckConstraint(
+        "high_water_sequence IS NULL OR high_water_sequence BETWEEN 0 AND "
+        f"{MAXIMUM_PRODUCER_SEQUENCE}",
+        name="ck_dashboard_broker_source_sequence_range",
+    ),
+)
+
+DASHBOARD_BROKER_EVENT = sa.Table(
+    DASHBOARD_BROKER_EVENT_TABLE,
+    METADATA,
+    sa.Column("source", sa.String(DASHBOARD_SOURCE_LENGTH), nullable=False),
+    sa.Column("event_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("source_sequence", sa.BigInteger(), nullable=False),
+    sa.Column("payload_digest", sa.String(DIGEST_LENGTH), nullable=False),
+    sa.Column("audit_mission_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
+    sa.Column("audit_ordinal", sa.BigInteger(), nullable=False),
+    sa.PrimaryKeyConstraint("source", "event_id", name="pk_dashboard_broker_event"),
+    sa.ForeignKeyConstraint(
+        ("source",),
+        ("dashboard_broker_source.source",),
+        name="fk_dashboard_broker_event_source",
+    ),
+    sa.ForeignKeyConstraint(
+        ("audit_mission_id", "audit_ordinal"),
+        ("audit_record.mission_id", "audit_record.ordinal"),
+        name="fk_dashboard_broker_event_audit",
+    ),
+    sa.UniqueConstraint(
+        "source", "source_sequence", name="uq_dashboard_broker_event_source_sequence"
+    ),
+    sa.UniqueConstraint(
+        "audit_mission_id", "audit_ordinal", name="uq_dashboard_broker_event_audit"
+    ),
+    sa.CheckConstraint(
+        f"source_sequence BETWEEN 0 AND {MAXIMUM_PRODUCER_SEQUENCE}",
+        name="ck_dashboard_broker_event_sequence_range",
+    ),
+    sa.CheckConstraint("audit_ordinal >= 1", name="ck_dashboard_broker_event_ordinal_positive"),
+    sa.CheckConstraint(
+        "payload_digest ~ '^[0-9a-f]{64}$'", name="ck_dashboard_broker_event_payload_digest"
     ),
 )
 
