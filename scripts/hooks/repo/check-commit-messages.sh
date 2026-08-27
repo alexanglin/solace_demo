@@ -70,6 +70,14 @@ else
 	commits=$(git rev-list --reverse "$base..$head")
 fi
 
+# Say which range was resolved and how large it is. A gate that validates the
+# wrong range reports "[Bad commit message] >> Initial commit" and nothing about
+# where that commit came from, which is indistinguishable from a genuinely bad
+# message until you can see the endpoints it used.
+printf 'commit-message range: base=%s head=%s remote=%s commits=%s\n' \
+	"${base:-<unset>}" "${head:-<unset>}" "${remote:-<unset>}" \
+	"$(printf '%s\n' "$commits" | grep -c .)" >&2
+
 message_dir=$(mktemp -d "${TMPDIR:-/tmp}/aerial-rescue-messages.XXXXXX")
 trap 'rm -rf "$message_dir"' 0 1 2 15
 status=0
