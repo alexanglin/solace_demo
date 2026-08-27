@@ -41,9 +41,21 @@ git rev-parse --verify --quiet "$head^{commit}" >/dev/null || {
 if [ -z "$base" ]; then
 	commits=$(git rev-list --max-count=1 "$head")
 elif [ "$base" = "$zero" ]; then
-	if [ -n "$remote" ] && git for-each-ref --format='%(refname)' "refs/remotes/$remote/" |
-		grep -q .; then
-		commits=$(git rev-list --reverse "$head" --not --remotes="$remote")
+	# Anchor on the target branch itself, not on "any ref this clone happens to
+	# hold". A CI checkout can carry remote refs that cover none of this branch's
+	# ancestry, and --remotes then excludes nothing: the walk reaches the root
+	# commit and fails on history written before Conventional Commits.
+	target=
+	if [ -n "$remote" ]; then
+		for candidate in "refs/remotes/$remote/HEAD" "refs/remotes/$remote/main"; do
+			if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+				target=$candidate
+				break
+			fi
+		done
+	fi
+	if [ -n "$target" ]; then
+		commits=$(git rev-list --reverse "$head" --not "$target")
 	else
 		# With no target-remote history there is no sound way to distinguish new
 		# commits from inherited local history. Validate HEAD rather than silently

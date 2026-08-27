@@ -41,6 +41,43 @@ class RangeEdgeCaseTests(QualityGateTestCase):
             "feat: add feature", inspected_messages.read_text(encoding="utf-8").strip()
         )
 
+    def test_an_unrelated_remote_ref_does_not_admit_pre_convention_history(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        tracked = repository / "tracked.txt"
+        tracked.write_text("root\n", encoding="utf-8")
+        self.commit_all(repository, "Initial commit")
+        tracked.write_text("feature\n", encoding="utf-8")
+        self.commit_all(repository, "feat: add feature")
+        head = self.git(repository, "rev-parse", "HEAD").stdout.strip()
+        self.git(repository, "checkout", "--orphan", "unrelated")
+        unrelated = repository / "unrelated.txt"
+        unrelated.write_text("unrelated\n", encoding="utf-8")
+        self.commit_all(repository, "chore: unrelated root")
+        orphan = self.git(repository, "rev-parse", "HEAD").stdout.strip()
+        self.git(repository, "update-ref", "refs/remotes/origin/unrelated", orphan)
+        self.git(repository, "checkout", "--force", head)
+        executable_directory = repository / "bin"
+        executable_directory.mkdir()
+        inspected_messages = repository / "messages.txt"
+        self._write_pre_commit_recorder(executable_directory / "pre-commit", inspected_messages)
+
+        # Act
+        result = self.run_hook(
+            "check-commit-messages.sh",
+            repository,
+            environment={
+                "PATH": f"{executable_directory}:/usr/bin:/bin",
+                "PRE_COMMIT_FROM_REF": "0" * 40,
+                "PRE_COMMIT_TO_REF": head,
+                "PRE_COMMIT_REMOTE_NAME": "origin",
+            },
+        )
+
+        # Assert
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("Initial commit", inspected_messages.read_text(encoding="utf-8"))
+
     def test_quality_range_cannot_borrow_one_pre_commit_endpoint(self) -> None:
         # Arrange
         repository = self.temporary_repository()
