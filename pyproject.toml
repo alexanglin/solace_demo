@@ -57,7 +57,7 @@ dev = [
     "tree-sitter-typescript==0.23.2",
     "bandit==1.9.4",
     "pip-audit==2.10.1",
-    "pre-commit==4.5.0",
+    "pre-commit==4.6.2",
     "coverage>=7",
     "jsonschema==4.26.0",
     "referencing==0.37.0",
