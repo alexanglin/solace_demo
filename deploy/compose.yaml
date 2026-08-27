@@ -151,7 +151,7 @@ services:
 
   migration:
     <<: *application
-    profiles: ["mission-control"]
+    profiles: ["services", "mission-control"]
     command: ["/app/.venv/bin/python", "-m", "aerial_rescue_store.migrate"]
     environment:
       <<: *store-environment
@@ -259,7 +259,7 @@ services:
 
   replay-validator:
     <<: *application
-    profiles: ["mission-control"]
+    profiles: ["services", "mission-control"]
     command:
       - /app/.venv/bin/python
       - -m
