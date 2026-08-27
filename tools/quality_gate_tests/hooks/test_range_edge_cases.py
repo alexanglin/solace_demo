@@ -78,6 +78,45 @@ class RangeEdgeCaseTests(QualityGateTestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("Initial commit", inspected_messages.read_text(encoding="utf-8"))
 
+    def test_a_shallow_clone_refuses_rather_than_validating_unreachable_history(self) -> None:
+        # Arrange
+        origin = self.temporary_repository()
+        tracked = origin / "tracked.txt"
+        tracked.write_text("root\n", encoding="utf-8")
+        self.commit_all(origin, "Initial commit")
+        tracked.write_text("base\n", encoding="utf-8")
+        self.commit_all(origin, "feat: the base")
+        base_commit = self.git(origin, "rev-parse", "HEAD").stdout.strip()
+        tracked.write_text("feature\n", encoding="utf-8")
+        self.commit_all(origin, "feat: add feature")
+        # Depth two keeps the base object but cuts its ancestry, which is the state
+        # the push-stage job reaches: base_ancestors=1 against a real history.
+        self.git(
+            origin.parent, "clone", "--depth", "2", f"file://{origin}", f"shallow-{origin.name}"
+        )
+        shallow = origin.parent / f"shallow-{origin.name}"
+        head = self.git(shallow, "rev-parse", "HEAD").stdout.strip()
+        executable_directory = shallow / "bin"
+        executable_directory.mkdir()
+        inspected_messages = shallow / "messages.txt"
+        self._write_pre_commit_recorder(executable_directory / "pre-commit", inspected_messages)
+
+        # Act
+        result = self.run_hook(
+            "check-commit-messages.sh",
+            shallow,
+            environment={
+                "PATH": f"{executable_directory}:/usr/bin:/bin",
+                "QUALITY_DIFF_BASE": base_commit,
+                "QUALITY_DIFF_HEAD": head,
+                "QUALITY_DIFF_REMOTE_NAME": "origin",
+            },
+        )
+
+        # Assert
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertIn("shallow", result.stderr)
+
     def test_quality_range_cannot_borrow_one_pre_commit_endpoint(self) -> None:
         # Arrange
         repository = self.temporary_repository()

@@ -38,6 +38,17 @@ git rev-parse --verify --quiet "$head^{commit}" >/dev/null || {
 	exit 2
 }
 
+# A shallow clone cannot answer "what does this range add": the endpoints resolve,
+# but the ancestry behind them does not, so `base..head` excludes nothing and walks
+# back to the repository's first commit. That reads as a pre-Conventional-Commits
+# message rather than as the truncated graph it is (docs/adr/0019 fails closed).
+if [ -n "$base" ] && [ "$base" != "$zero" ] &&
+	[ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+	printf 'Refusing a commit-message range in a shallow repository: %s\n' \
+		'unshallow it before validating, or the range reaches history it cannot see' >&2
+	exit 2
+fi
+
 if [ -z "$base" ]; then
 	commits=$(git rev-list --max-count=1 "$head")
 elif [ "$base" = "$zero" ]; then
