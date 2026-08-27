@@ -77,6 +77,9 @@ fi
 printf 'commit-message range: base=%s head=%s remote=%s commits=%s\n' \
 	"${base:-<unset>}" "${head:-<unset>}" "${remote:-<unset>}" \
 	"$(printf '%s\n' "$commits" | grep -c .)" >&2
+printf 'commit-message graph: shallow=%s toplevel=%s base_ancestors=%s head_ancestors=%s\n' \
+	"$(git rev-parse --is-shallow-repository 2>&1)" "$(git rev-parse --show-toplevel 2>&1)" \
+	"$(git rev-list --count "$base" 2>&1)" "$(git rev-list --count "$head" 2>&1)" >&2
 
 message_dir=$(mktemp -d "${TMPDIR:-/tmp}/aerial-rescue-messages.XXXXXX")
 trap 'rm -rf "$message_dir"' 0 1 2 15
