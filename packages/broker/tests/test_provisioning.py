@@ -318,6 +318,22 @@ def _state_refusal_of(
     raise AssertionError(message)
 
 
+class NotFoundObjectBroker(FakeBroker):
+    """Refuse a GET of an absent object the way the pinned broker does: HTTP 400, code 6.
+
+    ``FakeBroker`` answers such a read with an empty tuple, which the live broker never
+    does; a provisioner that relies on the empty tuple passes offline and fails on the
+    first real broker whose retired identity is already gone.
+    """
+
+    @override
+    def send(self, request: Request) -> tuple[Mapping[str, object], ...]:
+        if request.method is Method.GET and request.path not in self.objects:
+            self.issued.append(request)
+            raise SempError(SempFailure.STATUS, f"{request.path} status=400 code=6")
+        return super().send(request)
+
+
 class DesiredStateTests(unittest.TestCase):
     def test_profiles_are_total_but_the_unused_discovery_username_is_omitted(self) -> None:
         # Arrange
@@ -940,6 +956,20 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(ProvisioningRefusal.MALFORMED_READBACK, captured.value.refusal)
         self.assertIn(path, broker.objects)
         self.assertNotIn(Request(Method.DELETE, path, {}), broker.issued)
+
+    def test_an_absent_retired_scenario_identity_is_not_a_refusal_when_the_broker_answers_not_found(
+        self,
+    ) -> None:
+        # Arrange
+        broker = NotFoundObjectBroker()
+        retired = f"msgVpns/{VPN}/clientUsernames/{RETIRED_SCENARIO_IDENTITY}"
+
+        # Act
+        apply(broker, _desired_state())
+
+        # Assert
+        self.assertNotIn(retired, broker.objects)
+        self.assertNotIn(Request(Method.DELETE, retired, {}), broker.issued)
 
     def test_every_profile_is_written_deny_by_default_in_all_three_directions(self) -> None:
         # Arrange

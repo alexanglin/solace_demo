@@ -958,17 +958,26 @@ def _write_verified(transport: SempTransport, request: Request) -> None:
     _verify_readback(transport, request)
 
 
-def _client_username_inventory(transport: SempTransport, vpn: str) -> frozenset[str]:
-    """Return exact client-username identities, refusing malformed or duplicate rows."""
-    path = f"msgVpns/{vpn}/clientUsernames"
+def _inventory(transport: SempTransport, path: str, member: str) -> frozenset[str]:
+    """Return one collection's exact identities, refusing malformed or duplicate rows.
+
+    A collection read is the only way to ask the broker whether an object exists: a ``GET``
+    of an absent object is refused with HTTP 400 rather than answered with an empty page,
+    and the live broker proved that on the first run whose retired identity was already gone.
+    """
     rows = transport.read_all(path)
-    names = tuple(row.get("clientUsername") for row in rows)
+    names = tuple(row.get(member) for row in rows)
     if not all(isinstance(name, str) for name in names):
         raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, path)
     inventory = frozenset(name for name in names if isinstance(name, str))
     if len(inventory) != len(names):
         raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, path)
     return inventory
+
+
+def _client_username_inventory(transport: SempTransport, vpn: str) -> frozenset[str]:
+    """Return exact client-username identities, refusing malformed or duplicate rows."""
+    return _inventory(transport, f"msgVpns/{vpn}/clientUsernames", "clientUsername")
 
 
 def _remove_discovery_username(transport: SempTransport, vpn: str) -> None:
@@ -984,28 +993,28 @@ def _remove_discovery_username(transport: SempTransport, vpn: str) -> None:
 
 
 def _refuse_retired_scenario_identity(transport: SempTransport, vpn: str) -> None:
-    """Refuse apply when ADR-0158's old identity remains; this path never mutates it."""
+    """Refuse apply when ADR-0158's old identity remains; this path never mutates it.
+
+    Presence is decided from each collection's inventory and only a present object is read
+    back exactly, because the broker refuses a ``GET`` of an absent object outright.
+    """
     name = RETIRED_SCENARIO_IDENTITY
     objects = (
         (
-            f"msgVpns/{vpn}/clientUsernames/{name}",
-            {
-                "clientUsername": name,
-                "aclProfileName": name,
-                "clientProfileName": name,
-            },
+            f"msgVpns/{vpn}/clientUsernames",
+            "clientUsername",
+            {"clientUsername": name, "aclProfileName": name, "clientProfileName": name},
         ),
-        (f"msgVpns/{vpn}/aclProfiles/{name}", {"aclProfileName": name}),
-        (f"msgVpns/{vpn}/clientProfiles/{name}", {"clientProfileName": name}),
+        (f"msgVpns/{vpn}/aclProfiles", "aclProfileName", {"aclProfileName": name}),
+        (f"msgVpns/{vpn}/clientProfiles", "clientProfileName", {"clientProfileName": name}),
     )
     present: list[str] = []
-    for path, expected in objects:
-        rows = transport.send(Request(Method.GET, path, {}))
-        if not rows:
+    for collection, member, expected in objects:
+        if name not in _inventory(transport, collection, member):
             continue
-        if len(rows) != 1 or any(
-            rows[0].get(member) != value for member, value in expected.items()
-        ):
+        path = f"{collection}/{name}"
+        rows = transport.send(Request(Method.GET, path, {}))
+        if len(rows) != 1 or any(rows[0].get(key) != value for key, value in expected.items()):
             raise ProvisioningError(ProvisioningRefusal.MALFORMED_READBACK, path)
         present.append(path)
     if present:
