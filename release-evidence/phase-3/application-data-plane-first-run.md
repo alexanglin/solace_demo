@@ -231,8 +231,9 @@ Run 8 is the first to consume an operator approval and stage the `escalate-rescu
 first to reach the ADR-0186 handshake: the controller received the token, ran
 `docker compose restart --no-deps broker`, then `up --detach --wait --wait-timeout 30 broker`, which
 **recreated** the container because the merged Compose file differs from the pre-merge container's
-definition (`stop_grace_period: 20m`, same image digest), and reported healthy inside its 30 s
-bound at 21:28:36. The named volume `broker-storage` kept `/var/lib/solace`: 91 queues, 11 client
+definition by `stop_grace_period: 20m` and three broker environment entries
+(`logging_event_output: all`, `logging_event_messageformat: json`, `logging_maxjsonmessagesize:
+"8192"`), with the same image digest, and reported healthy inside its 30 s bound at 21:28:36. The named volume `broker-storage` kept `/var/lib/solace`: 91 queues, 11 client
 profiles, and 11 ACL profiles read back unchanged. The broker now runs under the merged Compose
 definition. The reconnection observation the restart exists to prove was not reached.
 
@@ -243,23 +244,55 @@ the fleet command and reached `_restart_broker_once`. The controller received th
 the broker, and saw it healthy; the test had already given up: its one deadline of
 `RECOVERY_POLLS × RECOVERY_POLL_SECONDS` = 30 s covers the request, the restart, and the reconnection
 together, and is the "readiness restored within 30 seconds" row of
-[operating-parameters.md](../../docs/operating-parameters.md#service-level-targets). Measured from
-the container state: the previous process finished at 01:35:14.68 UTC, the new one started at
-01:35:15.00, and the first healthy probe landed at 01:36:25.44 — 70 s from restart to healthy. In run 8
-the same controller path (which then recreated the container) reached healthy in about 25 s. The
-controller's own bounds are 30 s each for the restart and the healthy wait (ADR-0186), so a restart
+[operating-parameters.md](../../docs/operating-parameters.md#workload-and-service-level-profile).
+Measured from the container state and the broker log: shutdown was initiated at 01:35:00.26 UTC, the
+previous process finished at 01:35:14.68 (a 14 s graceful stop), the new one started at 01:35:15.00 and
+was first probed healthy at about 01:35:35 — 20 s of boot, about 35 s from token to healthy. (This
+record first gave 01:36:25.44 and "70 s"; that was the oldest of the five health-log entries Docker
+retains, read a minute later, not the first healthy probe.) Run 8's recreate path reached healthy in
+about 25 s. The controller's own bounds are 30 s each for the restart and the healthy wait (ADR-0186), so a restart
 that fits the controller can still exceed the probe's window; when the probe stops reading, the
 controller's result write finds no reader and reports `FAILED: the broker restart result could not
 be delivered` after its own 30 s. Whether this Docker Desktop virtual machine can ever meet the 30 s
 service-level row is a finding for a human, not something to widen in the probe.
 
-Run 10 (21:40) repeated the step on an idle machine: the token went out at about 21:40:10, the
-previous broker process finished at 01:40:19.75 UTC after its graceful stop, the new one started at
-01:40:20.10 and was first probed healthy at 01:40:40.31 — 20 s of boot after 9 s of stop — and the
-probe's 30 s deadline expired as the controller turned to write its result, which then found no reader.
-Two consecutive restarts therefore landed at or beyond the window with nothing else running. Every
-step before the restart is now proven live at `ec76eff`: salient event, three normalized and published
-proposals, three corroborated decisions, an expired, a mismatched, a duplicate, and an exact approval
-with the audited reasons, one staged `escalate-rescue` command, and its receipt by the fleet identity.
-What remains unverified is only what the restart exists to prove: degraded readiness, Guaranteed
-spooling across the outage, rebind, drain, and readiness recovery.
+Run 10 (21:40) repeated the step on an idle machine: the token went out at about 21:40:05 (the broker
+logged `SYSTEM_SYSTEM_SHUTDOWN_INITIATED` at 01:40:05.34 UTC and all five sessions lost their
+connection), the previous process finished at 01:40:19.75 after a 14 s graceful stop, the new one
+started at 01:40:20.10, enabled its listen ports at 01:40:39.76, and was first probed healthy at
+01:40:40.31 — 20 s of boot after 14 s of stop, about 35 s from token to healthy — and the probe's 30 s
+deadline expired about five seconds before the ports came up. Two consecutive restarts therefore
+landed beyond the window with nothing else running. Every step before the restart is proven live at
+`ec76eff`: salient event, three normalized and published proposals, three corroborated decisions, an
+expired, a mismatched, a duplicate, and an exact approval with the audited reasons
+(`expired-before-gateway-binding`, `approval-expired`, `persisted-binding-mismatch`,
+`approval-expired`), and one staged, broker-confirmed `escalate-rescue` command. The fleet's receipt of
+that command comes after the restart in the probe; run 8 alone reached it, after that run's restart
+succeeded, and stopped at the typed-member check.
+
+## Runs eleven to thirteen, 2026-08-28 07:38–07:50, and the reconnection budget
+
+With the result window widened to 120 s (`ea981f3`, human-approved) and the post-restart gateway
+recovery routed through the bounded drain (`2d9094e`), runs 11 and 12 received the controller's
+result within the window and then stopped at `live application graph did not complete durable
+recovery`. Run 13 ran with a session-only pytest plugin that wraps the probe's recovery calls and
+prints their results (the probe itself unchanged; the plugin lives in the session scratchpad):
+
+```text
+DIAG _observe_reconnection -> False
+DIAG _restart_broker_once -> (True, False)
+DIAG lifecycles before recovery: ['EXHAUSTED', 'EXHAUSTED', 'EXHAUSTED', 'EXHAUSTED']
+DIAG recover_gateway -> False   (three attempts)
+DIAG recover_evidence -> True
+DIAG drain_recovery -> RecoveryReport(visited=0, confirmed=0, refused=0, ambiguous=0, ready=False)
+```
+
+Every application session degraded on the stop (the first member is true) and none reconnected: the
+SDK's active-session budget is 30 reconnection attempts 1 000 ms apart (ADR-0145 rows in
+[operating-parameters.md](../../docs/operating-parameters.md#pubsub-client-profiles)), and while the
+broker's ports are closed each attempt is refused at once, so the budget is spent in about 30 s. On
+this host a restart takes about 14 s of graceful stop and 20 s of boot before the ports open, so the
+sessions are `EXHAUSTED` roughly five seconds before the broker is back. Whether the budget should
+cover a broker restart on the reference host is a parameter decision under ADR-0145 for a human.
+Nothing after the restart — Guaranteed spooling across the outage, rebind, drain, and readiness
+recovery — can be observed until it is made.
