@@ -26,6 +26,18 @@ class DecodingTests(unittest.TestCase):
             canonical.canonical_bytes(value),
         )
 
+    def test_a_document_nested_beyond_the_parser_is_refused_as_malformed_text(self) -> None:
+        # Arrange
+        depth = 100_000
+        text = "[" * depth + "]" * depth
+
+        # Act
+        with pytest.raises(canonical.CanonicalizationError) as refused:
+            canonical.decode(text)
+
+        # Assert
+        self.assertIs(canonical.Refusal.MALFORMED_TEXT, refused.value.refusal)
+
     def test_utf8_bytes_are_accepted_as_well_as_text(self) -> None:
         # Arrange
         text = b'{"missionId":"m1"}'
