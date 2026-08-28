@@ -272,27 +272,36 @@ succeeded, and stopped at the typed-member check.
 
 ## Runs eleven to thirteen, 2026-08-28 07:38–07:50, and the reconnection budget
 
-With the result window widened to 120 s (`ea981f3`, human-approved) and the post-restart gateway
-recovery routed through the bounded drain (`2d9094e`), runs 11 and 12 received the controller's
-result within the window and then stopped at `live application graph did not complete durable
-recovery`. Run 13 ran with a session-only pytest plugin that wraps the probe's recovery calls and
-prints their results (the probe itself unchanged; the plugin lives in the session scratchpad):
+With the result window widened to 120 s (`ea981f3`, human-approved), run 11 (07:38) received the
+controller's result within the window (controller exit 07:38:50) and stopped at `live application
+graph did not complete durable recovery`; after the post-restart gateway recovery was routed through
+the bounded drain (`2d9094e`), run 12 (07:43) received the result likewise (controller exit
+07:43:52) and stopped at the same check. Run 13 (07:48, 3 errors in 69 s) ran the committed probe with a session-only pytest plugin in the
+session scratchpad that rebinds the probe's module-level recovery names at `pytest_configure` and
+prints each result; nothing on disk changed. The plugin printed 24 lines in all: before the restart,
+the initial recovery saw four `CONNECTED` lifecycles and every recovery ready, and the bounded
+gateway drains during the proposal and approval phases alternated false and true. The lines after
+`_restart_broker_once` were:
 
 ```text
 DIAG _observe_reconnection -> False
 DIAG _restart_broker_once -> (True, False)
 DIAG lifecycles before recovery: ['EXHAUSTED', 'EXHAUSTED', 'EXHAUSTED', 'EXHAUSTED']
-DIAG recover_gateway -> False   (three attempts)
+DIAG recover_gateway -> False   (the three bounded _drain_gateway attempts)
 DIAG recover_evidence -> True
 DIAG drain_recovery -> RecoveryReport(visited=0, confirmed=0, refused=0, ambiguous=0, ready=False)
 ```
 
 Every application session degraded on the stop (the first member is true) and none reconnected: the
-SDK's active-session budget is 30 reconnection attempts 1 000 ms apart (ADR-0145 rows in
-[operating-parameters.md](../../docs/operating-parameters.md#pubsub-client-profiles)), and while the
-broker's ports are closed each attempt is refused at once, so the budget is spent in about 30 s. On
-this host a restart takes about 14 s of graceful stop and 20 s of boot before the ports open, so the
-sessions are `EXHAUSTED` roughly five seconds before the broker is back. Whether the budget should
+SDK's active-session budget was 30 reconnection attempts 1 000 ms apart (`RECONNECTION_ATTEMPTS`
+in `packages/broker/src/aerial_rescue_broker/messaging.py` before `8fab348`; the ADR-0145 rows in the
+broker data-plane table of
+[operating-parameters.md](../../docs/operating-parameters.md#broker-data-plane)). Measured in run
+13's captured log: the sessions lost the broker at 07:48:21.15 and their thirtieth attempt failed at
+07:48:59.1–59.2, 38 s later — through Docker Desktop's published-port proxy each attempt is accepted
+and then fails in the TLS handshake, so an attempt averages about 1.27 s — while the controller
+reported the broker healthy at 07:49:04. The sessions are `EXHAUSTED` a few seconds before the broker
+is back. Whether the budget should
 cover a broker restart on the reference host is a parameter decision under ADR-0145 for a human.
 Nothing after the restart — Guaranteed spooling across the outage, rebind, drain, and readiness
 recovery — can be observed until it is made.
@@ -300,7 +309,9 @@ recovery — can be observed until it is made.
 ## Runs fourteen to sixteen, 2026-08-28 08:19–09:0x, past the restart
 
 With the reconnection budget raised to 60 attempts (ADR-0192, `8fab348`), run 14 (08:19) was the
-first in which every session survived the restart: the controller reported healthy at 08:20:26 and
+first run on the `docker compose restart` path (about 35 s from token to healthy) in which every
+session survived; run 8's sessions had survived that run's shorter recreate-path outage (about 28 s)
+inside the earlier 30-attempt budget before stopping at the fleet's typed-member check. In run 14 the controller reported healthy at 08:20:26 and
 the probe observed reconnection, drained the gateway, evidence service, and fleet, received the
 `escalate-rescue` command on the fleet identity, and stopped in the recorder's drain on
 `value too long for type character varying(32)`: `audit_record.kind` had been sized for one KIND level
@@ -331,10 +342,15 @@ dropped its disposable database on success.
 ## Final external state after run 17
 
 Broker (VPN `default`): the ADR-0191 profiles applied; 91 durable queues; the recreated container runs
-the merged Compose definition and the reconnection budget of ADR-0192 applies to every application
-session; no application connections. The dead-message queues still hold the expired residue of the
+the merged Compose definition. The 60-attempt reconnection budget of ADR-0192 applies to every
+session built through `aerial_rescue_broker.messaging` — the five application services and this
+probe's identities — and not to the Agent Mesh Connector sessions, which
+`agent-mesh/aerial_rescue_runtime_compat/messaging.py` still builds with ADR-0177's 30 attempts;
+that container was stopped throughout this record. No application connections. The dead-message queues still hold the expired residue of the
 earlier attempts, and the primary queues drain to zero within the 300 s TTL. The pre-merge
 `agent-mesh` container remains stopped. PostgreSQL: the disposable databases of the failed attempts
 remain (one per failed attempt whose close raised); they hold no secret and can be dropped when a human
-authorizes it. The shared `aerial_rescue` database is still at revision 0010 until Increment 0.3
-applies 0011.
+authorizes it. The shared `aerial_rescue` database is still at revision `0005_dashboard_runtime`, where the
+pre-merge `migration` container left it on 2026-08-26: no run in this record touches it, because the
+probe creates and migrates its own disposable database to head (0010 through run 14, 0011 from run
+15). Increment 0.3 must apply 0006–0011 to it; its `audit_record.kind` is still 32 characters wide.
