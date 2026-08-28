@@ -50,7 +50,7 @@ its own Python 3.13 runtime; never execute this directory from `agent-mesh/.venv
 | `test_first_live_stack.py` | `phase0`, `docker`, `broker` | Live hostname-validated TLS handshakes to the two tested loopback endpoints and TCP acceptance on the tested PostgreSQL endpoint |
 | `test_agent_mesh_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live Web UI card-set, A2A discovery-topic, and workflow-to-agent-request-topic observations |
 | `test_event_mesh_gateway_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live salient-event publication through the Event Mesh Gateway, one observed A2A request topic, one observed application agent-response topic, and finite-window malformed-input silence |
-| `test_salient_chain_live.py` | `phase0`, `docker`, `broker`, `ollama` | The demo's causal chain against a running mission: one A2A delivery counted over SEMP, and the normalised proposal and its evidence decision read from the shared store |
+| `test_salient_chain_live.py` | `phase0`, `docker`, `broker`, `ollama` | The demo's causal chain against a running mission, from one publication: the stored provenance, one A2A delivery counted over SEMP, and the normalised proposal and its evidence decision read from the shared store |
 | `test_event_mesh_tool_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live reserved-channel request/reply, closed-operation refusal, model-to-tool request observation, post-reply command-topic silence, and a forbidden response-topic receiver construction that raises a vendor client error |
 
 `phase0` and `compatibility` classify evidence; they do not exclude a test from blocking stages. The
@@ -102,7 +102,10 @@ The current prerequisite boundaries are deliberately not interchangeable:
   `services` profile's command gateway and evidence service, the shared PostgreSQL database the services
   write to, and `AERIAL_RESCUE_DEMO_MISSION_ID` naming a mission the operator has started (it fails, never
   skips, without one). It publishes as `fleet-simulator`, whose one connection the deployed fleet holds
-  under ADR-0168, so that container must be stopped for the run and started again afterwards.
+  under ADR-0168, so that container must be stopped for the run and started again afterwards. It is one
+  case carrying four assertions rather than four cases, because the Event Mesh Gateway acknowledges on
+  completion at QoS 1: a second publication queues behind the first and would measure the first case's
+  model turn instead of its own.
 - `test_event_mesh_tool_live.py` needs provisioning **before** the Agent Mesh container is recreated so
   the reserved reply-channel ACL is present when the tool binds. It also needs the tool configuration,
   host Ollama for the model case, and the root-environment command gateway running on the host under its

@@ -329,11 +329,14 @@ carries only the values.
 | Coordinator model calls per task | 4, bounding a non-converging agent inside the gateway's acknowledgment window | `max_llm_calls_per_task` in `agent-mesh/configs/mission-coordinator.yaml`; the framework's default is 20 ([ADR-0198](adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md)) |
 | Agent request timeout | 60 s per A2A request | `inter_agent_communication.request_timeout_seconds` in each agent configuration |
 | Event Mesh Gateway acknowledgement timeout | 180 s, the window a handler has to complete before the gateway settles the message | `acknowledgment_policy.timeout_seconds` in `agent-mesh/configs/event-mesh-gateway.yaml`; a test asserts the committed value |
+| Salient-chain probe response window | 300 s, shared by the provenance row, the normalised proposal, and its evidence decision after one published salient event | `RESPONSE_WINDOW_SECONDS` in `tests/phase0/test_salient_chain_live.py` |
 | Entrypoint thread settle bound | 15 s, how long the owned entrypoint waits for surviving nondaemon threads before it forces the process to stop with the status the lifecycle chose | `THREAD_SETTLE_SECONDS` in `agent-mesh/aerial_rescue_runtime_compat/lifecycle.py`, asserted by an offline test ([ADR-0199](adr/0199-terminate-the-owned-agent-mesh-entrypoint.md)) |
 
 The entrypoint thread settle bound is a judgement, not a measurement, and the row it protects is the process exit status rather than a duration. It sits well above the pinned Connector's own bounded joins (0.1 s per flow thread, 1.0 s per component and trace thread) and well below the `agent-mesh` healthcheck's failure window, so an interpreter that has not settled inside it is stuck rather than slow. A forced exit during an ordinary SIGTERM shutdown is evidence that this bound is wrong.
 
 The gateway acknowledgement timeout is derived from the row above it rather than measured: a salient event reaches the workflow, whose node delegates to a peer agent, so two 60 s agent requests can run in series, and 60 s of margin covers a cold model load. It settles on completion and nacks with outcome `rejected` on failure, which [CONTRACTS.md](CONTRACTS.md) fixes and the configuration validator enforces. It is not a safety parameter: losing the window costs an agent's opinion, never a command ([ADR-0071](adr/0071-accept-the-event-mesh-gateway-temporary-data-plane-queue.md)).
+
+The salient-chain probe's response window is derived from the acknowledgement timeout in turn. 180 s is the longest a task can run before the gateway settles its message, and the command gateway's normalisation and the evidence service's decision follow that; 300 s covers the chain with margin for both hops, and a probe waiting past it would only be watching for a task the gateway has already nacked.
 
 ## Durable application processing
 

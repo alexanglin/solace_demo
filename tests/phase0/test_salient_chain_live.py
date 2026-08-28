@@ -1,7 +1,7 @@
 """The demo's causal chain, live: one salient event → one A2A task → one proposal → evidence.
 
-Each case publishes one contract-built salient ``DRONE_EVENT`` as the fleet simulator and reads the
-consequence from an oracle that needs no broker identity of its own: the running stack already holds
+The case publishes one contract-built salient ``DRONE_EVENT`` as the fleet simulator and reads every
+consequence from oracles that need no broker identity of their own: the running stack already holds
 every one-connection identity at its ADR-0168 ceiling, so a second observer under ``recorder`` or
 ``agent-mesh-agent`` is refused before it can subscribe. The request hop is read from the
 coordinator's A2A queue counter over the administrator's SEMP monitor plane; the normalised
@@ -13,8 +13,13 @@ What a green run establishes, and no more: the Event Mesh Gateway delivered one 
 coordinator's A2A queue; the command gateway normalised the coordinator's answer into one
 ``candidate-location`` proposal bound to the published source event and digest; and the evidence
 service scored that proposal ``contributing`` at 75 (``corroborated``). An abstaining model leaves
-no proposal, which the second case reports by name; nothing here proves the dashboard rendered
+no proposal, which the assertions report by name; nothing here proves the dashboard rendered
 anything.
+
+One publication carries the whole chain deliberately. The Event Mesh Gateway acknowledges on
+completion at QoS 1, so concurrent publications queue behind one another and a second case would
+measure the first case's model turn. Reading the A2A counter before the publish and every stored
+consequence after it keeps the causal claim exact while costing one model turn.
 
 Markers keep these out of every blocking suite: they need Docker, the broker, the ``services``
 profile (command gateway and evidence service), PostgreSQL, and Ollama.
@@ -29,6 +34,7 @@ import time
 import unittest
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
 
@@ -72,15 +78,18 @@ A2A_QUEUE_MARKER: Final = "/a2a/"
 # The same two windows the gateway probe already found sufficient: the request needs no model;
 # the proposal and the decision wait for a cold local model plus two service hops.
 REQUEST_WINDOW_SECONDS: Final = 60
-# The coordinator answers a structured request in one model turn, but the local model on a
-# loaded workstation has been observed taking two minutes per turn; this window covers several
-# turns plus the two service hops that follow, and a failure at its end is a real absence.
-RESPONSE_WINDOW_SECONDS: Final = 900
+# Derived from the gateway's own acknowledgement window rather than from a model's patience:
+# a task the gateway has already settled cannot become a proposal, so waiting past that window
+# plus the command-gateway and evidence-service hops measures nothing; the row that owns this
+# number lives in docs/operating-parameters.md.
+RESPONSE_WINDOW_SECONDS: Final = 300
 POLL_INTERVAL_SECONDS: Final = 1.0
 SOURCE_DIGEST_PROPERTY: Final = "aerial-rescue-source-event-digest"
 CORROBORATED_SCORE: Final = 75
 EXPECTED_BAND: Final = "corroborated"
 EXPECTED_OUTCOME: Final = "contributing"
+
+_Row = Mapping[str, object] | None
 
 _SOURCE_EVENT_QUERY: Final = text(
     "select source, canonical_digest from source_event "
@@ -114,7 +123,17 @@ def _traceparent() -> str:
     return f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01"
 
 
-def _salient_event(mission: str) -> tuple[str, bytes, str, Envelope]:
+@dataclass(frozen=True)
+class _SalientEvent:
+    """One accepted salient event: where it goes, what it carries, and how it is bound."""
+
+    topic: str
+    payload: bytes
+    digest: str
+    envelope: Envelope
+
+
+def _salient_event(mission: str) -> _SalientEvent:
     """Return one accepted salient event, its canonical bytes, its digest, and the envelope."""
     topic = Topic(Family.DRONE_EVENT, mission, {"droneId": DRONE, "eventType": EVENT_TYPE})
     declared = event_type(topic)
@@ -143,7 +162,7 @@ def _salient_event(mission: str) -> tuple[str, bytes, str, Envelope]:
     except ValueError as refusal:
         message = f"the contract refused the event this test publishes: {refusal}"
         raise _UnpublishableEventError(message) from refusal
-    return (
+    return _SalientEvent(
         format_topic(topic),
         canonical.canonical_bytes(document),
         source_event_digest(envelope),
@@ -228,43 +247,37 @@ async def _await_row(
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
-async def _stored_source_event(
-    mission: str, event_id: str, seconds: int
-) -> Mapping[str, object] | None:
-    """Wait for the evidence service to persist the published event as its provenance."""
-    engine = _store_engine()
-    try:
-        return await _await_row(
-            seconds,
-            lambda: _one_row(engine, _SOURCE_EVENT_QUERY, {"mission": mission, "event": event_id}),
-        )
-    finally:
-        await engine.dispose()
+def _remaining(started: float, seconds: int) -> int:
+    """Return what is left of one shared window, never less than a single poll."""
+    return max(1, int(seconds - (time.monotonic() - started)))
 
 
-async def _proposal_then_decision(
+async def _stored_consequences(
     mission: str, event_id: str, seconds: int
-) -> tuple[Mapping[str, object] | None, Mapping[str, object] | None]:
-    """Wait for the normalised proposal and then for its evidence decision within one window."""
+) -> tuple[_Row, _Row, _Row]:
+    """Wait for the provenance, the normalised proposal, and its decision within one window."""
     engine = _store_engine()
     try:
         started = time.monotonic()
-        proposal = await _await_row(
+        source_event = await _await_row(
             seconds,
+            lambda: _one_row(engine, _SOURCE_EVENT_QUERY, {"mission": mission, "event": event_id}),
+        )
+        proposal = await _await_row(
+            _remaining(started, seconds),
             lambda: _one_row(engine, _PROPOSAL_QUERY, {"mission": mission, "event": event_id}),
         )
         if proposal is None:
-            return None, None
-        remaining = max(1, int(seconds - (time.monotonic() - started)))
+            return source_event, None, None
         decision = await _await_row(
-            remaining,
+            _remaining(started, seconds),
             lambda: _one_row(
                 engine,
                 _DECISION_QUERY,
                 {"mission": mission, "proposal": str(proposal["proposal_id"])},
             ),
         )
-        return proposal, decision
+        return source_event, proposal, decision
     finally:
         await engine.dispose()
 
@@ -279,87 +292,71 @@ def _wait_for_requests(before: int, seconds: int) -> int:
     return count
 
 
+@dataclass(frozen=True)
+class _ChainObservation:
+    """What one published salient event caused, read from the mesh and from the store."""
+
+    deliveries: int
+    source_event: _Row
+    proposal: _Row
+    decision: _Row
+
+
+def _run_chain(event: _SalientEvent, mission: str, before: int) -> _ChainObservation:
+    """Publish one salient event and wait for every consequence the demo claims follows it."""
+    _publish(event.topic, event.payload, event.digest)
+    deliveries = _wait_for_requests(before, REQUEST_WINDOW_SECONDS)
+    source_event, proposal, decision = asyncio.run(
+        _stored_consequences(mission, event.envelope.id, RESPONSE_WINDOW_SECONDS)
+    )
+    return _ChainObservation(deliveries, source_event, proposal, decision)
+
+
 class SalientChainTests(unittest.TestCase):
-    def test_the_published_event_is_persisted_as_the_evidence_service_s_provenance(self) -> None:
+    def test_one_salient_event_becomes_a_corroborated_candidate_location(self) -> None:
         # Arrange
         mission = _mission_id()
-        topic, payload, digest, envelope = _salient_event(mission)
-
-        # Act
-        _publish(topic, payload, digest)
-        stored = asyncio.run(_stored_source_event(mission, envelope.id, REQUEST_WINDOW_SECONDS))
-
-        # Assert
-        self.assertIsNotNone(
-            stored,
-            "the evidence service stored no source event: the publication was refused before it "
-            "could become provenance, so nothing downstream can be scored",
-        )
-        assert stored is not None
-        self.assertEqual(f"urn:aerial-rescue:drone:{DRONE}", stored["source"])
-
-    def test_the_salient_event_becomes_one_a2a_task_for_the_mission_coordinator(self) -> None:
-        # Arrange
-        topic, payload, digest, _envelope = _salient_event(_mission_id())
+        event = _salient_event(mission)
         before = _a2a_deliveries()
 
         # Act
-        _publish(topic, payload, digest)
-        after = _wait_for_requests(before, REQUEST_WINDOW_SECONDS)
-
-        # Assert
-        self.assertGreater(
-            after,
-            before,
-            "the mesh's A2A queues spooled nothing, so the salient event became no task",
-        )
-
-    def test_the_coordinator_s_answer_becomes_one_proposal_bound_to_the_source_event(self) -> None:
-        # Arrange
-        mission = _mission_id()
-        topic, payload, digest, envelope = _salient_event(mission)
-
-        # Act
-        _publish(topic, payload, digest)
-        proposal, _decision = asyncio.run(
-            _proposal_then_decision(mission, envelope.id, RESPONSE_WINDOW_SECONDS)
-        )
+        observed = _run_chain(event, mission, before)
 
         # Assert
         self.assertIsNotNone(
-            proposal,
+            observed.source_event,
+            "the evidence service stored no source event: the publication was refused before it "
+            "could become provenance, so nothing downstream can be scored",
+        )
+        self.assertGreater(
+            observed.deliveries,
+            before,
+            "the mesh's A2A queues spooled nothing, so the salient event became no task",
+        )
+        self.assertIsNotNone(
+            observed.proposal,
             "no proposal was normalised within the window: the coordinator abstained, the owned "
             "gateway published no candidate, or the command gateway refused it",
         )
-        assert proposal is not None
+        self.assertIsNotNone(
+            observed.decision, "the evidence service published no decision in the window"
+        )
+        assert observed.source_event is not None
+        assert observed.proposal is not None
+        assert observed.decision is not None
+        self.assertEqual(f"urn:aerial-rescue:drone:{DRONE}", observed.source_event["source"])
         self.assertEqual(
-            (TARGET_AGENT, PROPOSAL_TYPE, digest, DRONE),
+            (TARGET_AGENT, PROPOSAL_TYPE, event.digest, DRONE),
             (
-                proposal["agent_name"],
-                proposal["proposal_type"],
-                proposal["source_event_digest"],
-                proposal["drone_id"],
+                observed.proposal["agent_name"],
+                observed.proposal["proposal_type"],
+                observed.proposal["source_event_digest"],
+                observed.proposal["drone_id"],
             ),
         )
-
-    def test_a_candidate_proposal_earns_a_corroborated_evidence_decision(self) -> None:
-        # Arrange
-        mission = _mission_id()
-        topic, payload, digest, envelope = _salient_event(mission)
-
-        # Act
-        _publish(topic, payload, digest)
-        proposal, decision = asyncio.run(
-            _proposal_then_decision(mission, envelope.id, RESPONSE_WINDOW_SECONDS)
-        )
-
-        # Assert
-        self.assertIsNotNone(proposal, "no proposal was normalised, so nothing could be scored")
-        self.assertIsNotNone(decision, "the evidence service published no decision in the window")
-        assert decision is not None
         self.assertEqual(
             (EXPECTED_OUTCOME, CORROBORATED_SCORE, EXPECTED_BAND),
-            (decision["outcome"], decision["score"], decision["band"]),
+            (observed.decision["outcome"], observed.decision["score"], observed.decision["band"]),
         )
 
 
