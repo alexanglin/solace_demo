@@ -41,7 +41,7 @@ ADR governs if a test, old evidence record, implementation, or this guide disagr
 
 ## 2. Five different proof boundaries
 
-All five modules execute in the root Python 3.14 environment. The Agent Mesh container under test has
+All six modules execute in the root Python 3.14 environment. The Agent Mesh container under test has
 its own Python 3.13 runtime; never execute this directory from `agent-mesh/.venv`.
 
 | File | Current markers | Bounded responsibility |
@@ -50,6 +50,7 @@ its own Python 3.13 runtime; never execute this directory from `agent-mesh/.venv
 | `test_first_live_stack.py` | `phase0`, `docker`, `broker` | Live hostname-validated TLS handshakes to the two tested loopback endpoints and TCP acceptance on the tested PostgreSQL endpoint |
 | `test_agent_mesh_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live Web UI card-set, A2A discovery-topic, and workflow-to-agent-request-topic observations |
 | `test_event_mesh_gateway_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live salient-event publication through the Event Mesh Gateway, one observed A2A request topic, one observed application agent-response topic, and finite-window malformed-input silence |
+| `test_salient_chain_live.py` | `phase0`, `docker`, `broker`, `ollama` | The demo's causal chain against a running mission: one A2A delivery counted over SEMP, and the normalised proposal and its evidence decision read from the shared store |
 | `test_event_mesh_tool_live.py` | `phase0`, `docker`, `broker`, `ollama` | Live reserved-channel request/reply, closed-operation refusal, model-to-tool request observation, post-reply command-topic silence, and a forbidden response-topic receiver construction that raises a vendor client error |
 
 `phase0` and `compatibility` classify evidence; they do not exclude a test from blocking stages. The
@@ -97,6 +98,11 @@ The current prerequisite boundaries are deliberately not interchangeable:
   plus the provisioned identities used to publish the event and observe the A2A and response families.
   Its file-level `ollama` marker covers the response case even though event-to-request transformation is
   model-independent.
+- `test_salient_chain_live.py` needs the same live Agent Mesh boundary as the gateway file, plus the
+  `services` profile's command gateway and evidence service, the shared PostgreSQL database the services
+  write to, and `AERIAL_RESCUE_DEMO_MISSION_ID` naming a mission the operator has started (it fails, never
+  skips, without one). It publishes as `fleet-simulator`, whose one connection the deployed fleet holds
+  under ADR-0168, so that container must be stopped for the run and started again afterwards.
 - `test_event_mesh_tool_live.py` needs provisioning **before** the Agent Mesh container is recreated so
   the reserved reply-channel ACL is present when the tool binds. It also needs the tool configuration,
   host Ollama for the model case, and the root-environment command gateway running on the host under its
@@ -146,6 +152,7 @@ the approved TDD workflow before extending the helper.
 | First live stack | Successful validated handshakes to the tested SMF and SEMP endpoints and one TCP connection to the tested Postgres port | Absence of non-loopback exposure, container or image health, broker protocol behavior, database authentication, schema, transaction, or durability |
 | Agent Mesh | The exact card-name set returned by the current helper, at least one observed discovery card whose name belongs to that set, and an observed request on the MissionCoordinator topic after workflow submission | HTTP status or media-type conformance, every card publishing, payload correlation, an Ollama invocation or completion, final workflow output, model quality, structured output, or plugin settlement |
 | Event Mesh Gateway | Contract-built events were acknowledged by the publisher, one matching A2A request topic and one matching application agent-response topic were observed in separate cases, and malformed bytes produced no observed request during the bounded window | Exactly one task, causation or payload correctness, answer quality, settlement, redelivery, permanent refusal, or delivery while the temporary gateway queue is disconnected |
+| Salient chain | One rise in the mesh's cumulative A2A queue counters after the publish, and the proposal and evidence-decision rows the command gateway and evidence service committed for that exact source event | Which queue carried the task, what the model reasoned, that exactly one task or proposal was produced, that the dashboard rendered any of it, or anything about a mission other than the one named |
 | Event Mesh Tool | The received replies satisfy the asserted RPC fields, one unknown operation is refused by name, one gateway-request-family topic is observed after a model prompt, and receiver construction on one forbidden response topic raises a vendor client error | Reply timeout or malformed-reply behavior, concurrency, restart, durable delivery, correlation or decoding of the model-triggered request, the precise vendor denial reason, or publication of the separate CloudEvent record |
 
 The non-actuation test starts its command-family observer only after `_ask()` has returned. Its decoded

@@ -58,7 +58,7 @@ The current suites have these deliberately different boundaries:
 | `contract/test_schema_identity.py` | Offline schema inventory, identity, reference, constant, binding, and contract-gate agreement |
 | `contract/test_golden_fixture_oracle.py` | Offline manifest polarity plus schema, Python, canonicalizer, topic, and refusal agreement |
 | `contract/test_command_vocabulary.py` | Offline agreement between command-result schema words, dispatch states, and the fleet-simulator publishing table |
-| [`phase0/`](phase0/AGENTS.md) | Offline native-client compatibility and explicitly authorized live stack, Agent Mesh, and Event Mesh feasibility probes |
+| [`phase0/`](phase0/AGENTS.md) | Offline native-client compatibility and explicitly authorized live stack, Agent Mesh, Event Mesh, and salient-chain feasibility probes |
 | [`integration/`](integration/AGENTS.md) | Explicitly authorized live fleet telemetry, guaranteed-delivery, command-dispatch, and backlog-recovery probes |
 | `security/test_broker_authorization.py` | Live positive and negative broker publish/connect controls plus one lifecycle subscription denial |
 
