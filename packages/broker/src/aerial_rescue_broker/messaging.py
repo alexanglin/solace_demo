@@ -234,9 +234,13 @@ DIRECT_INTEGRATION_RECEIVER_CAPACITY: Final = 50
 CONNECTION_ATTEMPTS_TIMEOUT_MILLISECONDS: Final = 1_000
 CONNECTION_RETRIES: Final = 2
 CONNECTION_RETRIES_PER_HOST: Final = 0
-RECONNECTION_ATTEMPTS: Final = 30
+RECONNECTION_ATTEMPTS: Final = 60
 RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS: Final = 1_000
-"""The complete bounded initial-connect and active-recovery policy from ADR-0145."""
+"""ADR-0145's bounded initial-connect and active-recovery policy, with ADR-0192's attempts.
+
+Sixty attempts one second apart outlast the reference host's broker restart (about 14 s of
+graceful stop and 20 s of boot before the listen ports open), which thirty did not.
+"""
 
 KEEP_ALIVE_INTERVAL_MILLISECONDS: Final = 3_000
 KEEP_ALIVE_WITHOUT_RESPONSE_LIMIT: Final = 3

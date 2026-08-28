@@ -1758,6 +1758,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The active reconnection budget is 60 attempts, up from 30.** A broker restart on the Apple Silicon
+  reference host is about 14 s of graceful stop plus 20 s of boot before the listen ports open, and
+  30 attempts 1 000 ms apart are refused at once while the ports are closed, so every application
+  session reached `EXHAUSTED` five seconds before the broker returned
+  ([ADR-0192](docs/adr/0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md)).
 - Dashboard snapshot/recorder control flow and repeated test arrangements are factored into focused
   helpers so the repository-wide cognitive-complexity and duplication authorities pass without changing
   production behavior, test identities, Acts, or assertions.

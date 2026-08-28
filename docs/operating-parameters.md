@@ -420,7 +420,7 @@ supersedable, and the endpoints that carry the guaranteed families are the secti
 | Connection-attempt timeout | 1,000 ms per attempt | exact Python SDK-property and composition tests; live connection-refusal timing remains part of shared-stack acceptance ([ADR-0145](adr/0145-bound-solace-recovery-and-queue-retirement.md)) |
 | Initial connection retries | 2 retries after the first attempt | exact Python SDK-property and composition tests; live exhaustion timing remains part of shared-stack acceptance (ADR-0145) |
 | Connection retries per host | 0 | exact Python SDK-property test; the standalone topology intentionally has one host (ADR-0145) |
-| Active-session reconnection attempts | 30 | exact Python SDK-property, lifecycle-listener, endpoint-termination, and service nonzero-exit tests; one live broker restart remains part of shared-stack acceptance (ADR-0145) |
+| Active-session reconnection attempts | 60 | exact Python SDK-property, lifecycle-listener, endpoint-termination, and service nonzero-exit tests; the ADR-0186 restart in the live data-plane probe proves the budget covers a reference-host restart ([ADR-0192](adr/0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md), which raised it from 30 after a measured 14 s stop plus 20 s boot exhausted the sessions) |
 | Wait between active reconnection attempts | 1,000 ms | exact Python SDK-property and lifecycle-state tests; live reconnect timing remains part of shared-stack acceptance (ADR-0145) |
 
 ### PubSub+ client profiles

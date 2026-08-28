@@ -163,7 +163,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0143](0143-let-durable-terminal-state-establish-reset-cancellation.md) | Let durable terminal state establish reset cancellation | Accepted |
 | [0144](0144-serialize-the-related-dashboard-test-hook.md) | Serialize the related dashboard test hook | Accepted |
 
-| [0145](0145-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Accepted |
+| [0145](0145-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Superseded in part by ADR-0192 |
 | [0146](0146-define-durable-application-processing.md) | Define durable application processing | Accepted |
 | [0147](0147-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
 | [0148](0148-close-the-application-data-plane-wire-documents.md) | Close the application data-plane wire documents | Accepted |
@@ -210,6 +210,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0189](0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md) | Reconcile the accepted dashboard runtime with the Solace application data plane | Accepted |
 | [0190](0190-count-active-queue-binds-through-transmit-flow-aggregates.md) | Count active queue binds through transmit-flow aggregates | Accepted |
 | [0191](0191-reserve-one-subscription-for-the-sdk-reply-inbox.md) | Reserve one subscription per session for the SDK reply inbox | Accepted |
+| [0192](0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md) | Cover a reference-host broker restart with the reconnection budget | Accepted |
 
 ## Decisions still open
 

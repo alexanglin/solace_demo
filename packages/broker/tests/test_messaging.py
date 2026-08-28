@@ -853,6 +853,16 @@ class ConnectionPropertyTests(unittest.TestCase):
             ),
         )
 
+    def test_the_active_reconnection_budget_covers_a_reference_host_broker_restart(self) -> None:
+        # Arrange
+        expected = (60, 1_000)
+
+        # Act
+        budget = (RECONNECTION_ATTEMPTS, RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS)
+
+        # Assert
+        self.assertEqual(expected, budget)
+
     def test_client_identity_description_and_keepalives_are_explicit_and_stable(self) -> None:
         # Arrange
         role = Principal.COMMAND_GATEWAY

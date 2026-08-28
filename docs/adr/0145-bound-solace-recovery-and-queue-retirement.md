@@ -1,6 +1,6 @@
 # ADR-0145: Bound Solace recovery and queue retirement
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0192
 - **Date:** 2026-08-25
 - **Deciders:** Alex Anglin
 - **Supersedes:** ADR-0080 only as to leaving stale queues undeleted; every other decision stands
