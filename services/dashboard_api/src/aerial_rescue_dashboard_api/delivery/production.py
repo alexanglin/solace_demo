@@ -243,6 +243,7 @@ def compose(configured: DashboardConfiguration) -> ProductionRuntime:
             resources=resources,
             mutations=solace.mutations,
             broker=solace.broker,
+            projection=solace.hub,
         ),
     )
     return ProductionRuntime(application, resources, configured.socket_path)

@@ -12,6 +12,7 @@ from typing import Final, Protocol, cast
 
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.digest import Context, digest
+from aerial_rescue_contracts.view import ReducerCheckpoint
 from fastapi import FastAPI, Path, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -59,7 +60,7 @@ from aerial_rescue_dashboard_api.ports import (
     ScenarioPort,
     StorePort,
 )
-from aerial_rescue_dashboard_api.snapshot import SnapshotService
+from aerial_rescue_dashboard_api.snapshot import SnapshotService, checkpoint_from_prepared_state
 from aerial_rescue_dashboard_api.stream import EventStreamer, native_last_event_id
 
 PUBLIC_BODY_BYTES: Final = 4 * 1024
@@ -155,6 +156,18 @@ class BrokerApplicationPort(Protocol):
         ...
 
 
+class ProjectionSeedPort(Protocol):
+    """The projection hub's atomic run replacement, the only seam the seed needs."""
+
+    async def replace_run(
+        self,
+        checkpoint: ReducerCheckpoint,
+        current_run: Mapping[str, object] | None,
+    ) -> None:
+        """Replace mission state and release every client of the prior run."""
+        ...
+
+
 @dataclass(frozen=True)
 class ApplicationPorts:
     """Every side-effecting dependency required by the dashboard application."""
@@ -167,6 +180,7 @@ class ApplicationPorts:
     resources: ResourcePort | None = None
     mutations: ApplicationMutationPort | None = None
     broker: BrokerApplicationPort | None = None
+    projection: ProjectionSeedPort | None = None
 
 
 @dataclass(frozen=True)
@@ -233,6 +247,7 @@ def create_app(settings: RuntimeSettings, ports: ApplicationPorts) -> FastAPI:
             ports.resources,
             broker=ports.broker,
             store=ports.store,
+            projection=ports.projection,
         ),
     )
     routes = _DashboardRoutes(settings, ports, coordinator, streams)
@@ -254,6 +269,7 @@ def _lifespan(
     *,
     broker: BrokerApplicationPort | None = None,
     store: StorePort | None = None,
+    projection: ProjectionSeedPort | None = None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     """Return a lifespan context that reconciles durable pending work before readiness."""
 
@@ -272,6 +288,7 @@ def _lifespan(
                     and selected.mode is RunMode.DEGRADED_LIVE
                     and selected.mission_id is not None
                 ):
+                    await _seed_projection(store, projection, selected.mission_id)
                     await broker.activate_mission(selected.mission_id)
             yield
         finally:
@@ -383,7 +400,13 @@ class _DashboardRoutes:
             accepted.idempotency_key,
             accepted.request_digest,
         )
-        await _activate_answer_mission(answer.status, answer.body, self._ports.broker)
+        await _activate_answer_mission(
+            answer.status,
+            answer.body,
+            self._ports.broker,
+            store=self._ports.store,
+            projection=self._ports.projection,
+        )
         return exact_json(answer.body, answer.status)
 
     async def reset_scenario(self, request: Request) -> Response:
@@ -393,7 +416,13 @@ class _DashboardRoutes:
             accepted.idempotency_key,
             accepted.request_digest,
         )
-        await _activate_answer_mission(answer.status, answer.body, self._ports.broker)
+        await _activate_answer_mission(
+            answer.status,
+            answer.body,
+            self._ports.broker,
+            store=self._ports.store,
+            projection=self._ports.projection,
+        )
         return exact_json(answer.body, answer.status)
 
     async def command(
@@ -598,10 +627,38 @@ def _ingress_error_code(refusal: MutationIngressRefusal) -> ErrorCode:
     }[refusal]
 
 
+async def _seed_projection(
+    store: StorePort,
+    projection: ProjectionSeedPort | None,
+    mission_id: str,
+) -> None:
+    """Seed the reducer with the run's own durable prepared state before any event folds.
+
+    Without this the checkpoint carries no current mission, so the first audit record the data
+    plane replays is refused ``MISSION_UNPREPARED`` and the process cannot recover the run.
+    """
+    if projection is None:
+        return
+    basis = await store.capture_snapshot_basis()
+    if basis is None or basis.current_run.mission_id != mission_id:
+        raise ApiError(ErrorCode.INTERNAL_FAILURE)
+    await projection.replace_run(
+        checkpoint_from_prepared_state(basis.prepared_initial_state),
+        {
+            "mode": RunMode.DEGRADED_LIVE.value,
+            "missionId": mission_id,
+            "runId": basis.current_run.run_id,
+        },
+    )
+
+
 async def _activate_answer_mission(
     status: int,
     body: bytes,
     broker: BrokerApplicationPort | None,
+    *,
+    store: StorePort | None = None,
+    projection: ProjectionSeedPort | None = None,
 ) -> None:
     """Recover the durable broker projection after an accepted live start or reset."""
     if status != _ACCEPTED or broker is None:
@@ -612,6 +669,8 @@ async def _activate_answer_mission(
     mission_id = document.get("missionId")
     if not isinstance(mission_id, str):
         raise ApiError(ErrorCode.INTERNAL_FAILURE)
+    if store is not None:
+        await _seed_projection(store, projection, mission_id)
     await broker.activate_mission(mission_id)
 
 

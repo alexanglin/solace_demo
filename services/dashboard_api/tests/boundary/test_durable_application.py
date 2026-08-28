@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import unittest
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 from unittest.mock import patch
@@ -11,6 +12,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.view import ReducerCheckpoint
+from aerial_rescue_dashboard_api.boundary.documents import prepare_live_state
 from aerial_rescue_dashboard_api.boundary.durable_application import (
     ApplicationPorts,
     RuntimeSettings,
@@ -19,7 +22,7 @@ from aerial_rescue_dashboard_api.boundary.durable_application import (
 from aerial_rescue_dashboard_api.boundary.http_contract import ROUTE_EXPECTATIONS
 from aerial_rescue_dashboard_api.boundary.mutation_boundary import AuthorizedMutation
 from aerial_rescue_dashboard_api.delivery.assets import Asset, AssetCatalog
-from aerial_rescue_dashboard_api.ports import CurrentRun, RunMode
+from aerial_rescue_dashboard_api.ports import CurrentRun, RunMode, SnapshotBasis
 from fastapi import FastAPI
 
 from tests.dashboard_api_support import (
@@ -59,6 +62,24 @@ class _Broker:
 
 
 @dataclass
+class _Projection:
+    """Record what the application seeds into the projection hub, in order with the broker."""
+
+    calls: list[str]
+
+    async def replace_run(
+        self, checkpoint: ReducerCheckpoint, current_run: Mapping[str, object] | None
+    ) -> None:
+        mission = None if current_run is None else current_run.get("missionId")
+        identifier = (
+            None
+            if checkpoint.state.current_mission is None
+            else (checkpoint.state.current_mission.identifier)
+        )
+        self.calls.append(f"seed:{mission}:{identifier}")
+
+
+@dataclass
 class _Mutations:
     calls: list[AuthorizedMutation] = field(default_factory=list)
 
@@ -73,11 +94,23 @@ class _Mutations:
         )
 
 
+def _catalog_scenario() -> Mapping[str, object]:
+    """Return the committed catalog's one scenario as the prepared state's source."""
+    catalog = canonical.decode(dashboard_fixture("scenario-catalog"))
+    assert isinstance(catalog, Mapping)
+    scenarios = catalog["scenarios"]
+    assert isinstance(scenarios, Sequence)
+    scenario = scenarios[0]
+    assert isinstance(scenario, Mapping)
+    return scenario
+
+
 def _application(
     *,
     recorder_reasons: tuple[str, ...] = (),
     broker: _Broker | None = None,
     mutations: _Mutations | None = None,
+    projection: _Projection | None = None,
 ) -> tuple[FastAPI, FakeStore, FakeScenario, FakeReplay]:
     """Create one fully injected ASGI application."""
     store = FakeStore()
@@ -100,6 +133,7 @@ def _application(
         identifiers=FakeIdentifiers(),
         broker=broker,
         mutations=mutations,
+        projection=projection,
     )
     settings = RuntimeSettings(
         runtime_id="runtime-test-0001",
@@ -174,6 +208,37 @@ class PublicReadTests(unittest.IsolatedAsyncioTestCase):
             broker.calls,
         )
         self.assertFalse(broker.ready)
+
+    async def test_a_stored_live_run_is_seeded_into_the_projection_before_activation(self) -> None:
+        # Arrange
+        calls: list[str] = []
+        broker = _Broker(calls=calls)
+        projection = _Projection(calls=calls)
+        application, store, _, _ = _application(broker=broker, projection=projection)
+        mission = "mission-test-0001"
+        store.current = CurrentRun(
+            mode=RunMode.DEGRADED_LIVE,
+            scenario_id="wilderness-missing-person",
+            scenario_revision=1,
+            mission_id=mission,
+            run_id="run-test-0001",
+            session_id=None,
+        )
+        store.basis = SnapshotBasis(
+            current_run=store.current,
+            prepared_initial_state=prepare_live_state(_catalog_scenario(), mission, None),
+            audit_watermark=0,
+        )
+
+        # Act
+        async with application.router.lifespan_context(application):
+            pass
+
+        # Assert
+        self.assertEqual(
+            ["startup", f"seed:{mission}:{mission}", f"activate:{mission}", "shutdown"],
+            calls,
+        )
 
     async def test_health_is_minimal_liveness_and_never_discloses_runtime_or_bearer(
         self,
