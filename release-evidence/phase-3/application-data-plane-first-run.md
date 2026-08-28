@@ -206,3 +206,12 @@ dashboard API's staging read it; the gate test drives the committed proposal fix
 `publish_application_batch` and sees it published. The live test's `_rows_for_family` filter still
 selects by `literal_suffix` and awaits a human's permission to change, so the data-plane run has
 not been repeated at `9db01bb`.
+
+With the filter corrected (human-approved), a fourth attempt at 20:51 (61 s) passed proposal
+normalization: all six outbox rows reached `confirmed`, and setup stopped at
+`live gateway did not publish normalized proposals` because `recover_application` drains one bounded
+batch per attempt and reports ready only when an attempt finds nothing left (the contract its unit
+test `test_recovery_drains_one_bounded_batch_per_attempt_before_readiness` pins and its scheduler
+relies on), while the probe calls it once at three sites; that edit awaits permission. The
+authorization suite, with the no-match acknowledgement classified as authorized, is 16 passed and
+2 failed, the two SEMP monitor probes.
