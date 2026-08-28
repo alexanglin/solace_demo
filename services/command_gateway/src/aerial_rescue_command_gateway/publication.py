@@ -165,7 +165,7 @@ def _application_properties(event: StagedApplicationEvent) -> Mapping[str, objec
         parsed = parse_topic(event.topic)
     except ValueError:
         raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY) from None
-    if event.producer != APPLICATION_PRODUCER or event.family != parsed.family.literal_suffix:
+    if event.producer != APPLICATION_PRODUCER or event.family != parsed.family.outbox_family:
         raise ApplicationPublicationError(ApplicationPublicationRefusal.IDENTITY)
     _bind_application_event(event, parsed)
     try:

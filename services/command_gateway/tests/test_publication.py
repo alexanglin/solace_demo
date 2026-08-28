@@ -197,6 +197,28 @@ def _application_event(event_id: str = "event-audit-1") -> StagedApplicationEven
     )
 
 
+def _proposal_event() -> StagedApplicationEvent:
+    """Return one normalized proposal row exactly as the gateway stages it."""
+    payload = (ROOT / "fixtures/golden/v1/event/agent-proposal/baseline.json").read_bytes()
+    document = canonical.decode(payload)
+    assert isinstance(document, dict)
+    return StagedApplicationEvent(
+        producer=APPLICATION_PRODUCER,
+        event_id=str(document["id"]),
+        family="agent-proposal",
+        topic=(
+            "aerial-rescue/v1/mission-synthetic-0001/agent/proposal/VisionAgent/candidate-location"
+        ),
+        headers=canonical.canonical_bytes({}),
+        payload=canonical.canonical_bytes(document),
+        traceparent=str(document["traceparent"]),
+        tracestate=None,
+        correlation_id=str(document["correlationid"]),
+        causation_id=None,
+        staged_at=str(document["time"]),
+    )
+
+
 def _payload_with(
     event: StagedApplicationEvent,
     **members: object,
@@ -272,6 +294,20 @@ class ApplicationPublicationTests(unittest.IsolatedAsyncioTestCase):
                 publisher.sent[0][2],
             ),
         )
+
+    async def test_a_normalized_proposal_row_passes_the_identity_gate_and_is_published(
+        self,
+    ) -> None:
+        # Arrange
+        row = _proposal_event()
+        store = FakeApplicationOutbox((row,))
+        publisher = FakePublisher()
+
+        # Act
+        await publish_application_batch(store, publisher, "2026-08-25T12:05:01.000Z")
+
+        # Assert
+        self.assertEqual([(row.topic, row.payload, {})], publisher.sent)
 
     async def test_every_staged_row_member_binds_to_the_exact_cloudevent_before_io(self) -> None:
         # Arrange

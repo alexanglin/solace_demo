@@ -153,6 +153,17 @@ class Family(Enum):
         return ".".join(level for level in self.levels if not _is_placeholder(level))
 
     @property
+    def outbox_family(self) -> str:
+        """Return the hyphenated family literal an application-outbox row's ``family`` holds.
+
+        Distinct from :attr:`literal_suffix`, which names queues and receivers with dots. The
+        store pins this form (``drone-event``, ``drone-command-result``, ``sector-event``), and
+        every producer stages it; the first live run found the command gateway's publication
+        gate comparing against the dotted form and refusing its own rows.
+        """
+        return self.name.lower().replace("_", "-")
+
+    @property
     def type_suffix(self) -> str:
         """Return the type-discriminator suffix: the template without instance levels."""
         kept = (

@@ -2022,6 +2022,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The command gateway can publish the proposals it normalizes.** Its publication gate compared an
+  outbox row's `family` with the dotted `Family.literal_suffix` (`agent.proposal`) while every
+  producer and the store use the hyphenated form (`agent-proposal`), so each normalized proposal
+  was refused as an identity mismatch before any broker I/O; the first live run stopped there.
+  `Family.outbox_family` now names that literal once, and the gate, the gateway's staging, and the
+  dashboard API's staging read it.
 - **Inbound bodies are normalized to immutable bytes at the SDK boundary.** The pinned Python
   API returns a `bytearray`, which compares equal to `bytes` while failing every `isinstance`
   check, so the first live delivery was refused by the dashboard API, command gateway, recorder,

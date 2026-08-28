@@ -286,7 +286,7 @@ class DashboardMutationService:
         return StagedApplicationEvent(
             producer="dashboard-api",
             event_id=stamp.event_id,
-            family=topic.family.name.lower().replace("_", "-"),
+            family=topic.family.outbox_family,
             topic=format_topic(topic),
             headers=_EMPTY_HEADERS,
             payload=encoded,

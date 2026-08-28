@@ -229,7 +229,7 @@ def _staged(payload: bytes, family: Family, topic: Topic) -> StagedApplicationEv
     return StagedApplicationEvent(
         producer=PRODUCER,
         event_id=envelope.id,
-        family=family.name.lower().replace("_", "-"),
+        family=family.outbox_family,
         topic=format_topic(topic),
         headers=_EMPTY_HEADERS,
         payload=payload,

@@ -734,3 +734,29 @@ class FamilyNameTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), offending)
+
+    def test_every_family_renders_its_outbox_literal_with_hyphens(self) -> None:
+        # Arrange
+        expected = (
+            "operator-command",
+            "operator-approval",
+            "drone-telemetry",
+            "drone-event",
+            "drone-command",
+            "drone-command-result",
+            "gateway-request",
+            "gateway-response",
+            "gateway-record",
+            "agent-proposal",
+            "agent-response",
+            "evidence-decision",
+            "audit",
+            "mission-event",
+            "sector-event",
+        )
+
+        # Act
+        literals = tuple(family.outbox_family for family in Family)
+
+        # Assert
+        self.assertEqual(expected, literals)
