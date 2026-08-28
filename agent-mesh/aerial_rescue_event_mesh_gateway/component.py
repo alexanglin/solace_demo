@@ -83,12 +83,29 @@ if TYPE_CHECKING:
 
         async def _handle_task_timeout(self, task_id: str) -> None: ...
 
+    _upstream_component_info: Mapping[str, object] = {}
+
 else:
     from sam_event_mesh_gateway.component import (
         EventMeshGatewayComponent as _EventMeshGatewayComponentBase,
     )
+    from sam_event_mesh_gateway.component import info as _upstream_component_info
 
 log = logging.getLogger(__name__)
+
+info: dict[str, object] = {
+    **_upstream_component_info,
+    "class_name": "AerialRescueEventMeshGatewayComponent",
+    "description": (
+        "Pinned Event Mesh Gateway component with project-owned Direct application output."
+    ),
+}
+"""The Connector reads ``info`` from the component class's module, not from the app's.
+
+It carries the pinned component's configuration parameters and schemas unchanged, so the
+Connector validates the owned component's configuration exactly as it validates the
+upstream one; only the class name and description are the project's.
+"""
 
 DIRECT_PUBLISHER_BUFFER_CAPACITY = 0
 DIRECT_PUBLISHER_TERMINATE_GRACE_MS = 15_000

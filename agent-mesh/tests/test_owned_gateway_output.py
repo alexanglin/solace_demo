@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import unittest
 from collections.abc import Callable
+from importlib import import_module
 from typing import Protocol, cast
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -206,6 +207,33 @@ def _publish_event(*, user_properties: object = None) -> Event:
         }
     )
     return Event(EventType.MESSAGE, message)
+
+
+class ComponentInfoTests(unittest.TestCase):
+    def test_the_connector_finds_the_owned_component_s_info_in_its_module(self) -> None:
+        # Arrange
+        upstream = import_module(EventMeshGatewayComponent.__module__).info
+
+        # Act
+        info = getattr(
+            import_module(AerialRescueEventMeshGatewayComponent.__module__), "info", None
+        )
+
+        # Assert
+        self.assertEqual(
+            (
+                "AerialRescueEventMeshGatewayComponent",
+                upstream["config_parameters"],
+                upstream["input_schema"],
+                upstream["output_schema"],
+            ),
+            (
+                None if info is None else info.get("class_name"),
+                None if info is None else info.get("config_parameters"),
+                None if info is None else info.get("input_schema"),
+                None if info is None else info.get("output_schema"),
+            ),
+        )
 
 
 class PersistentReceiptTests(unittest.TestCase):
