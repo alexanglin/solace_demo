@@ -236,6 +236,7 @@ MAX_RECORDER_POLLS: Final = 500
 RECOVERY_POLLS: Final = 600
 RESTART_RESULT_POLLS: Final = 2_400
 GATEWAY_DRAIN_ATTEMPTS: Final = 3
+REDELIVERY_BOUND: Final = 3
 RECOVERY_POLL_SECONDS: Final = 0.05
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01"
 RESTART_REQUEST_FIFO_SETTING: Final = "AERIAL_RESCUE_BROKER_RESTART_REQUEST_FIFO"
@@ -1590,10 +1591,18 @@ async def _mark_command_sent(graph: _LiveGraph, command_id: str) -> None:
 
 def _fleet_delivery(graph: _LiveGraph) -> CommandDelivery:
     """Receive one command from the probe drone's durable queue with bound settlement."""
+    delivery = _optional_fleet_delivery(graph)
+    if delivery is None:
+        _fail("live fleet received no authorized drone command")
+    return delivery
+
+
+def _optional_fleet_delivery(graph: _LiveGraph) -> CommandDelivery | None:
+    """Receive one command if the queue delivers within the window, else ``None``."""
     receiver = graph.fleet.receivers[PROBE_DRONE]
     message = receiver.receive(RECEIVE_TIMEOUT_MILLISECONDS)
     if message is None:
-        _fail("live fleet received no authorized drone command")
+        return None
     topic = message.get_destination_name()
     payload = inbound_payload(message)
     if not isinstance(topic, str) or not isinstance(payload, bytes):
@@ -1618,11 +1627,30 @@ def _critical_facts(
     return tuple(outcomes), frozenset(event_ids)
 
 
+async def _drain_redeliveries(
+    graph: _LiveGraph,
+    context: CommandContext,
+    expected: object,
+) -> None:
+    """Consume every further copy of the command, requiring each to dedupe like the first."""
+    for _redelivery in range(REDELIVERY_BOUND):
+        extra = _optional_fleet_delivery(graph)
+        if extra is None:
+            return
+        if (await handle_command(extra, context)).outcome is not expected:
+            _fail("live redelivered command was not treated as a duplicate")
+
+
 async def _exercise_fleet(
     graph: _LiveGraph,
     approval: _ApprovalExercise,
 ) -> _FleetExercise:
-    """Restart the broker, recover, and prove one durable effect despite redelivery."""
+    """Restart the broker, recover, and prove one durable effect despite redelivery.
+
+    A command spooled before the restart reaches the fleet more than twice: the copy the SDK
+    buffered on the old flow, the broker's redelivery after rebind, and the explicit duplicate
+    published here. Every copy after the first must dedupe and stage nothing.
+    """
     degraded, connected = await _restart_broker_once(graph.lifecycles)
     await _recover_live_graph(graph)
     recovered = connected and all(lifecycle.is_ready() for lifecycle in graph.lifecycles)
@@ -1670,6 +1698,7 @@ async def _exercise_fleet(
         {},
     )
     duplicate = await handle_command(_fleet_delivery(graph), context)
+    await _drain_redeliveries(graph, context, duplicate.outcome)
     if await graph.fleet_outbox.pending(PROBE_DRONE):
         _fail("live duplicate command staged another critical result")
     return _FleetExercise(
