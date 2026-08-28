@@ -37,6 +37,8 @@ class DecodingTests(unittest.TestCase):
 
         # Assert
         self.assertIs(canonical.Refusal.MALFORMED_TEXT, refused.value.refusal)
+        self.assertIs(text, refused.value.value)
+        self.assertIsInstance(refused.value.__cause__, RecursionError)
 
     def test_utf8_bytes_are_accepted_as_well_as_text(self) -> None:
         # Arrange
