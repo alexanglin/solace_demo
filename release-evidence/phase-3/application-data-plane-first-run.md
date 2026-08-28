@@ -235,3 +235,20 @@ definition (`stop_grace_period: 20m`, same image digest), and reported healthy i
 bound at 21:28:36. The named volume `broker-storage` kept `/var/lib/solace`: 91 queues, 11 client
 profiles, and 11 ACL profiles read back unchanged. The broker now runs under the merged Compose
 definition. The reconnection observation the restart exists to prove was not reached.
+
+## Run nine, 21:34, and the restart window
+
+With the probe's two payload reads routed through `inbound_payload()` (human-approved), run 9 passed
+the fleet command and reached `_restart_broker_once`. The controller received the token, restarted
+the broker, and saw it healthy; the test had already given up: its one deadline of
+`RECOVERY_POLLS × RECOVERY_POLL_SECONDS` = 30 s covers the request, the restart, and the reconnection
+together, and is the "readiness restored within 30 seconds" row of
+[operating-parameters.md](../../docs/operating-parameters.md#service-level-targets). Measured from
+the container state: the previous process finished at 01:35:14.68 UTC, the new one started at
+01:35:15.00, and the first healthy probe landed at 01:36:25.44 — 70 s from restart to healthy. In run 8
+the same controller path (which then recreated the container) reached healthy in about 25 s. The
+controller's own bounds are 30 s each for the restart and the healthy wait (ADR-0186), so a restart
+that fits the controller can still exceed the probe's window; when the probe stops reading, the
+controller's result write finds no reader and reports `FAILED: the broker restart result could not
+be delivered` after its own 30 s. Whether this Docker Desktop virtual machine can ever meet the 30 s
+service-level row is a finding for a human, not something to widen in the probe.
