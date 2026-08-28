@@ -296,3 +296,45 @@ sessions are `EXHAUSTED` roughly five seconds before the broker is back. Whether
 cover a broker restart on the reference host is a parameter decision under ADR-0145 for a human.
 Nothing after the restart — Guaranteed spooling across the outage, rebind, drain, and readiness
 recovery — can be observed until it is made.
+
+## Runs fourteen to sixteen, 2026-08-28 08:19–09:0x, past the restart
+
+With the reconnection budget raised to 60 attempts (ADR-0192, `8fab348`), run 14 (08:19) was the
+first in which every session survived the restart: the controller reported healthy at 08:20:26 and
+the probe observed reconnection, drained the gateway, evidence service, and fleet, received the
+`escalate-rescue` command on the fleet identity, and stopped in the recorder's drain on
+`value too long for type character varying(32)`: `audit_record.kind` had been sized for one KIND level
+since revision 0001 while the merged dashboard binds `kind == type`, and the recorder now writes the
+event type (50 characters here, 70 at most). Revision `0011_audit_kind` widens the column to 96
+(ADR-0193, `f67b6b6`). Run 15 (08:51) passed the audit row and stopped one step later: the recorder's
+`source_event` row was refused as an identity reused for different content, because it stamped
+`observed_at` with its receive clock while the evidence service, which had stored the same event,
+used the event's time; the recorder now stores the event time (`844dbf2`).
+Run 16 (09:02) ran the whole chain through the restart — sessions survived on the 60-attempt budget,
+the command spooled across the outage, the fleet applied exactly one effect, both durable results were
+published and audited (33 audit ordinals) — and failed only in `graph.close()`: one unconsumed message
+on the probe drone's command queue. The command had been spooled at 13:02:17 UTC, before the restart,
+with the fleet's receiver already bound, so the probe consumed the copy the SDK had buffered on the old
+flow as its first delivery and the broker's post-rebind redelivery as its duplicate, and its own
+explicit duplicate (fresh, redelivery count 0, spooled 13:02:56 as it was published) remained. The
+probe now drains every further copy after the explicit duplicate, requiring each to dedupe and stage
+nothing (`fdad898`, human-approved).
+
+**Run 17, 09:08:38–09:09:33: 3 passed in 54.49 s.** Every step this probe defines held live on the
+reference host: the salient event, three normalized and published proposals, three corroborated
+decisions, the expired, mismatched, duplicate, and exact approvals with their audited reasons, one
+staged and confirmed `escalate-rescue` command, the ADR-0186 restart (controller success at 09:09:16),
+degraded and recovered readiness across it, the command's survival on its queue, the fleet's single
+effect despite three deliveries, both durable results, and a complete recorder timeline. The probe
+dropped its disposable database on success.
+
+## Final external state after run 17
+
+Broker (VPN `default`): the ADR-0191 profiles applied; 91 durable queues; the recreated container runs
+the merged Compose definition and the reconnection budget of ADR-0192 applies to every application
+session; no application connections. The dead-message queues still hold the expired residue of the
+earlier attempts, and the primary queues drain to zero within the 300 s TTL. The pre-merge
+`agent-mesh` container remains stopped. PostgreSQL: the disposable databases of the failed attempts
+remain (one per failed attempt whose close raised); they hold no secret and can be dropped when a human
+authorizes it. The shared `aerial_rescue` database is still at revision 0010 until Increment 0.3
+applies 0011.
