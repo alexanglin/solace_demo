@@ -214,6 +214,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0193](0193-size-the-audit-kind-for-event-types.md) | Size the audit kind column for event types | Accepted |
 | [0194](0194-gate-broker-health-on-guaranteed-messaging.md) | Gate broker health on guaranteed messaging | Accepted |
 | [0195](0195-run-the-event-monitor-as-the-retained-log-s-owner.md) | Run the event monitor as the retained log's owner | Accepted |
+| [0196](0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md) | Count the coordinator's reply queue in the Agent Mesh endpoint ceiling | Accepted |
 
 ## Decisions still open
 

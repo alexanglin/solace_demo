@@ -387,7 +387,7 @@ _CLIENT_PROFILE_VALUES: Final[
         9,
         1,
         1,
-        4,
+        5,
         0,
         False,
         "aerial-rescue-agent-mesh-temp",

@@ -565,7 +565,7 @@ class DesiredStateTests(unittest.TestCase):
                 9,
                 1,
                 1,
-                4,
+                5,
                 0,
                 False,
                 "aerial-rescue-agent-mesh-temp",

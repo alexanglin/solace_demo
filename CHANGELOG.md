@@ -2027,6 +2027,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The Agent Mesh identity may own five endpoints.** The live steady state holds exactly the four
+  ADR-0153 allowed, so the MissionCoordinator's peer-delegation reply queue was refused with
+  `SOLCLIENT_SUBCODE_NO_MORE_NON_DURABLE_QUEUE_OR_TE` and the container restart-looped
+  ([ADR-0196](docs/adr/0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md)).
 - **The broker is healthy only once Guaranteed messaging is active.** The Compose health check probed
   `health-check/direct-active`, so the first merged composition provisioned 21 s after the container
   started and was refused with `code=412 message spool data not available`; it now probes
