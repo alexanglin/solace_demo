@@ -14,10 +14,11 @@ import os
 import stat
 import time
 import unittest
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import ClassVar, Final, Never, cast, override
 from uuid import uuid4
@@ -1309,28 +1310,28 @@ async def _stage_command(
 
 async def _dispatch_approval(
     graph: _LiveGraph,
-    clock: AuthorizationClock,
+    clock: Callable[[], AuthorizationClock],
 ) -> GuaranteedDispatchOutcome:
     """Receive one dashboard approval on the gateway's durable queue."""
     return await dispatch_gateway_guaranteed(
         Family.OPERATOR_APPROVAL.literal_suffix,
         _require_guaranteed(graph.gateway, Family.OPERATOR_APPROVAL.literal_suffix),
         graph.gateway_stamps,
-        clock,
+        clock(),
         graph.gateway_store,
     )
 
 
 async def _dispatch_command(
     graph: _LiveGraph,
-    clock: AuthorizationClock,
+    clock: Callable[[], AuthorizationClock],
 ) -> GuaranteedDispatchOutcome:
     """Receive one operator command through atomic authorization and settlement."""
     return await dispatch_gateway_guaranteed(
         Family.OPERATOR_COMMAND.literal_suffix,
         _require_guaranteed(graph.gateway, Family.OPERATOR_COMMAND.literal_suffix),
         graph.gateway_stamps,
-        clock,
+        clock(),
         graph.gateway_store,
     )
 
@@ -1377,7 +1378,7 @@ async def _exercise_expired_approval(
     graph: _LiveGraph,
     dashboard: DashboardMutationService,
     stamps: _DashboardStamps,
-    clock: AuthorizationClock,
+    clock: Callable[[], AuthorizationClock],
     authority: _Authority,
 ) -> tuple[GuaranteedDispatchOutcome, GuaranteedDispatchOutcome, tuple[str, str]]:
     """Persist and refuse one approval that expires before gateway binding."""
@@ -1414,7 +1415,7 @@ async def _exercise_expired_approval(
 async def _exercise_mismatched_approval(
     graph: _LiveGraph,
     dashboard: DashboardMutationService,
-    clock: AuthorizationClock,
+    clock: Callable[[], AuthorizationClock],
     authority: _Authority,
 ) -> tuple[
     tuple[GuaranteedDispatchOutcome, GuaranteedDispatchOutcome],
@@ -1458,7 +1459,7 @@ async def _exercise_mismatched_approval(
 async def _exercise_exact_approval(
     graph: _LiveGraph,
     dashboard: DashboardMutationService,
-    clock: AuthorizationClock,
+    clock: Callable[[], AuthorizationClock],
     authority: _Authority,
 ) -> tuple[
     tuple[GuaranteedDispatchOutcome, GuaranteedDispatchOutcome],
@@ -1507,6 +1508,14 @@ async def _exercise_exact_approval(
     )
 
 
+def _authority_clock(graph: _LiveGraph) -> AuthorizationClock:
+    """Read both live clocks for one dispatch, as the gateway's runtime does per message."""
+    return AuthorizationClock(
+        ClockReading(_now(), timedelta(seconds=time.monotonic())),
+        graph.identity.gateway_epoch,
+    )
+
+
 async def _exercise_approvals(
     graph: _LiveGraph,
     authorities: Sequence[_Authority],
@@ -1515,10 +1524,7 @@ async def _exercise_approvals(
     by_label = {authority.label: authority for authority in authorities}
     stamps = _DashboardStamps(_instant())
     dashboard = _dashboard_service(graph, stamps)
-    clock = AuthorizationClock(
-        ClockReading(_now(), timedelta(seconds=1_000)),
-        graph.identity.gateway_epoch,
-    )
+    clock = partial(_authority_clock, graph)
     expired_approval, expired_command, expired_reasons = await _exercise_expired_approval(
         graph,
         dashboard,
