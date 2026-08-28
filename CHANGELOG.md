@@ -2036,6 +2036,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The mission coordinator runs on a model that supports tools again.** [ADR-0198](docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) moved the
+  agent to `llama3:8b` and constrained its tool surface in one change, and a hook stashed the
+  configuration before either half ran. The first run that loaded it failed every completion with
+  `llama3:8b does not support tools`: the local daemon reports `['completion']` for that model and
+  `['completion', 'tools', 'thinking']` for the locked one. A delegating coordinator always carries
+  a tool, so no structured answer was possible, no candidate was published, and nothing was scored.
+  The coordinator is back on the locked tool-capable model, the unreferenced lock entry is gone, and
+  ADR-0198's tool-surface and call-bound decisions stand and get their first real measurement
+  ([ADR-0200](docs/adr/0200-give-the-coordinator-a-tool-capable-model.md)).
+- **Compose gives the Agent Mesh long enough to stop itself.** The service declared no
+  `stop_grace_period`, so Compose's 10 s default expired during the pinned Connector's own cleanup
+  and answered an ordinary recreate with SIGKILL and exit 137 — the graceful path could not finish
+  and the owned settle window could never fire. The service now declares 45 s, and a deployment
+  test holds it against `THREAD_SETTLE_SECONDS` so raising one without the other fails.
 - **The Agent Mesh entrypoint now stops when its lifecycle is finished.** The owned entrypoint ran
   `stop()` and `cleanup()` and chose a failure status exactly as
   [ADR-0177](docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) requires, and then never

@@ -218,6 +218,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0197](0197-standardize-scenario-control-on-the-console-composition.md) | Standardize scenario control on the console composition | Accepted |
 | [0198](0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) | Give the coordinator a model and a tool surface that answer the structured request | Accepted |
 | [0199](0199-terminate-the-owned-agent-mesh-entrypoint.md) | Terminate the owned Agent Mesh entrypoint | Accepted |
+| [0200](0200-give-the-coordinator-a-tool-capable-model.md) | Give the coordinator a tool-capable model | Accepted |
 
 ## Decisions still open
 

@@ -53,6 +53,7 @@ four distinct boundaries:
 | `phase-3/application-data-plane-first-run.md` | The first live application data plane at the merged revision: authorization probes, the gateway → evidence → dashboard → command chain, and the ADR-0186 restart with recovery |
 | `phase-3/merged-runtime-first-run.md` | The merged runtime's first container composition: spool-gated broker health, the Agent Mesh entrypoint, migrations, and the services that did and did not become healthy |
 | `phase-3/merged-runtime-second-composition.md` | The merged runtime composed on a freshly initialised broker volume: the JSON event log, the monitor's severities, the scenario-service standardization, the dashboard probe, and the first fully healthy composition |
+| `phase-3/agent-mesh-entrypoint-termination.md` | The owned Agent Mesh entrypoint exiting instead of hanging after cleanup, the container recovering by itself, the coordinator's model capability, and what the collapsed salient-chain probe then reached |
 
 The record itself owns the dated observation. Current capability claims belong in `README.md`, phase
 status and unfinished delivery risks belong in the implementation plan, measured parameters belong in

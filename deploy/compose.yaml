@@ -285,6 +285,11 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    # The owned entrypoint runs the Connector's stop and cleanup and then waits a bounded
+    # settle window for surviving nondaemon threads before forcing the exit. Compose's default
+    # 10 s grace killed that path with SIGKILL, so the container never reported its own status
+    # (docs/adr/0199-terminate-the-owned-agent-mesh-entrypoint.md).
+    stop_grace_period: 45s
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
