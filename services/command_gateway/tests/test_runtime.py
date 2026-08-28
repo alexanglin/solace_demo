@@ -204,6 +204,28 @@ class _Message:
         return self._properties
 
 
+class _ByteArrayMessage:
+    """One native message whose body arrives as the pinned SDK delivers it: a ``bytearray``."""
+
+    def __init__(self, topic: str, payload: bytes, properties: Mapping[str, object]) -> None:
+        """Retain the topic, the immutable bytes the mutable body copies, and the properties."""
+        self._topic = topic
+        self._payload = payload
+        self._properties = properties
+
+    def get_payload_as_bytes(self) -> bytearray:
+        """Return the mutable body the SDK hands over."""
+        return bytearray(self._payload)
+
+    def get_destination_name(self) -> str | None:
+        """Return the concrete arriving topic."""
+        return self._topic
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return exact broker user properties."""
+        return self._properties
+
+
 class _NonMappingPropertiesMessage(_Message):
     """Violate the upstream protocol at runtime to prove fail-closed admission."""
 
@@ -631,6 +653,34 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
                 delivered_response.topic,
                 delivered_response.payload,
             ),
+        )
+
+    async def test_a_direct_response_with_an_sdk_bytearray_body_is_normalized_as_bytes(
+        self,
+    ) -> None:
+        # Arrange
+        store = cast("ApplicationStore", type("Store", (), {"normalization": object()})())
+        response = _ByteArrayMessage(
+            "aerial-rescue/v1/mission-1/agent/response/VisionAgent",
+            b"{}",
+            {"aerial-rescue-agent-response-invocation-id": "invocation-1"},
+        )
+        normalization = patch(
+            "aerial_rescue_command_gateway.service.handle_agent_response",
+            new_callable=AsyncMock,
+        )
+
+        # Act
+        with normalization as handle_response:
+            outcome = await dispatch_direct(
+                response, cast("DeliveryRouter", object()), _Stamps(), store
+            )
+
+        # Assert
+        delivered = cast("DirectDelivery", handle_response.await_args_list[0].args[0])
+        self.assertEqual(
+            (DirectDispatchOutcome.RESPONSE_NORMALIZED, bytes, b"{}"),
+            (outcome, type(delivered.payload), delivered.payload),
         )
 
     async def test_direct_refusals_cover_missing_malformed_unowned_and_handler_failures(

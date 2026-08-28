@@ -72,6 +72,26 @@ class _Message:
         return {}
 
 
+@dataclass(frozen=True)
+class _ByteArrayMessage:
+    """One broker message whose body arrives as the pinned SDK delivers it: a ``bytearray``."""
+
+    payload: bytes
+    destination: str
+
+    def get_payload_as_bytes(self) -> bytearray:
+        """Return the mutable body the SDK hands over."""
+        return bytearray(self.payload)
+
+    def get_destination_name(self) -> str | None:
+        """Return the scripted concrete topic."""
+        return self.destination
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return no user properties."""
+        return {}
+
+
 @dataclass
 class _Settlement:
     """Record the one settlement decision made by downstream processing."""
@@ -338,6 +358,36 @@ class RecorderBrokerReceiverTests(unittest.IsolatedAsyncioTestCase):
                 third.settlement if isinstance(third, NotificationIngress) else None,
                 session.calls,
                 len(schemas.calls),
+            ),
+        )
+
+    async def test_a_guaranteed_notification_with_an_sdk_bytearray_body_is_admitted(self) -> None:
+        # Arrange
+        settlement = _Settlement()
+        message = _ByteArrayMessage(MISSION_EVENT, MISSION_TOPIC)
+        session = _ReceiverSession(
+            direct=[None],
+            guaranteed={
+                "audit": [None],
+                "mission": [GuaranteedMessage(message, cast("MessageSettlement", settlement))],
+            },
+        )
+        receiver = RecorderBrokerReceiver(session, _Schemas(), lambda: OBSERVED_AT, 100)
+
+        # Act
+        await receiver.receive()
+        await receiver.receive()
+        third = await receiver.receive()
+
+        # Assert
+        self.assertEqual(
+            (True, MISSION, settlement),
+            (
+                isinstance(third, NotificationIngress),
+                third.notification.envelope.subject
+                if isinstance(third, NotificationIngress)
+                else None,
+                third.settlement if isinstance(third, NotificationIngress) else None,
             ),
         )
 

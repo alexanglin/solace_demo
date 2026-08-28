@@ -31,6 +31,7 @@ from aerial_rescue_broker.messaging import (
     MessagingError,
     MessagingRefusal,
     UnsettledMessageError,
+    inbound_payload,
 )
 from aerial_rescue_broker.queues import drone_queue_name
 from aerial_rescue_broker.routing import (
@@ -523,7 +524,7 @@ class FleetExecutor:
         context: CommandContext,
     ) -> None:
         """Execute runtime schema admission before durable command processing."""
-        payload = message.get_payload_as_bytes() or b""
+        payload = inbound_payload(message) or b""
         topic = message.get_destination_name() or ""
         delivery = CommandDelivery(topic, payload, _AsyncSettlement(receiver, message))
         try:

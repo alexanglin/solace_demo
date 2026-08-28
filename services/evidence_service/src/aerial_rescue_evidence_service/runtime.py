@@ -27,6 +27,7 @@ from aerial_rescue_broker.messaging import (
     MessagingError,
     MessagingRefusal,
     UnsettledMessageError,
+    inbound_payload,
 )
 from aerial_rescue_broker.queues import family_queue_name, guaranteed_grants
 from aerial_rescue_broker.routing import RoutingError
@@ -251,7 +252,7 @@ async def dispatch_guaranteed(
     """Execute schema admission and route one durable family to its transaction."""
     message = guaranteed.message
     topic = message.get_destination_name() or ""
-    payload = message.get_payload_as_bytes() or b""
+    payload = inbound_payload(message) or b""
     delivery = InboundDelivery(topic, payload, hashlib.sha256(payload).hexdigest())
     settlement = _BoundSettlement(guaranteed.settlement)
     source_channel = receiver_name == Family.DRONE_EVENT.literal_suffix

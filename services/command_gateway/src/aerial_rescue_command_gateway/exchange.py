@@ -30,6 +30,7 @@ from aerial_rescue_broker.messaging import (
     InboundMessage,
     MessagePublisher,
     MessagingError,
+    inbound_payload,
 )
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.rpc import (
@@ -93,7 +94,7 @@ def _agrees(topic_text: object, request: GatewayRequest) -> bool:
 
 def _request_of(message: InboundMessage) -> GatewayRequest | None:
     """Return the request a message carries, or ``None`` when it carries none."""
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     if payload is None:
         return None
     try:

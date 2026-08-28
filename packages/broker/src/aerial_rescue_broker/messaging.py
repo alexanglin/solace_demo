@@ -185,6 +185,7 @@ __all__ = [
     "fleet_session",
     "guaranteed_processing_session",
     "guaranteed_publishing_session",
+    "inbound_payload",
     "install_lifecycle_listeners",
     "open_command_gateway_session",
     "open_consuming_session",
@@ -595,14 +596,33 @@ class BrokerEndpoint:
 class InboundMessage(Protocol):
     """One message as it arrived, named for the methods the upstream object already has."""
 
-    def get_payload_as_bytes(self) -> bytes | None:
-        """Return the payload, or ``None`` when the message carries none."""
+    def get_payload_as_bytes(self) -> bytes | bytearray | None:
+        """Return the payload, or ``None`` when the message carries none.
+
+        The pinned SDK returns a ``bytearray``; read the body through
+        :func:`inbound_payload`, which is the one place that difference is allowed to exist.
+        """
 
     def get_destination_name(self) -> str | None:
         """Return the topic the message arrived on."""
 
     def get_properties(self) -> Mapping[str, object]:
         """Return the user properties the producer set."""
+
+
+def inbound_payload(message: InboundMessage) -> bytes | None:
+    """Return one inbound body as immutable bytes, or ``None`` when the message has none.
+
+    The pinned SDK hands the body over as a ``bytearray``. Every consumer digests, stores,
+    or type-checks the body as ``bytes``, and a ``bytearray`` compares equal to ``bytes``
+    while failing every ``isinstance`` check, so the first live delivery was refused by
+    every service at once. Normalizing here keeps that fact out of every ingress. A body
+    of any other type is a broken or hostile transport and is reported as absent.
+    """
+    payload = message.get_payload_as_bytes()
+    if isinstance(payload, bytearray):
+        return bytes(payload)
+    return payload if isinstance(payload, bytes) else None
 
 
 class MessageTraceContext(Protocol):
@@ -789,7 +809,7 @@ def _inject_trace(tracing: MessageTraceContext, message: object, payload: bytes)
 
 def _validate_trace(tracing: MessageTraceContext, message: InboundMessage) -> None:
     """Validate an inbound carrier without retaining its body in a refusal."""
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     if payload is None:
         raise MessagingError(MessagingRefusal.TRACE_REFUSED, "PAYLOAD_ABSENT")
     try:
@@ -1283,7 +1303,7 @@ class UnsettledMessageMetadata:
 
 def _unsettled_metadata(message: InboundMessage) -> UnsettledMessageMetadata:
     """Derive bounded context and a one-way digest from hostile Direct or Guaranteed ingress."""
-    candidate_payload = message.get_payload_as_bytes()
+    candidate_payload = inbound_payload(message)
     payload = candidate_payload if isinstance(candidate_payload, bytes) else b""
     candidate_destination = message.get_destination_name()
     source: str | None = None

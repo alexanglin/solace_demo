@@ -54,6 +54,7 @@ from aerial_rescue_broker.messaging import (
     MessagePublisher,
     MessagingError,
     Outcome,
+    inbound_payload,
 )
 from aerial_rescue_broker.queues import drone_queue_name
 from aerial_rescue_contracts.canonical import canonical_bytes
@@ -452,7 +453,7 @@ def _handle(
     """
     try:
         command = accept(
-            message.get_payload_as_bytes(),
+            inbound_payload(message),
             message.get_destination_name() or "",
             drone_id,
             runtime.scenario.mission_id,

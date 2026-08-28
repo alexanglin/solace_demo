@@ -14,7 +14,12 @@ from enum import Enum
 from types import TracebackType
 from typing import Protocol
 
-from aerial_rescue_broker.messaging import AcknowledgingReceiver, InboundMessage, Outcome
+from aerial_rescue_broker.messaging import (
+    AcknowledgingReceiver,
+    InboundMessage,
+    Outcome,
+    inbound_payload,
+)
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.digest import source_event_digest
 from aerial_rescue_contracts.envelope import (
@@ -348,7 +353,7 @@ def _normalized_document(event: DashboardEvent) -> dict[str, object]:
 
 def _capture_material(message: InboundMessage) -> _CaptureMaterial:
     destination = message.get_destination_name()
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     if payload is None:
         raise _BoundaryError
     topic = parse_topic(destination)

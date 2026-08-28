@@ -29,6 +29,7 @@ from aerial_rescue_evidence_service.outbox import PublicationOutcome
 from aerial_rescue_evidence_service.ports import (
     DecisionStamp,
     EvidenceUnitOfWork,
+    InboundDelivery,
     SettlementPort,
     SourceUnitOfWork,
 )
@@ -148,6 +149,27 @@ class _Message:
     def get_payload_as_bytes(self) -> bytes | None:
         """Return exact arriving bytes."""
         return self.payload
+
+    def get_destination_name(self) -> str | None:
+        """Return the concrete destination."""
+        return self.topic
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return no application properties."""
+        return {}
+
+
+class _ByteArrayMessage:
+    """One native message whose body arrives as the pinned SDK delivers it: a ``bytearray``."""
+
+    def __init__(self, topic: str, payload: bytes) -> None:
+        """Retain the topic and the immutable bytes the mutable body will copy."""
+        self.topic = topic
+        self.payload = payload
+
+    def get_payload_as_bytes(self) -> bytearray:
+        """Return the mutable body the SDK hands over."""
+        return bytearray(self.payload)
 
     def get_destination_name(self) -> str | None:
         """Return the concrete destination."""
@@ -896,3 +918,35 @@ async def test_connected_processing_counts_outcome_and_removes_readiness_on_publ
         {DispatchOutcome.PROCESSED: 1},
         False,
     )
+
+
+async def test_dispatch_hands_the_source_handler_immutable_bytes_for_an_sdk_bytearray_body() -> (
+    None
+):
+    # Arrange
+    payload = canonical.canonical_bytes(source_document())
+    source = GuaranteedMessage(
+        cast("InboundMessage", _ByteArrayMessage(SOURCE_TOPIC, payload)),
+        cast("MessageSettlement", _Settlement()),
+    )
+    deliveries: list[InboundDelivery] = []
+
+    async def capture(delivery: InboundDelivery, _work: object, settlement: SettlementPort) -> None:
+        deliveries.append(delivery)
+        await settlement.accept("source-event")
+
+    # Act
+    with patch(
+        "aerial_rescue_evidence_service.runtime.handle_source_delivery", side_effect=capture
+    ):
+        await dispatch_guaranteed(
+            Family.DRONE_EVENT.literal_suffix,
+            source,
+            _dispatch_ports(proposal=_UnitOfWork(), source=_UnitOfWork()),
+        )
+
+    # Assert
+    assert [(bytes, payload, hashlib.sha256(payload).hexdigest())] == [
+        (type(delivery.payload), delivery.payload, delivery.canonical_digest)
+        for delivery in deliveries
+    ]

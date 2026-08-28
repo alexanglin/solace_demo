@@ -2022,6 +2022,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Inbound bodies are normalized to immutable bytes at the SDK boundary.** The pinned Python
+  API returns a `bytearray`, which compares equal to `bytes` while failing every `isinstance`
+  check, so the first live delivery was refused by the dashboard API, command gateway, recorder,
+  and evidence service at once. `InboundMessage` now declares the SDK's real return type and the
+  one `inbound_payload()` normalizer is the only reader every ingress uses.
 - **`canonical.decode` refuses undecodable bytes as malformed text.** Bytes that fit none of
   JSON's encodings raised the codec's `UnicodeDecodeError` past the typed `CanonicalizationError`,
   so a foreign body on a durable queue broke the receiver's bounded shutdown instead of becoming

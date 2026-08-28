@@ -183,6 +183,20 @@ class _Message:
 
 
 @dataclass
+class _ByteArrayMessage:
+    """One message whose body arrives as the pinned SDK delivers it: a ``bytearray``."""
+
+    topic: str
+    payload: bytes
+
+    def get_destination_name(self) -> str:
+        return self.topic
+
+    def get_payload_as_bytes(self) -> bytearray:
+        return bytearray(self.payload)
+
+
+@dataclass
 class _Guaranteed:
     message: _Message
     settlement: _Settlement
@@ -277,6 +291,29 @@ async def test_guaranteed_delivery_accepts_only_after_its_recorder_fact_is_commi
     # Assert
     assert decision is DeliveryDecision.ACCEPTED
     assert settlement.outcome == "accept"
+
+
+@pytest.mark.asyncio
+async def test_guaranteed_delivery_with_an_sdk_bytearray_body_is_accepted() -> None:
+    # Arrange
+    plane, _session, _hub = _plane((_record(),))
+    settlement = _Settlement()
+    delivered = _Guaranteed(
+        cast(
+            "_Message",
+            _ByteArrayMessage(
+                "aerial-rescue/v1/mission-synthetic-0001/mission/event/lifecycle",
+                _record().payload,
+            ),
+        ),
+        settlement,
+    )
+
+    # Act
+    decision = await plane.handle_guaranteed("mission.event", cast("GuaranteedDelivery", delivered))
+
+    # Assert
+    assert (decision, settlement.outcome) == (DeliveryDecision.ACCEPTED, "accept")
 
 
 @pytest.mark.asyncio

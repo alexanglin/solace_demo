@@ -49,6 +49,7 @@ from aerial_rescue_broker.messaging import (
     DashboardBindings,
     DashboardSession,
     GuaranteedMessage,
+    InboundMessage,
     InvalidDirectMessageError,
     MessageSettlement,
     MessagingError,
@@ -68,6 +69,7 @@ from aerial_rescue_broker.messaging import (
     connection_properties,
     dashboard_session,
     fleet_session,
+    inbound_payload,
     install_lifecycle_listeners,
     open_command_gateway_session,
     open_consuming_session,
@@ -513,6 +515,42 @@ class _PayloadlessMessage(FakeMessage):
     @override
     def get_payload_as_bytes(self) -> None:
         """Return the absent body exactly as the SDK permits."""
+
+
+class _ByteArrayMessage:
+    """One inbound message whose body arrives as the pinned SDK delivers it: a ``bytearray``."""
+
+    def __init__(self, payload: bytes) -> None:
+        """Record the immutable bytes the mutable body will copy."""
+        self._payload = payload
+
+    def get_payload_as_bytes(self) -> bytearray:
+        """Return the mutable body the SDK hands over."""
+        return bytearray(self._payload)
+
+    def get_destination_name(self) -> str | None:
+        """Return the topic the message arrived on."""
+        return "aerial-rescue/v1/m-0001/audit/approval"
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return no user properties."""
+        return {}
+
+
+class _HostileBodyMessage:
+    """One message whose body is an integer, as a hostile or broken transport could report."""
+
+    def get_payload_as_bytes(self) -> object:
+        """Return a body that is neither bytes nor a bytearray."""
+        return 7
+
+    def get_destination_name(self) -> str | None:
+        """Return the topic the message arrived on."""
+        return "aerial-rescue/v1/m-0001/audit/approval"
+
+    def get_properties(self) -> Mapping[str, object]:
+        """Return no user properties."""
+        return {}
 
 
 class FakePersistentReceiver(_FakeReceiverLifecycle):
@@ -3657,3 +3695,37 @@ class MessagingFailureBranchTests(unittest.TestCase):
             ),
             (captured.value.refusal, service.order, type(captured.value.__cause__)),
         )
+
+
+class InboundPayloadTests(unittest.TestCase):
+    """The one place the SDK's mutable body becomes the immutable bytes every consumer needs."""
+
+    def test_a_bytearray_body_is_returned_as_immutable_bytes(self) -> None:
+        # Arrange
+        message = _ByteArrayMessage(b'{"k":1}')
+
+        # Act
+        payload = inbound_payload(message)
+
+        # Assert
+        self.assertEqual((bytes, b'{"k":1}'), (type(payload), payload))
+
+    def test_an_absent_body_stays_absent(self) -> None:
+        # Arrange
+        message = _PayloadlessMessage()
+
+        # Act
+        payload = inbound_payload(message)
+
+        # Assert
+        self.assertIsNone(payload)
+
+    def test_a_body_that_is_neither_bytes_nor_bytearray_is_treated_as_absent(self) -> None:
+        # Arrange
+        hostile = cast("InboundMessage", _HostileBodyMessage())
+
+        # Act
+        payload = inbound_payload(hostile)
+
+        # Assert
+        self.assertIsNone(payload)

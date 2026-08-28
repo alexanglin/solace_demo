@@ -20,6 +20,7 @@ from aerial_rescue_broker.messaging import (
     BrokerLifecycle,
     BrokerLifecycleState,
     InboundMessage,
+    inbound_payload,
 )
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import decode_envelope
@@ -275,7 +276,7 @@ class DashboardDataPlane:
         """Validate, reconcile recorder authority, and settle one Guaranteed delivery."""
         message = delivery.message
         topic = message.get_destination_name()
-        payload = message.get_payload_as_bytes()
+        payload = inbound_payload(message)
         if not isinstance(topic, str) or not isinstance(payload, bytes):
             return await self._reject(receiver_name, delivery, topic, payload, "message-shape")
         try:
@@ -303,7 +304,7 @@ class DashboardDataPlane:
     async def handle_direct(self, message: InboundMessage) -> DeliveryDecision:
         """Use Direct arrival only as a hint to recover the recorder-owned ordered fact."""
         topic = message.get_destination_name()
-        payload = message.get_payload_as_bytes()
+        payload = inbound_payload(message)
         if not isinstance(topic, str) or not isinstance(payload, bytes):
             return DeliveryDecision.REJECTED
         try:

@@ -35,6 +35,7 @@ from aerial_rescue_broker.messaging import (
     MessagePublisher,
     MessageReceiver,
     UnsettledMessageError,
+    inbound_payload,
 )
 from aerial_rescue_broker.queues import family_queue_name, guaranteed_grants
 from aerial_rescue_broker.routing import (
@@ -252,7 +253,7 @@ class BoundSettlement:
 def _direct_parts(message: InboundMessage) -> tuple[str, bytes, Mapping[str, object]] | None:
     """Return typed broker members without coercing an absent topic or payload."""
     topic = message.get_destination_name()
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     properties: object = message.get_properties()
     if (
         not isinstance(topic, str)
@@ -306,7 +307,7 @@ async def dispatch_direct(
 def _guaranteed_delivery(message: InboundMessage) -> GuaranteedDelivery:
     """Preserve exact bytes while using empty sentinels only for missing broker members."""
     destination = message.get_destination_name()
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     return GuaranteedDelivery(
         destination if isinstance(destination, str) else "",
         payload if isinstance(payload, bytes) else b"",

@@ -20,6 +20,7 @@ from aerial_rescue_broker.messaging import (
     InboundMessage,
     InvalidDirectMessageError,
     UnsettledMessageError,
+    inbound_payload,
 )
 from aerial_rescue_contracts.envelope import decode_envelope
 from aerial_rescue_contracts.topics import parse_topic
@@ -186,7 +187,7 @@ class RecorderBrokerReceiver:
             ) from error
         if recording_policy(topic.family) is RecordingPolicy.EXCLUDED:
             return ExcludedIngress(topic.family)
-        payload = message.get_payload_as_bytes()
+        payload = inbound_payload(message)
         if not isinstance(payload, bytes):
             raise BrokerIngressError(
                 BrokerIngressRefusal.INVALID_NOTIFICATION,
@@ -216,7 +217,7 @@ class RecorderBrokerReceiver:
         error: BrokerIngressError,
     ) -> RefusedIngress:
         """Discard hostile bytes after deriving bounded digest and validated context."""
-        payload = message.get_payload_as_bytes()
+        payload = inbound_payload(message)
         raw = payload if isinstance(payload, bytes) else b""
         destination = message.get_destination_name()
         family: str | None = None
