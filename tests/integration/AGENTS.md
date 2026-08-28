@@ -98,6 +98,14 @@ The twenty-three `drone-backlog-NN` identifiers are written out in full in
 `test_backlog_recovery_live.PROVISIONING`; the ellipsis above stands for the other twenty-one and
 is not a shell form that works.
 
+That 28-drone roster provisions 99 durable queues, which is the whole effective endpoint ceiling of
+the pinned broker's 100-connection tier ([operating-parameters.md](../../docs/operating-parameters.md#guaranteed-delivery-endpoints)),
+so it cannot coexist with the 23-drone reference roster `just up` provisions: it is a CI-only
+projection. On the shared workstation stack, provision the reference roster plus only the probe
+drones the module you run declares (`test_application_data_plane_live` declares
+`drone-dispatch-probe`). The restart controller calls GNU `timeout`, which macOS does not ship; a
+workstation run needs one on `PATH` before the controller starts.
+
 Keep every drone in that single invocation, because a drone the invocation never names is never
 created. The applier adds what the matrix grants and deletes only ACL topic exceptions and queue
 subscriptions; it never deletes a queue, a client username, or an ACL profile
