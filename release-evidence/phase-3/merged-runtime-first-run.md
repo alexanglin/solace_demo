@@ -316,6 +316,9 @@ Each entry names the original statement, the corrected fact, and the effect.
 
 ## Amendments (2026-08-28, same environment and revision)
 
+- **16:56Z (12:56 local), pointer:** findings 6, 7, and 9 were resolved on a fresh broker volume and a
+  later revision; that changed environment and revision have their own record,
+  `merged-runtime-second-composition.md` (ADR-0197, `bbff2f5`, `66344d8`, `3566a7d`).
 - **14:33Z (10:33 local):** under authorization given after the record was committed, the thirteen
   `aerial_rescue_app_probe_*` databases were dropped (`drop database` × 13 as `aerial_rescue` in
   the PostgreSQL container; `pg_database` then lists none with the prefix). The header's "13 …
