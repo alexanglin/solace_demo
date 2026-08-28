@@ -96,8 +96,8 @@ class DashboardDeploymentWiringTests(unittest.TestCase):
         volumes = cast("list[str]", service.get("volumes", []))
 
         # Assert
-        self.assertEqual("localhost:8080", environment.get("DASHBOARD_ALLOWED_HOSTS"))
-        self.assertEqual("http://localhost:8080", environment.get("DASHBOARD_ALLOWED_ORIGIN"))
+        self.assertEqual("127.0.0.1:8080", environment.get("DASHBOARD_ALLOWED_HOSTS"))
+        self.assertEqual("http://127.0.0.1:8080", environment.get("DASHBOARD_ALLOWED_ORIGIN"))
         self.assertEqual("local-operator", environment.get("DASHBOARD_OPERATOR_ID"))
         self.assertEqual("/app/dashboard", environment.get("DASHBOARD_ASSET_ROOT"))
         self.assertEqual("/run/aerial-rescue/replay", environment.get("DASHBOARD_REPLAY_ROOT"))
@@ -120,7 +120,7 @@ class DashboardDeploymentWiringTests(unittest.TestCase):
 
         # Assert
         self.assertIn("/api/v1/readiness?mode=degradedLive", command)
-        self.assertIn("Host: localhost:8080", command)
+        self.assertIn("Host: 127.0.0.1:8080", command)
         self.assertIn("http.client.HTTPResponse", command)
         self.assertIn("json.loads", command)
         self.assertIn("document.get('ready') is True", command)

@@ -295,8 +295,8 @@ services:
     command: ["/bin/sh", "-c", "umask 0007; exec /app/.venv/bin/python -m aerial_rescue_dashboard_api"]
     environment:
       <<: [*broker-environment, *store-environment]
-      DASHBOARD_ALLOWED_HOSTS: localhost:8080
-      DASHBOARD_ALLOWED_ORIGIN: http://localhost:8080
+      DASHBOARD_ALLOWED_HOSTS: 127.0.0.1:8080
+      DASHBOARD_ALLOWED_ORIGIN: http://127.0.0.1:8080
       DASHBOARD_OPERATOR_ID: local-operator
       DASHBOARD_ASSET_ROOT: /app/dashboard
       DASHBOARD_REPLAY_ROOT: /run/aerial-rescue/replay
@@ -341,7 +341,7 @@ services:
           import http.client,json,socket;
           client=socket.socket(socket.AF_UNIX); client.settimeout(3);
           client.connect('/run/aerial-rescue/dashboard-api.sock');
-          client.sendall(b'GET /api/v1/readiness?mode=degradedLive HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n');
+          client.sendall(b'GET /api/v1/readiness?mode=degradedLive HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nConnection: close\r\n\r\n');
           response=http.client.HTTPResponse(client); response.begin();
           document=json.loads(response.read()); status=response.status; response.close();
           assert status == 200 and document.get('ready') is True
