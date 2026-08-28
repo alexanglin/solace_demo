@@ -2036,6 +2036,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The Agent Mesh entrypoint now stops when its lifecycle is finished.** The owned entrypoint ran
+  `stop()` and `cleanup()` and chose a failure status exactly as
+  [ADR-0177](docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) requires, and then never
+  exited: the pinned Solace SDK's `ThreadPoolExecutor` workers are nondaemon, and
+  `concurrent.futures` joins them without a bound at interpreter shutdown. One run left the
+  container reported `Up` with a frozen restart count for fourteen minutes, so Compose could not see
+  a mesh that had already failed. The entrypoint now waits a bounded settle window for surviving
+  nondaemon threads and, if any outlive it, flushes its diagnostics and stops the process with the
+  status the lifecycle had already chosen
+  ([ADR-0199](docs/adr/0199-terminate-the-owned-agent-mesh-entrypoint.md)).
 - **The dashboard API starts against the composed scenario service.** Its catalog and lost-run
   recovery calls were 404s on the deployed scenario composition, and its Compose readiness probe
   named a Host the production composition refuses; both are corrected (ADR-0197; findings 7 and 9

@@ -6,6 +6,7 @@ import importlib.metadata
 import inspect
 import threading
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final, Protocol, Self
 from unittest.mock import patch
@@ -15,7 +16,14 @@ import solace_ai_connector.common.messaging.solace_messaging as upstream_messagi
 import solace_ai_connector.main as connector_main
 from solace.messaging.config.retry_strategy import RetryStrategy
 
-from aerial_rescue_runtime_compat.lifecycle import run_connector
+import aerial_rescue_runtime_compat as runtime_compat
+from aerial_rescue_runtime_compat.lifecycle import (
+    EXIT_RUNTIME_FAILURE,
+    EXIT_SUCCESS,
+    THREAD_SETTLE_SECONDS,
+    run_connector,
+    terminate_process,
+)
 from aerial_rescue_runtime_compat.messaging import (
     ACTIVE_RECONNECTION_ATTEMPTS,
     ACTIVE_RECONNECTION_WAIT_MILLISECONDS,
@@ -38,6 +46,9 @@ EXPECTED_SAC_VERSION: Final = "3.3.12"
 EXPECTED_SAM_VERSION: Final = "1.28.7"
 VENDOR_SDK_PIN: Final = "solace-pubsubplus==1.9.0"
 SENSITIVE_FAILURE: Final = "tenant-secret-must-not-escape"
+EXPECTED_SETTLE_SECONDS: Final = 15.0
+TEST_SETTLE_SECONDS: Final = 1.0
+SURVIVING_THREADS: Final = 3
 
 
 class _InterruptionListener(Protocol):
@@ -112,6 +123,29 @@ class _FakeConnector:
     def cleanup(self) -> None:
         """Record final resource cleanup."""
         self.calls.append("cleanup")
+
+
+class _FakeInterpreter:
+    """Script the surviving nondaemon thread counts an owned termination step observes."""
+
+    def __init__(self, counts: Sequence[int]) -> None:
+        self.counts = list(counts)
+        self.waits: list[float] = []
+        self.forced: list[int] = []
+
+    def surviving(self) -> int:
+        """Return the next scripted count and repeat the last one forever."""
+        if len(self.counts) > 1:
+            return self.counts.pop(0)
+        return self.counts[0]
+
+    def sleep(self, seconds: float) -> None:
+        """Record one bounded settle wait instead of blocking the suite."""
+        self.waits.append(seconds)
+
+    def force(self, status: int) -> None:
+        """Record the status a hard interpreter exit would have carried."""
+        self.forced.append(status)
 
 
 def _retry_values(strategy: object) -> tuple[int, int]:
@@ -344,6 +378,123 @@ class RuntimeLifecycleTests(unittest.TestCase):
         output = str(logger.error.call_args_list)
         self.assertNotIn(SENSITIVE_FAILURE, output)
         self.assertIn("RuntimeError", output)
+
+
+class ProcessTerminationTests(unittest.TestCase):
+    def test_a_settled_interpreter_returns_the_status_without_forcing_the_exit(self) -> None:
+        # Arrange
+        interpreter = _FakeInterpreter([0])
+
+        # Act
+        status = terminate_process(
+            EXIT_RUNTIME_FAILURE,
+            surviving=interpreter.surviving,
+            sleep=interpreter.sleep,
+            force=interpreter.force,
+            settle_seconds=TEST_SETTLE_SECONDS,
+        )
+
+        # Assert
+        self.assertEqual(EXIT_RUNTIME_FAILURE, status)
+        self.assertEqual([], interpreter.forced)
+        self.assertEqual([], interpreter.waits)
+
+    def test_a_thread_that_ends_within_the_bound_is_awaited_rather_than_forced(self) -> None:
+        # Arrange
+        interpreter = _FakeInterpreter([SURVIVING_THREADS, 1, 0])
+
+        # Act
+        status = terminate_process(
+            EXIT_SUCCESS,
+            surviving=interpreter.surviving,
+            sleep=interpreter.sleep,
+            force=interpreter.force,
+            settle_seconds=TEST_SETTLE_SECONDS,
+        )
+
+        # Assert
+        self.assertEqual(EXIT_SUCCESS, status)
+        self.assertEqual([], interpreter.forced)
+        self.assertNotEqual([], interpreter.waits)
+
+    def test_a_thread_that_outlives_the_bound_forces_termination_with_the_status(self) -> None:
+        # Arrange
+        interpreter = _FakeInterpreter([SURVIVING_THREADS])
+
+        # Act
+        status = terminate_process(
+            EXIT_RUNTIME_FAILURE,
+            surviving=interpreter.surviving,
+            sleep=interpreter.sleep,
+            force=interpreter.force,
+            settle_seconds=TEST_SETTLE_SECONDS,
+        )
+
+        # Assert
+        self.assertEqual(EXIT_RUNTIME_FAILURE, status)
+        self.assertEqual([EXIT_RUNTIME_FAILURE], interpreter.forced)
+        self.assertLessEqual(sum(interpreter.waits), TEST_SETTLE_SECONDS)
+        self.assertEqual(EXPECTED_SETTLE_SECONDS, THREAD_SETTLE_SECONDS)
+
+    def test_a_forced_termination_logs_the_surviving_count_and_nothing_else(self) -> None:
+        # Arrange
+        interpreter = _FakeInterpreter([SURVIVING_THREADS])
+        logger_patch = patch("aerial_rescue_runtime_compat.lifecycle._LOGGER")
+        logger = logger_patch.start()
+
+        # Act
+        terminate_process(
+            EXIT_RUNTIME_FAILURE,
+            surviving=interpreter.surviving,
+            sleep=interpreter.sleep,
+            force=interpreter.force,
+            settle_seconds=TEST_SETTLE_SECONDS,
+        )
+        logger_patch.stop()
+
+        # Assert
+        self.assertEqual(1, len(logger.error.call_args_list))
+        self.assertEqual((SURVIVING_THREADS,), logger.error.call_args_list[0].args[1:])
+
+    def test_the_default_forced_exit_flushes_the_logs_before_stopping_the_interpreter(
+        self,
+    ) -> None:
+        # Arrange
+        interpreter = _FakeInterpreter([SURVIVING_THREADS])
+        order: list[str] = []
+        flush_patch = patch(
+            "aerial_rescue_runtime_compat.lifecycle.logging.shutdown",
+            side_effect=lambda: order.append("flush"),
+        )
+        exit_patch = patch(
+            "aerial_rescue_runtime_compat.lifecycle.os._exit",
+            side_effect=lambda code: order.append(f"exit:{code}"),
+        )
+        flush_patch.start()
+        exit_patch.start()
+
+        # Act
+        terminate_process(
+            EXIT_RUNTIME_FAILURE,
+            surviving=interpreter.surviving,
+            sleep=interpreter.sleep,
+            settle_seconds=TEST_SETTLE_SECONDS,
+        )
+        flush_patch.stop()
+        exit_patch.stop()
+
+        # Assert
+        self.assertEqual(["flush", f"exit:{EXIT_RUNTIME_FAILURE}"], order)
+
+    def test_the_owned_entrypoint_terminates_the_process_after_the_lifecycle(self) -> None:
+        # Arrange
+        entrypoint = Path(inspect.getfile(runtime_compat)).parent / "__main__.py"
+
+        # Act
+        normalized = " ".join(entrypoint.read_text(encoding="utf-8").split())
+
+        # Assert
+        self.assertIn("raise SystemExit(terminate_process(main()))", normalized)
 
 
 class DeploymentCompatibilityTests(unittest.TestCase):

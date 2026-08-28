@@ -217,6 +217,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0196](0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md) | Count the coordinator's reply queue in the Agent Mesh endpoint ceiling | Accepted |
 | [0197](0197-standardize-scenario-control-on-the-console-composition.md) | Standardize scenario control on the console composition | Accepted |
 | [0198](0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) | Give the coordinator a model and a tool surface that answer the structured request | Accepted |
+| [0199](0199-terminate-the-owned-agent-mesh-entrypoint.md) | Terminate the owned Agent Mesh entrypoint | Accepted |
 
 ## Decisions still open
 

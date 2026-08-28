@@ -16,7 +16,11 @@ from solace_ai_connector.common.logging_config import configure_from_file
 from solace_ai_connector.main import load_config, merge_config
 from solace_ai_connector.solace_ai_connector import SolaceAiConnector
 
-from aerial_rescue_runtime_compat.lifecycle import ConnectorRuntime, run_connector
+from aerial_rescue_runtime_compat.lifecycle import (
+    ConnectorRuntime,
+    run_connector,
+    terminate_process,
+)
 from aerial_rescue_runtime_compat.messaging import (
     BrokerTerminalState,
     install_hardened_messaging,
@@ -150,4 +154,4 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(terminate_process(main()))
