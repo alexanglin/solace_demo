@@ -4,13 +4,19 @@
   The first attempt's start is the PostgreSQL container's creation, 13:12:16Z; the last readback
   is the monitor line count at 10:06.
 - **Revision:** `feat/demo-solace-end-to-end`, starting at `b45a57d` (the merge `466df96` plus the
-  commits the first live data-plane runs produced) and ending at `e120fe5`. Attempts 1 and 2 built
-  their images from `b45a57d`, attempt 3 from `1860adf`, the 09:39 re-provisioning ran from
+  commits the first live data-plane runs produced) and ending at `e120fe5`. Attempt 1 failed at the
+  provisioner before the recipe reached its image build; attempt 2 built its images from
+  `b45a57d`, attempt 3 from `1860adf`, the 09:39 re-provisioning ran from
   `ad02fb3`, and the two `mission-control-up` attempts built from `ad02fb3` and `e120fe5`
   respectively; the final attempt's image build started at 09:59:33, 95 s
   after `e120fe5` (09:57:58), from the tree that commit left. Every attempt ran on the working tree
   that its named commit captured, and `git status` was empty after each commit; between attempts the
   tree changed only by the commits named below and by `9818ed7`, the D1 record's corrections.
+- **Governing documents:** the criterion is the `Event broker` and `Dashboard runtime` rows of
+  `docs/IMPLEMENTATION_PLAN.md`; the producer is the operator's Compose composition through the
+  `CONTRIBUTING.md` runbook (`just up`, `just mission-control-up`), not a test class of
+  `docs/TESTING.md` — no executable test produced these observations; the claim ceiling is
+  `docs/LIMITATIONS.md`'s: live on one local host, not release evidence.
 - **Host:** Apple Silicon, macOS 26.6.2 arm64; Docker Engine 29.5.3 with 7.65 GiB allocated to the
   virtual machine; `just` 1.58.0; the application runtime's Python 3.14.7 on the host.
 - **Versions:** PubSub+ software event broker `solace/solace-pubsub-standard:10.26.0.8799` at
@@ -65,10 +71,41 @@ Between attempts 2 and 3 an ad hoc read tested the log's permissions from the ap
 the read-only volume subpath as user 10001 and as 1000001 (finding 3); its exact invocation was not
 retained, and it is not reproduced here.
 
-Read-only SEMP v2 monitor and config reads over the broker container's loopback (`docker exec …
-curl http://localhost:8080/SEMP/v2/…`) supplied the client, queue, flow, and profile readbacks;
-`docker exec` reads of `/var/lib/solace/jail/logs/event.log` supplied the broker events. No
-broker object was created or changed by hand.
+Read-only readbacks, in the order first taken (the admin credential is read from
+`deploy/secrets/broker-admin-password` inside the command and never printed):
+
+Read-only readbacks, in the order first taken. Each SEMP request ran as `docker exec
+aerial-rescue-mesh-broker-1 curl -s <basic authentication for the admin user, read from
+deploy/secrets/broker-admin-password by the wrapper and never printed> "<URL>"`; only the URLs
+are listed:
+
+```sh
+docker exec … "http://localhost:8080/SEMP/v2/config/msgVpns/default/clientProfiles?select=clientProfileName,maxEndpointCountPerClientUsername,maxSubscriptionCount,maxConnectionCountPerClientUsername&count=100"
+docker exec … "http://localhost:8080/SEMP/v2/monitor/msgVpns/default/queues?select=queueName,durable&count=200"
+docker exec … "http://localhost:8080/SEMP/v2/monitor/msgVpns/default/clients?select=clientUsername,clientName&count=100"
+docker exec … "http://localhost:8080/SEMP/v2/monitor/msgVpns/default?select=maxEffectiveEndpointCount"
+docker exec … "http://localhost:8080/SEMP/v2/monitor/msgVpns/default/clients/aerial-rescue-recorder/txFlows?count=50"
+docker exec aerial-rescue-mesh-broker-1 sh -c 'tail -c 1200 /var/lib/solace/jail/logs/event.log'
+docker exec aerial-rescue-mesh-broker-1 sh -c 'grep -n SYSTEM_SYSTEM_STARTUP_COMPLETE /var/lib/solace/jail/logs/event.log'
+docker exec aerial-rescue-mesh-broker-1 /usr/sw/loads/currentload/bin/cli -A -e "show logging"
+docker exec aerial-rescue-mesh-agent-mesh-1 /opt/venv/bin/python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3).status)"
+docker exec aerial-rescue-mesh-recorder-1 cat /run/aerial-rescue/recorder-readiness/ready.json
+docker exec -i aerial-rescue-mesh-scenario-service-1 /app/.venv/bin/python -   # urllib GET /internal/v1/scenarios with Host, with and without Authorization: Bearer <file>
+docker exec aerial-rescue-mesh-postgres-1 psql -U aerial_rescue -d aerial_rescue -tAc "select version_num from alembic_version;"
+docker exec aerial-rescue-mesh-postgres-1 psql -U aerial_rescue -d aerial_rescue -Ac "select count(*), count(*) filter (where state='pending') from dashboard_operation;"
+docker logs --tail 400 aerial-rescue-mesh-broker-event-monitor-1
+docker inspect -f '{{.RestartCount}} {{.State.StartedAt}} {{.State.Health.Status}}' <container>
+```
+
+No broker object was created or changed by hand.
+
+### Remediation between attempts
+
+- After attempt 1 (spool refusal): none in code; the second attempt waited for the spool.
+- After attempt 2 (component `info`; monitor exit 3): `6503036`, then `1860adf` (ADR-0194, ADR-0195).
+- After attempt 3 (endpoint ceiling): `ad02fb3` (ADR-0196), re-provisioning, `agent-mesh` restarted.
+- After `mission-control-up` 1 (recorder unhealthy): `e120fe5`, image rebuilt.
+- After `mission-control-up` 2 (dashboard-api): none — finding 7 awaits a decision.
 
 ## What the run found that no offline test could
 
@@ -89,7 +126,8 @@ provisioner's refusal, not measured here). The health check now probes `guarante
 
 ### 2. The owned gateway component never started inside the Connector
 
-The second `just up --build` provisioned the reference topology, passed the Ollama preflight, built
+The second `just up --build` provisioned the reference topology, passed the Ollama preflight
+(`ollama_chat/qwen3:4b` at the manifest digest locked in `agent-mesh/model-lock.toml`), built
 both images, and started `agent-mesh` and `broker-event-monitor`; `agent-mesh` restart-looped with
 `Could not find 'info' dictionary for component_class AerialRescueEventMeshGatewayComponent`. The
 pinned Solace AI Connector 3.3.12 looks the `info` dictionary up on the component class's module
@@ -161,9 +199,10 @@ command is `aerial-rescue-recorder` → `aerial_rescue_recorder.console:main`, a
 reads the `RECORDER_READINESS_PATH` freshness lease, but (code reading at `b45a57d`) only the
 parallel `main.py` composition (`python -m aerial_rescue_recorder`) ever wrote that lease:
 `console.py` never referenced it. The console now publishes the lease from the lifecycle's
-readiness after every poll (`e120fe5`); the rebuilt recorder's Compose probe passed within 29 s of
-its container `StartedAt` (13:59:47Z; Compose started `dashboard-api`, which depends on the
-recorder's health, at 14:00:16Z) with a live `recorder-readiness/v1` lease.
+readiness after every poll (`e120fe5`); the rebuilt recorder's Compose probe passed within 23 s of
+its container `StartedAt` (13:59:47Z; `dashboard-api`, which Compose starts only after the
+recorder is healthy, wrote its first log line at 14:00:10Z) with a live `recorder-readiness/v1`
+lease.
 
 ### 6. The event monitor refuses every line the broker writes
 
@@ -272,6 +311,20 @@ Each entry names the original statement, the corrected fact, and the effect.
 | "healthy 39 s after start", "within seconds", "21 s", "75 s poll", "36 min", "23 min" | instruments named or the value marked as not measurable from retained artifacts | none |
 | `fleet-simulator`, `scenario-service` "healthy" | alive by `/healthz` liveness probes; `/readyz` not probed | the "proven live" paragraph now separates readiness from liveness |
 | "every provisioning call, Guaranteed publication, and queue bind depends on that state" | only the provisioner's first `PUT` was observed; the generalisation is ADR-0194's, an inference | none |
+| "Attempts 1 and 2 built their images from `b45a57d`" (`961d845`) | attempt 1 failed at the provisioner before any image build | none |
+| "within 29 s of its container `StartedAt`" (`961d845`) | within 23 s (dashboard-api's first log line 14:00:10Z, not its fourth start) | none |
+
+## Amendments (2026-08-28, same environment and revision)
+
+- **14:33Z (10:33 local):** under authorization given after the record was committed, the thirteen
+  `aerial_rescue_app_probe_*` databases were dropped (`drop database` × 13 as `aerial_rescue` in
+  the PostgreSQL container; `pg_database` then lists none with the prefix). The header's "13 …
+  now exist", finding 8's "remain", and "No cleanup was performed during this run" describe the
+  state at 10:05; this is the first cleanup.
+- **14:45Z (10:45 local):** `/readyz` inside the `scenario-service` and `fleet-simulator` containers
+  (`urllib` GET with the service's own `Host` header) answered `200 {"ready":true}` for both. The
+  record's "alive by `/healthz` liveness probes; `/readyz` not probed" holds for the run; their
+  readiness is established by this readback, not by the Compose probes.
 
 ## What this proves and what it does not
 
