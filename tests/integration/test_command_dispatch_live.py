@@ -248,7 +248,7 @@ def _drain(role: Principal, queue: str) -> list[Mapping[str, object]]:
             body = message.get_payload_as_bytes()
             receiver.settle(message, Outcome.ACCEPTED)
             if body is not None:
-                taken.append(decode_envelope(body).data)
+                taken.append(decode_envelope(bytes(body)).data)
     finally:
         receiver.close()
         service.disconnect()

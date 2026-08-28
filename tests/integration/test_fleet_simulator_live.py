@@ -263,7 +263,7 @@ def _drain(reader: BrokerSession) -> list[Mapping[str, object]]:
         window = DRAIN_WINDOW_MILLISECONDS
         body = message.get_payload_as_bytes()
         assert body is not None
-        envelope = decode_envelope(body)
+        envelope = decode_envelope(bytes(body))
         check_topic_binding(envelope, parse_topic(message.get_destination_name()))
         payloads.append(envelope.data)
 

@@ -137,7 +137,8 @@ def _consume_one(role: Principal, queue: str, outcome: Outcome) -> bytes | None:
         if message is None:
             return None
         receiver.settle(message, outcome)
-        return message.get_payload_as_bytes()
+        payload = message.get_payload_as_bytes()
+        return None if payload is None else bytes(payload)
     finally:
         receiver.close()
         service.disconnect()
