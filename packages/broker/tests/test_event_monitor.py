@@ -258,6 +258,30 @@ class EventProcessingTests(unittest.TestCase):
             (alert.disposition, alert.severity, alert.condition),
         )
 
+    def test_a_listen_port_enable_clears_at_the_severity_the_pinned_broker_emits(self) -> None:
+        # Arrange
+        processor = BrokerEventProcessor(clock=lambda: FIXED_NOW)
+        cleared = _event(
+            "SYSTEM_SERVICE_LISTEN_PORT_ENABLE",
+            severity="INFO",
+            additions={
+                "clear": "1LbDO6+dRa8NiIVAvEVaxA",
+                "serviceName": "SEMP",
+                "portNumber": 8080,
+            },
+        )
+
+        # Act
+        alert = processor.process(cleared)
+
+        # Assert
+        self.assertIsNotNone(alert)
+        assert alert is not None
+        self.assertEqual(
+            (AlertDisposition.CLEARED, BrokerSeverity.INFO, "SYSTEM_SERVICE_LISTEN_PORT_DISABLE"),
+            (alert.disposition, alert.severity, alert.condition),
+        )
+
     def test_capability_exclusions_and_client_events_emit_no_alert(self) -> None:
         # Arrange
         processor = BrokerEventProcessor(clock=lambda: FIXED_NOW)

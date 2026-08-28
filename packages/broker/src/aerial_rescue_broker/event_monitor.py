@@ -245,7 +245,7 @@ _SYSTEM_PAIRS: Final[tuple[_PairRow, ...]] = (
         "SYSTEM_SERVICE_LISTEN_PORT_DISABLE",
         "SYSTEM_SERVICE_LISTEN_PORT_ENABLE",
         BrokerSeverity.NOTICE,
-        BrokerSeverity.NOTICE,
+        BrokerSeverity.INFO,
     ),
     (
         "SYSTEM_SSL_CONNECTIONS_HIGH",
