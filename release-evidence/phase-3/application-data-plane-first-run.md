@@ -197,3 +197,12 @@ test drops its database in a `finally` after `graph.close()`, and in every attem
 raised the shutdown refusal first, so the drop was never reached; they hold no secret and can be
 dropped when a human authorizes it. The private FIFOs and the shim live in the session scratchpad
 and were not committed.
+
+## Later the same day
+
+The production half of the stop in section 5 was fixed test-first as `9db01bb`: `Family.outbox_family`
+names the hyphenated literal, and the gateway's publication gate, the gateway's staging, and the
+dashboard API's staging read it; the gate test drives the committed proposal fixture through
+`publish_application_batch` and sees it published. The live test's `_rows_for_family` filter still
+selects by `literal_suffix` and awaits a human's permission to change, so the data-plane run has
+not been repeated at `9db01bb`.
