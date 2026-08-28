@@ -16,3 +16,10 @@ digest = "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae
 recorded_on = "2026-08-21"
 recorded_by = "Alex Anglin"
 reason = "Phase 0 orchestration spike for the general and planning roles. Tool-capable at 2.50 GB, reported by Ollama as completion, tools, and thinking. Provisional: the roles are pinned by the Phase 4 model selection."
+
+[[models]]
+identifier = "ollama_chat/llama3:8b"
+digest = "sha256:365c0bd3c000a25d28ddbf732fe1c6add414de7275464c4e4d1c3b5fcb5d8ad1"
+recorded_on = "2026-08-28"
+recorded_by = "Alex Anglin"
+reason = "The MissionCoordinator's structured answer to the Event Mesh Gateway. 4.66 GB, Q4_0. qwen3:4b did not converge on the two-integer output schema inside the gateway's acknowledgment window (docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md)."

@@ -1758,6 +1758,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The Mission Coordinator answers the gateway's structured request instead of writing artifacts.**
+  It runs `ollama_chat/llama3:8b`, keeps only the read-only Event Mesh Tool the configuration
+  declares (`auto_inject_artifact_tools: false`), and is bounded to four model calls per task, so a
+  non-converging agent stays inside the Event Mesh Gateway's acknowledgment window rather than
+  running past it while every salient event is dead-lettered (ADR-0198).
 - **The scenario service runs one composition.** The `scenario-service` console entry point now
   serves catalog discovery and lost-run recovery beside start, status, cancel, and the Compose
   liveness and readiness probes; a mission-identity mismatch on cancel is `RUN_CONFLICT`; documents

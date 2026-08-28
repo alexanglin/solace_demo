@@ -324,7 +324,9 @@ carries only the values.
 | Agent card publishing interval | 30 s per agent | `agent_card_publishing.interval_seconds` in each agent configuration |
 | Web UI allowed browser origins | loopback only; a wildcard, an empty list, or any other host is refused | the `WEBUI_EXPOSURE` rule in the configuration validator |
 | Local model digest form | `sha256:` and 64 lowercase hexadecimal characters, the Ollama manifest digest | the `MODEL_LOCK` rule offline; `GET /api/tags` at readiness, which is still owed |
-| Orchestration model for the Phase 0 spike | `ollama_chat/qwen3:4b`, 2.50 GB resident, reporting `completion`, `tools`, `thinking` | `agent-mesh/model-lock.toml`. Provisional: the roles are pinned by the Phase 4 model selection |
+| Orchestration model for the Orchestrator and the workflow | `ollama_chat/qwen3:4b`, 2.50 GB resident, reporting `completion`, `tools`, `thinking` | `agent-mesh/model-lock.toml`. Provisional: the roles are pinned by the Phase 4 model selection |
+| Model for the coordinator's structured answer | `ollama_chat/llama3:8b`, 4.66 GB, Q4_0 | `agent-mesh/model-lock.toml` and the `model` in `agent-mesh/configs/mission-coordinator.yaml` ([ADR-0198](adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md)) |
+| Coordinator model calls per task | 4, bounding a non-converging agent inside the gateway's acknowledgment window | `max_llm_calls_per_task` in `agent-mesh/configs/mission-coordinator.yaml`; the framework's default is 20 ([ADR-0198](adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md)) |
 | Agent request timeout | 60 s per A2A request | `inter_agent_communication.request_timeout_seconds` in each agent configuration |
 | Event Mesh Gateway acknowledgement timeout | 180 s, the window a handler has to complete before the gateway settles the message | `acknowledgment_policy.timeout_seconds` in `agent-mesh/configs/event-mesh-gateway.yaml`; a test asserts the committed value |
 

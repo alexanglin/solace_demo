@@ -131,6 +131,12 @@ false positive or a false failure.
 - Bound every connect, acknowledgement, receive, HTTP, and model wait. Use monotonic deadlines for
   elapsed-time or silence claims, and close services, receivers, publishers, and HTTP connections in a
   `finally` block even when construction or startup fails.
+- Publish a Guaranteed application event through the project's own publisher, never a bare SDK one.
+  Every durable application consumer validates that the envelope's `traceparent` agrees with the
+  native Solace trace context, so a message published without it is refused `native-trace-refused`
+  and dead-lettered: the publish is acknowledged and the event still reaches nothing. A probe whose
+  only oracle is a topic observation cannot see this, because a gateway that does not validate still
+  receives it.
 - Preserve certificate-chain and hostname validation. Never retry with plaintext, disable verification,
   broaden an identity, or trust arbitrary certificate material to make a probe pass.
 

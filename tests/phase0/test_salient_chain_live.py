@@ -34,6 +34,7 @@ from typing import Final
 
 import pytest
 from aerial_rescue_broker.deployment import DEFAULT_VPN
+from aerial_rescue_broker.messaging import open_guaranteed_publishing_session
 from aerial_rescue_broker.semp import SempSession, connect
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.digest import source_event_digest
@@ -49,15 +50,14 @@ from aerial_rescue_domain.principals import Principal
 from aerial_rescue_recorder.console import production_bounds
 from aerial_rescue_store.engine import create_engine
 from aerial_rescue_store.settings import database_settings
-from solace.messaging.config.solace_properties import message_properties
-from solace.messaging.resources.topic import Topic as SolaceTopic
 from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.broker_live_support import (
     DEPLOY_ROOT,
+    LOCAL_BROKER_ENDPOINT,
     administrator_semp_endpoint,
-    connected_native_role_service,
+    role_credential,
 )
 
 pytestmark = [pytest.mark.phase0, pytest.mark.docker, pytest.mark.broker, pytest.mark.ollama]
@@ -77,12 +77,15 @@ REQUEST_WINDOW_SECONDS: Final = 60
 # turns plus the two service hops that follow, and a failure at its end is a real absence.
 RESPONSE_WINDOW_SECONDS: Final = 900
 POLL_INTERVAL_SECONDS: Final = 1.0
-ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS: Final = 10000
 SOURCE_DIGEST_PROPERTY: Final = "aerial-rescue-source-event-digest"
 CORROBORATED_SCORE: Final = 75
 EXPECTED_BAND: Final = "corroborated"
 EXPECTED_OUTCOME: Final = "contributing"
 
+_SOURCE_EVENT_QUERY: Final = text(
+    "select source, canonical_digest from source_event "
+    "where mission_id = :mission and event_id = :event"
+)
 _PROPOSAL_QUERY: Final = text(
     "select proposal_id, agent_name, proposal_type, source_event_digest, drone_id "
     "from proposal where mission_id = :mission and source_event_id = :event"
@@ -149,25 +152,23 @@ def _salient_event(mission: str) -> tuple[str, bytes, str, Envelope]:
 
 
 def _publish(topic: str, payload: bytes, digest: str) -> None:
-    """Publish one guaranteed message as the fleet simulator and wait for the broker's answer."""
-    service = connected_native_role_service(Principal.FLEET_SIMULATOR)
+    """Publish one guaranteed salient event the way the fleet does.
+
+    The project's own publisher is used rather than a bare SDK one because it injects the native
+    Solace trace context beside the envelope's ``traceparent``. Every durable application consumer
+    validates that the two agree (``packages/broker`` ``_validate_trace``), so a message published
+    without it is refused ``native-trace-refused`` and dead-lettered by the recorder and the
+    evidence service, leaving the proposal with no provenance to score.
+    """
+    session = open_guaranteed_publishing_session(
+        LOCAL_BROKER_ENDPOINT,
+        Principal.FLEET_SIMULATOR,
+        role_credential(Principal.FLEET_SIMULATOR),
+    )
     try:
-        publisher = service.create_persistent_message_publisher_builder().build()
-        publisher.start()
-        message = service.message_builder().build(
-            bytearray(payload),
-            additional_message_properties={
-                SOURCE_DIGEST_PROPERTY: digest,
-                message_properties.PERSISTENT_ACK_IMMEDIATELY: True,
-                message_properties.PERSISTENT_DMQ_ELIGIBLE: True,
-            },
-        )
-        publisher.publish_await_acknowledgement(
-            message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
-        )
-        publisher.terminate()
+        session.publisher.publish(topic, payload, {SOURCE_DIGEST_PROPERTY: digest})
     finally:
-        service.disconnect()
+        session.close()
 
 
 def _a2a_deliveries() -> int:
@@ -227,6 +228,20 @@ async def _await_row(
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
+async def _stored_source_event(
+    mission: str, event_id: str, seconds: int
+) -> Mapping[str, object] | None:
+    """Wait for the evidence service to persist the published event as its provenance."""
+    engine = _store_engine()
+    try:
+        return await _await_row(
+            seconds,
+            lambda: _one_row(engine, _SOURCE_EVENT_QUERY, {"mission": mission, "event": event_id}),
+        )
+    finally:
+        await engine.dispose()
+
+
 async def _proposal_then_decision(
     mission: str, event_id: str, seconds: int
 ) -> tuple[Mapping[str, object] | None, Mapping[str, object] | None]:
@@ -265,6 +280,24 @@ def _wait_for_requests(before: int, seconds: int) -> int:
 
 
 class SalientChainTests(unittest.TestCase):
+    def test_the_published_event_is_persisted_as_the_evidence_service_s_provenance(self) -> None:
+        # Arrange
+        mission = _mission_id()
+        topic, payload, digest, envelope = _salient_event(mission)
+
+        # Act
+        _publish(topic, payload, digest)
+        stored = asyncio.run(_stored_source_event(mission, envelope.id, REQUEST_WINDOW_SECONDS))
+
+        # Assert
+        self.assertIsNotNone(
+            stored,
+            "the evidence service stored no source event: the publication was refused before it "
+            "could become provenance, so nothing downstream can be scored",
+        )
+        assert stored is not None
+        self.assertEqual(f"urn:aerial-rescue:drone:{DRONE}", stored["source"])
+
     def test_the_salient_event_becomes_one_a2a_task_for_the_mission_coordinator(self) -> None:
         # Arrange
         topic, payload, digest, _envelope = _salient_event(_mission_id())
