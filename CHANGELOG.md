@@ -2022,6 +2022,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **An operator's approval can be consumed for the proposal it binds.** The domain's
+  `proposal_digest` used the generic context digest, which omits only a member named `digest`, while
+  every service binds proposals by ADR-0148's digest, which omits exactly `proposalDigest`; the
+  gateway hands the domain the complete stored payload, so `consume()` refused every live approval
+  as a digest mismatch (`proposal-mismatch`) after the dashboard had bound it. The domain now uses
+  the contracts proposal digest, so both forms of a proposal's parameters digest alike.
 - **Several proposals can draw on one source fact.** The evidence service minted a durable evidence
   item's identity from the source fact alone while the store keeps one item row per proposal, so the
   second proposal scored against one salient event was refused as an already-stored identity; the
