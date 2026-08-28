@@ -355,7 +355,10 @@ created outside the scenario file.
 [ADR-0107](adr/0107-authenticate-private-scenario-and-fleet-run-control.md) defines two authenticated
 private hops: dashboard API to scenario service, and scenario service to fleet simulator. Both use
 distinct exact Hosts and distinct bearer credentials; neither private listener publishes a host port.
-ADR-0114 extends only scenario control with catalog discovery and lost-run recovery.
+ADR-0114 extends only scenario control with catalog discovery and lost-run recovery. Both private
+listeners also expose Host-gated, unauthenticated `/healthz` and `/readyz` process probes for their
+Compose health checks; the probes sit outside the route registries and the generated OpenAPI
+([ADR-0197](adr/0197-standardize-scenario-control-on-the-console-composition.md)).
 
 | Method and path | Request | Successful response |
 | --- | --- | --- |

@@ -1758,6 +1758,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The scenario service runs one composition.** The `scenario-service` console entry point now
+  serves catalog discovery and lost-run recovery beside start, status, cancel, and the Compose
+  liveness and readiness probes; a mission-identity mismatch on cancel is `RUN_CONFLICT`; documents
+  carry `Cache-Control: no-store` and a trailing slash is not redirected (ADR-0197).
 - **The active reconnection budget is 60 attempts, up from 30.** A broker restart on the Apple Silicon
   reference host is about 14 s of graceful stop plus 20 s of boot before the listen ports open, and
   30 attempts 1 000 ms apart are refused at once while the ports are closed, so every application
@@ -2027,6 +2031,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The dashboard API starts against the composed scenario service.** Its catalog and lost-run
+  recovery calls were 404s on the deployed scenario composition, and its Compose readiness probe
+  named a Host the production composition refuses; both are corrected (ADR-0197; findings 7 and 9
+  of `release-evidence/phase-3/merged-runtime-first-run.md`).
 - **The broker event monitor accepts the pinned broker's JSON severity names.** On a storage element
   first initialised under the merged Compose file the broker writes JSON events with upper-case
   syslog severities (`INFO`, `NOTICE`, `WARNING`, `ERR`); the monitor's strict wire model knew only
@@ -2209,3 +2217,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   control -- rather than the absence of the vulnerability. The advisory is reported as
   `PYSEC-2026-344`; the register named a CVE alias, which would have failed the waiver gate in both
   directions at once.
+
+### Removed
+
+- **The parallel scenario-service composition** (`main.py`, `http.py`, `fleet_client.py`,
+  `lifecycle.py`, `ScenarioControl`) and its five test modules (ADR-0197).

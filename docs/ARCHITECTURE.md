@@ -118,8 +118,8 @@ validation cannot prove their settlement, redelivery, reconnect, or model behavi
 - **Scenario service:** Validates the versioned scenario catalog and definitions, preserves their
   explicit roster, geometry, and heartbeat-loss schedule, losslessly projects only simulated members
   into the fleet input, and exposes lifecycle operations. The input carries no seed or random source.
-  ADR-0158 keeps this process brokerless: private start, status, and cancel control uses authenticated
-  bounded HTTP, and the dashboard owns durable mission-event staging and publication while the fleet owns
+  ADR-0158 keeps this process brokerless: private catalog discovery, start, status, cancel, and lost-run
+  recovery use authenticated bounded HTTP from one console composition (ADR-0197), and the dashboard owns durable mission-event staging and publication while the fleet owns
   telemetry, critical drone events, and command effects.
   The exact twenty-plus-three production catalog, confined digest-validating loader, process-epoch
   lifecycle coordination, HTTP client/server, health/readiness, internal listener, console entry point,

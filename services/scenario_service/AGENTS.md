@@ -64,12 +64,12 @@ fact in its canonical authority and make the coordinated change required by the 
 | Path | Current responsibility |
 | --- | --- |
 | `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts dependency, exact FastAPI, HTTPX, Pydantic, and Uvicorn pins, and the `scenario-service` console entry point |
-| `src/aerial_rescue_scenario_service/wire.py` | Owns the two scenario-file models, four scenario-control server models, four distinct fleet-control caller models, and canonical-first strict validation |
-| `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact three-route private request, response, and default-refusal expectations without constructing a server |
-| `src/aerial_rescue_scenario_service/catalog.py` | Confines, bounds, digest-checks, and validates every definition selected by the injected version-one filesystem catalog |
+| `src/aerial_rescue_scenario_service/wire.py` | Owns the two scenario-file models, five scenario-control server models plus the private catalog response, four distinct fleet-control caller models, and canonical-first strict validation |
+| `src/aerial_rescue_scenario_service/http_contract.py` | Records the exact five-route private request, response, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_scenario_service/catalog.py` | Confines, bounds, digest-checks, and validates every definition selected by the injected version-one filesystem catalog, runs the geometry, roster, and heartbeat validators at startup, and projects the validated catalog into the dashboard `scenario-catalog/v1` document once per epoch |
 | `src/aerial_rescue_scenario_service/fleet_http.py` | Owns the distinct authenticated, bounded HTTPX caller and uncertain-start status reconciliation for fleet control |
-| `src/aerial_rescue_scenario_service/control.py` | Losslessly projects accepted definitions, coordinates one process epoch, and maps typed fleet outcomes without claiming durable mission authority |
-| `src/aerial_rescue_scenario_service/http_runtime.py` | Enforces ordered private admission, canonical request/response bodies, closed refusals, Host and bearer checks, bounded lifecycle, liveness, and readiness in FastAPI |
+| `src/aerial_rescue_scenario_service/control.py` | Losslessly projects accepted definitions, coordinates one process epoch, recovers a lost fleet run to a pinned `ABORTED` without publication, and maps typed fleet outcomes without claiming durable mission authority |
+| `src/aerial_rescue_scenario_service/http_runtime.py` | Enforces ordered private admission, canonical request/response bodies, closed refusals, Host and bearer checks, bounded lifecycle, liveness, readiness, catalog discovery, and lost-run recovery in FastAPI ([ADR-0197](../../docs/adr/0197-standardize-scenario-control-on-the-console-composition.md)) |
 | `src/aerial_rescue_scenario_service/service.py` | Reads only the six private-control/catalog inputs, composes the brokerless runtime, and starts the internal Uvicorn listener |
 | `tests/` | Owns the member-local catalog, coordinator, private HTTP, composition, timeout, refusal, readiness, and no-broker behavior |
 | `src/aerial_rescue_scenario_service/__init__.py` | Package-intent docstring |

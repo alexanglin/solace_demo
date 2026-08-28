@@ -245,3 +245,14 @@ Several service-level targets and operating parameters carry no number yet, and 
 number with no defined instrument. They are tracked in their own home, the "Parameters still to be
 set" section of [`docs/operating-parameters.md`](docs/operating-parameters.md), and are listed here
 only so that a reader of this document knows they exist.
+
+## 3. Parallel compositions the merge left behind
+
+[ADR-0197](docs/adr/0197-standardize-scenario-control-on-the-console-composition.md) standardized the
+scenario service on the composition its deployment runs. What remains:
+
+| Debt | Where | Clears when |
+| --- | --- | --- |
+| `ScenarioCatalogLoader`, `RootedScenarioSource`, and their refusal enum have no production consumer; ADR-0114 asks for one strict loader | `services/scenario_service/src/aerial_rescue_scenario_service/catalog.py`, `tests/test_catalog_loader.py` | The loader's geometry, roster, heartbeat, depth, and committed-pair checks are rewritten against `FilesystemScenarioCatalog` and the loader is deleted |
+| A lost run recovered to `ABORTED` produces no mission event: the scenario service is brokerless (ADR-0158) and the dashboard's `_complete_live_start` completes the operation without staging one | `services/dashboard_api/src/aerial_rescue_dashboard_api/orchestration.py` | A decision names where the `ABORTED` audit fact is staged and the dashboard stages it |
+| The fleet simulator (`control_plane/runtime.py` deployed; `control_plane/http.py`, `main.py` parallel), the dashboard API (`delivery/production.py` deployed; `console.py` parallel), and the recorder (`console.py` deployed; `main.py` parallel) still carry two compositions | `services/fleet_simulator`, `services/dashboard_api`, `services/recorder` | Each is standardized on its deployed composition under ADR-0197's rule, with its own understand-and-design pass and deletion permission |
