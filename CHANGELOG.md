@@ -2027,6 +2027,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The broker event monitor accepts the pinned broker's JSON severity names.** On a storage element
+  first initialised under the merged Compose file the broker writes JSON events with upper-case
+  syslog severities (`INFO`, `NOTICE`, `WARNING`, `ERR`); the monitor's strict wire model knew only
+  the lower-case names and refused every line as `BROKER_EVENT_INPUT_REFUSED`. The model now
+  normalises the case on input; emitted alerts are unchanged.
 - **The deployed recorder console now publishes its readiness lease.** `aerial-rescue-recorder`
   (`console:main`) never wrote the `RECORDER_READINESS_PATH` freshness lease that the Compose
   healthcheck reads — the writer lived only in the parallel `main.py` composition — so the merged

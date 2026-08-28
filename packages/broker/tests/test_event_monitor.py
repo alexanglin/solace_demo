@@ -18,6 +18,7 @@ from aerial_rescue_broker.event_monitor import (
     AlertDisposition,
     BrokerAlert,
     BrokerEventProcessor,
+    BrokerSeverity,
     EventMonitorError,
     EventMonitorRefusal,
     StreamSummary,
@@ -234,6 +235,27 @@ class EventProcessingTests(unittest.TestCase):
         self.assertTrue(all("tenant-broker-name" not in value for value in rendered))
         self.assertTrue(
             all('"msg"' not in value and '"password"' not in value for value in rendered)
+        )
+
+    def test_the_pinned_broker_s_upper_case_severity_names_are_accepted(self) -> None:
+        # Arrange
+        processor = BrokerEventProcessor(clock=lambda: FIXED_NOW)
+        raised = _event(
+            "VPN_AD_MSG_SPOOL_HIGH",
+            scope="VPN",
+            severity="WARNING",
+            additions={"raise": "IVpR4b6B17dyeaAUiHNWaQ"},
+        )
+
+        # Act
+        alert = processor.process(raised)
+
+        # Assert
+        self.assertIsNotNone(alert)
+        assert alert is not None
+        self.assertEqual(
+            (AlertDisposition.RAISED, BrokerSeverity.WARNING, "VPN_AD_MSG_SPOOL_HIGH"),
+            (alert.disposition, alert.severity, alert.condition),
         )
 
     def test_capability_exclusions_and_client_events_emit_no_alert(self) -> None:

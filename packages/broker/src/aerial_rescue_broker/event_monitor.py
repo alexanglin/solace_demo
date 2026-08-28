@@ -28,7 +28,7 @@ from pathlib import Path
 from threading import Event
 from typing import Final, Literal, Protocol
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from aerial_rescue_broker.event_source import RetainedEventLogSource
 
@@ -111,6 +111,12 @@ class _BrokerEventWire(BaseModel):
     scope: EventScope
     event: str = Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]+$")
     msg: str = Field(max_length=MAX_JSON_EVENT_BYTES, exclude=True)
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _accept_upper_case_severity(cls, value: object) -> object:
+        """Accept the pinned broker's upper-case syslog severity names (`WARNING`, `ERR`, ...)."""
+        return value.lower() if isinstance(value, str) else value
 
 
 @dataclass(frozen=True)
