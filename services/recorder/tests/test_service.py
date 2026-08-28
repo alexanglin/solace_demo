@@ -112,6 +112,19 @@ class RecorderServeTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
+    async def test_every_poll_reports_the_lifecycle_readiness_to_the_observer(self) -> None:
+        # Arrange
+        polls = len(recorder_bindings().queues) + 1
+        lifecycle = BrokerLifecycle()
+        lifecycle.connected()
+        observed: list[bool] = []
+
+        # Act
+        await serve(_Runtime(), lifecycle, _ticks(polls + 1), polls, observed.append)
+
+        # Assert
+        self.assertEqual([False] * (polls - 1) + [True, True], observed)
+
     async def test_a_reconnected_session_stays_unready_until_a_complete_receiver_cycle(
         self,
     ) -> None:

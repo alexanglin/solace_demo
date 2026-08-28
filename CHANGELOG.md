@@ -2027,6 +2027,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The deployed recorder console now publishes its readiness lease.** `aerial-rescue-recorder`
+  (`console:main`) never wrote the `RECORDER_READINESS_PATH` freshness lease that the Compose
+  healthcheck reads — the writer lived only in the parallel `main.py` composition — so the merged
+  runtime's first composition (2026-08-28) left the container permanently unhealthy after every
+  queue had bound. `serve()` now reports the lifecycle's readiness after every poll and the
+  console activates, refreshes, and withdraws the lease from it; `default_runtime()` resolves the
+  lease path with an owned default and refuses a blank override.
 - **The Agent Mesh identity may own five endpoints.** The live steady state holds exactly the four
   ADR-0153 allowed, so the MissionCoordinator's peer-delegation reply queue was refused with
   `SOLCLIENT_SUBCODE_NO_MORE_NON_DURABLE_QUEUE_OR_TE` and the container restart-looped

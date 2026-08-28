@@ -50,7 +50,13 @@ from aerial_rescue_store.settings import (
 from aerial_rescue_recorder.broker import RecorderBrokerReceiver
 from aerial_rescue_recorder.capture import Recorder
 from aerial_rescue_recorder.processing import RecorderRuntime, RefusalPort
-from aerial_rescue_recorder.service import ServeReport, recorder_bindings, serve
+from aerial_rescue_recorder.readiness import ReadinessLease
+from aerial_rescue_recorder.service import (
+    ServeReport,
+    ignore_readiness,
+    recorder_bindings,
+    serve,
+)
 from aerial_rescue_recorder.store import (
     RecordingTransactionsAdapter,
     StoreRecordingTransactions,
@@ -61,7 +67,9 @@ BROKER_VPN_SETTING: Final = "SOLACE_BROKER_VPN"
 TRUST_STORE_SETTING: Final = "TRUST_STORE"
 DEPLOY_DIRECTORY_SETTING: Final = "AERIAL_RESCUE_DEPLOY_DIR"
 SCHEMA_DIRECTORY_SETTING: Final = "AERIAL_RESCUE_SCHEMA_DIR"
+READINESS_PATH_SETTING: Final = "RECORDER_READINESS_PATH"
 DEFAULT_SCHEMA_DIRECTORY: Final = "schemas"
+DEFAULT_READINESS_PATH: Final = "/run/aerial-rescue/recorder-readiness/ready.json"
 production_bounds: Final = _production_bounds
 
 RECEIVE_WINDOW_MILLISECONDS: Final = 1_000
@@ -168,6 +176,7 @@ class Runtime:
     observed_at: Callable[[], str]
     running: Callable[[], bool]
     signals: SignalScope
+    readiness_path: Path | None = None
 
 
 class _StopController:
@@ -240,6 +249,30 @@ def _directory(environment: Mapping[str, str], name: str, default: str) -> Path:
     return Path(value)
 
 
+class _ReadinessPublisher:
+    """Publish the lifecycle's readiness as the freshness lease the container healthcheck reads."""
+
+    def __init__(self, lease: ReadinessLease) -> None:
+        """Start with no claim: the lease exists only while the recorder is ready."""
+        self._lease = lease
+        self._active = False
+
+    def observe(self, ready: bool) -> None:
+        """Activate on the first ready poll, refresh while ready, withdraw when unready."""
+        if ready and not self._active:
+            self._lease.activate()
+            self._active = True
+        elif ready:
+            self._lease.refresh_if_due()
+        elif self._active:
+            self.withdraw()
+
+    def withdraw(self) -> None:
+        """Remove the lease so a healthcheck fails as soon as capture is unavailable."""
+        self._lease.close()
+        self._active = False
+
+
 def default_runtime() -> Runtime:
     """Return the real container runtime without opening a file, socket, or connection."""
     environment = os.environ
@@ -265,6 +298,7 @@ def default_runtime() -> Runtime:
         observed_at=lambda: format_instant(datetime.now(tz=UTC)),
         running=lambda: True,
         signals=process_signals,
+        readiness_path=_directory(environment, READINESS_PATH_SETTING, DEFAULT_READINESS_PATH),
     )
 
 
@@ -310,6 +344,11 @@ async def run(runtime: Runtime) -> ServeReport:
         store = runtime.store(database, runtime.bounds, runtime.observed_at)
         session: ReceiverSession | None = None
         graph: RecorderRuntime | None = None
+        readiness = (
+            None
+            if runtime.readiness_path is None
+            else _ReadinessPublisher(ReadinessLease(runtime.readiness_path))
+        )
         try:
             session = runtime.open_broker(endpoint, role, credential, bindings)
             receiver = RecorderBrokerReceiver(
@@ -332,8 +371,11 @@ async def run(runtime: Runtime) -> ServeReport:
                 session.readiness,
                 lambda: stop.running() and runtime.running(),
                 recovery_cycle,
+                ignore_readiness if readiness is None else readiness.observe,
             )
         finally:
+            if readiness is not None:
+                readiness.withdraw()
             await _shutdown(
                 graph,
                 session,

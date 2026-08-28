@@ -6,8 +6,9 @@ import tomllib
 import unittest
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractAsyncContextManager, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import TracebackType
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
@@ -26,8 +27,10 @@ from aerial_rescue_broker.messaging import (
 from aerial_rescue_broker.queues import queues_for
 from aerial_rescue_domain.principals import Principal
 from aerial_rescue_recorder.console import (
+    DEFAULT_READINESS_PATH,
     DEFAULT_SCHEMA_DIRECTORY,
     DEPLOY_DIRECTORY_SETTING,
+    READINESS_PATH_SETTING,
     SCHEMA_DIRECTORY_SETTING,
     Runtime,
     SettingsError,
@@ -292,6 +295,28 @@ class RecorderConsoleTests(unittest.IsolatedAsyncioTestCase):
                 boundaries.events,
             ),
         )
+
+    async def test_the_readiness_lease_is_published_only_while_ready_and_withdrawn_at_shutdown(
+        self,
+    ) -> None:
+        # Arrange
+        boundaries = _Boundaries()
+        cycle = len(queues_for(Principal.RECORDER, ())) + 1
+        path = Path(self.enterContext(TemporaryDirectory())) / "ready.json"
+        ticks = _ticks(cycle + 2)
+        observed: list[bool] = []
+
+        def running() -> bool:
+            observed.append(path.exists())
+            return ticks()
+
+        runtime = replace(_runtime(boundaries, 1), readiness_path=path, running=running)
+
+        # Act
+        await run(runtime)
+
+        # Assert
+        self.assertEqual(([False] * cycle + [True] * 3, False), (observed, path.exists()))
 
     async def test_a_complete_fair_cycle_restores_readiness_before_shutdown(self) -> None:
         # Arrange
@@ -569,6 +594,27 @@ class DefaultRuntimeTests(unittest.TestCase):
                 [SettingsRefusal.MISSING_SETTING, SettingsRefusal.MISSING_SETTING],
             ),
             (runtime.deploy, runtime.schema_directory, refusals),
+        )
+
+    def test_the_readiness_lease_path_defaults_to_the_owned_volume_and_a_blank_override_refuses(
+        self,
+    ) -> None:
+        # Arrange
+        environments: tuple[dict[str, str], ...] = ({}, {READINESS_PATH_SETTING: " "})
+
+        # Act
+        with patch.dict("os.environ", environments[0], clear=True):
+            runtime = default_runtime()
+        with (
+            patch.dict("os.environ", environments[1], clear=True),
+            pytest.raises(SettingsError) as captured,
+        ):
+            default_runtime()
+
+        # Assert
+        self.assertEqual(
+            (Path(DEFAULT_READINESS_PATH), SettingsRefusal.MISSING_SETTING),
+            (runtime.readiness_path, captured.value.refusal),
         )
 
     def test_process_signal_scope_installs_requests_stop_and_restores_prior_handlers(self) -> None:

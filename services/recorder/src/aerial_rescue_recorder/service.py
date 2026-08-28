@@ -88,13 +88,23 @@ def recorder_bindings() -> ReceiverOnlyBindings:
     return ReceiverOnlyBindings(queues, direct, DIRECT_INTEGRATION_RECEIVER_CAPACITY)
 
 
+def ignore_readiness(ready: bool) -> None:
+    """Accept a readiness observation for a composition that publishes none."""
+    del ready
+
+
 async def serve(
     recorder: RecorderProcess,
     lifecycle: BrokerLifecycle,
     running: Callable[[], bool],
     recovery_cycle_polls: int,
+    observe_readiness: Callable[[bool], None] = ignore_readiness,
 ) -> ServeReport:
-    """Process bounded polls and restore readiness only after one complete healthy cycle."""
+    """Process bounded polls and restore readiness only after one complete healthy cycle.
+
+    ``observe_readiness`` receives the lifecycle's readiness after every poll so the composing
+    process can publish it (the container healthcheck reads a freshness lease) at poll cadence.
+    """
     if type(recovery_cycle_polls) is not int or recovery_cycle_polls <= 0:
         raise ServiceError(ServiceRefusal.INVALID_RECOVERY_CYCLE)
     counted: dict[ProcessDecision, int] = {}
@@ -122,6 +132,7 @@ async def serve(
                 lifecycle.mark_ready()
         else:
             successful_polls = 0
+        observe_readiness(lifecycle.is_ready())
     exit_status = int(lifecycle.state is BrokerLifecycleState.EXHAUSTED)
     return ServeReport(counted, exit_status)
 

@@ -135,7 +135,7 @@ identifiers, threads, tasks, or signal handlers at import time.
 ADR-0061 provisions the `recorder` role with subscribe exceptions for thirteen application families --
 every family except the two raw gateway request/reply transports -- and no publish grant. That matrix is
 an authority ceiling, not a record-format definition and not proof that every delivered payload belongs
-in a replay fixture. The concrete graph binds ten Guaranteed recordable-family queues and two Direct
+in a replay fixture. The concrete graph binds nine Guaranteed recordable-family queues and two Direct
 recordable-family subscriptions; it deliberately does not bind the raw structured Agent Response body.
 Broker configuration and representative live denial probes do not prove every subscription, redelivery,
 or denial path. Keep claims at that evidence level. The recorder has no A2A authority and must not
