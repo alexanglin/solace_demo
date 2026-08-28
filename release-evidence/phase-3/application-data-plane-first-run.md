@@ -215,3 +215,23 @@ test `test_recovery_drains_one_bounded_batch_per_attempt_before_readiness` pins 
 relies on), while the probe calls it once at three sites; that edit awaits permission. The
 authorization suite, with the no-match acknowledgement classified as authorized, is 16 passed and
 2 failed, the two SEMP monitor probes.
+
+## Runs five to eight, 21:00–21:32
+
+Each run stopped one step further, and each step found one thing:
+
+| Run | Start | Stopped at | Cause | Fix |
+| --- | --- | --- | --- | --- |
+| 5 | 21:00 | second proposal for one source event | evidence item identity was the source fact's, one row per proposal | `eed28c1` |
+| 6 | 21:08 | exact approval refused `approval-expired` | probe froze one `AuthorizationClock`; ingress saw `wall-clock-regressed-before-gateway-binding` | `e1203ca` (probe, approved) |
+| 7 | 21:16 | exact approval verified and bound, command refused `proposal-mismatch` | domain `proposal_digest` omitted `digest`, contracts omit `proposalDigest`; `consume()` compared unlike digests | domain delegates to the contracts digest |
+| 8 | 21:28 | fleet command receipt | the probe itself reads `get_payload_as_bytes()` and requires `bytes` | pending |
+
+Run 8 is the first to consume an operator approval and stage the `escalate-rescue` command, and the
+first to reach the ADR-0186 handshake: the controller received the token, ran
+`docker compose restart --no-deps broker`, then `up --detach --wait --wait-timeout 30 broker`, which
+**recreated** the container because the merged Compose file differs from the pre-merge container's
+definition (`stop_grace_period: 20m`, same image digest), and reported healthy inside its 30 s
+bound at 21:28:36. The named volume `broker-storage` kept `/var/lib/solace`: 91 queues, 11 client
+profiles, and 11 ACL profiles read back unchanged. The broker now runs under the merged Compose
+definition. The reconnection observation the restart exists to prove was not reached.
