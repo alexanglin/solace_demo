@@ -354,3 +354,10 @@ authorizes it. The shared `aerial_rescue` database is still at revision `0005_da
 pre-merge `migration` container left it on 2026-08-26: no run in this record touches it, because the
 probe creates and migrates its own disposable database to head (0010 through run 14, 0011 from run
 15). Increment 0.3 must apply 0006–0011 to it; its `audit_record.kind` is still 32 characters wide.
+
+## Correction (2026-08-28): scope citation
+
+The header's "Increment 0.2 of the demo plan" cites the session's untracked working plan, which is
+not a repository document. The governing criterion is the `Event broker` row of
+`docs/IMPLEMENTATION_PLAN.md` (ADR-0043) and Phase 3's "live qualification pending" bullets; the
+run satisfies no Phase 3 acceptance criterion. The observation and its conclusions are unchanged.

@@ -445,7 +445,7 @@ endpoint.
 | command-gateway | yes / yes | no / non-durable guard | 1 | 3 / 1 | 3 | 2 | 3 | one owned long-lived connection with three one-message application flows; construction-count and live readback instruments |
 | dashboard-api | yes / yes | no / non-durable guard | 1 | 6 / 1 | 6 | 3 | 6 | one owned long-lived connection with six one-message application flows; construction-count and live readback instruments |
 | evidence-service | yes / yes | no / non-durable guard | 1 | 2 / 1 | 2 | 0 | 2 | one owned long-lived connection with two one-message application flows; construction-count and live readback instruments |
-| recorder | no / yes | no / non-durable guard | 1 | 10 / 0 | 10 | 3 | 10 | one receiver-only connection with ten named flows; construction-count and live readback instruments |
+| recorder | no / yes | no / non-durable guard | 1 | 10 / 0 | 10 | 3 | 10 | one receiver-only connection with nine named flows (one below the flow ceiling); construction-count and live readback instruments |
 | event-mesh-gateway | yes / yes | yes / non-durable | 4 | 1 / 1 | 2 | 0 | 255 | one pinned upstream default-window flow; readback pending |
 | event-mesh-tool | yes / yes | yes / non-durable | 1 | 1 / 1 | 1 | 0 | 255 | one pinned upstream default-window flow; readback pending |
 | agent-mesh-agent | yes / yes | yes / non-durable | 9 | 1 / 1 | 5 | 0 | 255 | one pinned upstream default-window flow; the live steady state of 2026-08-28 held four temporaries and the coordinator's reply queue is the fifth ([ADR-0196](adr/0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md)) |
