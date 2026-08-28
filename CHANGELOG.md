@@ -2022,6 +2022,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Several proposals can draw on one source fact.** The evidence service minted a durable evidence
+  item's identity from the source fact alone while the store keeps one item row per proposal, so the
+  second proposal scored against one salient event was refused as an already-stored identity; the
+  first live run met it on its three proposals. The row identity is now derived from the proposal
+  and the fact; the published `evidenceItemId` is still the fact's.
 - **The command gateway can publish the proposals it normalizes.** Its publication gate compared an
   outbox row's `family` with the dotted `Family.literal_suffix` (`agent.proposal`) while every
   producer and the store use the hyphenated form (`agent-proposal`), so each normalized proposal

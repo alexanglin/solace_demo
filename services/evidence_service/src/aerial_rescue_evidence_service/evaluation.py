@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Final
 
 from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.digest import Context, digest
 from aerial_rescue_domain.evidence import INITIAL_STATE, EvidenceEvent, EvidenceState, transition
 from aerial_rescue_domain.scoring import (
     SCORE_VERSION,
@@ -125,6 +126,30 @@ def _lifecycle(origin: ObservationOrigin) -> EvidenceState:
     return transition(validated, EvidenceEvent.ADMIT)
 
 
+ITEM_IDENTITY_PREFIX: Final = "item-"
+"""The prefix of a durable evidence item's identity; the rest is a truncated digest."""
+
+ITEM_IDENTITY_DIGEST_LENGTH: Final = 59
+"""Hex digits kept after the prefix, so the identity fits the store's 64-character column."""
+
+
+def _item_identity(proposal_id: str, fact: ProvenanceFact) -> str:
+    """Return the durable identity of one fact's evidence item for one proposal.
+
+    The store keeps one item row per proposal (``proposal_id`` is a member and the reader
+    selects by it), while the fact's ``evidence_item_id`` names the observation itself and
+    is what the decision publishes. Deriving the row identity from both lets several
+    proposals draw on one source fact; the first live run found two proposals for one
+    salient event colliding on the fact's identity.
+    """
+    document = {
+        "canonicalizationVersion": 1,
+        "proposalId": proposal_id,
+        "evidenceItemId": fact.evidence_item_id,
+    }
+    return ITEM_IDENTITY_PREFIX + digest(Context.EVIDENCE, document)[:ITEM_IDENTITY_DIGEST_LENGTH]
+
+
 def _stored_item(
     mission_id: str,
     proposal_id: str,
@@ -132,7 +157,7 @@ def _stored_item(
 ) -> StoredEvidenceItem:
     """Map one verified provenance document into the durable evidence row."""
     return StoredEvidenceItem(
-        evidence_id=fact.evidence_item_id,
+        evidence_id=_item_identity(proposal_id, fact),
         mission_id=mission_id,
         proposal_id=proposal_id,
         source_id=fact.source_id,
