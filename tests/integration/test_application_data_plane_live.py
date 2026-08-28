@@ -36,6 +36,7 @@ from aerial_rescue_broker.messaging import (
     InboundMessage,
     MessageSettlement,
     SolaceDirectPublisher,
+    inbound_payload,
     open_command_gateway_session,
     open_dashboard_session,
     open_fleet_session,
@@ -1043,7 +1044,7 @@ def _observe_telemetry(graph: _LiveGraph) -> bool:
     received = graph.dashboard.receive_direct(RECEIVE_TIMEOUT_MILLISECONDS)
     if received is None:
         return False
-    payload = received.get_payload_as_bytes()
+    payload = inbound_payload(received)
     destination = received.get_destination_name()
     if not isinstance(payload, bytes) or destination != topic:
         return False
@@ -1591,7 +1592,7 @@ def _fleet_delivery(graph: _LiveGraph) -> CommandDelivery:
     if message is None:
         _fail("live fleet received no authorized drone command")
     topic = message.get_destination_name()
-    payload = message.get_payload_as_bytes()
+    payload = inbound_payload(message)
     if not isinstance(topic, str) or not isinstance(payload, bytes):
         _fail("live fleet command omitted its typed broker members")
     return CommandDelivery(
