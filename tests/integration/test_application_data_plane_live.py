@@ -232,6 +232,7 @@ RECEIVE_TIMEOUT_MILLISECONDS: Final = 10_000
 IDLE_RECEIVE_MILLISECONDS: Final = 25
 MAX_RECORDER_POLLS: Final = 500
 RECOVERY_POLLS: Final = 600
+GATEWAY_DRAIN_ATTEMPTS: Final = 3
 RECOVERY_POLL_SECONDS: Final = 0.05
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01"
 RESTART_REQUEST_FIFO_SETTING: Final = "AERIAL_RESCUE_BROKER_RESTART_REQUEST_FIFO"
@@ -1069,6 +1070,23 @@ def _proposal_for_label(
     return matching[0]
 
 
+async def _drain_gateway(graph: _LiveGraph) -> bool:
+    """Drain the gateway's bounded batches until one attempt finds nothing left.
+
+    ``recover_application`` publishes one bounded batch per attempt and reports ready only
+    when an attempt visits nothing, which is how the gateway's own scheduler drives it.
+    """
+    for _attempt in range(GATEWAY_DRAIN_ATTEMPTS):
+        if await recover_gateway(
+            graph.gateway,
+            graph.gateway_store,
+            graph.gateway_router,
+            _instant,
+        ):
+            return True
+    return False
+
+
 async def _establish_authorities(
     graph: _LiveGraph,
 ) -> tuple[
@@ -1090,12 +1108,7 @@ async def _establish_authorities(
     normalized = await _publish_agent_responses(graph, source_digest, labels)
     gateway_rows = await graph.gateway_store.application_outbox.pending("command-gateway")
     proposals = tuple(_proposal_for_label(gateway_rows, graph.identity, label) for label in labels)
-    if not await recover_gateway(
-        graph.gateway,
-        graph.gateway_store,
-        graph.gateway_router,
-        _instant,
-    ):
+    if not await _drain_gateway(graph):
         _fail("live gateway did not publish normalized proposals")
 
     proposal_outcomes: list[EvidenceDispatchOutcome] = []
@@ -1393,12 +1406,7 @@ async def _exercise_expired_approval(
         _required_text(expired_result, "approvalIngress"),
         await _authorization_reason(graph, expired_command),
     )
-    if not await recover_gateway(
-        graph.gateway,
-        graph.gateway_store,
-        graph.gateway_router,
-        _instant,
-    ):
+    if not await _drain_gateway(graph):
         _fail("live gateway did not publish the expired-command audit")
     return approval_dispatch, command_dispatch, reasons
 
@@ -1442,12 +1450,7 @@ async def _exercise_mismatched_approval(
         mismatched_approval,
     )
     exact_dispatch = await _dispatch_approval(graph, clock)
-    if not await recover_gateway(
-        graph.gateway,
-        graph.gateway_store,
-        graph.gateway_router,
-        _instant,
-    ):
+    if not await _drain_gateway(graph):
         _fail("live gateway did not publish the mismatch-command audit")
     return (adversary_dispatch, exact_dispatch), command_dispatch, reasons
 
@@ -1489,12 +1492,7 @@ async def _exercise_exact_approval(
     publication = pending[0]
     if publication.state is not OutboxState.STAGED:
         _fail("live exact command was not staged for confirmed publication")
-    if not await recover_gateway(
-        graph.gateway,
-        graph.gateway_store,
-        graph.gateway_router,
-        _instant,
-    ):
+    if not await _drain_gateway(graph):
         _fail("live gateway did not publish the exact authorized command")
     graph.dashboard_router.publish(
         exact_command.topic,
