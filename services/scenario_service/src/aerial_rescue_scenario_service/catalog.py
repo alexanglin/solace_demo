@@ -15,6 +15,7 @@ from aerial_rescue_contracts import canonical, digest
 from pydantic import BaseModel, ValidationError
 
 from aerial_rescue_scenario_service.wire import (
+    MAX_SCENARIO_CATALOG_BYTES,
     MAX_WIRE_DOCUMENT_BYTES,
     AbsentHeartbeat,
     DeclaredOnlyMember,
@@ -59,6 +60,7 @@ class FilesystemScenarioCatalog:
         """Remember the injected root without reading it at import or construction time."""
         self._configured_root = root
         self._definitions: dict[tuple[str, int], ScenarioDefinition] = {}
+        self._response: ScenarioCatalogResponse | None = None
         self._failure: ControlRefusal | None = ControlRefusal.SCENARIO_NOT_FOUND
         self._ready = False
 
@@ -71,6 +73,7 @@ class FilesystemScenarioCatalog:
         """Validate the bounded catalog off the event loop and fail readiness closed."""
         self._ready = False
         self._definitions.clear()
+        self._response = None
         try:
             definitions = await asyncio.to_thread(_validated_definitions, self._configured_root)
         except ControlError as error:
@@ -87,7 +90,16 @@ class FilesystemScenarioCatalog:
         """Drop cached untrusted documents and end this catalog epoch."""
         self._ready = False
         self._definitions.clear()
+        self._response = None
         self._failure = ControlRefusal.SCENARIO_NOT_FOUND
+
+    def catalog_response(self) -> ScenarioCatalogResponse:
+        """Project the startup-validated definitions into the bounded dashboard document."""
+        if self._failure is not None:
+            raise ControlError(self._failure)
+        if self._response is None:
+            self._response = _catalog_response(self._definitions)
+        return self._response
 
     async def load(self, scenario_id: str, revision: int) -> ScenarioDefinition:
         """Resolve an exact validated catalog identity without treating input as a path."""
@@ -99,6 +111,25 @@ class FilesystemScenarioCatalog:
         if any(identifier == scenario_id for identifier, _revision in self._definitions):
             raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH)
         raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND)
+
+
+def _catalog_response(
+    definitions: Mapping[tuple[str, int], ScenarioDefinition],
+) -> ScenarioCatalogResponse:
+    """Project validated definitions into scenario-catalog/v1 within its 512 KiB bound."""
+    try:
+        response = ScenarioCatalogResponse(
+            catalogVersion="scenario-catalog/v1",
+            scenarios=[
+                _project_catalog_scenario(definition) for definition in definitions.values()
+            ],
+        )
+    except (ScenarioCatalogError, ValidationError) as error:
+        raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND) from error
+    encoded = canonical.canonical_bytes(response.model_dump(mode="json", by_alias=True))
+    if len(encoded) > MAX_SCENARIO_CATALOG_BYTES:
+        raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND)
+    return response
 
 
 def _validated_definitions(root: Path) -> dict[tuple[str, int], ScenarioDefinition]:
@@ -134,6 +165,7 @@ def _validated_definitions(root: Path) -> dict[tuple[str, int], ScenarioDefiniti
             raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH) from error
         if definition.identifier != entry.identifier or definition.revision != entry.revision:
             raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH)
+        _validate_definition(definition)
         definitions[identity] = definition
     return definitions
 

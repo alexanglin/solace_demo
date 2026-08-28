@@ -15,6 +15,7 @@ from aerial_rescue_scenario_service.wire import (
     FleetControlCancelRequest,
     FleetControlRunStatus,
     FleetControlStartRequest,
+    ScenarioCatalogResponse,
     ScenarioControlCancelRequest,
     ScenarioControlStartRequest,
     ScenarioDefinition,
@@ -158,6 +159,14 @@ class FakeDefinitions:
         self.calls.append(("load", (scenario_id, revision)))
         return self.definition
 
+    def catalog_response(self) -> ScenarioCatalogResponse:
+        self.calls.append(("catalog_response", None))
+        if not self.ready:
+            raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND)
+        return ScenarioCatalogResponse.model_validate(
+            {"catalogVersion": "scenario-catalog/v1", "scenarios": []}
+        )
+
 
 class FakeFleet:
     def __init__(self, status: FleetControlRunStatus | None = None) -> None:
@@ -201,6 +210,26 @@ class FakeFleet:
 
 
 class ScenarioCoordinatorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_catalog_delegates_to_the_definition_source_only_when_ready(self) -> None:
+        # Arrange
+        definitions = FakeDefinitions(_definition())
+        fleet = FakeFleet()
+        coordinator = ScenarioCoordinator(definitions, fleet)
+
+        # Act
+        with pytest.raises(ControlError) as unready:
+            await coordinator.catalog()
+        await coordinator.startup()
+        response = await coordinator.catalog()
+
+        # Assert
+        self.assertEqual(ControlRefusal.SCENARIO_NOT_FOUND, unready.value.refusal)
+        self.assertEqual("scenario-catalog/v1", response.catalog_version)
+        self.assertEqual(
+            [("catalog_response", None), ("startup", None), ("catalog_response", None)],
+            definitions.calls,
+        )
+
     async def test_start_projects_every_simulator_input_and_maps_fleet_status(self) -> None:
         # Arrange
         definitions = FakeDefinitions(_definition())

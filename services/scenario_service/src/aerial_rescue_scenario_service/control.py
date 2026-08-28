@@ -98,6 +98,10 @@ class ScenarioDefinitions(Protocol):
         """Resolve an exact catalog identity and revision."""
         ...
 
+    def catalog_response(self) -> ScenarioCatalogResponse:
+        """Return the dashboard catalog projection validated at startup."""
+        ...
+
 
 class FleetControl(Protocol):
     """The distinct authenticated private fleet-control caller capability."""
@@ -181,6 +185,10 @@ class ScenarioCoordinator:
             await self._fleet.shutdown()
         finally:
             await self._definitions.shutdown()
+
+    async def catalog(self) -> ScenarioCatalogResponse:
+        """Serve the startup-validated catalog projection; an unready source refuses."""
+        return self._definitions.catalog_response()
 
     async def start(self, request: ScenarioControlStartRequest) -> ScenarioControlRunStatus:
         """Project and start once, or reconcile the same stable request by status."""

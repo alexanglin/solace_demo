@@ -10,11 +10,15 @@ import pytest
 from aerial_rescue_contracts import canonical
 from aerial_rescue_scenario_service.catalog import FilesystemScenarioCatalog
 from aerial_rescue_scenario_service.http_runtime import ControlError, ControlRefusal
+from aerial_rescue_scenario_service.wire import ScenarioCatalogResponse, parse_wire_document
 
 pytestmark = [pytest.mark.unit]
 
 REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[3]
 GOLDEN_DEFINITION: Final = REPOSITORY_ROOT / "fixtures/golden/v1/scenario/definition/baseline.json"
+CATALOG_SCHEMA_ID: Final = (
+    "https://aerial-rescue.invalid/schemas/v1/dashboard/scenario-catalog.schema.json"
+)
 PRODUCTION_ROOT: Final = REPOSITORY_ROOT / "scenarios"
 SCENARIO_ID: Final = "wilderness-missing-person"
 
@@ -79,6 +83,79 @@ class FilesystemScenarioCatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             entries[0]["definitionSha256"], hashlib.sha256(definition_bytes).hexdigest()
         )
+
+    async def test_the_committed_catalog_projects_into_the_dashboard_document_after_startup(
+        self,
+    ) -> None:
+        # Arrange
+        definition = cast(
+            "dict[str, object]",
+            canonical.decode(
+                (PRODUCTION_ROOT / "v1/wilderness-missing-person.r1.json").read_bytes()
+            ),
+        )
+        catalog = FilesystemScenarioCatalog(PRODUCTION_ROOT)
+        with pytest.raises(ControlError) as before_startup:
+            catalog.catalog_response()
+
+        # Act
+        await catalog.startup()
+        response = catalog.catalog_response()
+        encoded = canonical.canonical_bytes(response.model_dump(mode="json", by_alias=True))
+        parsed = parse_wire_document(CATALOG_SCHEMA_ID, encoded)
+        await catalog.shutdown()
+        with pytest.raises(ControlError) as after_shutdown:
+            catalog.catalog_response()
+
+        # Assert
+        scenario = response.scenarios[0]
+        self.assertEqual(
+            ("scenario-catalog/v1", 1, SCENARIO_ID, 1, definition["title"], definition["summary"]),
+            (
+                response.catalog_version,
+                len(response.scenarios),
+                scenario.identifier,
+                scenario.revision,
+                scenario.title,
+                scenario.summary,
+            ),
+        )
+        self.assertEqual(
+            (23, 20, 3, 20, 23),
+            (
+                scenario.declared_count,
+                scenario.simulated_count,
+                scenario.declared_only_count,
+                len(scenario.sectors),
+                len(scenario.members),
+            ),
+        )
+        self.assertIsInstance(parsed, ScenarioCatalogResponse)
+        self.assertEqual(
+            (ControlRefusal.SCENARIO_NOT_FOUND, ControlRefusal.SCENARIO_NOT_FOUND),
+            (before_startup.value.refusal, after_shutdown.value.refusal),
+        )
+
+    async def test_a_definition_that_fails_geometry_validation_fails_readiness_closed(
+        self,
+    ) -> None:
+        # Arrange
+        document = cast("dict[str, object]", canonical.decode(GOLDEN_DEFINITION.read_bytes()))
+        polygon = cast("dict[str, list[object]]", document["searchPolygon"])
+        polygon["vertices"] = [polygon["vertices"][0]] * len(polygon["vertices"])
+        root = Path(self.enterContext(TemporaryDirectory()))
+        _write_catalog(root, canonical.canonical_bytes(document))
+        catalog = FilesystemScenarioCatalog(root)
+
+        # Act
+        await catalog.startup()
+        ready = catalog.ready
+        with pytest.raises(ControlError) as refused:
+            await catalog.load(SCENARIO_ID, 1)
+
+        # Assert
+        self.assertFalse(ready)
+        self.assertEqual(ControlRefusal.SCENARIO_NOT_FOUND, refused.value.refusal)
 
     async def test_startup_validates_digest_and_loads_an_exact_catalog_identity(self) -> None:
         # Arrange
