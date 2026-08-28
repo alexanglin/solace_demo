@@ -111,6 +111,33 @@ evidence-service; `mission-control-up` and the `services` profile both exited 0.
 | 3 | `6b0c5ee`, `9b7eaa4`, `d75058e`, `08dcae0`, `f1738ce` (ADR-0197) |
 | 4 | `3566a7d` |
 
+## Amendments (2026-08-28, same environment and revision)
+
+- **17:00Z–17:04Z, the operator's Start.** Driven the way the browser does it: the bootstrap bearer
+  from the served index, `Origin: http://127.0.0.1:8080`, an `Idempotency-Key`, and the canonical body
+  `{"mode":"degradedLive","scenarioRevision":1}` to
+  `POST /api/v1/scenarios/wilderness-missing-person/start` through Caddy. The first attempt
+  (17:00:09Z) was refused `409 OPERATION_CONFLICT`, and the documented Reset
+  (`POST /api/v1/scenarios/current/reset`, 17:03:09Z) `409 CANCELLATION_NOT_ESTABLISHED`: the shared
+  database's `dashboard_current_run` pointer named a pre-merge run
+  (`run-cea0c581d0df401ab2e3bcbfcde51cab`, mission `PLANNED`, never started) that neither the composed
+  scenario service nor the fleet knew, which ADR-0143 refuses to abandon. All 51 pre-merge operations
+  had already been reconciled to `completed` by the dashboard's startup: the ported recovery route
+  answered the pending one live.
+- **17:04:31Z, authorized data mutation.** With explicit authorization, the one row of
+  `dashboard_current_run` was deleted (`delete from dashboard_current_run`, 1 row; every run,
+  mission, operation, and the 10 601 audit records kept). This is the only PostgreSQL data change of
+  the day outside the migrations.
+- **17:04:32Z, telemetry through the composed stack.** Start answered `202` with a fresh mission and
+  run. Read-only SEMP client counters (`dataTxMsgCount`/`dataRxMsgCount`, sampled every 10 s for
+  101 s): `fleet-simulator`'s session received 220 then 280 messages from its own publications by
+  20 s and no more afterwards — 14 ticks × 20 drones, the documented 280 telemetry publications of
+  the wilderness run; `dashboard-api` and `recorder` each transmitted 280 (the broker's Direct delivery
+  to their subscriptions). `audit_record` grew by 11 rows, all `connectivityChanged`. The mission's
+  `dashboard_mission.lifecycle` stayed `PLANNED`: the fleet executor publishes no mission-lifecycle
+  event, the gap the working plan already schedules. No approval, proposal, or command was exercised;
+  the "not proven" list below is superseded only for telemetry.
+
 ## What this proves and what it does not
 
 Proven live on the reference host: the merged Compose definition composes every default,
