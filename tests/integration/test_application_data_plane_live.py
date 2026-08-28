@@ -977,12 +977,7 @@ async def _open_live_graph(
 
 async def _recover_live_graph(graph: _LiveGraph) -> None:
     """Drain every committed producer outbox before declaring the graph ready."""
-    gateway_ready = await recover_gateway(
-        graph.gateway,
-        graph.gateway_store,
-        graph.gateway_router,
-        _instant,
-    )
+    gateway_ready = await _drain_gateway(graph)
     evidence_ready = await recover_evidence(
         graph.evidence,
         graph.evidence_outbox,
