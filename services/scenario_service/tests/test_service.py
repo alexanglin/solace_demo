@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import aerial_rescue_scenario_service.service as service_module
 import pytest
+from aerial_rescue_scenario_service.http_contract import ROUTE_EXPECTATIONS
 from aerial_rescue_scenario_service.service import (
     ListenerOptions,
     SettingsError,
@@ -166,13 +167,41 @@ class ScenarioServiceCompositionTests(unittest.TestCase):
             {
                 "/healthz",
                 "/readyz",
+                "/internal/v1/scenarios",
                 "/internal/v1/runs",
                 "/internal/v1/runs/{run_id}",
                 "/internal/v1/runs/{run_id}/cancel",
+                "/internal/v1/runs/{run_id}/recover",
             },
         )
         self.assertFalse(any(name.startswith("aerial_rescue_broker") for name in imported_modules))
         self.assertFalse(any("solace" in name for name in imported_modules))
+
+    def test_deployed_application_mounts_every_route_the_contract_registry_declares(self) -> None:
+        # Arrange
+        temporary = TemporaryDirectory()
+        settings = settings_from_environment(_environment(Path(temporary.name)))
+        declared = {
+            (method, path.replace("{runId}", "{run_id}"))
+            for method, path, _query, _body, _responses in ROUTE_EXPECTATIONS
+        }
+
+        # Act
+        application = build_application(settings)
+        mounted = {
+            (method, route.path)
+            for route in application.routes
+            if isinstance(route, Route) and route.methods is not None
+            for method in route.methods
+        }
+        temporary.cleanup()
+
+        # Assert
+        self.assertEqual(declared, {pair for pair in mounted if pair[1].startswith("/internal/")})
+        self.assertEqual(
+            {("GET", "/healthz"), ("GET", "/readyz")},
+            {pair for pair in mounted if not pair[1].startswith("/internal/")},
+        )
 
     def test_console_entrypoint_passes_the_bounded_internal_listener_to_uvicorn(self) -> None:
         # Arrange

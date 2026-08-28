@@ -16,7 +16,9 @@ from aerial_rescue_scenario_service.http_runtime import (
     create_application,
 )
 from aerial_rescue_scenario_service.wire import (
+    ScenarioCatalogResponse,
     ScenarioControlCancelRequest,
+    ScenarioControlRecoveryRequest,
     ScenarioControlRunStatus,
     ScenarioControlStartRequest,
 )
@@ -60,6 +62,36 @@ def _start_bytes(**changes: object) -> bytes:
     return canonical.canonical_bytes(document)
 
 
+def _recovery_bytes(**changes: object) -> bytes:
+    document: dict[str, object] = {
+        "controlVersion": 1,
+        "scenarioId": "wilderness-missing-person",
+        "scenarioRevision": 1,
+        "missionId": MISSION_ID,
+        "runId": RUN_ID,
+    }
+    document.update(changes)
+    return canonical.canonical_bytes(document)
+
+
+def _catalog() -> ScenarioCatalogResponse:
+    return ScenarioCatalogResponse.model_validate(
+        {"catalogVersion": "scenario-catalog/v1", "scenarios": []}
+    )
+
+
+class _OversizedCatalog(ScenarioCatalogResponse):
+    """A catalog whose canonical document exceeds the 512 KiB private bound."""
+
+    @override
+    def model_dump(self, **kwargs: object) -> dict[str, object]:
+        return {
+            "catalogVersion": "scenario-catalog/v1",
+            "scenarios": [],
+            "pad": ["x" * 4_000] * 160,
+        }
+
+
 def _cancel_bytes(**changes: object) -> bytes:
     document: dict[str, object] = {
         "controlVersion": 1,
@@ -79,6 +111,7 @@ class FakeControl:
         self.refusal: ControlRefusal | None = None
         self.unexpected: Exception | None = None
         self.invalid_result = False
+        self.oversized_catalog = False
 
     async def startup(self) -> None:
         self.lifecycle.append("startup")
@@ -94,6 +127,22 @@ class FakeControl:
             raise ControlError(self.refusal, "sensitive upstream detail")
         if self.invalid_result:
             return cast("ScenarioControlRunStatus", object())
+        return _status()
+
+    async def catalog(self) -> ScenarioCatalogResponse:
+        self.calls.append(("catalog", None))
+        if self.refusal is not None:
+            raise ControlError(self.refusal, "sensitive upstream detail")
+        if self.oversized_catalog:
+            return _OversizedCatalog.model_validate(
+                {"catalogVersion": "scenario-catalog/v1", "scenarios": []}
+            )
+        return _catalog()
+
+    async def recover(self, request: ScenarioControlRecoveryRequest) -> ScenarioControlRunStatus:
+        self.calls.append(("recover", request))
+        if self.refusal is not None:
+            raise ControlError(self.refusal, "sensitive upstream detail")
         return _status()
 
     async def status(self, run_id: str) -> ScenarioControlRunStatus:
@@ -264,6 +313,127 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.run_id, RUN_ID)
         self.assertGreater(remaining_seconds, 0)
         self.assertLessEqual(remaining_seconds, 15)
+
+    async def test_catalog_read_authenticates_before_operation_and_bounds_the_document(
+        self,
+    ) -> None:
+        # Arrange
+        control = FakeControl()
+        application = _application(control)
+        oversized = FakeControl()
+        oversized.oversized_catalog = True
+        oversized_application = _application(oversized)
+
+        # Act
+        async with _client(application) as client:
+            wrong_host = await client.get(
+                "/internal/v1/scenarios",
+                headers={"Host": "attacker.invalid", "Authorization": AUTHORIZATION},
+            )
+            wrong_bearer = await client.get(
+                "/internal/v1/scenarios", headers={"Host": HOST, "Authorization": "Bearer wrong"}
+            )
+            accepted = await client.get(
+                "/internal/v1/scenarios", headers={"Host": HOST, "Authorization": AUTHORIZATION}
+            )
+        async with _client(oversized_application) as client:
+            too_large = await client.get(
+                "/internal/v1/scenarios", headers={"Host": HOST, "Authorization": AUTHORIZATION}
+            )
+
+        # Assert
+        self.assertEqual(
+            (400, "HOST_INVALID", 401, "AUTHENTICATION_FAILED"),
+            (
+                wrong_host.status_code,
+                wrong_host.json()["errorCode"],
+                wrong_bearer.status_code,
+                wrong_bearer.json()["errorCode"],
+            ),
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.headers["content-type"], "application/json")
+        self.assertEqual(accepted.headers["cache-control"], "no-store")
+        self.assertEqual(
+            accepted.content,
+            canonical.canonical_bytes(_catalog().model_dump(mode="json", by_alias=True)),
+        )
+        self.assertEqual(control.calls, [("catalog", None)])
+        self.assertEqual(
+            (500, "INTERNAL_FAILURE"), (too_large.status_code, too_large.json()["errorCode"])
+        )
+
+    async def test_recovery_binds_the_path_before_calling_the_control_port(self) -> None:
+        # Arrange
+        control = FakeControl()
+        application = _application(control)
+        conflicting = FakeControl()
+        conflicting.refusal = ControlRefusal.RUN_CONFLICT
+        conflicting_application = _application(conflicting)
+
+        # Act
+        async with _client(application) as client:
+            refused = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(runId="another-run"),
+                headers=_headers(),
+            )
+            accepted = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(),
+                headers=_headers(),
+            )
+        async with _client(conflicting_application) as client:
+            conflict = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(),
+                headers=_headers(),
+            )
+
+        # Assert
+        self.assertEqual(
+            (409, "PATH_BODY_MISMATCH"), (refused.status_code, refused.json()["errorCode"])
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(
+            accepted.content,
+            canonical.canonical_bytes(_status().model_dump(mode="json", by_alias=True)),
+        )
+        self.assertEqual(len(control.calls), 1)
+        operation, request = control.calls[0]
+        self.assertEqual(operation, "recover")
+        self.assertIsInstance(request, ScenarioControlRecoveryRequest)
+        self.assertEqual(cast("ScenarioControlRecoveryRequest", request).run_id, RUN_ID)
+        self.assertEqual(
+            (409, "RUN_CONFLICT"), (conflict.status_code, conflict.json()["errorCode"])
+        )
+
+    async def test_trailing_slash_is_not_redirected_and_responses_are_not_cached(self) -> None:
+        # Arrange
+        control = FakeControl()
+        application = _application(control)
+
+        # Act
+        async with _client(application) as client:
+            slashed = await client.post(
+                "/internal/v1/runs/", content=_start_bytes(), headers=_headers()
+            )
+            status = await client.get(
+                f"/internal/v1/runs/{RUN_ID}",
+                headers={"Host": HOST, "Authorization": AUTHORIZATION},
+            )
+            refusal = await client.get(
+                f"/internal/v1/runs/{RUN_ID}", headers={"Host": HOST, "Authorization": "Bearer no"}
+            )
+
+        # Assert
+        self.assertEqual(slashed.status_code, 404)
+        self.assertNotIn("location", slashed.headers)
+        self.assertEqual(
+            ("no-store", "no-store"),
+            (status.headers["cache-control"], refusal.headers["cache-control"]),
+        )
+        self.assertEqual(control.calls, [("status", RUN_ID)])
 
     async def test_operation_refusals_use_only_the_closed_redacted_body(self) -> None:
         # Arrange

@@ -15,11 +15,14 @@ from typing import Final, Protocol, cast
 
 from aerial_rescue_contracts import canonical
 from fastapi import FastAPI, Request, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from .wire import (
+    MAX_SCENARIO_CATALOG_BYTES,
     MAX_WIRE_DOCUMENT_BYTES,
+    ScenarioCatalogResponse,
     ScenarioControlCancelRequest,
+    ScenarioControlRecoveryRequest,
     ScenarioControlRefusal,
     ScenarioControlRunStatus,
     ScenarioControlStartRequest,
@@ -32,7 +35,10 @@ _HOST_PATTERN: Final = re.compile(
 )
 _BEARER_PATTERN: Final = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
 _JSON_MEDIA_TYPE: Final = "application/json"
+_NO_STORE: Final = {"Cache-Control": "no-store"}
 CANCELLATION_BUDGET_SECONDS: Final = 15.0
+
+type _ResponseModel = ScenarioControlRunStatus | ScenarioCatalogResponse
 
 
 class ControlRefusal(StrEnum):
@@ -114,12 +120,20 @@ class ScenarioControl(Protocol):
         """Release runtime prerequisites."""
         ...
 
+    async def catalog(self) -> ScenarioCatalogResponse:
+        """Return the dashboard scenario-catalog/v1 projection."""
+        ...
+
     async def start(self, request: ScenarioControlStartRequest) -> ScenarioControlRunStatus:
         """Start or reconcile one stable private run."""
         ...
 
     async def status(self, run_id: str) -> ScenarioControlRunStatus:
         """Return current status for one stable run."""
+        ...
+
+    async def recover(self, request: ScenarioControlRecoveryRequest) -> ScenarioControlRunStatus:
+        """Reconcile one durable run whose fleet run may be lost."""
         ...
 
     async def cancel(
@@ -159,9 +173,19 @@ class _Lifecycle:
     accepting: bool = False
 
 
-def _document_response(model: ScenarioControlRunStatus, status_code: int) -> Response:
+def _document_response(model: _ResponseModel, status_code: int) -> Response:
     body = canonical.canonical_bytes(model.model_dump(mode="json", by_alias=True))
-    return Response(content=body, status_code=status_code, media_type=_JSON_MEDIA_TYPE)
+    bound = (
+        MAX_SCENARIO_CATALOG_BYTES
+        if isinstance(model, ScenarioCatalogResponse)
+        else MAX_WIRE_DOCUMENT_BYTES
+    )
+    if len(body) > bound:
+        _LOGGER.error("scenario control response exceeds its documented bound")
+        return _refusal_response(ControlRefusal.INTERNAL_FAILURE)
+    return Response(
+        content=body, status_code=status_code, media_type=_JSON_MEDIA_TYPE, headers=_NO_STORE
+    )
 
 
 def _refusal_response(refusal: ControlRefusal) -> Response:
@@ -177,6 +201,7 @@ def _refusal_response(refusal: ControlRefusal) -> Response:
         content=body,
         status_code=_REFUSAL_STATUS[refusal],
         media_type=_JSON_MEDIA_TYPE,
+        headers=_NO_STORE,
     )
 
 
@@ -211,11 +236,11 @@ async def _bounded_body(request: Request) -> bytes:
     return bytes(body)
 
 
-async def _parse_body(
+async def _parse_body[RequestT: BaseModel](
     request: Request,
     settings: ServerSettings,
-    model: type[ScenarioControlStartRequest] | type[ScenarioControlCancelRequest],
-) -> ScenarioControlStartRequest | ScenarioControlCancelRequest:
+    model: type[RequestT],
+) -> RequestT:
     identity_refusal = _admit_identity(request, settings)
     if identity_refusal is not None:
         raise ControlError(identity_refusal)
@@ -233,9 +258,13 @@ async def _parse_body(
         raise ControlError(ControlRefusal.SCHEMA_INVALID) from error
 
 
-async def _invoke(operation: Awaitable[object], success_status: int) -> Response:
+async def _invoke(
+    operation: Awaitable[object],
+    success_status: int,
+    expected: type[_ResponseModel] = ScenarioControlRunStatus,
+) -> Response:
     try:
-        status = await operation
+        result = await operation
     except ControlError as error:
         return _refusal_response(error.refusal)
     except Exception as error:
@@ -245,10 +274,10 @@ async def _invoke(operation: Awaitable[object], success_status: int) -> Response
             exc_info=(type(redacted), redacted, error.__traceback__),
         )
         return _refusal_response(ControlRefusal.INTERNAL_FAILURE)
-    if not isinstance(status, ScenarioControlRunStatus):
+    if not isinstance(result, expected):
         _LOGGER.error("scenario control operation returned an invalid result type")
         return _refusal_response(ControlRefusal.INTERNAL_FAILURE)
-    return _document_response(status, success_status)
+    return _document_response(result, success_status)
 
 
 class _Handlers:
@@ -300,15 +329,30 @@ class _Handlers:
             media_type=_JSON_MEDIA_TYPE,
         )
 
+    async def catalog(self, request: Request) -> Response:
+        """Authenticate catalog discovery before consulting the definition source."""
+        identity_refusal = _admit_identity(request, self._settings)
+        if identity_refusal is not None:
+            return _refusal_response(identity_refusal)
+        return await _invoke(self._control.catalog(), 200, ScenarioCatalogResponse)
+
     async def start(self, request: Request) -> Response:
         """Admit, validate, and invoke one stable scenario start."""
         try:
             parsed = await _parse_body(request, self._settings, ScenarioControlStartRequest)
         except ControlError as error:
             return _refusal_response(error.refusal)
-        if not isinstance(parsed, ScenarioControlStartRequest):
-            return _refusal_response(ControlRefusal.INTERNAL_FAILURE)
         return await _invoke(self._control.start(parsed), 202)
+
+    async def recover(self, request: Request, run_id: str) -> Response:
+        """Bind path and body before reconciling one durable run against the fleet."""
+        try:
+            parsed = await _parse_body(request, self._settings, ScenarioControlRecoveryRequest)
+        except ControlError as error:
+            return _refusal_response(error.refusal)
+        if run_id != parsed.run_id:
+            return _refusal_response(ControlRefusal.PATH_BODY_MISMATCH)
+        return await _invoke(self._control.recover(parsed), 200)
 
     async def status(self, request: Request, run_id: str) -> Response:
         """Authenticate before validating and looking up one run identifier."""
@@ -326,8 +370,6 @@ class _Handlers:
             parsed = await _parse_body(request, self._settings, ScenarioControlCancelRequest)
         except ControlError as error:
             return _refusal_response(error.refusal)
-        if not isinstance(parsed, ScenarioControlCancelRequest):
-            return _refusal_response(ControlRefusal.INTERNAL_FAILURE)
         if run_id != parsed.run_id:
             return _refusal_response(ControlRefusal.PATH_BODY_MISMATCH)
         remaining = CANCELLATION_BUDGET_SECONDS - (self._monotonic() - started_at)
@@ -354,13 +396,18 @@ def create_application(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        redirect_slashes=False,
         lifespan=handlers.lifespan,
     )
     application.add_api_route("/healthz", handlers.health, methods=["GET"])
     application.add_api_route("/readyz", handlers.readiness, methods=["GET"])
+    application.add_api_route("/internal/v1/scenarios", handlers.catalog, methods=["GET"])
     application.add_api_route("/internal/v1/runs", handlers.start, methods=["POST"])
     application.add_api_route("/internal/v1/runs/{run_id}", handlers.status, methods=["GET"])
     application.add_api_route(
         "/internal/v1/runs/{run_id}/cancel", handlers.cancel, methods=["POST"]
+    )
+    application.add_api_route(
+        "/internal/v1/runs/{run_id}/recover", handlers.recover, methods=["POST"]
     )
     return application
