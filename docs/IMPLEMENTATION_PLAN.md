@@ -334,9 +334,11 @@ contract, and operator-flow evidence.
 - **Live on the reference host, 2026-08-28:** the merged Compose definition composes every default,
   `mission-control`, and `services` target to a healthy state on a freshly initialised broker volume, the
   dashboard reaches readiness against the composed scenario service, and an operator Start moves the
-  wilderness run's 280 telemetry publications through the broker to the dashboard API and the recorder
-  (`release-evidence/phase-3/merged-runtime-second-composition.md`). The mission-lifecycle event, the
-  approval chain in containers, and the browser rehearsal remain unqualified.
+  wilderness run's 280 telemetry publications through the broker to the recorder and to the dashboard
+  API's session (`release-evidence/phase-3/merged-runtime-second-composition.md`). The deployed dashboard
+  composition folded none of them and cannot restart against their audit records (finding 6): the
+  dashboard's live projection, the mission-lifecycle event, the approval chain in containers, and the
+  browser rehearsal remain unqualified.
 - **Done in the domain and Evidence Service; live qualification pending:** the evidence score, ordinal
   bands, recorded-origin refusal, and distinct-source corroboration floor are implemented in Tier 1. The
   Evidence Service independently verifies provenance and complete source-event digests, applies the

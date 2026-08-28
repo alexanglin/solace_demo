@@ -137,6 +137,20 @@ evidence-service; `mission-control-up` and the `services` profile both exited 0.
   `dashboard_mission.lifecycle` stayed `PLANNED`: the fleet executor publishes no mission-lifecycle
   event, the gap the working plan already schedules. No approval, proposal, or command was exercised;
   the "not proven" list below is superseded only for telemetry.
+- **17:34Z–17:36Z, finding 6: the deployed dashboard folded none of that telemetry, and cannot
+  restart.** `just mission-control-up --build` at `d2a5dea` recreated every mission-control target;
+  `dashboard-api` exited 3 four times with `ProjectionError: the ordered event cannot advance the
+  reducer checkpoint: 'MISSION_UNPREPARED'` from `broker_runtime._recover_audit` →
+  `projection.apply_audit` → `view.fold_ordered_event`, and Caddy turned unhealthy. Readbacks:
+  `dashboard_broker_event` holds 0 rows for the mission while `audit_record` holds its 141
+  `drone.telemetry` rows (ordinals 1–141) — the "280 transmitted to `dashboard-api`" above is the
+  broker's delivery counter, not a fold. Cause (code reading at `d2a5dea`): the deployed composition
+  (`delivery/production.py`, `boundary/durable_application.py`) calls `broker.activate_mission` on an
+  accepted Start and on the lifespan's restart without ever seeding the projection hub with the run's
+  `prepared_initial_state`, so the reducer has no current mission; the parallel `console.py` →
+  `operations.py` composition seeds it (`hub.replace_run(_initial_checkpoint(…))`) before activating.
+  The dashboard API's two compositions (TECH_DEBT.md §3) are therefore the demo's next blocker; the
+  decision follows ADR-0197's rule and is in progress.
 
 ## What this proves and what it does not
 
