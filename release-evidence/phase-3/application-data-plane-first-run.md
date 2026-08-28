@@ -252,3 +252,14 @@ that fits the controller can still exceed the probe's window; when the probe sto
 controller's result write finds no reader and reports `FAILED: the broker restart result could not
 be delivered` after its own 30 s. Whether this Docker Desktop virtual machine can ever meet the 30 s
 service-level row is a finding for a human, not something to widen in the probe.
+
+Run 10 (21:40) repeated the step on an idle machine: the token went out at about 21:40:10, the
+previous broker process finished at 01:40:19.75 UTC after its graceful stop, the new one started at
+01:40:20.10 and was first probed healthy at 01:40:40.31 — 20 s of boot after 9 s of stop — and the
+probe's 30 s deadline expired as the controller turned to write its result, which then found no reader.
+Two consecutive restarts therefore landed at or beyond the window with nothing else running. Every
+step before the restart is now proven live at `ec76eff`: salient event, three normalized and published
+proposals, three corroborated decisions, an expired, a mismatched, a duplicate, and an exact approval
+with the audited reasons, one staged `escalate-rescue` command, and its receipt by the fleet identity.
+What remains unverified is only what the restart exists to prove: degraded readiness, Guaranteed
+spooling across the outage, rebind, drain, and readiness recovery.
