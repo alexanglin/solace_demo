@@ -50,6 +50,8 @@ four distinct boundaries:
 | `phase-3/durable-store-first-run.md` | The first Alembic revision this project applied to a cluster, on a database the run creates and drops, with both declared constraints enforced |
 | `phase-3/durable-transaction-first-run.md` | The four-revision history walked up and back down, the server-side bounds and isolation read back from a session, three live races, and ADR-0006's three writes committing and rolling back together |
 | `phase-3/wilderness-dashboard-production-first-run.md` | The first clean-source shared-project dashboard rebuild, fixture and production browser acceptance, bounded soak, and focused live store and broker controls |
+| `phase-3/application-data-plane-first-run.md` | The first live application data plane at the merged revision: authorization probes, the gateway → evidence → dashboard → command chain, and the ADR-0186 restart with recovery |
+| `phase-3/merged-runtime-first-run.md` | The merged runtime's first container composition: spool-gated broker health, the Agent Mesh entrypoint, migrations, and the services that did and did not become healthy |
 
 The record itself owns the dated observation. Current capability claims belong in `README.md`, phase
 status and unfinished delivery risks belong in the implementation plan, measured parameters belong in

@@ -1,11 +1,13 @@
 # Phase 3 evidence: the merged runtime's first container composition
 
-- **Recorded:** 2026-08-28, 09:20–10:05 local (America/Toronto; container and broker logs UTC).
+- **Recorded:** 2026-08-28, 09:12–10:05 local (America/Toronto; container and broker logs UTC).
+  The first attempt's start is the PostgreSQL container's creation, 13:12:16Z.
 - **Revision:** `feat/demo-solace-end-to-end`, starting at `b45a57d` (the merge `466df96` plus the
   commits the first live data-plane runs produced) and ending at `e120fe5`. Each attempt below names
-  the commit its images were built from; the final attempt's image build and the commit `e120fe5`
-  started from the same working tree within the same minute. Nothing was modified between an
-  attempt and the commit it names except the record you are reading.
+  the commit its images were built from; the final attempt's image build started at 09:59:33, 95 s
+  after `e120fe5` (09:57:58), from the tree that commit left. Every attempt ran on the working tree
+  that its named commit captured, and `git status` was empty after each commit; between attempts the
+  tree changed only by the commits named below and by `9818ed7`, the D1 record's corrections.
 - **Host:** Apple Silicon, macOS 26.6.2 arm64; Docker Engine 29.5.3 with 7.65 GiB allocated to the
   virtual machine; `just` 1.58.0; the application runtime's Python 3.14.7 on the host.
 - **Versions:** PubSub+ software event broker `solace/solace-pubsub-standard:10.26.0.8799` at
@@ -16,11 +18,12 @@
   Solace AI Connector 3.3.12, `solace-pubsubplus` 1.11.0 (read back by `just probe-image`).
 - **Prerequisites and pre-existing state:** the D1 broker and PostgreSQL containers
   (`application-data-plane-first-run.md`), the broker already recreated under the merged Compose
-  definition; the per-checkout CA and role credentials; the three private-control secrets
-  `scripts/broker-secrets.sh` added on 2026-08-27; the shared `aerial_rescue` database at revision
+  definition; the per-checkout CA and role credentials; the two private-control bearers
+  (`scenario-control-bearer`, `fleet-control-bearer`) `scripts/broker-secrets.sh` generated on
+  2026-08-27 and the `semp-monitor-password` file; the shared `aerial_rescue` database at revision
   `0005`; the reference roster plus `drone-dispatch-probe` provisioned (91 durable queues); the
-  D1 disposable databases (13 `aerial_rescue_app_probe_*` databases now exist) and the six `_dmq`
-  residues; the pre-merge `agent-mesh` container stopped.
+  D1 disposable databases (13 `aerial_rescue_app_probe_*` databases now exist) and dead-message
+  residue on nineteen `_dmq` queues; the pre-merge `agent-mesh` container stopped.
 - **Scope:** Increment 0.3 of the demo plan: `just down`, `just up --build`, the broker
   re-provisioning that ADR-0196 required, `just probe-image`, the agent-card readback, and
   `just mission-control-up --build` (twice). It does **not** cover the `services` profile's
@@ -90,35 +93,48 @@ importing. The monitor now runs as `1000001:10001` (ADR-0195, `1860adf`).
 ### 4. The Agent Mesh identity's endpoint ceiling was one short
 
 The third `just up --build` (09:27) recreated the broker under the spool-gated health check,
-started `broker-event-monitor` healthy for the first time, and rebuilt the Agent Mesh image with the
+started `broker-event-monitor` past its liveness probe for the first time, and rebuilt the Agent Mesh image with the
 component's `info`; the Connector then started every app and every mesh identity connected and
-bound, and the process still stopped: the MissionCoordinator's request/response app could not
-create its `reply-queue/…` — `SOLCLIENT_SUBCODE_NO_MORE_NON_DURABLE_QUEUE_OR_TE` — so the agent's
-asynchronous initialization failed and the app stopped the loop. A 75 s read-only SEMP poll across
-one restart cycle showed the steady state: `agent-mesh-agent` owning four non-durable queues (the
-`a2a` queues of MissionCoordinator, MissionResponse, and Orchestrator plus the web-ui gateway
-queue), `event-mesh-gateway` two, `event-mesh-tool` one — each exactly at its ADR-0153
-`maxEndpointCountPerClientUsername`. ADR-0196 raises `agent-mesh-agent` to five (`ad02fb3`); the
-provisioner applied it at 09:39 and `agent-mesh` became healthy at 09:40 after 18 restarts, with
+bound, and the process still stopped with `SOLCLIENT_SUBCODE_NO_MORE_NON_DURABLE_QUEUE_OR_TE`
+on a temporary queue create, after which the app stopped the loop. Across the 18 restarts the
+container's log holds 26 such refusals: 10 for the web-ui visualization queue
+`gdk/viz/aerial-rescue-web-ui` (the first refusal of all, 13:28:12Z), 8 for the request/response
+`reply-queue/…`, and 8 for the gateway's `gdk/event-mesh-gw/data/…` queue. A 75 s read-only SEMP
+poll across one restart cycle showed the steady state: `agent-mesh-agent` owning four non-durable
+queues (the `a2a` queues of MissionCoordinator, MissionResponse, and Orchestrator plus the web-ui
+gateway queue `gdk/gateway/aerial-rescue-web-ui`), `event-mesh-gateway` two, `event-mesh-tool`
+one — each exactly at the `maxEndpointCountPerClientUsername` its client profile is provisioned
+with (the profile table in `packages/broker/src/aerial_rescue_broker/provisioning.py`, recorded in
+`docs/operating-parameters.md`). The ceiling that was one short is `agent-mesh-agent`'s: its fifth
+queue is the visualization queue. The reply-queue is `event-mesh-tool`'s one endpoint and the data
+queue is `event-mesh-gateway`'s second; their refusals are consistent with the previous process's
+temporaries still counting during a restart, not with a short ceiling (inference from the
+counts, not measured). **ADR-0196 and its commit `ad02fb3` name the reply-queue as
+`agent-mesh-agent`'s fifth endpoint; the live readback contradicts that attribution while
+confirming the decision (five).** The provisioner applied the raised ceiling at 09:39 and
+`agent-mesh` became healthy at 09:40 after 18 restarts, with
 `/readyz` 200 inside the container and three agent cards (`MissionCoordinator`,
 `MissionResponse`, `Orchestrator`) on `http://127.0.0.1:8000/api/v1/agentCards`.
 `just probe-image` passed every check (interpreter, five pinned versions, gateway plugin, tool
 import, 10 runtime symbols, 12 direct-output methods and 3 receipt properties).
 
-The steady state after the fix holds eight non-durable queues (the seven above plus
-`#P2P/QTMP/v:broker/reply-queue/…`) and 91 durable ones: **99 of the VPN's 100 effective
+The steady state after the fix holds eight non-durable queues — `agent-mesh-agent` five (the
+four above plus `gdk/viz/aerial-rescue-web-ui`), `event-mesh-gateway` two, `event-mesh-tool` one
+(`#P2P/QTMP/v:broker/reply-queue/…`) — and 91 durable ones: **99 of the VPN's 100 effective
 endpoints** with the probe drone provisioned, 97 with the reference roster alone. Every
 application service that later creates a temporary endpoint competes for that last slot.
 
 ### 5. The deployed recorder could never become healthy
 
 `just mission-control-up --build` (09:43) provisioned the reference roster (89 queues; the
-provisioner leaves the probe drone's two queues in place, so 91 remain), applied revisions
-`0006`–`0011` to the shared database (`alembic_version` = `0011_audit_kind`), ran the replay
+provisioner leaves the probe drone's two queues in place, so 91 remain), ran the migration
+container to completion (exit 0, no output; `alembic_version` reads `0011_audit_kind` afterwards,
+from `0005` before), ran the replay
 validator (`validated replay ready`), and started `fleet-simulator` (healthy; 23 command-queue
 binds) and `recorder`. The recorder bound its nine durable queues and both Direct subscriptions
 within seconds (`CLIENT_CLIENT_BIND_SUCCESS` × 9, `CLIENT_CLIENT_SUBSCRIPTIONS_HIGH … 3`) and its
-health check failed 25 times in a row (`not ready`); the recipe exited 1 after 75 s. The Compose
+health check reported `not ready` on every probe (25 consecutive failures by the time it was
+inspected); the recipe exited 1 after 75 s. The Compose
 command is `aerial-rescue-recorder` → `aerial_rescue_recorder.console:main`, and the health check
 reads the `RECORDER_READINESS_PATH` freshness lease, but only the parallel `main.py` composition
 (`python -m aerial_rescue_recorder`) ever wrote that lease: `console.py` never touched it. The
@@ -127,24 +143,32 @@ rebuilt recorder was healthy 39 s after start with a live `recorder-readiness/v1
 
 ### 6. The event monitor refuses every line the broker writes
 
-`broker-event-monitor` is healthy under ADR-0195 and has emitted nothing but
-`BROKER_EVENT_INPUT_REFUSED` (`pipeline-degraded`) since it first read the file. The live
-`event.log` (31 MB at 10:44 UTC) is the legacy text format — for example
+`broker-event-monitor` is "healthy" under ADR-0195 — its Compose probe is `kill -0 1`, a
+liveness check — and has emitted nothing but `BROKER_EVENT_INPUT_REFUSED` (`pipeline-degraded`),
+one alert per line of the file (77 465 of each at 10:06). The live `event.log` (31 893 654
+bytes at 13:44 UTC, 09:44 local) holds two text formats and no JSON: lines 1–69 084, written
+before the 2026-08-28T01:28Z boot, are timestamped syslog lines
+(`2026-08-28T01:28:32.141+00:00 <local3.info> broker event: SYSTEM: …`); every line since that
+boot — twelve boots, the first under the merged Compose file — is bare text such as
 `SYSTEM: SYSTEM_AUTHENTICATION_SESSION_OPENED: - - SEMP session ::1-5416 internal authentication
-opened for user admin (admin)` — and so is the container's stdout that `just broker-events`
-follows, although the merged Compose file sets `logging_event_output: all`,
-`logging_event_messageformat: json`, and `logging_maxjsonmessagesize: 8192`. The broker's
-`broker-storage` volume was created before those keys existed; the broker has been recreated three
-times on it without the format changing. Whether the keys apply only when the storage element is
+opened for user admin (admin)`. The container's stdout that `just broker-events` follows carries
+the same bare text. The merged Compose file sets `logging_event_output: all`,
+`logging_event_messageformat: json`, and `logging_maxjsonmessagesize: 8192`; the keys therefore
+did change the format at the first boot that carried them, just not to JSON. The
+`broker-storage` volume was created on 2026-08-21, before the keys existed (`8b4f6d5`,
+2026-08-27). Whether the keys apply only when the storage element is
 first initialized, or only to syslog forwarding, was not confirmed from Solace documentation during
-the run (two documentation URLs returned 404); the read-only CLI accepted no batch `show` command.
-ADR-0173 anticipated this proof obligation ("Live deployment must still prove that the pinned broker
-image creates a readable `event.log`"). The monitor's contract with the file format is **not
-satisfied** on this host; no change was made.
+the run: `https://docs.solace.com/Software-Broker/Container-Tasks/Configuration-Keys-Reference.htm`
+and `…/Container-Tasks/Configuring-the-Broker-Using-Config-Keys.htm` both returned 404 on
+2026-08-28, and `/usr/sw/loads/currentload/bin/cli -A -e "show logging"` inside the container
+printed only the product banner. ADR-0173 left the readable-file proof to live deployment; the file
+is readable as its owner (finding 3), and its format is what this finding adds. The monitor's
+contract with the file format is **not satisfied** on this host; no change was made.
 
 ### 7. The dashboard cannot start against the scenario-service it is composed with
 
-The second `just mission-control-up --build` (09:59) reached `dashboard-api`, which exited 3 twice:
+The second `just mission-control-up --build` (09:59) reached `dashboard-api`, whose one container
+failed startup four times (the initial start plus its three `on-failure` restarts) and exited 3:
 its lifespan's `reconcile_pending()` found the one pending `dashboard_operation` row (50 rows exist
 from the pre-merge dashboard runs; one is `pending`) and asked the scenario-service for its
 catalog; `GET /internal/v1/scenarios` returned **404** with and without the bearer, so the client
@@ -160,22 +184,23 @@ reconciliation is a decision, not a defect fix.
 
 ### 8. Housekeeping the run surfaced
 
-Thirteen `aerial_rescue_app_probe_*` databases from failed D1 attempts remain; the six `_dmq`
-queues hold their D1 residue (`aerial-rescue-agent-mesh-temp_dmq` now spools 6 messages); the
-probe drone's pair of queues survives every `mission-control-up` re-provisioning. Each removal
-needs its own authorization.
+Thirteen `aerial_rescue_app_probe_*` databases from failed D1 attempts remain; nineteen `_dmq`
+queues hold messages (`recorder/audit_dmq` 94, `dashboard-api/audit_dmq` 94,
+`recorder/operator.approval_dmq` 50, `aerial-rescue-agent-mesh-temp_dmq` 6, among them); the
+probe drone's pair of queues survives every `mission-control-up` re-provisioning. No cleanup was
+performed during this run; each removal needs its own authorization.
 
 ## Observed state after the last attempt (10:05 local)
 
 | Container | State |
 | --- | --- |
 | `broker` | healthy (spool-gated), 36 min |
-| `broker-event-monitor` | healthy, every input line refused (finding 6) |
+| `broker-event-monitor` | alive (`kill -0 1` probe), every input line refused (finding 6) |
 | `agent-mesh` | healthy, 23 min, 18 restarts before ADR-0196 |
 | `postgres` | healthy; `aerial_rescue` at `0011_audit_kind` |
 | `migration`, `replay-validator` | exited 0 |
 | `fleet-simulator`, `scenario-service`, `recorder` | healthy |
-| `dashboard-api` | exited 3 (finding 7) |
+| `dashboard-api` | exited 3 after four startup failures (finding 7) |
 | `caddy` | created, never started |
 
 Broker: 99 of 100 effective endpoints (91 durable, 8 non-durable); connections `agent-mesh-agent`
@@ -188,15 +213,24 @@ client profile `agent-mesh-agent` reads back `maxEndpointCountPerClientUsername:
 | 2 | `6503036` |
 | 4 | `ad02fb3` (ADR-0196) |
 | 5 | `e120fe5` |
+| 4 (attribution) | none — ADR-0196 names the wrong queue; decision pending |
 | 6, 7, 8 | none — decisions pending |
 
 ## What this proves and what it does not
 
+Durations, counts, and refusal codes in the findings above are the run's console and log
+observations; those that no retained artifact reproduces (the first recorder attempt's 25
+failures, the 39 s to a healthy recorder, the 75 s SEMP poll, the `just probe-image` output, the
+documentation and CLI checks) are reported as observed, not as re-verifiable state.
+
 Proven live on the reference host: the merged Compose definition brings up the broker, PostgreSQL,
-the Agent Mesh runtime under the owned entrypoint with three agent cards, the event monitor as the
-log's owner, migrations `0006`–`0011`, the replay validator, the fleet simulator, the scenario
-service, and the recorder, all healthy; the rebuilt images pass `just probe-image`. The full
-offline suite ran green at `e120fe5` (3 744 passed, 411 subtests, 88 s, coverage gates enforced).
+the Agent Mesh runtime under the owned entrypoint with three agent cards, migrations
+`0006`–`0011`, the replay validator, the fleet simulator, the scenario service, and the recorder,
+all healthy by their Compose probes; the event monitor opens and reads the log as its owner
+(Compose-healthy) while refusing every line of it (finding 6); the rebuilt images pass
+`just probe-image`. The full offline suite, `scripts/hooks/python/pytest-full.sh` (the pre-push
+authority with the coverage gates), ran green at `e120fe5` from 10:00:20 to 10:01:51 local:
+3 744 passed, 100 deselected, 411 subtests, 88.51 s.
 
 Not proven: the dashboard API and Caddy (finding 7), the `services` profile, any telemetry
 through the composed stack (no mission was started), the event monitor's alert pipeline on real
