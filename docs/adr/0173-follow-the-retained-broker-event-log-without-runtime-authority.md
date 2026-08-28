@@ -1,6 +1,6 @@
 # ADR-0173: Follow the retained broker event log without runtime authority
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0195
 - **Date:** 2026-08-26
 - **Deciders:** Alex Anglin
 - **Supersedes:** the continuous event-source ambiguity left by ADR-0159

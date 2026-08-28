@@ -90,7 +90,7 @@ services:
       - event-mesh
       - broker-loopback
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:5550/health-check/direct-active >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5550/health-check/guaranteed-active >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -111,6 +111,9 @@ services:
       dockerfile: deploy/application/Dockerfile
     image: aerial-rescue/application:0.0.0
     command: ["/app/.venv/bin/aerial-rescue-broker-event-monitor"]
+    # The pinned broker image keeps jail/logs at mode 0700 under its own numeric user, so the
+    # monitor reads as that user and keeps the project group (ADR-0195).
+    user: "1000001:10001"
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:

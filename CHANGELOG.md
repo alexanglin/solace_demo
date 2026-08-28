@@ -2027,6 +2027,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The broker is healthy only once Guaranteed messaging is active.** The Compose health check probed
+  `health-check/direct-active`, so the first merged composition provisioned 21 s after the container
+  started and was refused with `code=412 message spool data not available`; it now probes
+  `health-check/guaranteed-active` ([ADR-0194](docs/adr/0194-gate-broker-health-on-guaranteed-messaging.md)).
+- **The broker event monitor can read the retained log.** The pinned broker image keeps `jail/logs` at
+  mode 0700 owned by its user 1000001, so the monitor at user 10001 exited with
+  `BROKER_EVENT_SOURCE_FAILED` on its first real start; it now runs as `1000001:10001` on its read-only
+  subpath mount ([ADR-0195](docs/adr/0195-run-the-event-monitor-as-the-retained-log-s-owner.md)).
+- **The owned Event Mesh Gateway component starts inside the Connector.** Its `info` dictionary lived in
+  the app module while the Connector reads it from the component class's module, so every flow failed
+  with `Could not find 'info' dictionary` and the agent-mesh container restart-looped; the component
+  module now defines `info`, carrying the pinned upstream parameters and schemas unchanged.
 - **The recorder's source-event row carries the event's own time.** The evidence service and the
   recorder both persist a salient event into the shared immutable `source_event` table; the recorder
   stamped `observed_at` with its receive clock while the evidence service used the event's `time`, so

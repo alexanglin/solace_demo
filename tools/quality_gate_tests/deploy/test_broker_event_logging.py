@@ -96,6 +96,35 @@ class BrokerEventLoggingTests(unittest.TestCase):
         self.assertIn("logs --follow --tail 0 --no-log-prefix broker", recipe)
         self.assertIn("aerial-rescue-broker-events", recipe)
 
+    def test_continuous_monitor_runs_as_the_retained_log_s_owner(self) -> None:
+        # Arrange
+        document = cast("dict[str, object]", yaml.safe_load(COMPOSE.read_text(encoding="utf-8")))
+        services = cast("dict[str, object]", document["services"])
+
+        # Act
+        monitor = cast("dict[str, object]", services.get("broker-event-monitor", {}))
+
+        # Assert
+        self.assertEqual("1000001:10001", monitor.get("user"))
+
+    def test_the_broker_is_healthy_only_once_guaranteed_messaging_is_active(self) -> None:
+        # Arrange
+        document = cast("dict[str, object]", yaml.safe_load(COMPOSE.read_text(encoding="utf-8")))
+        services = cast("dict[str, object]", document["services"])
+        broker = cast("dict[str, object]", services["broker"])
+
+        # Act
+        healthcheck = cast("dict[str, object]", broker.get("healthcheck", {}))
+
+        # Assert
+        self.assertEqual(
+            [
+                "CMD-SHELL",
+                "curl -fsS http://localhost:5550/health-check/guaranteed-active >/dev/null",
+            ],
+            healthcheck.get("test"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

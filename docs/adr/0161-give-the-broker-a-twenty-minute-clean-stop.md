@@ -1,6 +1,6 @@
 # ADR-0161: Give the broker twenty minutes to stop cleanly
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0194
 - **Date:** 2026-08-25
 - **Deciders:** Alex Anglin
 - **Supersedes:** none; adds the container-lifecycle binding omitted from ADR-0159

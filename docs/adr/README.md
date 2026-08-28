@@ -179,7 +179,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0158](0158-keep-scenario-control-brokerless.md) | Keep scenario control brokerless | Accepted |
 | [0159](0159-gate-applicable-solace-best-practices.md) | Gate every applicable Solace best practice | Accepted |
 | [0160](0160-bound-public-dashboard-mutation-bodies.md) | Bound public dashboard mutation bodies before canonical decoding | Accepted |
-| [0161](0161-give-the-broker-a-twenty-minute-clean-stop.md) | Give the broker twenty minutes to stop cleanly | Accepted |
+| [0161](0161-give-the-broker-a-twenty-minute-clean-stop.md) | Give the broker twenty minutes to stop cleanly | Superseded in part by ADR-0194 |
 | [0162](0162-generate-and-validate-per-image-cyclonedx-sboms.md) | Generate and validate per-image CycloneDX SBOMs | Accepted |
 | [0163](0163-retain-ci-volumes-until-hosted-runner-disposal.md) | Retain integration volumes until hosted-runner disposal | Accepted |
 | [0164](0164-require-tls13-for-pubsub-clients.md) | Require TLS 1.3 for PubSub+ clients | Accepted |
@@ -191,7 +191,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0170](0170-force-dmq-eligibility-at-the-publisher.md) | Force DMQ eligibility at the Guaranteed publisher | Accepted |
 | [0171](0171-close-dashboard-idempotency-kinds.md) | Close durable idempotency over every public dashboard mutation | Superseded in part by ADR-0189 |
 | [0172](0172-complete-the-protected-dashboard-operator-flow.md) | Complete the protected dashboard operator flow | Accepted |
-| [0173](0173-follow-the-retained-broker-event-log-without-runtime-authority.md) | Follow the retained broker event log without runtime authority | Accepted |
+| [0173](0173-follow-the-retained-broker-event-log-without-runtime-authority.md) | Follow the retained broker event log without runtime authority | Superseded in part by ADR-0195 |
 | [0174](0174-recompute-evidence-digests-at-the-dashboard-boundary.md) | Recompute evidence digests at the dashboard boundary | Accepted |
 | [0175](0175-project-every-recorded-event-into-the-dashboard.md) | Project every recorded event into the ordered dashboard stream | Accepted |
 | [0176](0176-bound-dashboard-sse-clients-and-keepalives.md) | Bound dashboard SSE clients and keepalives | Accepted |
@@ -212,6 +212,8 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0191](0191-reserve-one-subscription-for-the-sdk-reply-inbox.md) | Reserve one subscription per session for the SDK reply inbox | Accepted |
 | [0192](0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md) | Cover a reference-host broker restart with the reconnection budget | Accepted |
 | [0193](0193-size-the-audit-kind-for-event-types.md) | Size the audit kind column for event types | Accepted |
+| [0194](0194-gate-broker-health-on-guaranteed-messaging.md) | Gate broker health on guaranteed messaging | Accepted |
+| [0195](0195-run-the-event-monitor-as-the-retained-log-s-owner.md) | Run the event monitor as the retained log's owner | Accepted |
 
 ## Decisions still open
 
