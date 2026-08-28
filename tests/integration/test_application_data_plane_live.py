@@ -694,7 +694,7 @@ def _rows_for_family(
 ) -> tuple[StagedApplicationEvent, ...]:
     """Select staged rows through their closed topic parser."""
     expected = family
-    return tuple(row for row in rows if row.family == expected.literal_suffix)
+    return tuple(row for row in rows if row.family == expected.outbox_family)
 
 
 def _require_guaranteed(

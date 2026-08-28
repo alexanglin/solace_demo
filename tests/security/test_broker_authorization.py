@@ -35,7 +35,10 @@ from aerial_rescue_broker.provisioning import (
 from aerial_rescue_broker.semp import SempEndpoint, SempError, SempFailure, SempSession, connect
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
-from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
+from solace.messaging.errors.pubsubplus_client_error import (
+    MessageDestinationDoesNotExistError,
+    PubSubPlusClientError,
+)
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
@@ -94,6 +97,10 @@ class Outcome(Enum):
 
     PUBLISHED = "the identity connected and the broker accepted the publish"
     PUBLISH_DENIED = "the identity connected and the broker refused the publish"
+    PUBLISH_UNMATCHED = (
+        "the identity connected, the broker authorized the publish, and no Guaranteed subscription"
+        " matched"
+    )
     SUBSCRIBED = "the identity connected and the broker accepted the subscription"
     SUBSCRIBE_DENIED = "the identity connected and the broker refused the subscription"
     CONNECT_DENIED = "the broker refused the connection"
@@ -105,6 +112,13 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     Guaranteed rather than direct delivery, because a direct publish the broker discards
     looks the same to the client as one it delivered; only an acknowledged publish makes
     the broker's answer observable.
+
+    A project application profile rejects a Guaranteed send that matches no Guaranteed
+    subscription (ADR-0153), and the broker checks the ACL before it matches: the SDK raises
+    ``MessageRejectedByBrokerError`` for an ACL denial and
+    ``MessageDestinationDoesNotExistError`` for a no-match rejection. The second therefore
+    proves authorization for a Direct family no queue subscribes, and is reported as
+    :attr:`Outcome.PUBLISH_UNMATCHED` rather than as a denial.
 
     Only ``PubSubPlusClientError`` is caught. Catching every exception would make a defect
     in this helper indistinguishable from a denial, and every test below asserts a denial,
@@ -122,6 +136,8 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
         publisher.publish_await_acknowledgement(
             message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
         )
+    except MessageDestinationDoesNotExistError:
+        return Outcome.PUBLISH_UNMATCHED
     except PubSubPlusClientError:
         return Outcome.PUBLISH_DENIED
     else:
@@ -185,7 +201,9 @@ class PositiveControlTests(unittest.TestCase):
         # Assert
         self.assertIs(Outcome.PUBLISHED, outcome)
 
-    def test_the_fleet_simulator_may_publish_its_own_telemetry(self) -> None:
+    def test_the_fleet_simulator_may_publish_its_own_telemetry_though_no_queue_subscribes_it(
+        self,
+    ) -> None:
         # Arrange
         role = Principal.FLEET_SIMULATOR
 
@@ -193,7 +211,7 @@ class PositiveControlTests(unittest.TestCase):
         outcome = _publish_as(role, DRONE_TELEMETRY)
 
         # Assert
-        self.assertIs(Outcome.PUBLISHED, outcome)
+        self.assertIs(Outcome.PUBLISH_UNMATCHED, outcome)
 
     def test_the_event_mesh_tool_may_publish_a_gateway_request(self) -> None:
         # Arrange
