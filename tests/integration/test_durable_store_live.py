@@ -197,6 +197,7 @@ SEVENTH_REVISION: Final = "0007_durable_fleet_processing"
 EIGHTH_REVISION: Final = "0008_command_gateway_authority"
 NINTH_REVISION: Final = "0009_broker_refusal"
 TENTH_REVISION: Final = "0010_dashboard_idempotency"
+ELEVENTH_REVISION: Final = "0011_audit_kind"
 
 _FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
 _SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
@@ -235,6 +236,7 @@ _EIGHTH_TABLES: Final = (
 )
 _NINTH_TABLES: Final = (*_EIGHTH_TABLES, BROKER_REFUSAL_TABLE)
 _TENTH_TABLES: Final = _NINTH_TABLES
+_ELEVENTH_TABLES: Final = _TENTH_TABLES
 
 HISTORY: Final = (
     (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
@@ -247,13 +249,14 @@ HISTORY: Final = (
     (EIGHTH_REVISION, tuple(sorted(_EIGHTH_TABLES))),
     (NINTH_REVISION, tuple(sorted(_NINTH_TABLES))),
     (TENTH_REVISION, tuple(sorted(_TENTH_TABLES))),
+    (ELEVENTH_REVISION, tuple(sorted(_ELEVENTH_TABLES))),
 )
 """Every step and what the database holds after it. Literals, so a new revision is noticed here
 too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
 express neither a path nor a step back along one."""
 
-HEAD_REVISION_ID: Final = TENTH_REVISION
-APPLIED_TABLES: Final = tuple(sorted(_TENTH_TABLES))
+HEAD_REVISION_ID: Final = ELEVENTH_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_ELEVENTH_TABLES))
 """Every table a migrated database holds, including Alembic's own version table."""
 
 BOUNDS: Final = EngineBounds(

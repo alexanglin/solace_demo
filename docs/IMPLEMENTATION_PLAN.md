@@ -357,7 +357,7 @@ contract, and operator-flow evidence.
   and returns a durable prior result for duplicates. Deterministic failure-injection tests cover the
   transactional order; the application-data-plane live test must still prove one logical side effect
   across disconnect and restart ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)).
-- **Ten-revision, 25-table store implemented; revisions 0006 through 0010 await live upgrade evidence.** The current
+- **Eleven-revision, 25-table store implemented; revisions 0006 through 0011 await live upgrade evidence.** The current
   append-only Alembic history and typed async SQLAlchemy Core repositories cover the complete application
   transaction surface selected by ADR-0146. Service packages now declare and compose that store. The
   earlier live records prove revisions 0001 through immutable dashboard revision 0005, `READ COMMITTED`,

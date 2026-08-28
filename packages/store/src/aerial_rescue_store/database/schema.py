@@ -39,6 +39,8 @@ from aerial_rescue_store.migration import (
 
 IDENTIFIER_LENGTH = 64
 KIND_LENGTH = 32
+EVENT_TYPE_LENGTH = 96
+"""An audit kind is a CloudEvent type: prefix, family literal, and one KIND level (ADR-0193)."""
 SOURCE_LENGTH = 256
 TOPIC_LENGTH = 250
 INSTANT_LENGTH = 24
@@ -71,7 +73,7 @@ AUDIT_RECORD = sa.Table(
     METADATA,
     sa.Column("mission_id", sa.String(IDENTIFIER_LENGTH), nullable=False),
     sa.Column("ordinal", sa.BigInteger(), nullable=False),
-    sa.Column("kind", sa.String(KIND_LENGTH), nullable=False),
+    sa.Column("kind", sa.String(EVENT_TYPE_LENGTH), nullable=False),
     sa.Column("occurred_at", sa.String(INSTANT_LENGTH), nullable=False),
     sa.Column("payload", sa.LargeBinary(), nullable=False),
     sa.Column("correlation_id", sa.String(IDENTIFIER_LENGTH), nullable=False),

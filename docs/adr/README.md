@@ -211,6 +211,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0190](0190-count-active-queue-binds-through-transmit-flow-aggregates.md) | Count active queue binds through transmit-flow aggregates | Accepted |
 | [0191](0191-reserve-one-subscription-for-the-sdk-reply-inbox.md) | Reserve one subscription per session for the SDK reply inbox | Accepted |
 | [0192](0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md) | Cover a reference-host broker restart with the reconnection budget | Accepted |
+| [0193](0193-size-the-audit-kind-for-event-types.md) | Size the audit kind column for event types | Accepted |
 
 ## Decisions still open
 

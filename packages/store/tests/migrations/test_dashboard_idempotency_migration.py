@@ -15,6 +15,7 @@ from aerial_rescue_store.migration import (
 PROBE_URL: Final = "postgresql+asyncpg://probe@127.0.0.1:5432/probe"
 NINTH_REVISION: Final = "0009_broker_refusal"
 TENTH_REVISION: Final = "0010_dashboard_idempotency"
+ELEVENTH_REVISION: Final = "0011_audit_kind"
 NINTH_TO_TENTH: Final = f"{NINTH_REVISION}:{TENTH_REVISION}"
 DASHBOARD_KINDS: Final = (
     "dashboard command",
@@ -24,15 +25,16 @@ ESTABLISHED_KINDS: Final = ("command", "approval consumption")
 
 
 class DashboardIdempotencyMigrationTests(unittest.TestCase):
-    def test_revision_0010_is_the_single_linear_head(self) -> None:
+    def test_revision_0010_is_the_step_before_the_single_linear_head(self) -> None:
         # Arrange
         config = migration_config(PROBE_URL)
 
         # Act
         actual = heads(config)
+        emitted = upgrade_statements(config, f"{TENTH_REVISION}:{ELEVENTH_REVISION}")
 
         # Assert
-        self.assertEqual((TENTH_REVISION,), actual)
+        self.assertEqual(((ELEVENTH_REVISION,), True), (actual, "ALTER TABLE" in emitted))
 
     def test_upgrade_replaces_only_the_kind_constraint_with_the_closed_total_set(self) -> None:
         # Arrange

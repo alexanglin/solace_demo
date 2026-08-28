@@ -94,8 +94,8 @@ validation cannot prove their settlement, redelivery, reconnect, or model behavi
   store for mission state, broker inbox/outbox records, proposals, approvals, idempotency results,
   evidence provenance and decisions, command progress and receipts, and audit records. Access is through
   async SQLAlchemy 2.x with `asyncpg`, and every durable table and constraint is introduced through an
-  append-only Alembic revision. The ten-revision history preserves immutable dashboard revision 0005 and
-  appends application-data-plane revisions 0006 through 0010. Its 25 SQLAlchemy-owned tables include audit,
+  append-only Alembic revision. The eleven-revision history preserves immutable dashboard revision 0005 and
+  appends application-data-plane revisions 0006 through 0011. Its 25 SQLAlchemy-owned tables include audit,
   approval, idempotency,
   command-outbox, broker inbox/refusal, general application outbox, proposal, evidence, source-event,
   command-progress, durable receipt, pending-invocation, and dashboard-idempotency state. Typed
@@ -103,7 +103,7 @@ validation cannot prove their settlement, redelivery, reconnect, or model behavi
   code does not create durable tables from metadata. Broker acknowledgement occurs only after the
   related durable transaction commits. An append-only audit table with a monotonic ordinal is the
   ordering authority for the mission timeline. Revisions 0001 through 0005 have live PostgreSQL evidence;
-  applying and exercising revisions 0006 through 0010 remains part of the adoption shared-stack run. See
+  applying and exercising revisions 0006 through 0011 remains part of the adoption shared-stack run. See
   [ADR-0003](adr/0003-postgres-durable-mission-store.md) and
   [ADR-0146](adr/0146-define-durable-application-processing.md) and
   [ADR-0189](adr/0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md).

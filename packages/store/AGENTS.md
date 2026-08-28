@@ -8,10 +8,10 @@ rules still apply.
 
 This member is the PostgreSQL repository and transaction boundary. Its schema history is ten
 linear revisions over 25 tables. Immutable revision 0005 adds the dashboard runtime; revisions
-0006 through 0010 add the application data plane after it. Above the history sit complete shared
+0006 through 0011 add the application data plane after it. Above the history sit complete shared
 SQLAlchemy Core metadata, a session and transaction boundary, and purpose-specific repositories
 for dashboard operations, broker processing, evidence, fleet effects, and command dispatch. The
-curated dashboard run proves the five-revision predecessor; revisions 0006 through 0010 still
+curated dashboard run proves the five-revision predecessor; revisions 0006 through 0011 still
 require the separately authorized disposable-database and shared-stack migrations. No paid-call
 ledger has been built yet.
 
@@ -98,18 +98,19 @@ such, and
 [`tools/quality_gate_tests/coverage/test_member_scaffold.py`](../../tools/quality_gate_tests/coverage/test_member_scaffold.py)
 pins that. The Tier 2 coverage gate applies here now, to every statement and every branch under `src/`.
 
-**The schema is real, linear, and completely represented.** Ten revisions render in exact order,
+**The schema is real, linear, and completely represented.** Eleven revisions render in exact order,
 each step back leaves the predecessor intact, and the shared SQLAlchemy metadata names exactly the
 25 migrated tables. Revision 0005 remains the accepted dashboard runtime. Revisions 0006 through
 0010 add application processing, fleet effects, gateway authority, durable malformed-ingress
-refusals, and the generic dashboard command/decision idempotency kinds respectively. Start/reset
+refusals, and the generic dashboard command/decision idempotency kinds respectively; revision 0011
+widens the audit kind column for event types (ADR-0193). Start/reset
 remain in `dashboard_operation` rather than the generic idempotency table.
 
 Above the schema, the established approval, audit, idempotency and outbox repositories and the
 dashboard run/operation/event repositories all execute typed statements over the same metadata.
 Application processing adds store-owned transactions for evidence, recorder, fleet and command
 gateway work. The historical durable-transaction evidence proves the four-revision predecessor,
-and the dashboard evidence proves the five-revision predecessor. Neither proves the new ten-revision
+and the dashboard evidence proves the five-revision predecessor. Neither proves the new eleven-revision
 head. This member's deterministic suite opens no connection; the authorized disposable-database
 probe owns PostgreSQL acceptance, downgrade, concurrency and transaction evidence.
 
@@ -382,7 +383,7 @@ strategy selected by the governing decision for those integration claims; never 
 mission data or replace the selected database with SQLite and call the result equivalent.
 
 `tests/integration/test_durable_store_live.py` carries `docker` and not `broker`. Its merged
-inventory walks the ten-revision history in both directions and retains the dashboard-runtime
+inventory walks the eleven-revision history in both directions and retains the dashboard-runtime
 start/reset recovery, exact-byte retry, predecessor, scenario identity, broker deduplication and
 snapshot cases alongside the established transaction/concurrency cases and the application-data-plane
 schema checks. It still proves nothing about interrupted-process rollback, killed-process recovery,

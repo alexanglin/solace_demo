@@ -201,7 +201,7 @@ and review remain mandatory for those behaviors.
   ([ADR-0086](adr/0086-prove-the-store-on-a-database-the-run-creates-and-drops.md)). They are the only
   evidence for isolation, constraints, transaction visibility, Alembic behaviour, restart durability,
   pool cancellation, and concurrent races; the store's own member suite never opens a connection and
-  establishes none of them. The migration cases walk the ten-revision history through revision 0010 in
+  establishes none of them. The migration cases walk the eleven-revision history through revision 0011 in
   both directions and exercise prepared-before-start persistence, exact-byte start/reset replay,
   same-run pending recovery, predecessor retention, broker deduplication, application inbox/outbox,
   proposals, evidence, command progress, durable receipts, dashboard command/decision idempotency, and

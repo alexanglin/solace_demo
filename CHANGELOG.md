@@ -2027,6 +2027,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The audit record's kind holds an event type.** `audit_record.kind` was 32 characters, the bound of one
+  KIND level, while the dashboard binds every audit record to its event by `kind == type` and a type
+  runs to 70; the first live run to survive a broker restart stopped in the recorder's drain on
+  `aerial-rescue.v1.agent.proposal.candidate-location`. Revision `0011_audit_kind` widens the column
+  to 96 ([ADR-0193](docs/adr/0193-size-the-audit-kind-for-event-types.md)).
 - **An operator's approval can be consumed for the proposal it binds.** The domain's
   `proposal_digest` used the generic context digest, which omits only a member named `digest`, while
   every service binds proposals by ADR-0148's digest, which omits exactly `proposalDigest`; the
