@@ -331,6 +331,12 @@ contract, and operator-flow evidence.
   ([ADR-0074](adr/0074-command-dispatch-lifecycle.md)), and the evidence lifecycle
   ([ADR-0075](adr/0075-evidence-lifecycle-states.md)) in `packages/domain`. All five Tier 1 domain
   state machines [ADR-0017](adr/0017-mutation-tool-score-and-risk-tiers.md) names now exist.
+- **Live on the reference host, 2026-08-28:** the merged Compose definition composes every default,
+  `mission-control`, and `services` target to a healthy state on a freshly initialised broker volume, the
+  dashboard reaches readiness against the composed scenario service, and an operator Start moves the
+  wilderness run's 280 telemetry publications through the broker to the dashboard API and the recorder
+  (`release-evidence/phase-3/merged-runtime-second-composition.md`). The mission-lifecycle event, the
+  approval chain in containers, and the browser rehearsal remain unqualified.
 - **Done in the domain and Evidence Service; live qualification pending:** the evidence score, ordinal
   bands, recorded-origin refusal, and distinct-source corroboration floor are implemented in Tier 1. The
   Evidence Service independently verifies provenance and complete source-event digests, applies the
