@@ -125,10 +125,10 @@ def _catalog_response(
             ],
         )
     except (ScenarioCatalogError, ValidationError) as error:
-        raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND) from error
+        raise ControlError(ControlRefusal.INTERNAL_FAILURE) from error
     encoded = canonical.canonical_bytes(response.model_dump(mode="json", by_alias=True))
     if len(encoded) > MAX_SCENARIO_CATALOG_BYTES:
-        raise ControlError(ControlRefusal.SCENARIO_NOT_FOUND)
+        raise ControlError(ControlRefusal.INTERNAL_FAILURE)
     return response
 
 

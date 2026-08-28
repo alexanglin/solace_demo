@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final, cast
+from unittest.mock import patch
 
 import pytest
 from aerial_rescue_contracts import canonical
@@ -135,6 +136,37 @@ class FilesystemScenarioCatalogTests(unittest.IsolatedAsyncioTestCase):
             (ControlRefusal.SCENARIO_NOT_FOUND, ControlRefusal.SCENARIO_NOT_FOUND),
             (before_startup.value.refusal, after_shutdown.value.refusal),
         )
+
+    async def test_a_projection_that_cannot_serve_the_dashboard_is_an_internal_failure(
+        self,
+    ) -> None:
+        # Arrange
+        root = Path(self.enterContext(TemporaryDirectory()))
+        _write_catalog(root, GOLDEN_DEFINITION.read_bytes())
+        undersized = FilesystemScenarioCatalog(root)
+        bounded = FilesystemScenarioCatalog(PRODUCTION_ROOT)
+
+        # Act
+        await undersized.startup()
+        ready = undersized.ready
+        with pytest.raises(ControlError) as counts:
+            undersized.catalog_response()
+        await bounded.startup()
+        with (
+            patch("aerial_rescue_scenario_service.catalog.MAX_SCENARIO_CATALOG_BYTES", 64),
+            pytest.raises(ControlError) as oversize,
+        ):
+            bounded.catalog_response()
+        first = bounded.catalog_response()
+        second = bounded.catalog_response()
+
+        # Assert
+        self.assertTrue(ready)
+        self.assertEqual(
+            (ControlRefusal.INTERNAL_FAILURE, ControlRefusal.INTERNAL_FAILURE),
+            (counts.value.refusal, oversize.value.refusal),
+        )
+        self.assertIs(first, second)
 
     async def test_a_definition_that_fails_geometry_validation_fails_readiness_closed(
         self,

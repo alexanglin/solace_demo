@@ -378,7 +378,7 @@ established-cancel success deliberately share one run-status representation.
 | scenario-control start request | `scenarioId`, integer `scenarioRevision`, stable `missionId`, and stable `runId` |
 | scenario-control run status | scenario, mission, and run identities; `PLANNED`, `SEARCHING`, `EXHAUSTED`, or `ABORTED` |
 | scenario-control cancel request | `missionId` and `runId`; the body run identifier must equal the path identifier |
-| scenario-control recovery request | scenario, mission, and run identities; an unknown fleet run returns `ABORTED` so the dashboard can stage one guaranteed lifecycle fact |
+| scenario-control recovery request | scenario, mission, and run identities; an unknown fleet run returns `ABORTED`, pinned for the scenario service's process epoch; staging the corresponding lifecycle fact is the dashboard's, still open in `TECH_DEBT.md` ([ADR-0197](adr/0197-standardize-scenario-control-on-the-console-composition.md)) |
 | scenario-control refusal | service-specific closed `errorCode` and a bounded redacted `message` |
 | fleet-control start request | stable `runId` and exactly one nested lossless `FleetScenario` projection |
 | fleet-control run status | mission and run identities; `ACCEPTED`, `RUNNING`, `EXHAUSTED`, `CANCELLED`, or `FAILED`; completed-tick and telemetry-publication counters |

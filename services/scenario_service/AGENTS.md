@@ -98,8 +98,8 @@ started or completed a mission. The application composes no broker, A2A, Ollama,
 and reads no corresponding environment value. ADR-0061 deliberately gives the scenario service no broker
 username, password, role, publish grant, or subscription grant.
 
-The member-local suite proves HTTP admission, catalog load, exact projection, start/status/cancel
-coordination, readiness, bounded shutdown, and typed simulator delivery through deterministic fakes and
+The member-local suite proves HTTP admission, catalog load and its dashboard projection, start, status,
+cancel, and lost-run recovery coordination with the bounded per-epoch binding count, readiness, bounded shutdown, and typed simulator delivery through deterministic fakes and
 HTTPX's in-process transport. It is not live process, container-network, fleet-scale, or durable-store
 evidence. `AGENTS.md` and its `CLAUDE.md` symlink remain documentation and do not affect active-member
 detection.

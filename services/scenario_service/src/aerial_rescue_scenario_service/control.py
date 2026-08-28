@@ -32,6 +32,7 @@ from .http_runtime import ControlError, ControlRefusal
 _SIMULATED_COUNT: Final = 20
 _DECLARED_ONLY_COUNT: Final = 3
 _TERMINAL_STATES: Final = frozenset({"EXHAUSTED", "ABORTED"})
+MAXIMUM_BINDINGS: Final = 32
 
 
 class FleetControlRefusal(StrEnum):
@@ -139,10 +140,20 @@ _STATE_BY_FLEET_STATE = {
 class ScenarioCoordinator:
     """Coordinate one process epoch without claiming durable mission authority."""
 
-    def __init__(self, definitions: ScenarioDefinitions, fleet: FleetControl) -> None:
+    def __init__(
+        self,
+        definitions: ScenarioDefinitions,
+        fleet: FleetControl,
+        *,
+        maximum_bindings: int = MAXIMUM_BINDINGS,
+    ) -> None:
         """Bind the distinct definition and private fleet-control capabilities."""
+        if maximum_bindings < 1:
+            message = "maximum_bindings must be positive"
+            raise ValueError(message)
         self._definitions = definitions
         self._fleet = fleet
+        self._maximum_bindings = maximum_bindings
         self._bindings: dict[str, _RunBinding] = {}
         self._lock = asyncio.Lock()
         self._started = False
@@ -187,6 +198,7 @@ class ScenarioCoordinator:
                 fleet_status = await self._fleet_status(request.run_id)
                 return self._remember(binding, fleet_status)
 
+            self._admit_capacity()
             definition = await self._definitions.load(
                 request.scenario_id, request.scenario_revision
             )
@@ -232,6 +244,7 @@ class ScenarioCoordinator:
                 if binding.terminal_state is not None:
                     return _terminal_status(binding)
             else:
+                self._admit_capacity()
                 await self._definitions.load(request.scenario_id, request.scenario_revision)
                 binding = _RunBinding(
                     request_bytes=request_bytes,
@@ -272,10 +285,7 @@ class ScenarioCoordinator:
             try:
                 fleet_status = await self._fleet.cancel(fleet_request, remaining_seconds)
             except FleetControlError as error:
-                if (
-                    binding.terminal_state is not None
-                    and error.refusal is FleetControlRefusal.RUN_NOT_FOUND
-                ):
+                if binding.terminal_state is not None:
                     return _terminal_status(binding)
                 raise _translate_fleet_error(error) from error
             _validate_fleet_binding(binding, fleet_status)
@@ -295,6 +305,11 @@ class ScenarioCoordinator:
         if status.state in _TERMINAL_STATES:
             self._bindings[binding.run_id] = replace(binding, terminal_state=status.state)
         return status
+
+    def _admit_capacity(self) -> None:
+        """Refuse a new binding once the process epoch holds its bounded number of runs."""
+        if len(self._bindings) >= self._maximum_bindings:
+            raise ControlError(ControlRefusal.INTERNAL_FAILURE, "binding capacity")
 
     def _binding(self, run_id: str) -> _RunBinding:
         try:

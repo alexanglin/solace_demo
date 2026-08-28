@@ -206,6 +206,7 @@ had a host publication
 | Connection establishment timeout | 1 s per private call | R8 injected HTTPX timeout and boundary tests |
 | Start or status response timeout | 5 s per call | R8 typed-client timeout tests |
 | Reset cancellation budget | One shared 15 s monotonic budget from the dashboard operation through the scenario-to-fleet call | R5 orchestration and R8 private-control deadline tests |
+| Scenario-control run bindings per process epoch | 32 (`MAXIMUM_BINDINGS`); a further start or recovery of an unknown run is refused `INTERNAL_FAILURE` | `ScenarioCoordinator(maximum_bindings=…)` construction argument and the coordinator capacity test in `services/scenario_service/tests/test_control.py` ([ADR-0197](adr/0197-standardize-scenario-control-on-the-console-composition.md)) |
 | Private listener host publications | Zero for ports 8081 and 8082 | R9 Compose-policy and exact-service-closure tests plus post-cleanup container inspection at revision `db2b640`, which observed empty host-port maps for scenario service and fleet simulator ([wilderness-dashboard-production-first-run.md](../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)) |
 
 ## Dashboard event stream

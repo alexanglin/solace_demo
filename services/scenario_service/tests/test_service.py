@@ -180,8 +180,9 @@ class ScenarioServiceCompositionTests(unittest.TestCase):
 
     def test_deployed_application_mounts_every_route_the_contract_registry_declares(self) -> None:
         # Arrange
-        temporary = TemporaryDirectory()
-        settings = settings_from_environment(_environment(Path(temporary.name)))
+        settings = settings_from_environment(
+            _environment(Path(self.enterContext(TemporaryDirectory())))
+        )
         declared = {
             (method, path.replace("{runId}", "{run_id}"))
             for method, path, _query, _body, _responses in ROUTE_EXPECTATIONS
@@ -195,7 +196,6 @@ class ScenarioServiceCompositionTests(unittest.TestCase):
             if isinstance(route, Route) and route.methods is not None
             for method in route.methods
         }
-        temporary.cleanup()
 
         # Assert
         self.assertEqual(declared, {pair for pair in mounted if pair[1].startswith("/internal/")})

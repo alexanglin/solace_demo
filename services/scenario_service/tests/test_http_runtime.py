@@ -408,6 +408,43 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
             (409, "RUN_CONFLICT"), (conflict.status_code, conflict.json()["errorCode"])
         )
 
+    async def test_recovery_admission_refuses_before_the_control_port_is_called(self) -> None:
+        # Arrange
+        control = FakeControl()
+        application = _application(control)
+
+        # Act
+        async with _client(application) as client:
+            wrong_host = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(),
+                headers=_headers(Host="attacker.invalid"),
+            )
+            wrong_bearer = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(),
+                headers=_headers(Authorization="Bearer wrong"),
+            )
+            wrong_media = await client.post(
+                f"/internal/v1/runs/{RUN_ID}/recover",
+                content=_recovery_bytes(),
+                headers=_headers(**{"Content-Type": "text/plain"}),
+            )
+
+        # Assert
+        self.assertEqual(
+            [
+                (400, "HOST_INVALID"),
+                (401, "AUTHENTICATION_FAILED"),
+                (415, "UNSUPPORTED_MEDIA_TYPE"),
+            ],
+            [
+                (r.status_code, r.json()["errorCode"])
+                for r in (wrong_host, wrong_bearer, wrong_media)
+            ],
+        )
+        self.assertEqual([], control.calls)
+
     async def test_trailing_slash_is_not_redirected_and_responses_are_not_cached(self) -> None:
         # Arrange
         control = FakeControl()
@@ -425,13 +462,20 @@ class HttpRuntimeTests(unittest.IsolatedAsyncioTestCase):
             refusal = await client.get(
                 f"/internal/v1/runs/{RUN_ID}", headers={"Host": HOST, "Authorization": "Bearer no"}
             )
+            live = await client.get("/healthz", headers={"Host": HOST})
+            ready = await client.get("/readyz", headers={"Host": HOST})
 
         # Assert
         self.assertEqual(slashed.status_code, 404)
         self.assertNotIn("location", slashed.headers)
         self.assertEqual(
-            ("no-store", "no-store"),
-            (status.headers["cache-control"], refusal.headers["cache-control"]),
+            ("no-store", "no-store", "no-store", "no-store"),
+            (
+                status.headers["cache-control"],
+                refusal.headers["cache-control"],
+                live.headers["cache-control"],
+                ready.headers["cache-control"],
+            ),
         )
         self.assertEqual(control.calls, [("status", RUN_ID)])
 

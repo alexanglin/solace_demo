@@ -316,6 +316,7 @@ class _Handlers:
         return Response(
             content=canonical.canonical_bytes({"status": "live"}),
             media_type=_JSON_MEDIA_TYPE,
+            headers=_NO_STORE,
         )
 
     async def readiness(self, request: Request) -> Response:
@@ -327,6 +328,7 @@ class _Handlers:
             content=canonical.canonical_bytes({"ready": ready}),
             status_code=200 if ready else 503,
             media_type=_JSON_MEDIA_TYPE,
+            headers=_NO_STORE,
         )
 
     async def catalog(self, request: Request) -> Response:
