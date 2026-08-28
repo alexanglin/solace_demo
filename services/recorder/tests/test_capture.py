@@ -289,7 +289,7 @@ class GuaranteedCaptureTests(unittest.IsolatedAsyncioTestCase):
             (
                 source_event_digest(notification.envelope),
                 canonical.canonical_bytes(envelope_document(notification.envelope)),
-                OBSERVED_AT,
+                notification.envelope.time,
                 OBSERVED_AT,
                 notification.envelope.time,
             ),

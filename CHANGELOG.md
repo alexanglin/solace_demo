@@ -2027,6 +2027,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The recorder's source-event row carries the event's own time.** The evidence service and the
+  recorder both persist a salient event into the shared immutable `source_event` table; the recorder
+  stamped `observed_at` with its receive clock while the evidence service used the event's `time`, so
+  the second writer was refused as an identity reused for different content. The row now carries
+  the event time; the recorder's inbox completion keeps the receive clock.
 - **The audit record's kind holds an event type.** `audit_record.kind` was 32 characters, the bound of one
   KIND level, while the dashboard binds every audit record to its event by `kind == type` and a type
   runs to 70; the first live run to survive a broker restart stopped in the recorder's drain on

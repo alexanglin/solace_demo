@@ -157,11 +157,17 @@ class AuditFact:
 
 @dataclass(frozen=True)
 class RecordingFact:
-    """Every value the recorder's atomic store adapter must persist together."""
+    """Every value the recorder's atomic store adapter must persist together.
+
+    ``observed_at`` is the recorder's receive instant and completes the inbox; the source
+    event carries the event's own time, because the shared immutable ``source_event`` row is
+    derived from the event alone and the evidence service stores the same row.
+    """
 
     inbox: InboxFact
     source_event: SourceEventFact
     audit: AuditFact
+    observed_at: str
 
 
 @dataclass(frozen=True)
@@ -268,7 +274,7 @@ def _recording_fact(consumer: str, notification: ReceivedNotification) -> Record
         format_topic(notification.topic),
         event_digest,
         canonical_event,
-        notification.observed_at,
+        envelope.time,
     )
     audit = AuditFact(
         envelope.subject,
@@ -279,7 +285,7 @@ def _recording_fact(consumer: str, notification: ReceivedNotification) -> Record
         envelope.causation_id,
         envelope.traceparent,
     )
-    return RecordingFact(inbox, source, audit)
+    return RecordingFact(inbox, source, audit, notification.observed_at)
 
 
 async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> CaptureOutcome:
@@ -294,7 +300,7 @@ async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> Ca
     ordinal = _positive_ordinal(
         await transaction.append_audit(fact.audit), CaptureRefusal.AUDIT_ORDINAL
     )
-    await transaction.complete_inbox(fact.inbox, ordinal, fact.source_event.observed_at)
+    await transaction.complete_inbox(fact.inbox, ordinal, fact.observed_at)
     return CaptureOutcome(CaptureDecision.RECORDED, ordinal)
 
 
