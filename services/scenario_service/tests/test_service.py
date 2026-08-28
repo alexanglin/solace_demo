@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import ipaddress
 import os
+import runpy
 import unittest
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -202,6 +203,23 @@ class ScenarioServiceCompositionTests(unittest.TestCase):
             {("GET", "/healthz"), ("GET", "/readyz")},
             {pair for pair in mounted if not pair[1].startswith("/internal/")},
         )
+
+    def test_module_execution_resolves_to_the_console_composition(self) -> None:
+        # Arrange
+        module_name = "aerial_rescue_scenario_service.__main__"
+
+        # Act
+        imported = runpy.run_module(module_name, run_name="scenario-import-check")
+        with (
+            patch("aerial_rescue_scenario_service.service.main", return_value=None) as process,
+            pytest.raises(SystemExit) as stopped,
+        ):
+            runpy.run_module(module_name, run_name="__main__")
+
+        # Assert
+        self.assertEqual("scenario-import-check", imported["__name__"])
+        self.assertEqual(0, stopped.value.code)
+        process.assert_called_once_with()
 
     def test_console_entrypoint_passes_the_bounded_internal_listener_to_uvicorn(self) -> None:
         # Arrange
