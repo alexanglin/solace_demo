@@ -17,6 +17,7 @@ from aerial_rescue_scenario_service.wire import (
     FleetControlStartRequest,
     ScenarioCatalogResponse,
     ScenarioControlCancelRequest,
+    ScenarioControlRecoveryRequest,
     ScenarioControlStartRequest,
     ScenarioDefinition,
 )
@@ -125,6 +126,18 @@ def _request(**changes: object) -> ScenarioControlStartRequest:
     return ScenarioControlStartRequest.model_validate(document)
 
 
+def _recovery(**changes: object) -> ScenarioControlRecoveryRequest:
+    document: dict[str, object] = {
+        "controlVersion": 1,
+        "scenarioId": SCENARIO_ID,
+        "scenarioRevision": 1,
+        "missionId": MISSION_ID,
+        "runId": RUN_ID,
+    }
+    document.update(changes)
+    return ScenarioControlRecoveryRequest.model_validate(document)
+
+
 def _fleet_status(
     state: str = "RUNNING", *, mission_id: str = MISSION_ID, run_id: str = RUN_ID
 ) -> FleetControlRunStatus:
@@ -146,6 +159,7 @@ class FakeDefinitions:
         self.ready = False
         self.definition = definition
         self.calls: list[tuple[str, object]] = []
+        self.refusal: ControlRefusal | None = None
 
     async def startup(self) -> None:
         self.calls.append(("startup", None))
@@ -157,6 +171,8 @@ class FakeDefinitions:
 
     async def load(self, scenario_id: str, revision: int) -> ScenarioDefinition:
         self.calls.append(("load", (scenario_id, revision)))
+        if self.refusal is not None:
+            raise ControlError(self.refusal)
         return self.definition
 
     def catalog_response(self) -> ScenarioCatalogResponse:
@@ -207,6 +223,12 @@ class FakeFleet:
         if self.refusal is not None:
             raise FleetControlError(self.refusal)
         return self.response
+
+
+def unknown_coordinator_fleet_calls(coordinator: ScenarioCoordinator) -> list[tuple[str, object]]:
+    """Return the fake fleet's recorded calls for a coordinator built inline."""
+    fleet = cast("FakeFleet", coordinator._fleet)
+    return fleet.calls
 
 
 class ScenarioCoordinatorTests(unittest.IsolatedAsyncioTestCase):
@@ -311,12 +333,116 @@ class ScenarioCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.state, "ABORTED")
         self.assertEqual(cancelled.state, "ABORTED")
         self.assertEqual(missing.value.refusal, ControlRefusal.RUN_NOT_FOUND)
-        self.assertEqual(mismatch.value.refusal, ControlRefusal.PATH_BODY_MISMATCH)
+        self.assertEqual(mismatch.value.refusal, ControlRefusal.RUN_CONFLICT)
         cancel_request, remaining = cast(
             "tuple[FleetControlCancelRequest, float]", fleet.calls[-1][1]
         )
         self.assertEqual(cancel_request.mission_id, MISSION_ID)
         self.assertEqual(remaining, 9.5)
+
+    async def test_recover_binds_a_known_fleet_run_without_repeating_start(self) -> None:
+        # Arrange
+        definitions = FakeDefinitions(_definition())
+        fleet = FakeFleet()
+        coordinator = ScenarioCoordinator(definitions, fleet)
+        await coordinator.startup()
+
+        # Act
+        recovered = await coordinator.recover(_recovery())
+        current = await coordinator.status(RUN_ID)
+
+        # Assert
+        self.assertEqual(("SEARCHING", "SEARCHING"), (recovered.state, current.state))
+        self.assertEqual([("startup", None), ("status", RUN_ID), ("status", RUN_ID)], fleet.calls)
+        self.assertIn(("load", (SCENARIO_ID, 1)), definitions.calls)
+
+    async def test_recover_of_a_lost_fleet_run_reports_aborted_once_and_stays_terminal(
+        self,
+    ) -> None:
+        # Arrange
+        definitions = FakeDefinitions(_definition())
+        fleet = FakeFleet()
+        fleet.refusal = FleetControlRefusal.RUN_NOT_FOUND
+        coordinator = ScenarioCoordinator(definitions, fleet)
+        await coordinator.startup()
+        cancel = ScenarioControlCancelRequest.model_validate(
+            {"controlVersion": 1, "missionId": MISSION_ID, "runId": RUN_ID}
+        )
+
+        # Act
+        first = await coordinator.recover(_recovery())
+        second = await coordinator.recover(_recovery())
+        current = await coordinator.status(RUN_ID)
+        cancelled = await coordinator.cancel(cancel, 9.5)
+
+        # Assert
+        self.assertEqual(
+            ("ABORTED", "ABORTED", "ABORTED", "ABORTED"),
+            (first.state, second.state, current.state, cancelled.state),
+        )
+        self.assertEqual(
+            [("startup", None), ("status", RUN_ID), "cancel"],
+            [*fleet.calls[:2], fleet.calls[2][0]],
+        )
+        self.assertEqual(3, len(fleet.calls))
+
+    async def test_recover_refuses_a_conflicting_identity_unknown_scenario_and_lost_fleet(
+        self,
+    ) -> None:
+        # Arrange
+        definitions = FakeDefinitions(_definition())
+        fleet = FakeFleet()
+        coordinator = ScenarioCoordinator(definitions, fleet)
+        await coordinator.startup()
+        await coordinator.start(_request())
+        unknown_definitions = FakeDefinitions(_definition())
+        unknown_definitions.refusal = ControlRefusal.SCENARIO_NOT_FOUND
+        unknown_coordinator = ScenarioCoordinator(unknown_definitions, FakeFleet())
+        await unknown_coordinator.startup()
+        unavailable_fleet = FakeFleet()
+        unavailable_fleet.refusal = FleetControlRefusal.INTERNAL_FAILURE
+        unavailable_coordinator = ScenarioCoordinator(
+            FakeDefinitions(_definition()), unavailable_fleet
+        )
+        await unavailable_coordinator.startup()
+
+        # Act
+        with pytest.raises(ControlError) as conflict:
+            await coordinator.recover(_recovery(missionId="another-mission"))
+        with pytest.raises(ControlError) as unknown:
+            await unknown_coordinator.recover(_recovery())
+        with pytest.raises(ControlError) as unavailable:
+            await unavailable_coordinator.recover(_recovery())
+
+        # Assert
+        self.assertEqual(
+            (
+                ControlRefusal.RUN_CONFLICT,
+                ControlRefusal.SCENARIO_NOT_FOUND,
+                ControlRefusal.FLEET_UNAVAILABLE,
+            ),
+            (conflict.value.refusal, unknown.value.refusal, unavailable.value.refusal),
+        )
+        self.assertEqual([("startup", None)], unknown_coordinator_fleet_calls(unknown_coordinator))
+
+    async def test_a_terminal_fleet_state_is_remembered_without_further_fleet_calls(self) -> None:
+        # Arrange
+        definitions = FakeDefinitions(_definition())
+        fleet = FakeFleet(_fleet_status("EXHAUSTED"))
+        coordinator = ScenarioCoordinator(definitions, fleet)
+        await coordinator.startup()
+
+        # Act
+        started = await coordinator.start(_request())
+        fleet.refusal = FleetControlRefusal.RUN_NOT_FOUND
+        current = await coordinator.status(RUN_ID)
+        repeated = await coordinator.start(_request())
+
+        # Assert
+        self.assertEqual(
+            ("EXHAUSTED", "EXHAUSTED", "EXHAUSTED"), (started.state, current.state, repeated.state)
+        )
+        self.assertEqual([("startup", None), ("start", fleet.calls[1][1])], fleet.calls)
 
     async def test_cancel_refuses_until_the_fleet_reports_a_terminal_state(self) -> None:
         # Arrange

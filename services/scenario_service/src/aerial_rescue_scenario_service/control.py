@@ -7,7 +7,7 @@ import hmac
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, StrEnum
 from typing import Final, Literal, Protocol
 
@@ -141,6 +141,7 @@ class _RunBinding:
     scenario_revision: int
     mission_id: str
     run_id: str
+    terminal_state: str | None = None
 
 
 _STATE_BY_FLEET_STATE = {
@@ -198,8 +199,10 @@ class ScenarioCoordinator:
             if binding is not None:
                 if not hmac_bytes_equal(binding.request_bytes, request_bytes):
                     raise ControlError(ControlRefusal.RUN_CONFLICT)
+                if binding.terminal_state is not None:
+                    return _terminal_status(binding)
                 fleet_status = await self._fleet_status(request.run_id)
-                return _scenario_status(binding, fleet_status)
+                return self._remember(binding, fleet_status)
 
             definition = await self._definitions.load(
                 request.scenario_id, request.scenario_revision
@@ -218,14 +221,53 @@ class ScenarioCoordinator:
             )
             _validate_fleet_binding(binding, fleet_status)
             self._bindings[request.run_id] = binding
-            return _scenario_status(binding, fleet_status)
+            return self._remember(binding, fleet_status)
 
     async def status(self, run_id: str) -> ScenarioControlRunStatus:
         """Return status only for a run bound during this process epoch."""
         async with self._lock:
             binding = self._binding(run_id)
+            if binding.terminal_state is not None:
+                return _terminal_status(binding)
             fleet_status = await self._fleet_status(run_id)
-            return _scenario_status(binding, fleet_status)
+            return self._remember(binding, fleet_status)
+
+    async def recover(self, request: ScenarioControlRecoveryRequest) -> ScenarioControlRunStatus:
+        """Reconcile a durable run against the fleet; a run the fleet lost is ABORTED for good."""
+        request_bytes = canonical.canonical_bytes(request.model_dump(mode="json", by_alias=True))
+        identity = (
+            request.scenario_id,
+            request.scenario_revision,
+            request.mission_id,
+            request.run_id,
+        )
+        async with self._lock:
+            binding = self._bindings.get(request.run_id)
+            if binding is not None:
+                if _identity(binding) != identity:
+                    raise ControlError(ControlRefusal.RUN_CONFLICT)
+                if binding.terminal_state is not None:
+                    return _terminal_status(binding)
+            else:
+                await self._definitions.load(request.scenario_id, request.scenario_revision)
+                binding = _RunBinding(
+                    request_bytes=request_bytes,
+                    scenario_id=request.scenario_id,
+                    scenario_revision=request.scenario_revision,
+                    mission_id=request.mission_id,
+                    run_id=request.run_id,
+                )
+            try:
+                fleet_status = await self._fleet.status(request.run_id)
+            except FleetControlError as error:
+                if error.refusal is not FleetControlRefusal.RUN_NOT_FOUND:
+                    raise _translate_fleet_error(error) from error
+                lost = replace(binding, terminal_state="ABORTED")
+                self._bindings[request.run_id] = lost
+                return _terminal_status(lost)
+            _validate_fleet_binding(binding, fleet_status)
+            self._bindings[request.run_id] = binding
+            return self._remember(binding, fleet_status)
 
     async def cancel(
         self, request: ScenarioControlCancelRequest, remaining_seconds: float
@@ -234,7 +276,7 @@ class ScenarioCoordinator:
         async with self._lock:
             binding = self._binding(request.run_id)
             if binding.mission_id != request.mission_id:
-                raise ControlError(ControlRefusal.PATH_BODY_MISMATCH)
+                raise ControlError(ControlRefusal.RUN_CONFLICT)
             if remaining_seconds <= 0:
                 raise ControlError(ControlRefusal.CANCELLATION_NOT_ESTABLISHED)
             fleet_request = FleetControlCancelRequest.model_validate(
@@ -247,15 +289,29 @@ class ScenarioCoordinator:
             try:
                 fleet_status = await self._fleet.cancel(fleet_request, remaining_seconds)
             except FleetControlError as error:
+                if (
+                    binding.terminal_state is not None
+                    and error.refusal is FleetControlRefusal.RUN_NOT_FOUND
+                ):
+                    return _terminal_status(binding)
                 raise _translate_fleet_error(error) from error
             _validate_fleet_binding(binding, fleet_status)
             if fleet_status.state in {"ACCEPTED", "RUNNING"}:
                 raise ControlError(ControlRefusal.CANCELLATION_NOT_ESTABLISHED)
-            return _scenario_status(binding, fleet_status)
+            return self._remember(binding, fleet_status)
 
     def snapshot(self) -> dict[str, int | bool]:
         """Return non-sensitive process-epoch diagnostics for deterministic probes."""
         return {"runCount": len(self._bindings), "started": self._started}
+
+    def _remember(
+        self, binding: _RunBinding, fleet_status: FleetControlRunStatus
+    ) -> ScenarioControlRunStatus:
+        """Map one fleet status and pin a terminal state so the fleet is never asked again."""
+        status = _scenario_status(binding, fleet_status)
+        if status.state in _TERMINAL_STATES:
+            self._bindings[binding.run_id] = replace(binding, terminal_state=status.state)
+        return status
 
     def _binding(self, run_id: str) -> _RunBinding:
         try:
@@ -340,6 +396,23 @@ def _drone(member: SimulatedMember) -> FleetControlDroneStart:
 def _validate_fleet_binding(binding: _RunBinding, status: FleetControlRunStatus) -> None:
     if status.run_id != binding.run_id or status.mission_id != binding.mission_id:
         raise ControlError(ControlRefusal.FLEET_UNAVAILABLE)
+
+
+def _identity(binding: _RunBinding) -> tuple[str, int, str, str]:
+    return (binding.scenario_id, binding.scenario_revision, binding.mission_id, binding.run_id)
+
+
+def _terminal_status(binding: _RunBinding) -> ScenarioControlRunStatus:
+    return ScenarioControlRunStatus.model_validate(
+        {
+            "controlVersion": 1,
+            "scenarioId": binding.scenario_id,
+            "scenarioRevision": binding.scenario_revision,
+            "missionId": binding.mission_id,
+            "runId": binding.run_id,
+            "state": binding.terminal_state,
+        }
+    )
 
 
 def _scenario_status(
