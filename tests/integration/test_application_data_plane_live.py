@@ -234,6 +234,7 @@ RECEIVE_TIMEOUT_MILLISECONDS: Final = 10_000
 IDLE_RECEIVE_MILLISECONDS: Final = 25
 MAX_RECORDER_POLLS: Final = 500
 RECOVERY_POLLS: Final = 600
+RESTART_RESULT_POLLS: Final = 2_400
 GATEWAY_DRAIN_ATTEMPTS: Final = 3
 RECOVERY_POLL_SECONDS: Final = 0.05
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01"
@@ -821,22 +822,29 @@ async def _observe_reconnection(
 async def _restart_broker_once(
     lifecycles: Sequence[BrokerLifecycle],
 ) -> tuple[bool, bool]:
-    """Ask the owning runner for exactly one restart and observe SDK lifecycle truth."""
+    """Ask the owning runner for exactly one restart and observe SDK lifecycle truth.
+
+    The runner's result gets its own window: the controller may spend 30 s on the restart
+    and 30 s on the healthy wait (ADR-0186), after a graceful stop and a broker boot the
+    host decides. The 30 s readiness observation that follows is the service-level bound
+    and starts only once the runner has reported the broker healthy.
+    """
     if os.environ.get(RESTART_AUTHORITY_SETTING, "") != RESTART_REQUEST_MARKER:
         _fail("live broker restart authority token is absent or invalid")
     if not all(lifecycle.is_ready() for lifecycle in lifecycles):
         _fail("live broker restart began before production sessions were ready")
-    deadline = time.monotonic() + RECOVERY_POLLS * RECOVERY_POLL_SECONDS
+    result_deadline = time.monotonic() + RESTART_RESULT_POLLS * RECOVERY_POLL_SECONDS
     result_fd = os.open(
         _private_fifo(RESTART_RESULT_FIFO_SETTING),
         os.O_RDONLY | os.O_NONBLOCK,
     )
     try:
-        _send_restart_request(_private_fifo(RESTART_REQUEST_FIFO_SETTING), deadline)
-        degraded = await _receive_restart_result(result_fd, lifecycles, deadline)
+        _send_restart_request(_private_fifo(RESTART_REQUEST_FIFO_SETTING), result_deadline)
+        degraded = await _receive_restart_result(result_fd, lifecycles, result_deadline)
     finally:
         os.close(result_fd)
-    reconnected = await _observe_reconnection(lifecycles, degraded, deadline)
+    recovery_deadline = time.monotonic() + RECOVERY_POLLS * RECOVERY_POLL_SECONDS
+    reconnected = await _observe_reconnection(lifecycles, degraded, recovery_deadline)
     return len(degraded) == len(lifecycles), reconnected
 
 
