@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import * as maplibregl from "maplibre-gl";
-import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type {
   GeoJSONSource,
   LngLatBoundsLike,
@@ -15,8 +15,9 @@ import type { DashboardReducedState, DashboardScenarioCatalog } from "../contrac
 type Scenario = DashboardScenarioCatalog["scenarios"][number];
 
 // MapLibre otherwise derives its worker URL from `import.meta.url`, which resolves to a file the
-// bundler never emits. Naming the emitted asset keeps the worker same-origin and local, as the
-// dashboard guide requires of every map asset.
+// bundler never emits. `?worker&url` emits the worker with everything it imports, because the
+// worker's own `./maplibre-gl-shared.mjs` would otherwise be a 404 that stops every source tiling.
+// Naming the emitted asset keeps the worker same-origin and local, as the dashboard guide requires.
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 const emptyStyle: StyleSpecification = {

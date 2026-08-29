@@ -10,13 +10,14 @@ const acceptedNames = [
   "loads the live command center without a remote browser request",
   "locks mutations when the API restarts before the first validated snapshot",
   "reproduces one final digest across ten replay folds",
+  "serves the map worker and every module it imports",
   "resynchronizes exactly once after real durable stream overload",
   "shows recorder readiness loss and recovery through typed production responses",
   "shows a bounded publisher outage as offline and recovers on the same API runtime",
   "shows the bounded drone heartbeat, sector recovery, and exhaustion sequence",
 ].sort();
 
-test("keeps eight ordered production workflows outside the 64-case fixture inventory", async () => {
+test("keeps nine ordered production workflows outside the 64-case fixture inventory", async () => {
   // Arrange
   const names = (await readdir(productionRoot)).filter((name) => name.endsWith(".spec.ts")).sort();
   const sources = await Promise.all(

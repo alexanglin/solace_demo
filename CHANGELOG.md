@@ -2059,6 +2059,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   derive their event from one `project()` call. ADR-0205 records the decision, and the new
   cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
   change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The map draws its sectors again.** Vite's `?url` copies a file verbatim without following its
+  imports, so the emitted MapLibre worker still named `./maplibre-gl-shared.mjs`, which the origin
+  answered 404 for. A module worker that cannot finish its own imports fails silently: MapLibre's
+  dispatcher never initialised, so every GeoJSON source stopped tiling and the mission boundary, all
+  twenty sector polygons, the at-risk dashes and the trails vanished. Only the drone markers survived,
+  because they are DOM elements added by a separate effect. Nothing reported it -- `map.once("load")`
+  still fired, because the initial style is background-only and needs no worker, so the map went on
+  announcing "Mission bounds fitted automatically" and "20 sector polygons" over an empty rectangle.
+  `?worker&url` now bundles the worker with everything it imports into one content-hashed chunk. Two
+  guards keep the class closed: the build refuses to emit an asset naming a module it did not emit,
+  and a production case fetches the worker from the running origin and requires every import it
+  declares to answer 200.
+
 - **The map's worker ships, is served, and is permitted.** MapLibre resolves its worker from
   `import.meta.url` at run time, so the bundler inlined the library and emitted no worker; the browser
   then asked the origin for `/assets/maplibre-gl-worker.mjs`, which 404'd, and Caddy's
