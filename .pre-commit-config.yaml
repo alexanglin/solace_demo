@@ -282,6 +282,19 @@ repos:
         always_run: true
         pass_filenames: false
 
+      # The production and soak harness embeds Python, container module names, and
+      # environment names as TypeScript string literals, which tsc and ESLint read as
+      # string[]. Resolve them against the workspace source and the Compose file
+      # (docs/adr/0204). always_run because the change that breaks a reference is a
+      # deletion on the Python side, and that commit touches no harness file.
+      - id: production-probe-references
+        name: dashboard production probes resolve
+        entry: scripts/hooks/dashboard/check-production-probes.sh
+        language: script
+        stages: [pre-commit, pre-push]
+        always_run: true
+        pass_filenames: false
+
       # Generated dashboard types are committed review artifacts. Re-run the
       # check-only offline generator whenever an input or generated output changes.
       - id: dashboard-contracts-current
