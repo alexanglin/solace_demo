@@ -1151,6 +1151,23 @@ class AuthorizationArtifactTests(unittest.TestCase):
             observations,
         )
 
+    def test_the_audit_record_kind_is_the_audit_envelope_type(self) -> None:
+        # Arrange
+        ingress = _accepted(_delivery())
+
+        # Act
+        artifacts = build_authorization_artifacts(
+            ingress,
+            STAMP,
+            authorized=True,
+            approval_id="approval-synthetic-0001",
+            reason=None,
+        )
+
+        # Assert
+        audit = cast("dict[str, object]", canonical.decode(artifacts.audit_record.payload))
+        self.assertEqual(audit["type"], artifacts.audit_record.kind)
+
     def test_escalation_artifacts_preserve_every_exact_wire_and_store_member(self) -> None:
         # Arrange
         ingress = _accepted(_delivery())
@@ -1191,7 +1208,7 @@ class AuthorizationArtifactTests(unittest.TestCase):
                 "event-operator-command-escalate-0001",
                 traced.occurred_at,
                 "mission-synthetic-0001",
-                "command-authorization",
+                "aerial-rescue.v1.audit.command-authorization",
                 traced.occurred_at,
                 artifacts.audit_event.payload,
                 "correlation-synthetic-0001",
