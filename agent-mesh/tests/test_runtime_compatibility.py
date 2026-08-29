@@ -4,19 +4,29 @@ from __future__ import annotations
 
 import importlib.metadata
 import inspect
+import signal
 import threading
 import unittest
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from concurrent.futures import FIRST_EXCEPTION, Future
 from pathlib import Path
 from typing import Final, Protocol, Self
 from unittest.mock import patch
 
 import pytest
+import sam_event_mesh_tool.tools as upstream_event_mesh_tool
+import solace_agent_mesh.agent.adk.setup as upstream_agent_setup
+import solace_agent_mesh.agent.sac.component as upstream_agent_component
+import solace_agent_mesh.common.sac.sam_component_base as upstream_component_base
 import solace_ai_connector.common.messaging.solace_messaging as upstream_messaging
+import solace_ai_connector.flow.flow as upstream_flow
 import solace_ai_connector.main as connector_main
+import solace_ai_connector.solace_ai_connector as upstream_connector
 from solace.messaging.config.retry_strategy import RetryStrategy
 
 import aerial_rescue_runtime_compat as runtime_compat
+import aerial_rescue_runtime_compat.__main__ as runtime_main
+from aerial_rescue_runtime_compat import lifecycle as runtime_lifecycle
 from aerial_rescue_runtime_compat.lifecycle import (
     EXIT_RUNTIME_FAILURE,
     EXIT_SUCCESS,
@@ -100,14 +110,22 @@ class _FakeBuilder:
 class _FakeConnector:
     """Record owned run, stop, and cleanup lifecycle ordering."""
 
-    def __init__(self, *, failure: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure: BaseException | None = None,
+        startup: Callable[[], None] | None = None,
+    ) -> None:
         self.failure = failure
+        self.startup = startup
         self.stop_signal = threading.Event()
         self.calls: list[str] = []
 
     def run(self) -> None:
         """Start or raise one injected runtime failure."""
         self.calls.append("run")
+        if self.startup is not None:
+            self.startup()
         if self.failure is not None:
             raise self.failure
 
@@ -123,6 +141,27 @@ class _FakeConnector:
     def cleanup(self) -> None:
         """Record final resource cleanup."""
         self.calls.append("cleanup")
+
+
+class _FakeAsyncComponent:
+    """Expose the pinned SAM component's async-initialization seam."""
+
+    def __init__(self, future: Future[object] | None) -> None:
+        self._async_init_future = future
+
+
+class _InvalidAsyncComponent:
+    """Expose an incompatible non-future value at the pinned private seam."""
+
+    def __init__(self) -> None:
+        self._async_init_future = object()
+
+
+class _FakeFlow:
+    """Expose the pinned Connector flow's nested component groups."""
+
+    def __init__(self, component_groups: Sequence[Sequence[object]]) -> None:
+        self.component_groups = component_groups
 
 
 class _FakeInterpreter:
@@ -315,6 +354,55 @@ class MessagingCompatibilityTests(unittest.TestCase):
         self.assertIn("os._exit(0)", lifecycle_source)
         self.assertIn("def shutdown", lifecycle_source)
 
+    def test_the_upstream_startup_callback_precedes_readiness_and_covers_tool_initialization(
+        self,
+    ) -> None:
+        # Arrange
+        sources = (
+            upstream_connector.SolaceAiConnector.run,
+            upstream_flow.Flow.__init__,
+            upstream_flow.Flow.create_component_group,
+            upstream_component_base.SamComponentBase.run,
+            upstream_agent_component.SamAgentComponent.__init__,
+            upstream_agent_component.SamAgentComponent._perform_async_init,
+            upstream_agent_setup._create_python_tool_lifecycle_hooks,
+            upstream_event_mesh_tool.EventMeshTool.init,
+        )
+
+        # Act
+        connector, flow, flow_group, component, agent_init, agent, hooks, event_tool = map(
+            inspect.getsource, sources
+        )
+
+        # Assert
+        self.assertLess(
+            connector.index("self.create_apps()"),
+            connector.index("on_flow_creation(self.flows)"),
+        )
+        self.assertLess(
+            connector.index("on_flow_creation(self.flows)"),
+            connector.index("self.health_checker.mark_ready()"),
+        )
+        self.assertLess(
+            connector.index("except KeyboardInterrupt:"),
+            connector.index("except Exception:"),
+        )
+        self.assertIn("raise KeyboardInterrupt", connector)
+        self.assertIn("self.component_groups: List[List[ComponentBase]] = []", flow)
+        self.assertIn("self.create_components()", flow)
+        self.assertIn("self.component_groups.append(component_group)", flow_group)
+        self.assertIn("self._async_init_future.add_done_callback", component)
+        self.assertIn(
+            "self._async_init_future = concurrent.futures.Future()",
+            agent_init,
+        )
+        self.assertLess(
+            agent.index("await load_adk_tools(self)"),
+            agent.index("self._signal_async_init_future(success=True)"),
+        )
+        self.assertIn("await tool_instance.init(component, tool_config_model)", hooks)
+        self.assertIn("component.create_request_response_session(", event_tool)
+
 
 class RuntimeLifecycleTests(unittest.TestCase):
     def test_requested_shutdown_converts_an_upstream_keyboard_interrupt_to_success(self) -> None:
@@ -330,6 +418,79 @@ class RuntimeLifecycleTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, status)
         self.assertEqual(["run", "stop", "cleanup"], connector.calls)
+
+    def test_requested_stop_interrupts_initialization_and_remains_successful(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+        connector = _FakeConnector()
+        connector.startup = lambda: runtime_lifecycle.wait_for_async_initialization(
+            flows,
+            stop_signal=connector.stop_signal,
+        )
+        requested = threading.Event()
+        requested.set()
+        connector.stop_signal.set()
+        terminal = BrokerTerminalState(on_exhausted=connector.stop_signal.set)
+
+        # Act
+        status = run_connector(connector, requested=requested, terminal=terminal)
+
+        # Assert
+        self.assertEqual(EXIT_SUCCESS, status)
+        self.assertEqual(["run", "stop", "cleanup"], connector.calls)
+
+    def test_initialization_failure_outweighs_concurrent_requested_shutdown(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        failure = RuntimeError(SENSITIVE_FAILURE)
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+        connector = _FakeConnector()
+        connector.startup = lambda: runtime_lifecycle.wait_for_async_initialization(
+            flows,
+            stop_signal=connector.stop_signal,
+        )
+        requested = threading.Event()
+        requested.set()
+        future.add_done_callback(lambda _completed: connector.stop_signal.set())
+        future.set_exception(failure)
+        terminal = BrokerTerminalState(on_exhausted=connector.stop_signal.set)
+        logger_patch = patch("aerial_rescue_runtime_compat.lifecycle._LOGGER")
+        logger = logger_patch.start()
+        self.addCleanup(logger_patch.stop)
+
+        # Act
+        status = run_connector(connector, requested=requested, terminal=terminal)
+
+        # Assert
+        self.assertEqual(EXIT_RUNTIME_FAILURE, status)
+        self.assertEqual(["run", "stop", "cleanup"], connector.calls)
+        self.assertIn("RuntimeError", str(logger.error.call_args_list))
+
+    def test_terminal_stop_interrupts_initialization_and_remains_a_failure(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+        connector = _FakeConnector()
+        connector.startup = lambda: runtime_lifecycle.wait_for_async_initialization(
+            flows,
+            stop_signal=connector.stop_signal,
+        )
+        requested = threading.Event()
+        terminal = BrokerTerminalState(on_exhausted=connector.stop_signal.set)
+        terminal.mark_exhausted()
+        logger_patch = patch("aerial_rescue_runtime_compat.lifecycle._LOGGER")
+        logger = logger_patch.start()
+        self.addCleanup(logger_patch.stop)
+
+        # Act
+        status = run_connector(connector, requested=requested, terminal=terminal)
+        logger_patch.stop()
+
+        # Assert
+        self.assertEqual(EXIT_RUNTIME_FAILURE, status)
+        self.assertEqual(["run", "stop", "cleanup"], connector.calls)
+        self.assertIn("KeyboardInterrupt", str(logger.error.call_args_list))
 
     def test_requested_shutdown_stops_then_cleans_up_and_returns_success(self) -> None:
         # Arrange
@@ -378,6 +539,291 @@ class RuntimeLifecycleTests(unittest.TestCase):
         output = str(logger.error.call_args_list)
         self.assertNotIn(SENSITIVE_FAILURE, output)
         self.assertIn("RuntimeError", output)
+
+
+class AsyncInitializationReadinessTests(unittest.TestCase):
+    def test_completed_component_initialization_allows_connector_readiness(self) -> None:
+        # Arrange
+        first: Future[object] = Future()
+        second: Future[object] = Future()
+        first.set_result(None)
+        second.set_result(None)
+        flows = [_FakeFlow([[_FakeAsyncComponent(first), _FakeAsyncComponent(second)]])]
+        stop_signal = threading.Event()
+
+        # Act
+        runtime_lifecycle.wait_for_async_initialization(flows, stop_signal=stop_signal)
+
+        # Assert
+        self.assertEqual((None, None), (first.exception(), second.exception()))
+
+    def test_component_initialization_failure_refuses_connector_readiness(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        failure = RuntimeError(SENSITIVE_FAILURE)
+        future.set_exception(failure)
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+        stop_signal = threading.Event()
+
+        # Act
+        with pytest.raises(RuntimeError) as raised:
+            runtime_lifecycle.wait_for_async_initialization(flows, stop_signal=stop_signal)
+
+        # Assert
+        self.assertIs(failure, raised.value)
+
+    def test_completed_failure_outweighs_its_stop_callback(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        failure = RuntimeError(SENSITIVE_FAILURE)
+        stop_signal = threading.Event()
+        future.add_done_callback(lambda _completed: stop_signal.set())
+        future.set_exception(failure)
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+
+        # Act
+        with pytest.raises(RuntimeError) as raised:
+            runtime_lifecycle.wait_for_async_initialization(
+                flows,
+                stop_signal=stop_signal,
+            )
+
+        # Assert
+        self.assertIs(failure, raised.value)
+        self.assertTrue(stop_signal.is_set())
+
+    def test_failure_completed_during_poll_outweighs_its_stop_callback(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        failure = RuntimeError(SENSITIVE_FAILURE)
+        stop_signal = threading.Event()
+        future.add_done_callback(lambda _completed: stop_signal.set())
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+
+        def fail_during_poll(
+            pending: set[Future[object]],
+            *,
+            timeout: float,
+            return_when: str,
+        ) -> tuple[set[Future[object]], set[Future[object]]]:
+            del timeout, return_when
+            future.set_exception(failure)
+            return ({future}, pending - {future})
+
+        wait_patch = patch(
+            "aerial_rescue_runtime_compat.lifecycle.wait",
+            side_effect=fail_during_poll,
+        )
+        waiter = wait_patch.start()
+        self.addCleanup(wait_patch.stop)
+
+        # Act
+        with pytest.raises(RuntimeError) as raised:
+            runtime_lifecycle.wait_for_async_initialization(
+                flows,
+                stop_signal=stop_signal,
+            )
+        wait_patch.stop()
+
+        # Assert
+        self.assertIs(failure, raised.value)
+        self.assertTrue(stop_signal.is_set())
+        self.assertEqual(1, waiter.call_count)
+
+    def test_pending_components_share_one_global_initialization_timeout(self) -> None:
+        # Arrange
+        first: Future[object] = Future()
+        second: Future[object] = Future()
+        futures = (first, second)
+        flows = [_FakeFlow([[_FakeAsyncComponent(first)], [_FakeAsyncComponent(second)]])]
+        stop_signal = threading.Event()
+        clock_values = iter((10.0, 10.0, 69.75, 70.0))
+        wait_patch = patch(
+            "aerial_rescue_runtime_compat.lifecycle.wait",
+            return_value=(set(), set(futures)),
+        )
+        waiter = wait_patch.start()
+        self.addCleanup(wait_patch.stop)
+
+        # Act
+        with pytest.raises(runtime_lifecycle.AsyncInitializationTimeoutError) as raised:
+            runtime_lifecycle.wait_for_async_initialization(
+                flows,
+                stop_signal=stop_signal,
+                monotonic=lambda: next(clock_values),
+            )
+        wait_patch.stop()
+
+        # Assert
+        self.assertEqual(
+            "Agent Mesh async initialization exceeded its startup bound",
+            str(raised.value),
+        )
+        self.assertEqual(60.0, runtime_lifecycle.ASYNC_INITIALIZATION_TIMEOUT_SECONDS)
+        self.assertEqual(0.5, runtime_lifecycle.ASYNC_INITIALIZATION_POLL_SECONDS)
+        self.assertEqual(
+            [0.5, 0.25],
+            [pending_wait.kwargs["timeout"] for pending_wait in waiter.call_args_list],
+        )
+        self.assertTrue(
+            all(
+                pending_wait.kwargs["return_when"] == FIRST_EXCEPTION
+                for pending_wait in waiter.call_args_list
+            )
+        )
+
+    def test_stop_signal_interrupts_a_pending_initialization_after_one_poll(self) -> None:
+        # Arrange
+        future: Future[object] = Future()
+        flows = [_FakeFlow([[_FakeAsyncComponent(future)]])]
+        stop_signal = threading.Event()
+
+        def stop_during_poll(
+            pending: set[Future[object]],
+            *,
+            timeout: float,
+            return_when: str,
+        ) -> tuple[set[Future[object]], set[Future[object]]]:
+            del timeout, return_when
+            stop_signal.set()
+            return (set(), pending)
+
+        wait_patch = patch(
+            "aerial_rescue_runtime_compat.lifecycle.wait",
+            side_effect=stop_during_poll,
+        )
+        waiter = wait_patch.start()
+        self.addCleanup(wait_patch.stop)
+
+        # Act
+        with pytest.raises(KeyboardInterrupt):
+            runtime_lifecycle.wait_for_async_initialization(
+                flows,
+                stop_signal=stop_signal,
+            )
+        wait_patch.stop()
+
+        # Assert
+        self.assertEqual(1, waiter.call_count)
+
+    def test_components_without_an_async_initialization_future_are_ignored(self) -> None:
+        # Arrange
+        flows = [_FakeFlow([[object(), _FakeAsyncComponent(None)]])]
+        stop_signal = threading.Event()
+        wait_patch = patch("aerial_rescue_runtime_compat.lifecycle.wait")
+        waiter = wait_patch.start()
+        self.addCleanup(wait_patch.stop)
+
+        # Act
+        runtime_lifecycle.wait_for_async_initialization(flows, stop_signal=stop_signal)
+        wait_patch.stop()
+
+        # Assert
+        waiter.assert_not_called()
+
+    def test_an_incompatible_async_initialization_seam_is_refused(self) -> None:
+        # Arrange
+        flows = [_FakeFlow([[_InvalidAsyncComponent()]])]
+        stop_signal = threading.Event()
+
+        # Act
+        with pytest.raises(runtime_lifecycle.AsyncInitializationContractError) as raised:
+            runtime_lifecycle.wait_for_async_initialization(flows, stop_signal=stop_signal)
+
+        # Assert
+        self.assertEqual(
+            "Agent Mesh async initialization future has unsupported type",
+            str(raised.value),
+        )
+
+    def test_owned_entrypoint_registers_the_initialization_barrier(self) -> None:
+        # Arrange
+        connector = _FakeConnector()
+        constructor_patch = patch.object(
+            runtime_main,
+            "SolaceAiConnector",
+            return_value=connector,
+        )
+        run_patch = patch.object(runtime_main, "run_connector", return_value=EXIT_SUCCESS)
+        messaging_patch = patch.object(
+            runtime_main,
+            "install_hardened_messaging",
+            return_value=lambda: None,
+        )
+        signals_patch = patch.object(runtime_main, "_install_signal_handlers", return_value={})
+        initialization_patch = patch.object(runtime_main, "wait_for_async_initialization")
+        constructor = constructor_patch.start()
+        self.addCleanup(constructor_patch.stop)
+        run_patch.start()
+        self.addCleanup(run_patch.stop)
+        messaging_patch.start()
+        self.addCleanup(messaging_patch.stop)
+        signals_patch.start()
+        self.addCleanup(signals_patch.stop)
+        initialization_waiter = initialization_patch.start()
+        self.addCleanup(initialization_patch.stop)
+
+        # Act
+        status = runtime_main._run_configuration({}, ["mission-coordinator.yaml"])
+        handler = constructor.call_args.kwargs["event_handlers"]["on_flow_creation"]
+        handler([])
+        initialization_patch.stop()
+        signals_patch.stop()
+        messaging_patch.stop()
+        run_patch.stop()
+        constructor_patch.stop()
+
+        # Assert
+        self.assertEqual(EXIT_SUCCESS, status)
+        initialization_waiter.assert_called_once_with(
+            [],
+            stop_signal=connector.stop_signal,
+        )
+
+    def test_shutdown_requested_during_connector_construction_cancels_its_startup(self) -> None:
+        # Arrange
+        connector = _FakeConnector()
+
+        def request_during_install(
+            control: runtime_main._StopControl,
+        ) -> dict[signal.Signals, signal.Handlers]:
+            control.request_shutdown(signal.SIGTERM, None)
+            return {}
+
+        constructor_patch = patch.object(
+            runtime_main,
+            "SolaceAiConnector",
+            return_value=connector,
+        )
+        run_patch = patch.object(runtime_main, "run_connector", return_value=EXIT_SUCCESS)
+        messaging_patch = patch.object(
+            runtime_main,
+            "install_hardened_messaging",
+            return_value=lambda: None,
+        )
+        signals_patch = patch.object(
+            runtime_main,
+            "_install_signal_handlers",
+            side_effect=request_during_install,
+        )
+        constructor_patch.start()
+        self.addCleanup(constructor_patch.stop)
+        run_patch.start()
+        self.addCleanup(run_patch.stop)
+        messaging_patch.start()
+        self.addCleanup(messaging_patch.stop)
+        signals_patch.start()
+        self.addCleanup(signals_patch.stop)
+
+        # Act
+        runtime_main._run_configuration({}, ["mission-coordinator.yaml"])
+        signals_patch.stop()
+        messaging_patch.stop()
+        run_patch.stop()
+        constructor_patch.stop()
+
+        # Assert
+        self.assertTrue(connector.stop_signal.is_set())
 
 
 class ProcessTerminationTests(unittest.TestCase):

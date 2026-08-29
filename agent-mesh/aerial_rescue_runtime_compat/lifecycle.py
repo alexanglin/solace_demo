@@ -6,13 +6,16 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Callable
-from typing import Final, NoReturn, Protocol
+from collections.abc import Callable, Sequence
+from concurrent.futures import FIRST_EXCEPTION, Future, wait
+from typing import Final, NoReturn, Protocol, cast
 
 from aerial_rescue_runtime_compat.messaging import BrokerTerminalState
 
 EXIT_SUCCESS: Final = 0
 EXIT_RUNTIME_FAILURE: Final = 1
+ASYNC_INITIALIZATION_TIMEOUT_SECONDS: Final = 60.0
+ASYNC_INITIALIZATION_POLL_SECONDS: Final = 0.5
 THREAD_SETTLE_SECONDS: Final = 15.0
 SETTLE_POLL_SECONDS: Final = 0.5
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +42,93 @@ class ConnectorRuntime(Protocol):
 
     def cleanup(self) -> None:
         """Release Connector resources."""
+
+
+class _ComponentFlow(Protocol):
+    """The pinned Connector flow surface used by the readiness barrier."""
+
+    component_groups: Sequence[Sequence[object]]
+
+
+class AsyncInitializationTimeoutError(TimeoutError):
+    """At least one SAM component remained uninitialized past the startup bound."""
+
+    def __init__(self) -> None:
+        """Create a fixed diagnostic that cannot expose upstream configuration."""
+        super().__init__("Agent Mesh async initialization exceeded its startup bound")
+
+
+class AsyncInitializationContractError(RuntimeError):
+    """The pinned SAM async-initialization seam has an unsupported shape."""
+
+    def __init__(self) -> None:
+        """Create a fixed diagnostic that cannot expose the incompatible value."""
+        super().__init__("Agent Mesh async initialization future has unsupported type")
+
+
+def _async_initialization_futures(flows: Sequence[object]) -> tuple[Future[object], ...]:
+    """Collect each pinned SAM component future from the Connector's concrete flows."""
+    futures: list[Future[object]] = []
+    for candidate in flows:
+        flow = cast(_ComponentFlow, candidate)
+        for component_group in flow.component_groups:
+            for component in component_group:
+                future = cast(object, getattr(component, "_async_init_future", None))
+                if future is None:
+                    continue
+                if not isinstance(future, Future):
+                    raise AsyncInitializationContractError
+                futures.append(cast("Future[object]", future))
+    return tuple(futures)
+
+
+def _raise_completed_initialization_failure(
+    futures: Sequence[Future[object]],
+) -> None:
+    """Propagate completed component failures in deterministic flow order."""
+    for future in futures:
+        if future.done():
+            future.result()
+
+
+def _interrupt_if_stopped(
+    stop_signal: threading.Event,
+    futures: Sequence[Future[object]],
+) -> None:
+    """Leave through the interrupt branch unless completed startup already failed."""
+    if stop_signal.is_set():
+        _raise_completed_initialization_failure(futures)
+        raise KeyboardInterrupt
+
+
+def wait_for_async_initialization(
+    flows: Sequence[object],
+    *,
+    stop_signal: threading.Event,
+    timeout_seconds: float = ASYNC_INITIALIZATION_TIMEOUT_SECONDS,
+    poll_seconds: float = ASYNC_INITIALIZATION_POLL_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> None:
+    """Keep Connector readiness closed until every SAM component initializes."""
+    deadline = monotonic() + timeout_seconds
+    futures = _async_initialization_futures(flows)
+    _raise_completed_initialization_failure(futures)
+    _interrupt_if_stopped(stop_signal, futures)
+    if not futures:
+        return
+    pending = {future for future in futures if not future.done()}
+    while pending:
+        _interrupt_if_stopped(stop_signal, futures)
+        remaining_seconds = deadline - monotonic()
+        if remaining_seconds <= 0:
+            raise AsyncInitializationTimeoutError
+        _completed, pending = wait(
+            pending,
+            timeout=min(poll_seconds, remaining_seconds),
+            return_when=FIRST_EXCEPTION,
+        )
+        _raise_completed_initialization_failure(futures)
+        _interrupt_if_stopped(stop_signal, futures)
 
 
 def run_connector(

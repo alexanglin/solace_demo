@@ -20,6 +20,7 @@ from aerial_rescue_runtime_compat.lifecycle import (
     ConnectorRuntime,
     run_connector,
     terminate_process,
+    wait_for_async_initialization,
 )
 from aerial_rescue_runtime_compat.messaging import (
     BrokerTerminalState,
@@ -38,6 +39,14 @@ class EmptyConfigurationError(RuntimeError):
         super().__init__("Agent Mesh configuration discovery returned no files")
 
 
+class _UnboundInitializationError(RuntimeError):
+    """The Connector invoked its flow callback before construction returned."""
+
+    def __init__(self) -> None:
+        """Create the fixed credential-free compatibility failure."""
+        super().__init__("Agent Mesh initialization began before connector construction")
+
+
 class _StopControl:
     """Share requested and terminal stop state with signal and SDK callbacks."""
 
@@ -54,6 +63,13 @@ class _StopControl:
         del signum, frame
         self.requested.set()
         self._wake_connector()
+
+    def await_component_initialization(self, flows: Sequence[object]) -> None:
+        """Wait interruptibly on component startup using the Connector's stop event."""
+        connector = self.connector
+        if connector is None:
+            raise _UnboundInitializationError
+        wait_for_async_initialization(flows, stop_signal=connector.stop_signal)
 
     def _wake_connector(self) -> None:
         connector = self.connector
@@ -129,10 +145,14 @@ def _run_configuration(configuration: dict[str, object], files: list[str]) -> in
         previous_handlers = _install_signal_handlers(control)
         connector = cast(
             ConnectorRuntime,
-            SolaceAiConnector(configuration, config_filenames=files),
+            SolaceAiConnector(
+                configuration,
+                event_handlers={"on_flow_creation": control.await_component_initialization},
+                config_filenames=files,
+            ),
         )
         control.connector = connector
-        if terminal.exhausted:
+        if control.requested.is_set() or terminal.exhausted:
             connector.stop_signal.set()
         return run_connector(connector, requested=control.requested, terminal=terminal)
     except Exception as error:
