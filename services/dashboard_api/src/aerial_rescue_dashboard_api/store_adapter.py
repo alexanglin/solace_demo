@@ -5,9 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, cast
 
+from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.envelope import decode_envelope
+from aerial_rescue_contracts.view import (
+    OrderedDashboardEvent,
+    ordered_event_document,
+    project,
+)
 from aerial_rescue_store import STORE_BOUNDARY_ERRORS
 from aerial_rescue_store.dashboard.events import (
     EventSession,
+    StoredDashboardEvent,
     capture_snapshot_basis,
     read_event_page,
     read_suffix_page,
@@ -266,7 +274,30 @@ class SqlStore:
                     )
         except _STORE_FAILURES as unavailable:
             raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE) from unavailable
-        return tuple(StoredEvent(item.audit_ordinal, item.kind, item.payload) for item in page)
+        return tuple(_normalized_event(item) for item in page)
+
+
+def _normalized_event(stored: StoredDashboardEvent) -> StoredEvent:
+    """Project one committed recorder envelope into the port's normalized-event bytes.
+
+    ``capture.Recorder`` -- the composition Compose runs -- commits the canonical CloudEvent
+    envelope under the envelope's own type. ``StoredEvent`` declares normalized-event bytes, so
+    this adapter owns that projection rather than leaking the durable form into the reducer.
+    """
+    try:
+        envelope = decode_envelope(stored.payload)
+        projected = project(envelope)
+    except ValueError as unreadable:
+        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE) from unreadable
+    if stored.kind != envelope.type:
+        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
+    ordered = OrderedDashboardEvent(stored.audit_ordinal, projected)
+    event = ordered_event_document(ordered)["event"]
+    return StoredEvent(
+        stored.audit_ordinal,
+        projected.kind,
+        canonical.canonical_bytes(event),
+    )
 
 
 def _claimed_operation(stored: DashboardOperation) -> ClaimedOperation:
