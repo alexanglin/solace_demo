@@ -88,10 +88,11 @@ class CaptureError(ValueError):
 
 
 class CaptureDecision(Enum):
-    """Whether this delivery appended a fact or replayed its durable prior result."""
+    """Whether this delivery appended a fact, replayed a prior result, or was refused."""
 
     RECORDED = "recorded"
     DUPLICATE = "exact duplicate"
+    REFUSED = "permanently refused by the durable store"
 
 
 class InboxDecision(Enum):
@@ -221,10 +222,13 @@ class RecordingTransactions(Protocol):
 
 
 class AcceptedSettlement(Protocol):
-    """The one settlement capability a Guaranteed delivery may carry."""
+    """The settlement capabilities a Guaranteed delivery may carry."""
 
     def accept(self) -> None:
         """Settle the already committed delivery as accepted."""
+
+    def reject(self) -> None:
+        """Settle a delivery the durable store refused permanently."""
 
 
 class Recorder:
@@ -247,8 +251,17 @@ class Recorder:
         delivery = delivery_for(family)
         _require_settlement(delivery, settlement)
         fact = _recording_fact(self._consumer, notification)
-        async with self._transactions.open() as transaction:
-            outcome = await _persist(transaction, fact)
+        try:
+            async with self._transactions.open() as transaction:
+                outcome = await _persist(transaction, fact)
+        except DashboardEventError as refusal:
+            if refusal.refusal not in _PERMANENT_STORE_REFUSALS:
+                raise
+            # A permanent refusal cannot succeed on redelivery, so settle it out of the
+            # stream rather than propagating and ending the recorder process.
+            if settlement is not None:
+                settlement.reject()
+            return CaptureOutcome(CaptureDecision.REFUSED, 0)
         if settlement is not None:
             settlement.accept()
         return outcome

@@ -143,6 +143,8 @@ class RecorderRuntime:
                 raise ProcessError(ProcessRefusal.INVALID_EXCLUSION, ingress.family.name)
             return ProcessOutcome(ProcessDecision.EXCLUDED)
         captured = await self.capture.capture(ingress.notification, ingress.settlement)
+        if captured.decision is CaptureDecision.REFUSED:
+            return ProcessOutcome(ProcessDecision.REJECTED)
         decision = (
             ProcessDecision.RECORDED
             if captured.decision is CaptureDecision.RECORDED
