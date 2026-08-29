@@ -364,6 +364,62 @@ redact_diagnostics() {
 	cat "$safe_diagnostics"
 }
 
+# The reader above discards a whole document when any generated value survives its line
+# filter. That is correct for a status table, but it makes a container's own output
+# unreadable: a role name is both a generated value and ordinary broker log text, so one
+# incidental occurrence hides the reason a service never started. This reader replaces
+# every generated value with the same fixed marker and then applies the identical
+# survival proof, so what it prints is proven free of generated material rather than
+# discarded because generated material was present.
+redact_substituting() {
+	raw_diagnostics=$1
+	safe_diagnostics=$2
+	if [ ! -s "$redaction_file" ]; then
+		printf '<redacted: runtime diagnostics suppressed>\n'
+		return
+	fi
+	if ! awk '
+		NR == FNR {
+			if (length($0) > 0) { token[++tokens] = $0 }
+			next
+		}
+		{
+			lower = tolower($0)
+			if (lower ~ /authorization[[:space:]]*:/ ||
+			    lower ~ /(^|[^a-z])(password|token|api[_-]?key)[[:space:]]*[:=]/ ||
+			    $0 ~ /:\/\/[^[:space:]\/@]+:[^[:space:]@]+@/) {
+				print "<redacted>"
+				next
+			}
+			line = $0
+			for (index_of_token = 1; index_of_token <= tokens; index_of_token++) {
+				secret = token[index_of_token]
+				kept = ""
+				while ((position = index(line, secret)) > 0) {
+					kept = kept substr(line, 1, position - 1) "<redacted>"
+					line = substr(line, position + length(secret))
+				}
+				line = kept line
+			}
+			print line
+		}
+	' "$redaction_file" "$raw_diagnostics" >"$safe_diagnostics"; then
+		printf '<redacted: runtime diagnostics suppressed>\n'
+		return
+	fi
+	if grep -F -f "$redaction_file" "$safe_diagnostics" >/dev/null 2>&1; then
+		printf '<redacted: runtime diagnostics suppressed>\n'
+		return
+	else
+		grep_status=$?
+		if [ "$grep_status" -ne 1 ]; then
+			printf '<redacted: runtime diagnostics suppressed>\n'
+			return
+		fi
+	fi
+	cat "$safe_diagnostics"
+}
+
 report_failure_diagnostics() {
 	printf 'runtime status for project %s:\n' "$compose_project" >&2
 	if compose_runtime ps --all >"$work_directory/compose-ps.raw" 2>&1; then
@@ -378,7 +434,7 @@ report_failure_diagnostics() {
 	printf 'runtime logs for project %s:\n' "$compose_project" >&2
 	if compose_runtime logs --no-color --timestamps --tail "$DIAGNOSTIC_LOG_LINES" \
 		>"$work_directory/compose-logs.raw" 2>&1; then
-		redact_diagnostics "$work_directory/compose-logs.raw" \
+		redact_substituting "$work_directory/compose-logs.raw" \
 			"$work_directory/compose-logs.safe" >&2
 	else
 		printf '<redacted: project-scoped log command failed>\n' >&2

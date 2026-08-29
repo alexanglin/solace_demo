@@ -578,6 +578,8 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
             '"$CI_SECRET_SENTINEL"; printf \'opaque %s-semp-monitor-password '
             "%s-scenario-control-bearer %s-fleet-control-bearer\\n' "
             '"$CI_SECRET_SENTINEL" "$CI_SECRET_SENTINEL" "$CI_SECRET_SENTINEL" ;;\n'
+            "*'compose '*' logs '*) printf 'broker-1  | boot refused near %s here\\n' "
+            '"$CI_SECRET_SENTINEL" ;;\n'
             "*'compose '*' down '*) : >\"$CI_DOWN_CALLED\" ;;\n"
             "*'volume ls --quiet --filter label=com.docker.compose.project='*)\n"
             '  if [ -f "$CI_DOWN_CALLED" ]; then\n'
@@ -898,6 +900,20 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
             "logs --no-color --timestamps --tail 200",
             calls,
         )
+
+    def test_container_log_diagnostics_survive_redaction_of_a_generated_value(self) -> None:
+        # Arrange
+        repository, environment, _calls_path = self._repository()
+        environment["CI_FAIL_FILE"] = str(AUTHORIZED_SUITE[0].path)
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn(SENSITIVE_VALUE, output)
+        self.assertIn("broker-1  | boot refused near <redacted> here", output)
 
     def test_owned_resource_after_cleanup_makes_a_green_suite_fail(self) -> None:
         # Arrange
