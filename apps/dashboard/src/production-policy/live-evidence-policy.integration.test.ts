@@ -111,8 +111,8 @@ test("collects private fleet status and recorder-linked audit evidence without a
 
   // Assert
   expect(runtimeSource).toContain('"scenario-service"');
-  expect(runtimeSource).toContain('"FLEET_CONTROL_SECRET_FILE"');
-  expect(runtimeSource).toContain("FleetControlClient");
+  expect(runtimeSource).toContain("settings_from_environment");
+  expect(runtimeSource).toContain("FleetHttpClient");
   expect(runtimeSource).toContain("FROM dashboard_broker_event AS broker_event");
   expect(runtimeSource).toContain("JOIN audit_record AS audit");
   expect(runtimeSource).toContain("audit.kind = 'droneTelemetry'");

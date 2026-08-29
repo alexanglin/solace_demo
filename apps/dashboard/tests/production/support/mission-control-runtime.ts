@@ -45,19 +45,27 @@ const normalizedRecordingFilename = "wilderness-missing-person.r1.ndjson";
 const validatedReplayFilename = "wilderness-missing-person.r1.replay.json";
 const processProbe =
   "from pathlib import Path; lines=Path('/proc/1/status').read_text(encoding='utf-8').splitlines(); rss=next(line for line in lines if line.startswith('VmRSS:')); print(int(rss.split()[1])*1024, len(tuple(Path('/proc/1/fd').iterdir())))";
+// ADR-0197 left one composition in the scenario service, so the probe reads its settings
+// through the same entry point the deployed console does rather than reconstructing them.
+// Mission identity is not re-checked here: `status` no longer takes an expected mission,
+// and `parseFleetCompletionEvidence` already refuses a document whose identities disagree.
 const fleetStatusProbe = [
+  "import asyncio",
   "import os",
   "import sys",
-  "import httpx",
-  "from aerial_rescue_scenario_service.fleet_client import FleetClientConfig, FleetControlClient",
-  "from aerial_rescue_scenario_service.main import _read_secret",
-  'secret = _read_secret(os.environ["FLEET_CONTROL_SECRET_FILE"], "FLEET_CONTROL_SECRET_FILE", control_secret=True)',
-  'client = FleetControlClient(FleetClientConfig("http://fleet-simulator:8082", "fleet-simulator:8082", secret), httpx.Client())',
-  "try:",
-  "    status = client.status(sys.argv[1], expected_mission_id=sys.argv[2])",
+  "from aerial_rescue_scenario_service.fleet_http import FleetHttpClient",
+  "from aerial_rescue_scenario_service.service import settings_from_environment",
+  "",
+  "async def _status() -> None:",
+  "    client = FleetHttpClient(settings_from_environment(os.environ).fleet)",
+  "    await client.startup()",
+  "    try:",
+  "        status = await client.status(sys.argv[1])",
+  "    finally:",
+  "        await client.shutdown()",
   "    print(status.model_dump_json(by_alias=True))",
-  "finally:",
-  "    client.close()",
+  "",
+  "asyncio.run(_status())",
 ].join("\n");
 
 export function buildTelemetryReceiptQuery(missionId: string, runId: string): string {
@@ -388,7 +396,6 @@ export class MissionControlRuntime {
       "-c",
       fleetStatusProbe,
       runId,
-      missionId,
     );
     const fleet = parseFleetCompletionEvidence(fleetOutput, missionId, runId);
     const telemetryReceiptQuery = buildTelemetryReceiptQuery(missionId, runId);
