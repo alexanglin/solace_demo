@@ -30,6 +30,11 @@ ROLE_PASSWORDS = tuple(f"secrets/broker-{role.value}-password" for role in MESSA
 """One per enabled messaging role; management identities are separate (ADR-0153)."""
 UNUSED_SEMP_DISCOVERY_PATH = "secrets/semp-discovery-password"
 """The optional external SEMP consumer has no repository-provisioned identity."""
+BROKER_READABLE_FILES = ("secrets/broker-admin-password", "secrets/broker-server.pem")
+"""The two files this deployment mounts into the pinned PubSub+ image, whose processes run as
+uid 1000001 (ADR-0195). Compose ignores a secret's ``mode``, so the host file itself must be
+readable by that user or the broker's baseline playback fails (ADR-0203)."""
+
 PRIVATE_FILES = (
     "secrets/ca.key",
     "secrets/broker-server.key",
@@ -188,7 +193,7 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
         self.assertTrue(all(len(bearer) == PASSWORD_HEX_LENGTH for bearer in bearers))
         self.assertFalse(any("CONTROL" in name for name in declarations))
 
-    def test_private_files_are_mode_0600_and_the_public_certificate_is_readable(self) -> None:
+    def test_only_the_broker_s_mounted_secrets_leave_owner_only_mode(self) -> None:
         # Arrange
         repository = self.temporary_repository()
 
@@ -200,9 +205,34 @@ class BrokerSecretsScriptTests(QualityGateTestCase):
             name: stat.S_IMODE((repository / "deploy" / name).stat().st_mode)
             for name in PRIVATE_FILES
         }
-        self.assertEqual({name: 0o600 for name in PRIVATE_FILES}, modes)
+        expected = {
+            name: (0o644 if name in BROKER_READABLE_FILES else 0o600) for name in PRIVATE_FILES
+        }
         public = stat.S_IMODE((repository / "deploy" / "certs" / "ca.pem").stat().st_mode)
+        self.assertEqual(expected, modes)
         self.assertEqual(0o644, public)
+        self.assertTrue(set(BROKER_READABLE_FILES).issubset(PRIVATE_FILES))
+
+    def test_a_fill_missing_run_converges_an_earlier_owner_only_broker_secret(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        self.generate(repository)
+        deploy = repository / "deploy"
+        for name in BROKER_READABLE_FILES:
+            (deploy / name).chmod(0o600)
+        before = {name: (deploy / name).read_bytes() for name in BROKER_READABLE_FILES}
+
+        # Act
+        result = self.generate(repository)
+
+        # Assert
+        modes = {
+            name: stat.S_IMODE((deploy / name).stat().st_mode) for name in BROKER_READABLE_FILES
+        }
+        after = {name: (deploy / name).read_bytes() for name in BROKER_READABLE_FILES}
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({name: 0o644 for name in BROKER_READABLE_FILES}, modes)
+        self.assertEqual(before, after)
 
     def test_the_server_pem_holds_the_key_before_the_certificate(self) -> None:
         # Arrange
