@@ -35,7 +35,13 @@ through 0106.
 ## Verification
 
 - Keep Playwright specifications under `tests/e2e/` and import `test` and `expect` explicitly from
-  `@playwright/test`.
+  `@playwright/test`. The suites that drive a real Compose stack live under `tests/production/` and
+  `tests/soak/`; no hook runs them, so they are qualified by a recorded live run rather than by the
+  browser gate.
+- Python, container module names, and environment names embedded in the production harness as string
+  literals are code that no compiler reads. Keep each embedded program in a constant whose name ends
+  in `Probe`, and target only a service's deployed composition; the ADR-0204 gate resolves every
+  first-party reference and refuses one it cannot read.
 - Keep fixture-source globals and synthetic bearer sentinels behind the test build boundary. The
   production-build integration test must prove those tokens are absent from emitted assets.
 - Keep deterministic integration specifications under `src/` with the `*.integration.test.{ts,tsx}`
