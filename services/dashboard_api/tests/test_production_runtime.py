@@ -200,6 +200,24 @@ class RecorderLeaseReadinessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BuiltAssetTests(unittest.TestCase):
+    def test_the_map_worker_module_the_build_emits_is_served(self) -> None:
+        # Arrange
+        root = Path(self.enterContext(TemporaryDirectory()))
+        (root / "index.html").write_text("<html><head></head></html>", encoding="utf-8")
+        assets = root / "assets"
+        assets.mkdir()
+        (assets / "index-12345678.js").write_bytes(b"export {};")
+        (assets / "maplibre-gl-worker-f96B2wcH.mjs").write_bytes(b"export {};")
+
+        # Act
+        built = load_built_dashboard(root)
+
+        # Assert
+        worker = built.assets.get("maplibre-gl-worker-f96B2wcH.mjs")
+        self.assertEqual(
+            "text/javascript; charset=utf-8", None if worker is None else worker.media_type
+        )
+
     def test_invalid_asset_names_media_and_bootstrap_shapes_are_refused(self) -> None:
         # Arrange
         roots: list[Path] = []

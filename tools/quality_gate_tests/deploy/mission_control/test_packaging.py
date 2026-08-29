@@ -497,6 +497,18 @@ class MissionControlImageTests(QualityGateTestCase):
         self.assertIn("flush_interval -1", text)
         self.assertNotIn("file_server", directives)
 
+    def test_the_policy_permits_the_same_origin_worker_the_map_loads(self) -> None:
+        # Arrange
+        text = CADDYFILE_PATH.read_text(encoding="utf-8")
+
+        # Act
+        directive = re.search(r"worker-src ([^;\"]+)", text)
+
+        # Assert
+        self.assertIsNotNone(directive)
+        sources = (directive.group(1) if directive else "").split()
+        self.assertIn("'self'", sources)
+
     def test_caddy_preserves_hostport_and_owns_one_public_security_policy(self) -> None:
         # Arrange
         text = CADDYFILE_PATH.read_text(encoding="utf-8")

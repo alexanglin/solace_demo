@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   removeMarker: vi.fn(),
   setLayoutProperty: vi.fn(),
   setLngLat: vi.fn(),
+  setWorkerUrl: vi.fn(),
   sources: new Map<string, { data: unknown; setData: ReturnType<typeof vi.fn> }>(),
 }));
 
@@ -112,7 +113,12 @@ vi.mock("maplibre-gl", () => {
     }
   }
 
-  return { Map: FakeMap, Marker: FakeMarker, ScaleControl: FakeScaleControl };
+  return {
+    Map: FakeMap,
+    Marker: FakeMarker,
+    ScaleControl: FakeScaleControl,
+    setWorkerUrl: fakes.setWorkerUrl,
+  };
 });
 
 afterEach(() => {
