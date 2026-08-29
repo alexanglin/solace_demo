@@ -10,6 +10,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Python the dashboard's production harness embeds as string literals is now resolved at
+  commit time.** `tsc` and ESLint read an embedded probe as `string[]`, so ADR-0197's deletion of
+  the scenario service's `fleet_client` and `main` modules left every reference in the fleet-status
+  probe naming something that no longer existed while every gate stayed green, and the one test
+  that read the harness was green precisely because the harness was broken. A new gate reconstructs
+  each `...Probe` declaration, then resolves its first-party imports and imported names, the modules
+  named after a `-m` container argument, and the environment names it reads against
+  `deploy/compose.yaml`. It blocks at both hook stages regardless of which files changed, because
+  the commit that breaks such a reference is usually a deletion on the Python side (ADR-0204).
+
 - **Solace PubSub+ now carries the continuously running application data plane end to end.** Typed
   delivery routing derives Direct, Guaranteed, or request/reply behavior from the closed topic family
   before broker I/O; bounded TLS sessions publish, receive, settle, reconnect, and expose readiness
@@ -2035,6 +2045,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   interpretation while retaining exact refusal precedence and immutable checkpoint behavior.
 
 ### Fixed
+
+- **The production fleet-status probe reaches the scenario service's deployed composition again.**
+  It now reads its settings through `settings_from_environment` and drives `FleetHttpClient`'s
+  asynchronous startup, status, and shutdown sequence, instead of two modules ADR-0197 deleted, a
+  private secret reader, an environment name Compose does not set, a removed keyword argument, a
+  synchronous call shape, and a fleet URL whose trailing slash the settings now require rather than
+  forbid. The browser case that collects live mission evidence could not have passed.
 
 - **Recorder-first salient events no longer crash-loop the evidence service.** The recorder and
   evidence service intentionally share the immutable `source_event` row, but the evidence writer
