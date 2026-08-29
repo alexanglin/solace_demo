@@ -37,9 +37,6 @@ PROBE_SUFFIX: Final = "Probe"
 MODULE_FLAG: Final = "-m"
 """The container argument whose successor names the module the image will execute."""
 
-ENVIRONMENT_READERS: Final = ("get", "getenv")
-"""The call attributes that read one environment name, beside subscripting ``os.environ``."""
-
 _TYPESCRIPT_LANGUAGE: Final = Language(tree_sitter_typescript.language_typescript())
 
 
