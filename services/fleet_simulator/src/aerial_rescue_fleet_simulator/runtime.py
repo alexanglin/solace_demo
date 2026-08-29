@@ -75,6 +75,10 @@ from aerial_rescue_fleet_simulator.intake import (
     AssignSectorCommand,
     IncomingCommand,
 )
+from aerial_rescue_fleet_simulator.lifecycle import (
+    BrokerFleetLifecycle,
+    publish_transitions,
+)
 from aerial_rescue_fleet_simulator.results import ResultStamp
 from aerial_rescue_fleet_simulator.scenario import DroneStart, FleetScenario, sectors
 from aerial_rescue_fleet_simulator.service import IntakeBounds, Pacer
@@ -346,6 +350,11 @@ class FleetExecutor:
     ) -> FleetControlRunStatus:
         """Fold and publish one accepted simulation until cancellation or exhaustion."""
         scenario, requested, command_context = self._prepare_run(request)
+        lifecycle = BrokerFleetLifecycle(
+            self._require_session().results,
+            request.run_id,
+            self._dependencies.stamps,
+        )
         state = initial_fleet(scenario)
         publications = 0
         while not mission_is_terminal(state.mission):
@@ -359,7 +368,8 @@ class FleetExecutor:
                 return interrupted
             started = self._dependencies.pacer.now_milliseconds()
             tick = advance_tick(scenario, state)
-            state = tick.state
+            before, state = state, tick.state
+            await asyncio.to_thread(publish_transitions, lifecycle, scenario, before, state)
             checkpoint = _RunCheckpoint(request, cancelled, state.tick, publications)
             published, interrupted = await self._publish_readings(
                 scenario,
