@@ -218,7 +218,7 @@ def build_authorization_artifacts(
     )
     audit_record = AuditRecord(
         mission_id=ingress.payload.mission_id,
-        kind=AUDIT_RECORD_TYPE,
+        kind=parse_envelope(canonical.decode(audit_bytes)).type,
         occurred_at=stamp.occurred_at,
         payload=audit_bytes,
         correlation_id=ingress.envelope.correlation_id,

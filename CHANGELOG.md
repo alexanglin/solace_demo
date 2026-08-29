@@ -2059,6 +2059,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   derive their event from one `project()` call. ADR-0205 records the decision, and the new
   cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
   change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The evidence service and command gateway commit an audit kind that binds to their own
+  envelope.** Both wrote the payload's `recordType` -- `evidence-decision` and
+  `command-authorization` -- into `audit_record.kind`, while the payload beside it is the audit
+  envelope whose type is `aerial-rescue.v1.audit.<recordType>`. The dashboard's recovery fold
+  refuses that pair, so once the prepared-state seed let recovery advance past the first row, the
+  deployed `dashboard-api` exited 3 on `ProjectionError: the audit columns do not bind to their
+  canonical envelope: 'evidence-decision'`. Both writers now read the kind from the event they
+  commit, so the two columns cannot disagree by construction. A readback of the affected mission
+  showed every other row group already binding, and only these three did not.
+
 - **The prepared-state seed the deployed dashboard composition applies is now held by tests.** The
   container ran with an image built 71 seconds before it died, without the `_seed_projection` fix,
   and exited 3 four times on `ProjectionError: ... 'MISSION_UNPREPARED'`. Nothing wired the real

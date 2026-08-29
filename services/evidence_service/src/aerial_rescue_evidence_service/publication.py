@@ -244,10 +244,14 @@ def _audit_record(
     stamp: DecisionStamp,
     audit_event: bytes,
 ) -> AuditRecord:
-    """Map the exact published audit event into the authoritative mission timeline."""
+    """Map the exact published audit event into the authoritative mission timeline.
+
+    ADR-0205 fixes ``audit_record.kind`` as the committed envelope's own type, so it is read
+    from the event rather than restated; a literal here cannot bind to its canonical envelope.
+    """
     return AuditRecord(
         mission_id=proposal.payload.mission_id,
-        kind="evidence-decision",
+        kind=parse_envelope(canonical.decode(audit_event)).type,
         occurred_at=stamp.decided_at,
         payload=audit_event,
         correlation_id=proposal.envelope.correlation_id,

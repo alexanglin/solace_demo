@@ -47,6 +47,34 @@ def _validator(relative: str) -> Validator:
 
 
 class PublicationContractTests(unittest.TestCase):
+    def test_the_audit_record_kind_is_the_audit_envelope_type(self) -> None:
+        # Arrange
+        proposal = accept_proposal(bound_proposal_bytes(), BOUND_PROPOSAL_TOPIC)
+        facts = (
+            provenance_fact(
+                "evidence-item-sensor-0001", "source-sensor-0001", ObservationOrigin.LIVE_SENSOR
+            ),
+        )
+        evaluation = evaluate(BOUND_MISSION, BOUND_PROPOSAL, facts)
+        stamp = DecisionStamp(
+            producer_id="evidence-runtime-01",
+            decision_id="decision-bound-0001",
+            decision_event_id="event-evidence-bound-0001",
+            audit_record_id="audit-evidence-bound-0001",
+            audit_event_id="event-audit-bound-0001",
+            decided_at="2026-08-25T12:04:00.000Z",
+            decision_sequence=6,
+            audit_sequence=7,
+            traceparent="00-4bf92f3577b34da6a3ce929d0e0e4739-b7ad6b7169203335-01",
+        )
+
+        # Act
+        artifacts = build_artifacts(proposal, evaluation, stamp)
+
+        # Assert
+        audit = cast("JsonObject", canonical.decode(artifacts.audit_record.payload))
+        self.assertEqual(audit["type"], artifacts.audit_record.kind)
+
     def test_contributing_decision_and_audit_are_valid_closed_contract_events(self) -> None:
         # Arrange
         proposal = accept_proposal(bound_proposal_bytes(), BOUND_PROPOSAL_TOPIC)

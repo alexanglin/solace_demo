@@ -292,7 +292,7 @@ class DurableContributingTests(unittest.IsolatedAsyncioTestCase):
                 [BOUND_PROPOSAL_EVENT],
                 "corroborated",
                 [(BOUND_MISSION, SOURCE_EVENT)],
-                (True, "evidence-decision", STAMP.decision_event_id),
+                (True, "aerial-rescue.v1.audit.evidence-decision", STAMP.decision_event_id),
                 ["complete", "commit", "settle"],
             ),
             (
