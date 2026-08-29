@@ -122,14 +122,32 @@ class RecorderBrokerReceiver:
         self._timeout_milliseconds = timeout_milliseconds
         self._channels = (self._DIRECT, *session.receiver_names)
         self._next = 0
+        self._quiet_polls = 0
+
+    def _poll_timeout(self) -> int:
+        """Spend the blocking wait only once a complete revolution has found nothing.
+
+        Waiting on every channel serialises the whole fan-in behind one timeout each, so a
+        ten-channel receiver admits at most one message per ten waits. Draining at zero while
+        traffic is present keeps the fan-in at the producer's rate, and the wait returns as soon
+        as a full quiet revolution proves there is nothing to drain, so an idle recorder never
+        spins.
+        """
+        return self._timeout_milliseconds if self._quiet_polls >= len(self._channels) else 0
+
+    def _observed(self, ingress: RecorderIngress | None) -> RecorderIngress | None:
+        """Record whether this poll found work, then return it unchanged."""
+        self._quiet_polls = self._quiet_polls + 1 if ingress is None else 0
+        return ingress
 
     async def receive(self) -> RecorderIngress | None:
         """Poll one channel and admit only a typed recordable or excluded input."""
         channel = self._channels[self._next]
         self._next = (self._next + 1) % len(self._channels)
+        timeout_milliseconds = self._poll_timeout()
         if channel == self._DIRECT:
             try:
-                message = self._session.receive_direct(self._timeout_milliseconds)
+                message = self._session.receive_direct(timeout_milliseconds)
             except InvalidDirectMessageError as error:
                 return RefusedIngress(
                     BrokerRefusalCandidate(
@@ -142,9 +160,9 @@ class RecorderBrokerReceiver:
                     ),
                     None,
                 )
-            return None if message is None else self._admit(message, None)
+            return self._observed(None if message is None else self._admit(message, None))
         try:
-            guaranteed = self._session.receive_guaranteed(channel, self._timeout_milliseconds)
+            guaranteed = self._session.receive_guaranteed(channel, timeout_milliseconds)
         except UnsettledMessageError as error:
             return RefusedIngress(
                 BrokerRefusalCandidate(
@@ -158,11 +176,13 @@ class RecorderBrokerReceiver:
                 error.settlement,
             )
         if guaranteed is None:
-            return None
+            return self._observed(None)
         try:
-            return self._admit(guaranteed.message, guaranteed.settlement)
+            return self._observed(self._admit(guaranteed.message, guaranteed.settlement))
         except BrokerIngressError as error:
-            return self._refused(guaranteed.message, channel, guaranteed.settlement, error)
+            return self._observed(
+                self._refused(guaranteed.message, channel, guaranteed.settlement, error)
+            )
 
     def _admit(
         self,

@@ -2059,6 +2059,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   derive their event from one `project()` call. ADR-0205 records the decision, and the new
   cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
   change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The deployed fleet scopes its telemetry producer to one mission, and the recorder no longer
+  serialises its fan-in behind idle channels.** Three defects in the deployed compositions kept a
+  completed mission off the screen entirely. The fleet omitted `producer_source`, violating ADR-0140,
+  so a restarted process replayed sequence zero against a durable high-water of 13 and the recorder
+  refused every event; the Accepted ADR's own regression test imported the parallel `service._publish`,
+  which the container cannot reach, so the violation passed every gate. That refusal then ended the
+  recorder process, because the deployed serve loop had no handler for it -- the surfacing ADR-0206
+  predicted, arriving as a crash. And the receiver spent its full 1,000 ms window on each of ten
+  channels, admitting at most one message per ten seconds against a scenario that emits 280 events in
+  fourteen ticks. Measured beforehand: the fleet reported `{"completedTickCount":14,
+  "state":"EXHAUSTED","telemetryPublicationCount":280}` while the store held zero audit rows for that
+  mission. ADR-0207 records the fan-in drain rule and reconciles the two contradictory
+  operating-parameter rows the two recorder compositions had left behind.
+
 - **The deployed recorder links the provenance the dashboard's snapshot watermark reads.**
   `watermark_statement` inner-joins `audit_record` to `dashboard_broker_event`, and the recorder
   composition Compose runs never wrote that table -- the row is built in `_capture_material`, which
