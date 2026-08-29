@@ -134,6 +134,33 @@ class _Transaction:
 
 
 @dataclass
+class _RefusingTransaction(_Transaction):
+    """Refuse the provenance link the way a badly-behaved producer's sequence does."""
+
+    @override
+    async def link_broker_event(self, event: BrokerEvent, mission_id: str, ordinal: int, /) -> None:
+        """Raise the exact permanent refusal the deployed store raises."""
+        del event, mission_id, ordinal
+        self.calls.append("link-broker-event")
+        raise DashboardEventError(DashboardEventRefusal.STALE_SEQUENCE, 0)
+
+
+@dataclass
+class _RejectableSettlement:
+    """Record which one-shot settlement a permanent refusal selected."""
+
+    calls: list[str]
+
+    def accept(self) -> None:
+        """Settle the delivery as accepted."""
+        self.calls.append("settle-accepted")
+
+    def reject(self) -> None:
+        """Settle the delivery as permanently refused."""
+        self.calls.append("settle-rejected")
+
+
+@dataclass
 class _UnitOfWork:
     """Expose one recording transaction and its commit/rollback boundary."""
 
@@ -178,6 +205,10 @@ class _Settlement:
     def accept(self) -> None:
         """Accept the delivery after its transaction commits."""
         self.calls.append("settle-accepted")
+
+    def reject(self) -> None:
+        """Settle a delivery the durable store refused permanently."""
+        self.calls.append("settle-rejected")
 
 
 class RecordingPolicyTests(unittest.TestCase):
@@ -650,3 +681,31 @@ class BestEffortCaptureTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual([], calls)
+
+
+class PermanentRefusalTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_permanently_refused_direct_fact_is_reported_not_raised(self) -> None:
+        # Arrange
+        calls: list[str] = []
+        recorder = Recorder("recorder", _Transactions(_RefusingTransaction(calls)))
+
+        # Act
+        outcome = await recorder.capture(_notification(Family.DRONE_TELEMETRY), None)
+
+        # Assert
+        self.assertEqual(CaptureDecision.REFUSED, outcome.decision)
+
+    async def test_a_permanently_refused_guaranteed_fact_is_rejected_not_accepted(self) -> None:
+        # Arrange
+        calls: list[str] = []
+        settlement = _RejectableSettlement(calls)
+        recorder = Recorder("recorder", _Transactions(_RefusingTransaction(calls)))
+
+        # Act
+        outcome = await recorder.capture(_notification(), settlement)
+
+        # Assert
+        self.assertEqual(
+            (CaptureDecision.REFUSED, ["settle-rejected"]),
+            (outcome.decision, [call for call in calls if call.startswith("settle-")]),
+        )
