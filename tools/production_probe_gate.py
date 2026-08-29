@@ -31,6 +31,9 @@ DIAGNOSTIC: Final = "PROBE"
 PROBE_SUFFIX: Final = "Probe"
 """The declaration-name suffix that marks a constant as embedded Python (ADR-0204)."""
 
+MODULE_FLAG: Final = "-m"
+"""The container argument whose successor names the module the image will execute."""
+
 _TYPESCRIPT_LANGUAGE: Final = Language(tree_sitter_typescript.language_typescript())
 
 
@@ -137,14 +140,23 @@ def is_first_party(module: str, packages: Mapping[str, Path]) -> bool:
     return module.split(".", maxsplit=1)[0] in packages
 
 
-def module_path(module: str, packages: Mapping[str, Path]) -> Path | None:
-    """Return the file backing one first-party module, or ``None`` when it is absent."""
+def _resolve(module: str, packages: Mapping[str, Path], sibling: str) -> Path | None:
     root = packages.get(module.split(".", maxsplit=1)[0])
     if root is None:
         return None
     base = root.joinpath(*module.split("."))
-    candidates = (base.with_suffix(".py"), base / "__init__.py")
+    candidates = (base.with_suffix(".py"), base / sibling)
     return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def module_path(module: str, packages: Mapping[str, Path]) -> Path | None:
+    """Return the file backing one first-party module, or ``None`` when it is absent."""
+    return _resolve(module, packages, "__init__.py")
+
+
+def runnable_module_path(module: str, packages: Mapping[str, Path]) -> Path | None:
+    """Return the file ``python -m`` would execute, or ``None`` when there is none."""
+    return _resolve(module, packages, "__main__.py")
 
 
 def _assigned_names(targets: Iterable[ast.expr]) -> set[str]:
@@ -242,6 +254,43 @@ def probe_issues(path: Path, probe: EmbeddedProbe, packages: Mapping[str, Path])
     return issues
 
 
+def _invocation_issue(
+    path: Path,
+    node: Node,
+    source: bytes,
+    packages: Mapping[str, Path],
+) -> list[str]:
+    module = _string_value(node, source)
+    if module is None:
+        return [f"{path}: a {MODULE_FLAG} container argument is not a literal module name"]
+    if not is_first_party(module, packages):
+        return []
+    if runnable_module_path(module, packages) is not None:
+        return []
+    return [
+        f"{path}: {MODULE_FLAG} names {module}, which is not a runnable module under the "
+        f"workspace source roots"
+    ]
+
+
+def invocation_issues(
+    path: Path,
+    root: Node,
+    source: bytes,
+    packages: Mapping[str, Path],
+) -> list[str]:
+    """Return every unresolved first-party module named after a ``-m`` container argument."""
+    issues: list[str] = []
+    for node in _walk(root):
+        if node.type != "array":
+            continue
+        elements = list(node.named_children)
+        for index, element in enumerate(elements[:-1]):
+            if _string_value(element, source) == MODULE_FLAG:
+                issues.extend(_invocation_issue(path, elements[index + 1], source, packages))
+    return issues
+
+
 def evaluate_support(path: Path, text: str, packages: Mapping[str, Path]) -> list[str]:
     """Return every finding for one harness source."""
     source = text.encode("utf-8")
@@ -251,6 +300,7 @@ def evaluate_support(path: Path, text: str, packages: Mapping[str, Path]) -> lis
     issues: list[str] = []
     for probe in extract_probes(path, tree.root_node, source, issues):
         issues.extend(probe_issues(path, probe, packages))
+    issues.extend(invocation_issues(path, tree.root_node, source, packages))
     return issues
 
 
