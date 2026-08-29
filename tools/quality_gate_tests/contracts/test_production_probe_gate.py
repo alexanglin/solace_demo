@@ -46,10 +46,20 @@ class ProductionProbeGateTests(QualityGateTestCase):
         support.write_text(probe, encoding="utf-8")
         return support, root / "src"
 
-    def _findings(self, probe: str, module: str = CONFORMING_MODULE) -> list[str]:
+    def _findings(
+        self,
+        probe: str,
+        module: str = CONFORMING_MODULE,
+        compose: Path | None = None,
+    ) -> list[str]:
         support, source_root = self._tree(probe, module)
         errors: list[str] = []
-        return production_probe_gate.evaluate([support], [source_root], errors) + errors
+        return production_probe_gate.evaluate([support], [source_root], compose, errors) + errors
+
+    def _compose(self, document: str) -> Path:
+        path = self.temporary_directory() / "compose.yaml"
+        path.write_text(document, encoding="utf-8")
+        return path
 
     def test_a_probe_whose_every_reference_resolves_passes(self) -> None:
         # Arrange
@@ -189,7 +199,9 @@ class ProductionProbeGateTests(QualityGateTestCase):
         errors: list[str] = []
 
         # Act
-        findings = production_probe_gate.evaluate([root / "absent.ts"], [root / "src"], errors)
+        findings = production_probe_gate.evaluate(
+            [root / "absent.ts"], [root / "src"], None, errors
+        )
 
         # Assert
         self.assertEqual([], findings)
@@ -342,7 +354,7 @@ class ProductionProbeGateTests(QualityGateTestCase):
         errors: list[str] = []
 
         # Act
-        findings = production_probe_gate.evaluate([support], [source_root], errors) + errors
+        findings = production_probe_gate.evaluate([support], [source_root], None, errors) + errors
 
         # Assert
         self.assertEqual([], findings)
@@ -377,6 +389,135 @@ class ProductionProbeGateTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual([], findings)
+
+    def test_an_environment_name_a_service_sets_passes(self) -> None:
+        # Arrange
+        compose = self._compose(
+            "services:\n  scenario-service:\n    environment:\n"
+            "      FLEET_CONTROL_BEARER_FILE: /run/secrets/fleet-control-bearer\n"
+        )
+        probe = "const aProbe = \"import os\\nprint(os.environ['FLEET_CONTROL_BEARER_FILE'])\";\n"
+
+        # Act
+        findings = self._findings(probe, CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_an_environment_name_no_service_sets_is_refused(self) -> None:
+        # Arrange
+        compose = self._compose(
+            "services:\n  scenario-service:\n    environment:\n"
+            "      FLEET_CONTROL_BEARER_FILE: /run/secrets/fleet-control-bearer\n"
+        )
+        probe = "const aProbe = \"import os\\nprint(os.environ['FLEET_CONTROL_SECRET_FILE'])\";\n"
+
+        # Act
+        findings = self._findings(probe, CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("FLEET_CONTROL_SECRET_FILE", findings[0])
+        self.assertIn("no service in", findings[0])
+
+    def test_every_way_of_reading_an_environment_name_is_resolved(self) -> None:
+        # Arrange
+        compose = self._compose("services:\n  one:\n    environment:\n      KNOWN: value\n")
+        probe = (
+            'const aProbe = ["import os", "os.environ[\'A\']",'
+            ' "os.environ.get(\'B\')", "os.getenv(\'C\')"].join("\\n");\n'
+        )
+
+        # Act
+        findings = self._findings(probe, CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual(3, len(findings), findings)
+        self.assertEqual(
+            ["A", "B", "C"],
+            sorted(name for name in ("A", "B", "C") if any(name in f for f in findings)),
+        )
+
+    def test_a_service_declaring_its_environment_as_a_list_is_understood(self) -> None:
+        # Arrange
+        compose = self._compose(
+            "services:\n  one:\n    environment:\n      - KNOWN=value\n      - BARE\n"
+        )
+        probe = "const aProbe = \"import os\\nos.environ['KNOWN']\\nos.environ['BARE']\";\n"
+
+        # Act
+        findings = self._findings(probe, CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_environment_names_are_not_checked_when_no_compose_file_is_given(self) -> None:
+        # Arrange
+        probe = "const aProbe = \"import os\\nprint(os.environ['ANYTHING'])\";\n"
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_compose_file_that_is_not_readable_is_an_error(self) -> None:
+        # Arrange
+        compose = self.temporary_directory() / "absent.yaml"
+
+        # Act
+        findings = self._findings('const aProbe = "import os";\n', CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("absent.yaml", findings[0])
+
+    def test_a_compose_file_that_is_not_valid_yaml_is_an_error(self) -> None:
+        # Arrange
+        compose = self._compose("services: [unclosed\n")
+
+        # Act
+        findings = self._findings('const aProbe = "import os";\n', CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("compose.yaml", findings[0])
+
+    def test_a_compose_file_declaring_no_service_environment_names_nothing(self) -> None:
+        # Arrange
+        compose = self._compose("services:\n  one:\n    image: example\n")
+        probe = "const aProbe = \"import os\\nos.environ['ANY']\";\n"
+
+        # Act
+        findings = self._findings(probe, CONFORMING_MODULE, compose)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("ANY", findings[0])
+
+    def test_a_compose_entry_that_is_not_a_service_mapping_declares_nothing(self) -> None:
+        # Arrange
+        compose = self._compose("services:\n  one: null\n  two:\n    environment:\n      A: b\n")
+        errors: list[str] = []
+
+        # Act
+        names = production_probe_gate.compose_environment_names(compose, errors)
+
+        # Assert
+        self.assertEqual([], errors)
+        self.assertEqual(frozenset({"A"}), names)
+
+    def test_the_repository_compose_file_sets_the_names_the_harness_reads(self) -> None:
+        # Arrange
+        compose = production_probe_gate.REPOSITORY_ROOT / "deploy" / "compose.yaml"
+        errors: list[str] = []
+
+        # Act
+        names = production_probe_gate.compose_environment_names(compose, errors)
+
+        # Assert
+        self.assertEqual([], errors)
+        self.assertIn("FLEET_CONTROL_BEARER_FILE", names)
 
     def test_the_gate_is_inert_when_it_is_handed_no_harness_source(self) -> None:
         # Arrange

@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Final, cast
 
 import tree_sitter_typescript
+import yaml
 from tree_sitter import Language, Node, Parser
+
+REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[1]
 
 DIAGNOSTIC: Final = "PROBE"
 PROBE_SUFFIX: Final = "Probe"
@@ -33,6 +36,9 @@ PROBE_SUFFIX: Final = "Probe"
 
 MODULE_FLAG: Final = "-m"
 """The container argument whose successor names the module the image will execute."""
+
+ENVIRONMENT_READERS: Final = ("get", "getenv")
+"""The call attributes that read one environment name, beside subscripting ``os.environ``."""
 
 _TYPESCRIPT_LANGUAGE: Final = Language(tree_sitter_typescript.language_typescript())
 
@@ -238,7 +244,76 @@ def _plain_import_issues(
     ]
 
 
-def probe_issues(path: Path, probe: EmbeddedProbe, packages: Mapping[str, Path]) -> list[str]:
+def _declared_names(raw: object) -> set[str]:
+    """Return the environment names one service declares, in mapping or list form."""
+    if isinstance(raw, Mapping):
+        return {str(key) for key in raw}
+    if isinstance(raw, list):
+        return {str(item).partition("=")[0] for item in raw}
+    return set()
+
+
+def _compose_services(compose: Path, errors: list[str]) -> Iterable[object]:
+    try:
+        document = cast("object", yaml.safe_load(compose.read_text(encoding="utf-8")))
+    except OSError:
+        errors.append(f"{compose}: the Compose file could not be read")
+        return ()
+    except yaml.YAMLError:
+        errors.append(f"{compose}: the Compose file is not valid YAML")
+        return ()
+    services = document.get("services") if isinstance(document, Mapping) else None
+    return services.values() if isinstance(services, Mapping) else ()
+
+
+def compose_environment_names(compose: Path, errors: list[str]) -> frozenset[str]:
+    """Return every environment name some service in this Compose file sets."""
+    names: set[str] = set()
+    for service in _compose_services(compose, errors):
+        if isinstance(service, Mapping):
+            names |= _declared_names(service.get("environment"))
+    return frozenset(names)
+
+
+def _environment_reads(tree: ast.AST) -> set[str]:
+    """Return every environment name one probe reads through the ``os`` module."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        match node:
+            case ast.Subscript(
+                value=ast.Attribute(value=ast.Name(id="os"), attr="environ"),
+                slice=ast.Constant(value=str() as name),
+            ):
+                names.add(name)
+            case ast.Call(
+                func=ast.Attribute(value=ast.Attribute(attr="environ"), attr="get"),
+                args=[ast.Constant(value=str() as name), *_],
+            ):
+                names.add(name)
+            case ast.Call(
+                func=ast.Attribute(value=ast.Name(id="os"), attr="getenv"),
+                args=[ast.Constant(value=str() as name), *_],
+            ):
+                names.add(name)
+            case _:
+                pass
+    return names
+
+
+def _environment_issues(label: str, tree: ast.AST, declared: frozenset[str]) -> list[str]:
+    return [
+        f"{label} reads the environment name {name}, which no service in the Compose file sets"
+        for name in sorted(_environment_reads(tree))
+        if name not in declared
+    ]
+
+
+def probe_issues(
+    path: Path,
+    probe: EmbeddedProbe,
+    packages: Mapping[str, Path],
+    declared: frozenset[str] | None,
+) -> list[str]:
     """Return every unresolved first-party reference one embedded probe makes."""
     label = f"{path}: {probe.name}"
     try:
@@ -251,6 +326,8 @@ def probe_issues(path: Path, probe: EmbeddedProbe, packages: Mapping[str, Path])
             issues.extend(_from_import_issues(label, node, packages))
         elif isinstance(node, ast.Import):
             issues.extend(_plain_import_issues(label, node, packages))
+    if declared is not None:
+        issues.extend(_environment_issues(label, tree, declared))
     return issues
 
 
@@ -291,7 +368,12 @@ def invocation_issues(
     return issues
 
 
-def evaluate_support(path: Path, text: str, packages: Mapping[str, Path]) -> list[str]:
+def evaluate_support(
+    path: Path,
+    text: str,
+    packages: Mapping[str, Path],
+    declared: frozenset[str] | None,
+) -> list[str]:
     """Return every finding for one harness source."""
     source = text.encode("utf-8")
     tree = Parser(_TYPESCRIPT_LANGUAGE).parse(source)
@@ -299,7 +381,7 @@ def evaluate_support(path: Path, text: str, packages: Mapping[str, Path]) -> lis
         return [f"{path}: harness source cannot be parsed as TypeScript"]
     issues: list[str] = []
     for probe in extract_probes(path, tree.root_node, source, issues):
-        issues.extend(probe_issues(path, probe, packages))
+        issues.extend(probe_issues(path, probe, packages, declared))
     issues.extend(invocation_issues(path, tree.root_node, source, packages))
     return issues
 
@@ -307,10 +389,12 @@ def evaluate_support(path: Path, text: str, packages: Mapping[str, Path]) -> lis
 def evaluate(
     supports: Sequence[Path],
     source_roots: Sequence[Path],
+    compose: Path | None,
     errors: list[str],
 ) -> list[str]:
     """Return every finding across the enumerated harness sources."""
     packages = first_party_packages(source_roots)
+    declared = None if compose is None else compose_environment_names(compose, errors)
     issues: list[str] = []
     for path in supports:
         try:
@@ -318,7 +402,7 @@ def evaluate(
         except OSError:
             errors.append(f"{path}: harness source could not be read")
             continue
-        issues.extend(evaluate_support(path, text, packages))
+        issues.extend(evaluate_support(path, text, packages, declared))
     return issues
 
 
@@ -329,6 +413,7 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--support", action="append", default=[], type=Path)
     parser.add_argument("--source-root", action="append", default=[], type=Path)
+    parser.add_argument("--compose", type=Path)
     return parser.parse_args(argv)
 
 
@@ -337,10 +422,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parse_arguments(argv)
     supports = cast("list[Path]", arguments.support)
     source_roots = cast("list[Path]", arguments.source_root)
+    compose = cast("Path | None", arguments.compose)
     if not supports:
         return 0
     errors: list[str] = []
-    issues = sorted(set(evaluate(supports, source_roots, errors) + errors))
+    issues = sorted(set(evaluate(supports, source_roots, compose, errors) + errors))
     for issue in issues:
         print(f"{DIAGNOSTIC}: {issue}", file=sys.stderr)
     return 1 if issues else 0
