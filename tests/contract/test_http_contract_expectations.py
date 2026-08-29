@@ -14,6 +14,7 @@ pytestmark = [pytest.mark.contract]
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PREFIX = "https://aerial-rescue.invalid/schemas/v1/"
+UNPROCESSABLE_CONTENT_STATUS = 422
 
 Framing = Literal["json", "sse", "html-embed", "asset"]
 BodyExpectation = tuple[str | None, Framing, tuple[str, ...]]
@@ -100,6 +101,30 @@ def _public_expectations() -> tuple[RouteExpectation, ...]:
             _json(_dashboard_schema("reset-request")),
             (
                 (202, _json(_dashboard_schema("reset-response"))),
+                (401, error),
+                (409, error),
+                ("default", error),
+            ),
+        ),
+        (
+            "POST",
+            "/api/v1/missions/{missionId}/commands",
+            (),
+            _json(_dashboard_schema("operator-command-request")),
+            (
+                (202, _json(_dashboard_schema("command-response"))),
+                (401, error),
+                (409, error),
+                ("default", error),
+            ),
+        ),
+        (
+            "POST",
+            "/api/v1/missions/{missionId}/proposals/{proposalId}/decisions",
+            (),
+            _json(_dashboard_schema("proposal-decision-request")),
+            (
+                (202, _json(_dashboard_schema("proposal-decision-response"))),
                 (401, error),
                 (409, error),
                 ("default", error),
@@ -239,9 +264,9 @@ def _schema_ids(routes: tuple[RouteExpectation, ...]) -> frozenset[str]:
 class HttpContractExpectationTests(unittest.TestCase):
     def test_public_and_private_route_registries_match_the_accepted_surface_exactly(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
         scenario = _contract_module("aerial_rescue_scenario_service.http_contract")
-        fleet = _contract_module("aerial_rescue_fleet_simulator.control_http_contract")
+        fleet = _contract_module("aerial_rescue_fleet_simulator.control_plane.http_contract")
         expected = (
             _public_expectations(),
             _scenario_expectations(),
@@ -257,7 +282,7 @@ class HttpContractExpectationTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, actual)
-        self.assertEqual(17, sum(len(routes) for routes in actual))
+        self.assertEqual(19, sum(len(routes) for routes in actual))
 
     def test_every_route_schema_is_manifest_owned(self) -> None:
         # Arrange
@@ -269,9 +294,9 @@ class HttpContractExpectationTests(unittest.TestCase):
             f"https://aerial-rescue.invalid/{cast('str', entry['schema'])}" for entry in entries
         }
         modules = (
-            _contract_module("aerial_rescue_dashboard_api.http_contract"),
+            _contract_module("aerial_rescue_dashboard_api.boundary.http_contract"),
             _contract_module("aerial_rescue_scenario_service.http_contract"),
-            _contract_module("aerial_rescue_fleet_simulator.control_http_contract"),
+            _contract_module("aerial_rescue_fleet_simulator.control_plane.http_contract"),
         )
 
         # Act
@@ -282,24 +307,36 @@ class HttpContractExpectationTests(unittest.TestCase):
         # Assert
         self.assertLessEqual(route_ids, manifest_ids)
 
-    def test_public_surface_contains_no_deferred_workflow_or_generated_422(self) -> None:
+    def test_public_surface_contains_only_the_selected_workflow_mutations_and_no_generated_422(
+        self,
+    ) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
-        forbidden = ("approval", "command", "model", "evidence", "rescue", "escalation")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
+        expected_workflow_paths = {
+            "/api/v1/missions/{missionId}/commands",
+            "/api/v1/missions/{missionId}/proposals/{proposalId}/decisions",
+        }
 
         # Act
         public_paths = tuple(route[1] for route in dashboard.ROUTE_EXPECTATIONS)
+        workflow_paths = {
+            path
+            for path in public_paths
+            if "/commands" in path or "/proposals/" in path or "/approvals" in path
+        }
         statuses = tuple(
             response[0] for route in dashboard.ROUTE_EXPECTATIONS for response in route[4]
         )
 
         # Assert
-        self.assertTrue(all(word not in path for path in public_paths for word in forbidden))
-        self.assertNotIn(422, statuses)
+        self.assertEqual(
+            (expected_workflow_paths, False),
+            (workflow_paths, UNPROCESSABLE_CONTENT_STATUS in statuses),
+        )
 
-    def test_only_public_start_and_reset_carry_json_request_bodies(self) -> None:
+    def test_only_the_four_selected_public_mutations_carry_json_request_bodies(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
 
         # Act
         body_routes = tuple(
@@ -321,13 +358,23 @@ class HttpContractExpectationTests(unittest.TestCase):
                     "/api/v1/scenarios/current/reset",
                     _json(_dashboard_schema("reset-request")),
                 ),
+                (
+                    "POST",
+                    "/api/v1/missions/{missionId}/commands",
+                    _json(_dashboard_schema("operator-command-request")),
+                ),
+                (
+                    "POST",
+                    "/api/v1/missions/{missionId}/proposals/{proposalId}/decisions",
+                    _json(_dashboard_schema("proposal-decision-request")),
+                ),
             ),
             body_routes,
         )
 
     def test_sse_html_and_assets_do_not_claim_the_same_framing(self) -> None:
         # Arrange
-        dashboard = _contract_module("aerial_rescue_dashboard_api.http_contract")
+        dashboard = _contract_module("aerial_rescue_dashboard_api.boundary.http_contract")
         success_bodies = {
             path: responses[0][1] for _, path, _, _, responses in dashboard.ROUTE_EXPECTATIONS
         }

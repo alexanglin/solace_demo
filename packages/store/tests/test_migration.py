@@ -18,14 +18,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
 from aerial_rescue_store.migration import (
+    APPLICATION_OUTBOX_TABLE,
     APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
+    BROKER_INBOX_TABLE,
     COMMAND_OUTBOX_TABLE,
+    COMMAND_PROGRESS_TABLE,
     CONNECTION_ATTRIBUTE,
+    DRONE_COMMAND_RECEIPT_TABLE,
+    EVIDENCE_DECISION_TABLE,
+    EVIDENCE_ITEM_TABLE,
     IDEMPOTENCY_CLAIM_TABLE,
     PARAMSTYLE,
+    PROPOSAL_TABLE,
     SCRIPT_DIRECTORY,
+    SOURCE_EVENT_TABLE,
+    SOURCE_EVIDENCE_ITEM_TABLE,
     URL_OPTION,
     VERSION_SERIES,
     downgrade_statements,
@@ -46,9 +55,13 @@ FIRST_REVISION: Final = "0001_audit_log"
 SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
 FOURTH_REVISION: Final = "0004_command_outbox"
+FIFTH_REVISION: Final = "0005_dashboard_runtime"
+SIXTH_REVISION: Final = "0006_application_processing"
 FIRST_TO_SECOND: Final = f"{FIRST_REVISION}:{SECOND_REVISION}"
 SECOND_TO_THIRD: Final = f"{SECOND_REVISION}:{THIRD_REVISION}"
 THIRD_TO_FOURTH: Final = f"{THIRD_REVISION}:{FOURTH_REVISION}"
+FOURTH_TO_FIFTH: Final = f"{FOURTH_REVISION}:{FIFTH_REVISION}"
+FIFTH_TO_SIXTH: Final = f"{FIFTH_REVISION}:{SIXTH_REVISION}"
 """Alembic's range form, so a step renders on its own rather than the whole history."""
 
 
@@ -328,6 +341,169 @@ class FourthRevisionTests(unittest.TestCase):
                 f"CREATE TABLE {IDEMPOTENCY_CLAIM_TABLE}" in emitted,
             ),
         )
+
+
+class SixthRevisionTests(unittest.TestCase):
+    """Rendered from immutable 0005 so application processing is one additive step."""
+
+    def test_the_step_creates_every_new_authoritative_table_and_no_prior_table(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+        expected = (
+            BROKER_INBOX_TABLE,
+            SOURCE_EVENT_TABLE,
+            SOURCE_EVIDENCE_ITEM_TABLE,
+            APPLICATION_OUTBOX_TABLE,
+            PROPOSAL_TABLE,
+            EVIDENCE_ITEM_TABLE,
+            EVIDENCE_DECISION_TABLE,
+            COMMAND_PROGRESS_TABLE,
+            DRONE_COMMAND_RECEIPT_TABLE,
+        )
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            ((True,) * len(expected), False),
+            (
+                tuple(f"CREATE TABLE {table}" in emitted for table in expected),
+                f"CREATE TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+            ),
+        )
+
+    def test_inbox_identity_is_consumer_source_and_event_id_together(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertIn("PRIMARY KEY (consumer, source, event_id)", emitted)
+
+    def test_source_events_keep_complete_canonical_bytes_under_exact_cloudevent_identity(
+        self,
+    ) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            (True, True, True, True, True),
+            (
+                "PRIMARY KEY (source, event_id)" in emitted,
+                "topic VARCHAR(250) NOT NULL" in emitted,
+                "canonical_payload BYTEA NOT NULL" in emitted,
+                "canonical_digest ~ '^[0-9a-f]{64}$'" in emitted,
+                "CREATE INDEX ix_source_event_mission_event" in emitted,
+            ),
+        )
+
+    def test_source_evidence_is_ordered_bounded_and_bound_to_exact_source_identity(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            (True, True, True, True, True),
+            (
+                "PRIMARY KEY (source_event_source, source_event_id, ordinal)" in emitted,
+                "FOREIGN KEY(source_event_source, source_event_id)" in emitted,
+                "REFERENCES source_event (source, event_id) ON DELETE RESTRICT" in emitted,
+                "ordinal BETWEEN 1 AND 23" in emitted,
+                "document BYTEA NOT NULL" in emitted,
+            ),
+        )
+
+    def test_application_outbox_has_a_closed_state_and_deterministic_drain_index(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            (True, True),
+            (
+                "CHECK (state IN ('staged', 'reconciliation needed', 'confirmed'))" in emitted,
+                "CREATE INDEX ix_application_outbox_drain" in emitted,
+            ),
+        )
+
+    def test_evidence_and_decisions_are_bound_to_immutable_proposals(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            (2, True),
+            (
+                emitted.count("REFERENCES proposal (proposal_id)"),
+                "UNIQUE (proposal_id, sequence)" in emitted,
+            ),
+        )
+
+    def test_command_progress_and_receipts_keep_progress_separate_from_prior_results(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+
+        # Act
+        emitted = upgrade_statements(config, FIFTH_TO_SIXTH)
+
+        # Assert
+        self.assertEqual(
+            (True, True, True, True, False),
+            (
+                "send_count <= 5" in emitted,
+                "PRIMARY KEY (drone_id, command_id)" in emitted,
+                "ck_drone_command_receipt_completion" in emitted,
+                "(result IS NULL AND applied_sequence IS NULL AND processed_at IS NULL)" in emitted,
+                "result BYTEA NOT NULL" in emitted,
+            ),
+        )
+
+    def test_the_step_back_drops_only_the_nine_tables_this_revision_created(self) -> None:
+        # Arrange
+        config = migration_config(PROBE_URL)
+        expected = (
+            BROKER_INBOX_TABLE,
+            SOURCE_EVENT_TABLE,
+            SOURCE_EVIDENCE_ITEM_TABLE,
+            APPLICATION_OUTBOX_TABLE,
+            PROPOSAL_TABLE,
+            EVIDENCE_ITEM_TABLE,
+            EVIDENCE_DECISION_TABLE,
+            COMMAND_PROGRESS_TABLE,
+            DRONE_COMMAND_RECEIPT_TABLE,
+        )
+
+        # Act
+        emitted = downgrade_statements(config, FIFTH_REVISION)
+
+        # Assert
+        self.assertEqual(
+            ((True,) * len(expected), False),
+            (
+                tuple(f"DROP TABLE {table}" in emitted for table in expected),
+                f"DROP TABLE {COMMAND_OUTBOX_TABLE}" in emitted,
+            ),
+        )
+
+
+class FourthRevisionConstraintTests(unittest.TestCase):
+    """The remaining constraints owned by the fourth revision."""
 
     def test_one_command_holds_one_record_because_a_retry_republishes_it(self) -> None:
         # Arrange

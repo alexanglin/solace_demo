@@ -37,7 +37,7 @@ from aerial_rescue_contracts.view import (
     state_digest,
     state_document,
 )
-from aerial_rescue_dashboard_api.wire import parse_wire_document
+from aerial_rescue_dashboard_api.boundary.wire import parse_wire_document
 
 REPLAY_BUNDLE_SCHEMA_ID = (
     "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json"

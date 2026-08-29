@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts.topics import (
+    RESERVED_REPLY_MISSION,
     Family,
     Rule,
     Topic,
@@ -37,7 +38,11 @@ def shadowing_topics(draw: st.DrawFn) -> tuple[Family, str]:
     """Draw a family and one of its topics whose variable levels shadow literal levels."""
     family = draw(st.sampled_from(list(Family)))
     values = {name: draw(LEVEL_VALUES[rule_for(name)]) for name in family.parameters}
-    mission = draw(LEVEL_VALUES[Rule.IDENTIFIER])
+    mission = (
+        RESERVED_REPLY_MISSION
+        if family is Family.GATEWAY_RESPONSE
+        else draw(LEVEL_VALUES[Rule.IDENTIFIER])
+    )
     return (family, format_topic(Topic(family, mission, values)))
 
 

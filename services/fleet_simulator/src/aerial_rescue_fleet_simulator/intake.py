@@ -7,10 +7,9 @@ against the closed authority table; then the bytes; then the envelope against th
 then the payload's own members.
 
 Those last members are read defensively rather than trusted. ``parse_envelope`` validates
-the envelope profile and the canonical profile of the payload, and it checks that the
-subject is the payload's mission, but it never validates the payload against its own JSON
-Schema -- that oracle runs offline over the golden fixtures. A payload member that reaches
-a fold is therefore one this module checked.
+the envelope profile and canonical representation while service-local strict models execute
+the complete type-specific payload shape. The concrete runtime also executes the committed
+JSON Schema before this boundary; this duplicate validation is intentional defence in depth.
 
 Nothing here decides settlement, drives a machine, or reads a clock. The composition root
 takes the bytes off a message and decides what to do with a refusal. This module is pure.
@@ -18,11 +17,10 @@ takes the bytes off a message and decides what to do with a refusal. This module
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final
+from typing import Annotated, ClassVar, Final, Literal
 
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import (
@@ -41,6 +39,14 @@ from aerial_rescue_contracts.topics import (
 )
 from aerial_rescue_domain import DomainError
 from aerial_rescue_domain.authority import CommandType, command_type
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+)
 
 from aerial_rescue_fleet_simulator import FleetSimulatorError
 
@@ -48,7 +54,66 @@ COMMAND_TYPE_PARAMETER: Final = "commandType"
 COMMAND_ID_MEMBER: Final = "commandId"
 SECTOR_ID_MEMBER: Final = "sectorId"
 
-_IDENTIFIER: Final = re.compile(IDENTIFIER_PATTERN)
+_DIGEST_PATTERN: Final = r"^[0-9a-f]{64}$"
+
+type Identifier = Annotated[
+    str,
+    StringConstraints(pattern=IDENTIFIER_PATTERN, max_length=64),
+]
+type Digest = Annotated[
+    str,
+    StringConstraints(pattern=_DIGEST_PATTERN, min_length=64, max_length=64),
+]
+type Latitude = Annotated[int, Field(ge=-90_000_000, le=90_000_000)]
+type Longitude = Annotated[int, Field(ge=-180_000_000, le=180_000_000)]
+
+
+def _strict_one(value: object) -> object:
+    """Prevent a JSON boolean from satisfying Python's equality with integer one."""
+    if type(value) is not int:
+        message = "version must be the integer one"
+        raise ValueError(message)
+    return value
+
+
+type StrictOne = Annotated[Literal[1], BeforeValidator(_strict_one)]
+
+
+class _ClosedPayload(BaseModel):
+    """The common strict, immutable, alias-only payload posture."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        validate_by_alias=True,
+        validate_by_name=False,
+        serialize_by_alias=True,
+    )
+
+    mission_id: Identifier = Field(alias="missionId")
+    drone_id: Identifier = Field(alias="droneId")
+    command_id: Identifier = Field(alias="commandId")
+
+
+class _AssignSectorPayload(_ClosedPayload):
+    """The exact assign-sector payload branch."""
+
+    sector_id: Identifier = Field(alias="sectorId")
+
+
+class _EscalateRescuePayload(_ClosedPayload):
+    """The exact approval-, proposal-, evidence-, and location-bound rescue branch."""
+
+    approval_id: Identifier = Field(alias="approvalId")
+    proposal_id: Identifier = Field(alias="proposalId")
+    proposal_digest: Digest = Field(alias="proposalDigest")
+    proposal_version: StrictOne = Field(alias="proposalVersion")
+    evidence_decision_id: Identifier = Field(alias="evidenceDecisionId")
+    evidence_decision_digest: Digest = Field(alias="evidenceDecisionDigest")
+    evidence_decision_version: StrictOne = Field(alias="evidenceDecisionVersion")
+    latitude_microdegrees: Latitude = Field(alias="latitudeMicrodegrees")
+    longitude_microdegrees: Longitude = Field(alias="longitudeMicrodegrees")
 
 
 class IntakeRefusal(Enum):
@@ -68,21 +133,38 @@ class IntakeError(FleetSimulatorError):
 
 
 @dataclass(frozen=True)
-class IncomingCommand:
-    """One command this drone accepted, reduced to what a fold and an answer need.
-
-    ``sector_id`` is here because ``assign-sector`` is the one command type a payload
-    schema binds today. Binding a second type changes this shape, which is the coupling
-    ``docs/adr/0082-bind-the-drone-command-and-its-result-to-payload-schemas.md`` accepts
-    in exchange for the type-to-payload agreement being checked.
-    """
+class AssignSectorCommand:
+    """One completely validated deterministic sector assignment."""
 
     command_id: str
-    command_type: CommandType
     sector_id: str
     event_id: str
     correlation_id: str
     sequence: int
+    command_type: ClassVar[CommandType] = CommandType.ASSIGN_SECTOR
+
+
+@dataclass(frozen=True)
+class EscalateRescueCommand:
+    """One immutable rescue effect retaining every upstream authority binding."""
+
+    command_id: str
+    approval_id: str
+    proposal_id: str
+    proposal_digest: str
+    proposal_version: int
+    evidence_decision_id: str
+    evidence_decision_digest: str
+    evidence_decision_version: int
+    latitude_microdegrees: int
+    longitude_microdegrees: int
+    event_id: str
+    correlation_id: str
+    sequence: int
+    command_type: ClassVar[CommandType] = CommandType.ESCALATE_RESCUE
+
+
+type IncomingCommand = AssignSectorCommand | EscalateRescueCommand
 
 
 def _routed(topic: str, drone_id: str, mission_id: str) -> Topic:
@@ -101,17 +183,30 @@ def _routed(topic: str, drone_id: str, mission_id: str) -> Topic:
     return parsed
 
 
-def _identifier(payload: Mapping[str, object], member: str) -> str:
-    """Return one identifier-formed payload member, refusing an absent or ill-formed one.
+def _refused_member(error: ValidationError) -> str:
+    """Return only a closed schema member, never an attacker-selected extra key."""
+    fields = (
+        *_AssignSectorPayload.model_fields.values(),
+        *_EscalateRescuePayload.model_fields.values(),
+    )
+    known = {alias for field in fields if (alias := field.alias) is not None}
+    first = error.errors(include_input=False, include_url=False)[0]["loc"]
+    candidate = first[0] if first else None
+    return candidate if isinstance(candidate, str) and candidate in known else "payload"
 
-    ``parse_envelope`` has already made the payload a mapping inside the canonical profile,
-    so the shape is not re-checked here; what it has not done is validate the payload
-    against its own schema, which is why every member a fold reads passes through here.
-    """
-    value = payload.get(member)
-    if not isinstance(value, str) or _IDENTIFIER.fullmatch(value) is None:
-        raise IntakeError(IntakeRefusal.MALFORMED_COMMAND, member)
-    return value
+
+def _validate_payload(
+    requested: CommandType,
+    payload: Mapping[str, object],
+) -> _AssignSectorPayload | _EscalateRescuePayload:
+    """Execute the exact type-specific closed payload shape."""
+    model = (
+        _AssignSectorPayload if requested is CommandType.ASSIGN_SECTOR else _EscalateRescuePayload
+    )
+    try:
+        return model.model_validate(payload)
+    except ValidationError as error:
+        raise IntakeError(IntakeRefusal.MALFORMED_COMMAND, _refused_member(error)) from error
 
 
 def accept(payload: bytes | None, topic: str, drone_id: str, mission_id: str) -> IncomingCommand:
@@ -148,10 +243,26 @@ def accept(payload: bytes | None, topic: str, drone_id: str, mission_id: str) ->
         check_topic_binding(envelope, parsed)
     except EnvelopeError as refusal:
         raise IntakeError(IntakeRefusal.TOPIC_DISAGREEMENT, refusal.value) from refusal
-    return IncomingCommand(
-        command_id=_identifier(envelope.data, COMMAND_ID_MEMBER),
-        command_type=requested,
-        sector_id=_identifier(envelope.data, SECTOR_ID_MEMBER),
+    validated = _validate_payload(requested, envelope.data)
+    if isinstance(validated, _AssignSectorPayload):
+        return AssignSectorCommand(
+            command_id=validated.command_id,
+            sector_id=validated.sector_id,
+            event_id=envelope.id,
+            correlation_id=envelope.correlation_id,
+            sequence=int(envelope.sequence),
+        )
+    return EscalateRescueCommand(
+        command_id=validated.command_id,
+        approval_id=validated.approval_id,
+        proposal_id=validated.proposal_id,
+        proposal_digest=validated.proposal_digest,
+        proposal_version=validated.proposal_version,
+        evidence_decision_id=validated.evidence_decision_id,
+        evidence_decision_digest=validated.evidence_decision_digest,
+        evidence_decision_version=validated.evidence_decision_version,
+        latitude_microdegrees=validated.latitude_microdegrees,
+        longitude_microdegrees=validated.longitude_microdegrees,
         event_id=envelope.id,
         correlation_id=envelope.correlation_id,
         sequence=int(envelope.sequence),

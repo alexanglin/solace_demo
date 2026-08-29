@@ -1,6 +1,6 @@
 """The deny-by-default broker authorization tables that decide who may use which topic family.
 
-The ten roles and their grants are the decisions in ADR-0061 and ADR-0111. Authority is
+The nine roles and their grants are the effective decisions through ADR-0158. Authority is
 expressed over roles rather than over processes: each deployed process carries its own
 client username for observability and credential rotation, and that username binds to its
 role's ACL profile, so two edge agents have distinct identities and identical authority.
@@ -31,7 +31,6 @@ class Principal(Enum):
     FLEET_SIMULATOR = "fleet-simulator"
     COMMAND_GATEWAY = "command-gateway"
     DASHBOARD_API = "dashboard-api"
-    SCENARIO_SERVICE = "scenario-service"
     EVIDENCE_SERVICE = "evidence-service"
     RECORDER = "recorder"
     EVENT_MESH_GATEWAY = "event-mesh-gateway"
@@ -68,15 +67,22 @@ _PUBLISH: Final[Mapping[Principal, frozenset[Family]]] = {
         }
     ),
     Principal.COMMAND_GATEWAY: frozenset(
-        {Family.DRONE_COMMAND, Family.GATEWAY_RESPONSE, Family.AUDIT}
+        {
+            Family.DRONE_COMMAND,
+            Family.GATEWAY_RESPONSE,
+            Family.GATEWAY_RECORD,
+            Family.AGENT_PROPOSAL,
+            Family.AUDIT,
+        }
     ),
-    Principal.DASHBOARD_API: frozenset({Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL}),
-    Principal.SCENARIO_SERVICE: frozenset({Family.MISSION_EVENT}),
-    Principal.EVIDENCE_SERVICE: frozenset({Family.AUDIT}),
+    Principal.DASHBOARD_API: frozenset(
+        {Family.OPERATOR_COMMAND, Family.OPERATOR_APPROVAL, Family.MISSION_EVENT}
+    ),
+    Principal.EVIDENCE_SERVICE: frozenset({Family.EVIDENCE_DECISION, Family.AUDIT}),
     Principal.RECORDER: frozenset(),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.AGENT_RESPONSE}),
     Principal.EVENT_MESH_TOOL: frozenset({Family.GATEWAY_REQUEST}),
-    Principal.AGENT_MESH_AGENT: frozenset({Family.AGENT_PROPOSAL, Family.AGENT_RESPONSE}),
+    Principal.AGENT_MESH_AGENT: frozenset(),
     Principal.DISCOVERY: frozenset(),
 }
 """Total over the roles; a test asserts it.
@@ -94,7 +100,7 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.OPERATOR_COMMAND,
             Family.OPERATOR_APPROVAL,
             Family.GATEWAY_REQUEST,
-            Family.AGENT_PROPOSAL,
+            Family.AGENT_RESPONSE,
             Family.DRONE_COMMAND_RESULT,
         }
     ),
@@ -104,21 +110,16 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
             Family.DRONE_EVENT,
             Family.DRONE_COMMAND,
             Family.DRONE_COMMAND_RESULT,
+            Family.GATEWAY_RECORD,
             Family.AGENT_PROPOSAL,
             Family.AGENT_RESPONSE,
+            Family.EVIDENCE_DECISION,
             Family.AUDIT,
         }
     ),
-    Principal.SCENARIO_SERVICE: frozenset(),
     Principal.EVIDENCE_SERVICE: frozenset({Family.DRONE_EVENT, Family.AGENT_PROPOSAL}),
-    Principal.RECORDER: frozenset(
-        {
-            Family.DRONE_TELEMETRY,
-            Family.DRONE_EVENT,
-            Family.MISSION_EVENT,
-            Family.SECTOR_EVENT,
-        }
-    ),
+    Principal.RECORDER: frozenset(Family)
+    - frozenset({Family.GATEWAY_REQUEST, Family.GATEWAY_RESPONSE}),
     Principal.EVENT_MESH_GATEWAY: frozenset({Family.DRONE_EVENT}),
     Principal.EVENT_MESH_TOOL: frozenset(),
     Principal.AGENT_MESH_AGENT: frozenset(),
@@ -126,12 +127,9 @@ _SUBSCRIBE: Final[Mapping[Principal, frozenset[Family]]] = {
 }
 """Total over the roles; a test asserts it.
 
-``RECORDER`` names only the four schema-bound source families that project into dashboard state.
-Its direct telemetry subscription stays separate from the three guaranteed lifecycle families.
-Because ``DRONE_EVENT`` also carries salient detections, ADR-0120 requires the broker adapter to
-narrow that one family grant to the exact ``connectivity-changed`` event type. The resulting
-deployed authority cannot reach command, approval, evidence, audit, salient-detection, or Agent Mesh
-traffic it never records.
+``RECORDER`` reads every notification and integration family because the replay fixtures
+it writes must be able to reproduce the whole mission; the two raw RPC families are
+excluded because their mission-scoped outcome is carried by ``GATEWAY_RECORD``.
 ``AGENT_MESH_AGENT`` reads nothing here because agents receive work over A2A rather than
 over application topics (``docs/adr/0014-application-events-separate-from-a2a.md``), and
 ``EVENT_MESH_TOOL`` reads nothing here because the only thing it consumes is its own

@@ -1,0 +1,11 @@
+{
+  "kind": "commandResult",
+  "eventClass": "COMMAND",
+  "mission": "mission-synthetic-0001",
+  "time": "2026-08-24T12:00:03.000Z",
+  "data": {
+    "droneId": "drone-sim-01",
+    "commandId": "command-synthetic-0001",
+    "outcome": "succeeded"
+  }
+}

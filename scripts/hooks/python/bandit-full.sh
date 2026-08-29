@@ -7,22 +7,11 @@ script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 . "$script_directory/../quality-components.sh"
 
-root_active=false
-agent_active=false
-quality_root_python_active && root_active=true
-quality_agent_python_active && agent_active=true
+root_active=$(quality_root_python_manifest_state)
+agent_active=$(quality_agent_python_manifest_state)
 
 if [ "$root_active" = false ] && [ "$agent_active" = false ]; then
 	exit 0
-fi
-
-if [ "$root_active" = true ] && [ ! -f pyproject.toml ]; then
-	printf 'MISSING: pyproject.toml is required by owned root Python source\n' >&2
-	exit 1
-fi
-if [ "$agent_active" = true ] && [ ! -f agent-mesh/pyproject.toml ]; then
-	printf 'MISSING: agent-mesh/pyproject.toml is required by owned Agent Mesh source\n' >&2
-	exit 1
 fi
 
 command -v uv >/dev/null 2>&1 || {
@@ -50,7 +39,11 @@ fi
 
 if [ "$agent_active" = true ]; then
 	set --
-	for path in agent-mesh/plugins agent-mesh/tools; do
+	for path in \
+		agent-mesh/aerial_rescue_event_mesh_gateway \
+		agent-mesh/aerial_rescue_runtime_compat \
+		agent-mesh/plugins \
+		agent-mesh/tools; do
 		[ -d "$path" ] && set -- "$@" "$path"
 	done
 	if [ "$#" -gt 0 ]; then

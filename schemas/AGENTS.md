@@ -31,6 +31,9 @@ values in this guide:
 | Strict scenario catalog and definition files | [ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md) |
 | Authenticated private scenario and fleet control | [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
 | Schema-bound dashboard lifecycle sources and composed events | [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
+| Durable application processing and the fourteen-family representation | [ADR-0146](../docs/adr/0146-define-durable-application-processing.md) |
+| Closed application payloads, integration body, projections, and HTTP documents | [ADR-0148](../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Reserved-topic RPC versus mission-scoped Gateway Response record | [ADR-0149](../docs/adr/0149-preserve-mission-scoped-gateway-response-records.md) |
 
 An Accepted architecture decision record (ADR) governs whenever a schema, fixture, implementation, or
 document disagrees with it. Never rewrite Accepted ADR prose. Create a new or superseding record before
@@ -46,6 +49,7 @@ verification mechanism.
 | `v1/envelope.schema.json` | Structural closed-member CloudEvents envelope profile |
 | `v1/payload/` | Application-event payload shapes |
 | `v1/event/` | Composed schemas binding an envelope's `type`, `dataschema`, and `data` |
+| `v1/integration/` | Closed non-CloudEvent plugin-integration bodies; currently only the direct structured Agent Response |
 | `v1/rpc/` | Request/reply bodies that are not application events, including command-gateway and private scenario/fleet control RPC ([ADR-0068](../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0107](../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md)) |
 | `v1/scenario/` | Strict catalog and scenario-definition file shapes ([ADR-0100](../docs/adr/0100-commit-a-strict-wilderness-scenario-catalog.md)) |
 | `v1/topic-cases.schema.json` | Common shape of accepted and refused topic case files |
@@ -58,6 +62,17 @@ schema, so one definition serves both uses. The
 payload schema has its own `$id`, which the envelope `dataschema` and Python binding name; the composed
 event schema has a distinct event-schema `$id` and constrains the payload, event type, and schema binding
 together.
+
+The version-one manifest currently owns 68 schemas. Twenty-two are dashboard schemas: 20 have
+server-facing dashboard-API Pydantic twins and two remain browser-only. The reconciled inventory keeps
+ADR-0124's minimal dashboard wire, adds recording and scenario-recovery documents from the qualified
+dashboard runtime, and adds ADR-0148's application payload/event documents, standalone
+`integration/agent-response` schema, and four dashboard command/decision HTTP documents. Agent Response
+has no payload/event pair and no CloudEvents `BINDINGS` row; wrapping it in an envelope would change its
+representation and authority. The fifteen topic families are not fifteen identical wire shapes: twelve
+are notification-only, two carry request/reply RPC, Agent Response is a direct integration body, and
+ADR-0150 additionally preserves a direct mission-scoped Gateway Response CloudEvent beside that family's
+reserved-topic raw RPC reply.
 
 Schemas describe representation and structural validation. They do not own mission authorization,
 state-transition policy, broker subscriptions, persistence, or transport settlement. Dashboard event and
@@ -171,6 +186,12 @@ projection row, reduced-state rule, fixtures, manifest entries, and current Pyth
 TypeScript parity tests in the same change when the dashboard implementation exists. A recognized event
 without the ADR-0067 projection and state decision is refused as unprojected; do not invent an exemption
 in a schema.
+
+Representation is also contract surface. A raw Gateway Response RPC body is valid only on the reserved
+`reply` topic, while its bound CloudEvent record is valid only on a real mission topic. An Agent Response
+integration body is valid only as that closed direct body. Schema registration alone does not choose a
+publisher, construct a broker router, open a service receiver, persist a fact, or prove either crossed
+representation is refused before I/O; those remain runtime obligations outside this contract tranche.
 
 Change [`tools/contract_gate.py`](../tools/contract_gate.py), its conformance tests, hook registration, or
 manifest format only when the verification policy itself changes. That is a build/verification decision,

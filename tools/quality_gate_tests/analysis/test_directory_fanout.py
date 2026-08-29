@@ -445,7 +445,15 @@ class RepositoryRegistryTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual([], errors)
-        self.assertEqual({".", "docs/adr"}, {item.directory for item in records})
+        self.assertEqual(
+            {
+                ".",
+                "apps/dashboard/src/contracts/generated",
+                "docs/adr",
+                "schemas/v1/dashboard",
+            },
+            {item.directory for item in records},
+        )
 
 
 class HookRegistrationTests(QualityGateTestCase):

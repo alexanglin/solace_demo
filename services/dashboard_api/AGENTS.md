@@ -7,10 +7,11 @@ These instructions apply to every file under `services/dashboard_api/`. Read the
 rules still apply.
 
 This member is the Tier 2 local HTTP and server-sent-event boundary for scenario control, validated
-replay, health, readiness, and normalized dashboard events. Its strict wire models, FastAPI application,
-durable orchestration, scenario client, snapshot/SSE paths, and Unix-socket production composition are
-implemented and dependency-injected. The current UI slice deliberately has no approval, command,
-evidence, model, rescue, or escalation route.
+replay, health, readiness, normalized dashboard events, and the two selected application mutations.
+Its strict service-local wire models, FastAPI boundary, concrete store/scenario/broker composition,
+contracts-owned projection, bounded SSE hub, local file adapters, and Unix-socket console are
+implemented. The contract has no generic approval route and no control exists merely because the
+command and exact proposal-decision documents are closed.
 Read the owner of each concern before changing it:
 
 | Concern | Authority or reference |
@@ -43,6 +44,7 @@ Read the owner of each concern before changing it:
 | Integer-only canonical serialization | [ADR-0027](../../docs/adr/0027-integer-only-canonical-serialization.md) |
 | Approval digest recomputation and two clocks | [ADR-0040](../../docs/adr/0040-consume-approvals-by-recomputed-digest-and-two-clocks.md) |
 | Approval expiry parameter | [ADR-0042](../../docs/adr/0042-approval-time-to-live.md) |
+| Gateway-owned approval clock authority | [ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md) |
 | Docker Compose runtime and explicit profiles | [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md) |
 | Honest scaffold classification | [ADR-0053](../../docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md) |
 | Browser-side schema validation | [ADR-0058](../../docs/adr/0058-validate-dashboard-inputs-against-the-committed-schemas.md) |
@@ -57,9 +59,13 @@ Read the owner of each concern before changing it:
 | Authenticated private scenario client | [ADR-0107](../../docs/adr/0107-authenticate-private-scenario-and-fleet-run-control.md) |
 | Service-local Python wire ownership and route registries | [ADR-0108](../../docs/adr/0108-register-strict-python-wire-models-before-http-runtime.md) |
 | Typed Pydantic constructors under strict mypy | [ADR-0109](../../docs/adr/0109-enable-the-pydantic-mypy-plugin-with-typed-constructors.md) |
-| Dashboard runtime persistence and recovery checkpoints | [ADR-0113](../../docs/adr/0113-persist-dashboard-runtime-after-the-current-store-head.md) |
-| Removal of unconsumed dashboard wire values | [ADR-0124](../../docs/adr/0124-remove-unconsumed-dashboard-wire-values.md) |
-| Production SSE downstream-pressure evidence | [ADR-0138](../../docs/adr/0138-stall-the-publisher-not-the-api-for-sse-pressure.md) |
+| Durable application processing and selected public mutations | [ADR-0146](../../docs/adr/0146-define-durable-application-processing.md) |
+| Closed application, projection, and HTTP documents | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md) |
+| Mission-scoped Gateway Record | [ADR-0150](../../docs/adr/0150-separate-gateway-records-from-private-replies.md) |
+| Public mutation body ceiling and refusal order | [ADR-0160](../../docs/adr/0160-bound-public-dashboard-mutation-bodies.md) |
+| Closed dashboard idempotency kinds | [ADR-0171](../../docs/adr/0171-close-dashboard-idempotency-kinds.md) |
+| Complete ordered dashboard projection | [ADR-0175](../../docs/adr/0175-project-every-recorded-event-into-the-dashboard.md) |
+| SSE admission and keepalive bounds | [ADR-0176](../../docs/adr/0176-bound-dashboard-sse-clients-and-keepalives.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,
@@ -71,13 +77,24 @@ make the coordinated change required by the root guide.
 
 | Path | Current responsibility |
 | --- | --- |
-| `pyproject.toml` | Declares Python 3.14, Tier 2, the contracts, domain, observability, and store dependencies, and the exact FastAPI, HTTPX, Pydantic, and Uvicorn runtime pins |
-| `src/aerial_rescue_dashboard_api/wire.py` | Owns the strict server-facing dashboard and scenario-control caller models, the browser-only classification, and canonical-first validation |
-| `src/aerial_rescue_dashboard_api/http_contract.py` | Records the exact nine-route public request, response, framing, query, and default-refusal expectations without constructing a server |
-| `src/aerial_rescue_dashboard_api/application.py` | FastAPI route graph, readiness, bootstrap, mutations, replay, and SSE dependencies |
-| `src/aerial_rescue_dashboard_api/orchestration.py` | Prepared-before-HTTP start, exact response replay, reset, and single pending-operation recovery |
-| `src/aerial_rescue_dashboard_api/store_adapter.py` | Transaction-owning adapter over revision-0005 repositories and snapshot reads |
-| `src/aerial_rescue_dashboard_api/delivery/` | Bounded assets, OpenAPI projection, secret-safe composition, and private Unix-socket process delivery |
+| `pyproject.toml` | Declares Python 3.14, Tier 2, the broker/contracts/domain/store dependency closure, exact third-party pins, and the production console script |
+| `src/aerial_rescue_dashboard_api/boundary/wire.py` | Owns the 21 server-facing dashboard models, four distinct scenario-control caller models, the two browser-only classifications, and canonical-first strict validation |
+| `src/aerial_rescue_dashboard_api/boundary/http_contract.py` | Records the exact eleven-route public request, response, framing, query, and default-refusal expectations without constructing a server |
+| `src/aerial_rescue_dashboard_api/boundary/security.py` | Validates the raw Host, Origin, and bearer boundary before route or body effects |
+| `src/aerial_rescue_dashboard_api/boundary/ingress.py` | Applies the bounded canonical mutation and path-binding boundary |
+| `src/aerial_rescue_dashboard_api/runtime_context.py` | Creates the fresh in-memory bearer and validated public runtime identity |
+| `src/aerial_rescue_dashboard_api/lifecycle.py` | Owns the closed process lifecycle and mode-specific readiness state |
+| `src/aerial_rescue_dashboard_api/sse_buffer.py` | Owns the finite per-client telemetry-evicting overload policy |
+| `src/aerial_rescue_dashboard_api/boundary/application.py` | Constructs separate live/replay FastAPI graphs over injected typed route operations; it owns raw-ASGI authorization, exact routes, response validation, bounded mutation reads, dynamic bootstrap, SSE framing, and safe lifecycle ordering |
+| `src/aerial_rescue_dashboard_api/messaging/projection.py` | Recovers recorder-ordered audit facts through the contracts reducer and fans one normalized checkpoint out through bounded SSE clients |
+| `src/aerial_rescue_dashboard_api/messaging/mutations.py` and `messaging/outbox.py` | Durably stage and publish the selected operator command and exact proposal decision |
+| `src/aerial_rescue_dashboard_api/scenario_http.py` and `operations.py` | Implement authenticated private live run control, durable route idempotency, and capability-isolated read-only replay |
+| `src/aerial_rescue_dashboard_api/files.py` | Validates scenarios, replay bundles, and exactly one content-hashed local asset entrypoint before readiness |
+| `src/aerial_rescue_dashboard_api/messaging/broker_runtime.py` and `messaging/supervisor.py` | Own one mixed Solace session, durable recovery, reconnect readiness, outbox drain, cancellation, and reverse shutdown |
+| `src/aerial_rescue_dashboard_api/console.py` | Composes the live SQLAlchemy/Solace graph and runs Uvicorn only on the configured Unix socket |
+| `tests/boundary/` | Proves the HTTP application, ingress, wire, refusal, and local-operator boundary |
+| `tests/messaging/` and `tests/outbox/` | Prove broker recovery, projection, mutation, publication, and supervisor behavior |
+| Remaining `tests/` modules | Prove adapters, lifecycle, composition, SSE, and Tier 2 behavior |
 | `src/aerial_rescue_dashboard_api/__init__.py` | Package-intent docstring |
 | `src/aerial_rescue_dashboard_api/py.typed` | Marker for distributed type information |
 
@@ -89,40 +106,48 @@ The model layer is closed, frozen, strict, alias-only, and checked against the m
 and one-reason-negative fixtures. It delegates canonical decoding and instant validation to
 `packages/contracts`; it does not import another service implementation or put Pydantic in that package.
 
-The member-local unit and integration suites exercise the application, security boundary, scenario
-client, durable adapter, snapshot construction, stream buffering, replay access, and production
-configuration without turning a fake into a production fallback. Never add a dummy handler, empty
-application, no-op dependency, or import-only entry point to make an absent capability look started;
-each behavior lands through red-green-refactor.
-
-The `dashboard-api` definition in `deploy/compose.yaml` runs the production composition on the shared
-Unix socket behind Caddy. Its healthcheck probes the service-owned health path over that socket, and its
-readiness composes store, scenario, replay, and recorder dependencies. Static Compose and image-policy
-checks establish topology only; they do not replace the required browser run, API-restart recovery, SSE
-soak, or live broker/store evidence. Do not describe configuration shape as production acceptance.
+This activation includes the closed in-process application, raw-ASGI security boundary, dynamic
+bootstrap shell, liveness/readiness handlers, durable live operations, structurally isolated replay
+operations, one owned mixed broker session, audit recovery, bounded projection/SSE, authenticated
+scenario HTTP, local file validation, and a Unix-socket Uvicorn console. Framework documentation routes
+remain disabled. Offline tests prove composition, refusal order, recovery orchestration, and reverse
+cleanup; they do not prove socket reachability, a real PostgreSQL transaction, PubSub+ delivery, or the
+deployment profile. Never add a dummy adapter, no-op dependency, or import-only entry point to make an
+absent capability look operational; each behavior lands through red-green-refactor.
 
 `AGENTS.md` and its `CLAUDE.md` symlink remain documentation and do not affect active-member detection.
 
 ## 3. Keep the public boundary narrow and delegate ownership
 
-The UI-first public surface is exactly the route set ADR-0097 and `docs/CONTRACTS.md` define:
+The public surface is exactly the route set ADR-0097 as enlarged by ADR-0146/0148 and
+`docs/CONTRACTS.md` define:
 
-| Method and path | Runtime responsibility |
+| Method and path | Responsibility |
 | --- | --- |
 | `GET /api/v1/health` | Report process liveness only |
 | `GET /api/v1/readiness?mode=degradedLive\|replay` | Report whether the selected mode can start a scenario |
 | `GET /api/v1/scenarios` | Return available synthetic scenarios and metadata |
 | `POST /api/v1/scenarios/{scenarioId}/start` | Start a deterministic live or replay run |
 | `POST /api/v1/scenarios/current/reset` | Cancel and replace a live mission, or create a fresh replay session |
+| `POST /api/v1/missions/{missionId}/commands` | Validate and durably stage one canonical operator-command event |
+| `POST /api/v1/missions/{missionId}/proposals/{proposalId}/decisions` | Approve or reject the exact proposal and selected evidence decision |
 | `GET /api/v1/events` | Stream normalized dashboard events with SSE |
 | `GET /api/v1/replays/{sessionId}` | Return one read-only validated replay bundle |
 | `GET /` and `GET /assets/{asset}` | Serve the dynamic bootstrap shell and hashed local assets |
 
-There is no approval route or placeholder in this slice. The committed dashboard schemas define the
-request, response, error, snapshot, ordered-event, overload, and replay documents. Strict service-owned
-Pydantic twins, the route registry, generated OpenAPI parity, and runtime routes are implemented. Do not
-infer an additional route from a UI mockup, use a loose mapping temporarily, or expose an extra route
-because implementation wants one.
+There is no generic approval route. The two application mutations above are exact contract entries, not
+placeholders: the committed dashboard schemas define their closed requests and `202` responses alongside
+the existing error, snapshot, ordered-event, overload, and replay documents. Strict service-owned
+Pydantic twins, the framework-free route registry, exact in-process handlers, and the production
+Unix-socket composition now exist; generated OpenAPI remains intentionally absent. Do not infer extra
+behavior from a UI mockup, use a loose mapping temporarily, or expose an extra route because
+implementation wants one.
+
+The proposal-decision transaction persists the dashboard runtime identifier as event-source provenance
+and leaves both command-gateway authority columns null. Its dashboard monotonic reading is diagnostic
+decision evidence only. It must never guess a gateway epoch, convert between process-local monotonic
+origins, or populate command authority; verified Guaranteed ingress owns the one allowed bind under
+[ADR-0183](../../docs/adr/0183-bind-approval-authority-to-the-command-gateway-clock.md).
 
 This service coordinates narrower owners; it does not duplicate them:
 
@@ -132,15 +157,17 @@ This service coordinates narrower owners; it does not duplicate them:
 - Use `packages/domain` for mission transitions, approval decisions and consumption, command authority,
   broker-role authority, and other pure policy. Never copy a state table or grant matrix into a route.
 - Keep durable missions, proposals, approvals, idempotency records, audit rows, and their transactions
-  behind `packages/store`. Process memory and logs are not authority; revision 0005 is the dashboard
-  runtime representation.
+  behind `packages/store`. Process memory and logs are not authority. The store has nine append-only
+  Alembic revisions, shared SQLAlchemy metadata, and the selected inbox, outbox, proposal, evidence,
+  command-progress, durable-receipt, audit-recovery, and dashboard-processing repositories.
 - Keep every direct `solace` import, vendor callback value, subscription, publisher acknowledgement,
   reconnect loop, and transport exception inside `packages/broker`. Vendor types and broad `Any` values
   must not cross into HTTP or domain policy.
 - Call the scenario-service boundary through an injected typed client that implements ADR-0107's private
   start, status, cancel, authentication, timeout, and typed-refusal contract. Preserve the caller-supplied
   stable run identity, never automatically repeat an uncertain start, and reconcile it by querying the
-  same run. Do not import another service's implementation or copy the public dashboard routes inward.
+  same run. The concrete bounded client lives in `scenario_http.py`; do not import another service's
+  implementation or copy the public dashboard routes inward.
 - Keep shared logs, metrics, traces, and redaction helpers in `packages/observability` once two real
   consumers establish them. A log line is neither an audit row nor a dashboard event.
 
@@ -186,10 +213,12 @@ from `User-Agent`, from the presence of `Origin`, or from another caller-control
 
 ADR-0096 fixes the startup transfer: the dynamic no-store shell injects the fresh bearer and non-secret
 runtime identifier, and browser bootstrap removes their source nodes and retains the bearer only in
-memory. That server path is implemented and covered at the application and production-composition
-boundaries. Do not replace it with a cookie, query parameter, generated
-source file, persistent browser store, or diagnostic endpoint. A process restart invalidates the old
-context; a stale browser disables mutation and requires an explicit document reload before retrying.
+memory. The application seam emits that validated shell and one content-hashed asset entrypoint; the
+production Uvicorn process binds the configured Unix socket. Browser node-removal evidence remains
+browser-owned. Do not replace
+the transfer with a cookie, query parameter, generated source file, persistent browser store, or
+diagnostic endpoint. A process restart invalidates the old context; a stale browser disables mutation
+and requires an explicit document reload before retrying.
 
 Never log credentials, authorization headers, cookies, unrestricted request headers or bodies, tenant
 values, database or broker URLs containing credentials, or internal exception representations that carry
@@ -206,8 +235,10 @@ second canonicalizer, hash framework model dumps opportunistically, or let form 
 alternate mutation channel.
 
 Bound request bodies, parsing work, timeouts, dependency waits, retry counts, concurrency, and response
-generation with values owned by `docs/operating-parameters.md`. An open row is a design obligation, not
-permission to choose a convenient local default.
+generation with values owned by `docs/operating-parameters.md`. ADR-0160 fixes the public mutation body
+ceiling at 262,144 bytes inclusive and requires media validation and incremental accumulation before
+canonical decoding. An open row is a design obligation, not permission to choose a convenient local
+default.
 
 Each mutation requires a lowercase UUID version 4 idempotency key. Its durable operation stores the
 canonical request digest and exact response status and bytes. The same key and body returns that response;
@@ -215,46 +246,64 @@ different content refuses without an effect. Claim and persist the operation und
 in-process dictionary is never authority. A mutation is not automatically repeated after `401`, runtime
 replacement, or an uncertain private response.
 
-Revision 0005 stores the stable operation before the private handoff, and the store selects prepared
-mission/run state before live start. An uncertain handoff remains pending and is reconciled by status on
-the same run without repeating start. Reset recovery re-establishes predecessor cancellation, selects a
-fresh `PLANNED` successor, and never starts that successor's fleet. A later Start may activate its stable
-identity. Exact operation state and response bytes—not unused wall-clock columns—are mutation authority.
-This UI slice has no approval route; approval, command, model, evidence, rescue, and escalation workflows
-remain follow-on work and gain no placeholder handler.
+The HTTP adapter injects typed live mutation operations and validates their exact canonical response
+bytes before serving them. No concrete dashboard-operation persistence composition exists yet. Do not
+claim durability, reconciliation, or exact-response replay until the owning store adapters and real
+concurrent/restart tests exist. The command and proposal-decision handlers are capability boundaries,
+not implementations of approval, model, evidence, rescue, or escalation workflows.
 
-Reset is not a mission transition. A recorder-persisted terminal predecessor already establishes the
-stopped condition without a private cancel call. Otherwise, after cancellation is established within the
-shared budget, retain history, abort only a nonterminal predecessor, and create a fresh `PLANNED`
-successor. If cancellation cannot be established, return the typed refusal and change nothing. Replay reset creates a fresh
+Reset is not a mission transition. After cancellation is established within the shared budget, retain
+history, abort only a nonterminal predecessor, and create a fresh `PLANNED` successor. If cancellation
+cannot be established, return the typed refusal and change nothing. Replay reset creates a fresh
 cursor-zero session without mutating an operational mission. Never `TRUNCATE`, drop a schema, delete a
 volume, rewind a terminal mission, or silently discard audit history.
 
-## 6. Read only recorder-validated, audit-ordered events
+## 6. Respect broker authority and validate every event
 
-The current dashboard API has no broker credential, session, publisher, receiver, queue, or broker
-network attachment. Fleet and scenario services publish the schema-bound source events; the receiver-only
-recorder validates topic, envelope, payload, source binding, and projection before committing broker
-identity and the normalized event into audit order. The API reads the prepared checkpoint and bounded
-ordered suffix through `packages/store`. It never consumes an `InboundMessage`, invents a lifecycle fact,
-or treats a log, timestamp, producer sequence, or process-local collection as timeline authority.
+The dashboard broker role is closed and deny-by-default. It may publish only operator-command and
+operator-approval families. Its application subscriptions cover drone telemetry, drone event, drone
+command, command result, agent proposal, direct agent response, guaranteed evidence decision, audit, and
+ADR-0150's direct mission-scoped Gateway Record. It never consumes the reserved raw RPC reply.
+It may not publish a drone command, reach the Agent Mesh A2A namespace, borrow another component's
+identity, or widen a wildcard for convenience.
 
-The broader authorization table still records a dashboard broker role for follow-on command and approval
-work, but that role is not a runtime dependency or identity in the UI-first mission-control closure. Do
-not provision it for symmetry, instantiate it behind an unused port, or bypass the recorder by wiring a
-direct subscription into this service. A future feature that needs the broader role must first land its
-real producer/consumer path, public contract, broker projection, and positive and negative authorization
-evidence.
+That matrix is an authority ceiling, not a wire contract or delivery proof. Broker readback proves the
+configured exception counts, and the current live negative control proves dashboard command publication
+is denied. It does not prove every allowed publication, subscription delivery, subscription denial,
+payload validation, reconnection, or durable recovery. A grant change requires its ADR, total domain
+table and tests, broker projection, credential and Compose coordination, plus allowed positive and
+forbidden negative controls against a live broker.
 
-Keep raw broker validation and settlement with the recorder, `packages/contracts`, and
-`packages/broker`; keep deduplication and audit assignment with `packages/store`. This service validates
-the already-normalized stored values again at its HTTP/SSE boundary and folds through the contracts-owned
-reducer. A recorder commit and a dashboard read are separate evidence: neither a static grant nor a
-successful snapshot alone proves broker delivery, redelivery, or live timeline completeness.
+ADR-0150 resolves the former Gateway Response conflict with disjoint families, not by broadening the
+private reply channel. Only the validated `GATEWAY_RECORD` CloudEvent on a real mission topic is a
+dashboard input; the raw `GATEWAY_RESPONSE` body beneath reserved mission `reply` remains unreachable
+and unrecorded. Subscription rendering and the delivery router must refuse crossed topic/body
+combinations before broker I/O.
+
+Solace imports, vendor exceptions, session mechanics, and the structural transport ports stay in
+`packages/broker`. Consume its `InboundMessage` port rather than a concrete vendor type. Preserve the
+payload bytes through canonical decode, obtain the destination through that port, validate the closed
+envelope and exact topic binding through `packages/contracts`, execute the payload schema through the
+future contracts-owned runtime validator, and only then project it. The current envelope parser binds a
+schema identifier but does not by itself execute JSON Schema. Refuse absent payloads or destinations,
+repeated keys, malformed envelopes, unbound event types, `dataschema` mismatches, subject mismatches,
+topic mismatches, invalid payloads, and unprojected types through typed outcomes. Never guess a projection
+from a topic or display unvalidated `data` because an ACL allowed delivery.
+
+The broker package can project durable application queues and exposes a queue-bound receiver with
+explicit settlement, but this service constructs neither that receiver nor a direct input session. No
+dashboard handler validates, commits, projects, or settles a broker message. Direct delivery remains
+acceptable for supersedable telemetry and the two explicit direct record types under their loss policy;
+it is not evidence that the dashboard has a complete timeline. Add the service transaction and
+commit-before-settlement behavior before claiming RPO-0 or recovery.
 
 ## 7. Bound SSE and delegate normalized state
 
-`GET /api/v1/events` carries the contracts-owned projection of validated application envelopes. A
+`GET /api/v1/events` carries the contracts-owned projection of validated application envelopes. The six
+ADR-0148 additions are non-droppable timeline-only operator-command, operator-approval, agent-proposal,
+evidence-decision, rescue-command, and typed-audit variants. Projection removes `missionId` from each
+payload and additionally removes `evidenceDecisionDigest` from an evidence decision. Direct Agent
+Response has no CloudEvents time or durable audit ordinal and never enters this ordered stream. A
 dashboard event contains `kind`, `eventClass`, `mission`, `time`, and `data`. Transport metadata such as
 the envelope identifier, source, producer sequence, schema identifier, and trace context does not cross
 the browser boundary. The source event time is presentation and timeline data, not ordering authority.
@@ -275,9 +324,8 @@ presentation state separate; an event timeline must not be reconstructed from th
 
 Each client gets the finite buffer owned by `docs/operating-parameters.md`. On overflow, discard the
 oldest droppable telemetry first. If the buffer remains full, close the stream with the typed overload
-reason; never silently drop a non-droppable event. The client then obtains a full snapshot and performs
-the one explicit resynchronization the production source contract permits. Bound per-client queues,
-tasks, fan-out, serialization work, keepalive
+reason; never silently drop a non-droppable event. The client then obtains a full snapshot and resumes
+through the eventual contract. Bound per-client queues, tasks, fan-out, serialization work, keepalive
 work, and disconnect cleanup. Cancellation must release that client's registration, buffer, stream, and
 task immediately enough to satisfy the soak and shutdown gates; one client disconnect must not close a
 shared broker receiver or another client's resources.
@@ -285,9 +333,9 @@ shared broker receiver or another client's resources.
 Use SSE's standard `text/event-stream` framing. ADR-0101 permits only `snapshot`, `dashboard-event`, and
 terminal `stream-overloaded` data frames; keepalives are comments, and cursors are opaque and run-bound.
 An unknown, stale, or cross-run cursor receives a fresh snapshot, while overload permits exactly one
-explicit resynchronization. The bounded per-client buffer, terminal slot, cursor validation, atomic
-snapshot watermark, suffix read, and SSE framing are implemented behind injected ports. Member tests
-prove those rules deterministically; production pressure and soak remain separate live evidence. Do not
+explicit resynchronization. The schemas, fixtures, finite buffer policy, closed SSE encoder,
+contracts-owned state fold, durable audit recovery, broker-backed projection hub, and explicit stream
+cleanup exist. Cursor resumption remains snapshot-first rather than a second ordering authority. Do not
 invent another frame or write a service-local fold.
 
 ADR-0058 requires the browser to validate HTTP, snapshot, and SSE input against committed schemas. That
@@ -299,10 +347,9 @@ canonical ingress validation, or the API runtime's responsibility to emit its ex
 Live simulation, degraded live simulation, and replay are distinct composition modes and must remain
 visually and operationally explicit. Run mode is not mission state.
 
-- Live mode constructs only the store, scenario client, validated replay/document, readiness, and SSE
-  ports its decided behavior needs. It has no broker port; recorder-owned ingestion is visible only after
-  durable audit append. A model or Agent Mesh outage may force degraded live behavior, but must not
-  disable telemetry, operator visibility, or the bounded deterministic controls that remain available.
+- Live mode may construct only the store, scenario, broker, and other ports its decided behavior needs.
+  A model or Agent Mesh outage may force degraded live behavior, but must not disable telemetry, operator
+  visibility, or the bounded deterministic controls that remain available.
 - Degraded live mode abstains when model-derived evidence is unavailable. It never substitutes a
   recording or presents replayed evidence as current.
 - Replay uses a separate composition graph. It constructs no broker publisher or session, model client,
@@ -311,17 +358,16 @@ visually and operationally explicit. Run mode is not mission state.
 - Replay may expose recorded approvals and events for display, but provides no path to create an
   approval, escalate, or publish. Recorded approval facts never become current authorization.
 
-The recorder freshness lease is an active degraded-live prerequisite. Its shared strict codec proves a
-recent recorder cycle only after that service bound its database and broker receivers; replay readiness
-deliberately ignores it. The replay stream and adapter must still be judged by their production evidence,
-not merely because a fake can feed an event iterator. The deterministic oracle is the ordered domain
-outcome and reduced-state digest across the required repetitions, not raw event identifiers, timestamps,
-transport headers, or diagnostic traces ([ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md)).
+The recorder, versioned replay stream, and typed replay-to-dashboard adapter are implemented, but their
+shared-stack and production-browser evidence remains a separate acceptance obligation. Do not claim
+end-to-end replay merely because a deterministic adapter can feed an event iterator. The deterministic
+oracle is the ordered domain outcome and reduced-state digest across the required repetitions, not raw
+event identifiers, timestamps, transport headers, or diagnostic traces.
 
 Health reports process liveness only. Readiness answers whether the selected mode can start a scenario;
-it is not “the import worked,” “the port is open,” or “every dependency is healthy.” Build the
-mode-specific predicate from typed dependency status, including scenario status and the degraded-live
-recorder lease. Do not hide a missing critical dependency
+it is not “the import worked,” “the port is open,” or “every dependency is healthy.” The lifecycle seam
+requires store, scenario-control, and broker-delivery status for degraded live, and only replay input for
+replay; concrete adapters must supply those statuses honestly. Do not hide a missing critical dependency
 behind a generic success or make a deliberately absent replay dependency fail readiness.
 
 Make lifecycle ownership explicit. Startup validates settings and generated material before accepting
@@ -336,7 +382,7 @@ diagnostics.
 
 For every new behavior in this member:
 
-1. Run the active-member predicate and every relevant domain, contracts, broker, store, deployment, and root
+1. Run the scaffold predicate and every relevant domain, contracts, broker, store, deployment, and root
    test before editing.
 2. Add the smallest member-local test under `services/dashboard_api/tests/` with the mandatory AAA
    structure.
@@ -350,7 +396,7 @@ Member-local tests own HTTP adapters, pure orchestration, SSE buffering, composi
 single-service integration behavior, including its real socket and process lifecycle. Each package owns
 its own real adapter evidence, such as PostgreSQL transaction behavior in `packages/store` and PubSub+
 transport behavior in `packages/broker`. Root `tests/` owns behavior crossing those owners, Compose,
-operating-system outbound-blocked replay, and end-to-end security. The dashboard package owns its
+operating-system outbound-blocked replay, and end-to-end security. The future browser member owns its
 framework unit tests and Playwright operator workflow. Cover at least these behavior classes as their
 contracts land:
 
@@ -364,14 +410,13 @@ contracts land:
   typed responses and errors, and generated OpenAPI conformance;
 - dashboard-operation idempotency under same-body, different-body, concurrent, failure, and restart cases,
   exact-response replay, and refusal before any duplicate effect;
-- proof that the closed route inventory has no approval, command, model, evidence, rescue, or escalation
-  handler or placeholder;
+- proof that the closed inventory has exactly the two selected application mutations, no generic
+  approval or other model/evidence/rescue route, and structurally read-only replay handlers;
 - health versus mode-specific readiness, dependency loss and recovery, ADR-0107 authentication and typed
   refusal, uncertain-start status reconciliation without a repeated start, bounded cancellation, partial
   start/reset failure, and safe reset identity;
-- normalized stored-value refusal, unprojected event types, duplicate and out-of-order audit suffixes,
-  snapshot-watermark races, and state-digest divergence; topic/envelope admission, broker operations,
-  settlement, and reconnect remain with recorder, contracts, broker, and their integration suites;
+- topic and envelope mismatch, payload-schema refusal, unprojected event types, allowed and forbidden
+  broker operations, reconnect, duplicates, and out-of-order input;
 - finite SSE buffering, oldest-telemetry eviction, never-droppable classes, typed overload closure,
   snapshot resynchronization, slow clients, disconnect cancellation, resource release, and soak bounds;
   and

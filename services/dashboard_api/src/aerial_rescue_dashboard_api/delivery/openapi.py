@@ -7,7 +7,7 @@ from typing import cast
 
 from fastapi import FastAPI
 
-from aerial_rescue_dashboard_api.http_contract import ROUTE_EXPECTATIONS, BodyExpectation
+from aerial_rescue_dashboard_api.boundary.http_contract import ROUTE_EXPECTATIONS, BodyExpectation
 
 type QueryExpectation = tuple[str, bool, tuple[str, ...]]
 type ResponseExpectation = tuple[int | str, BodyExpectation]

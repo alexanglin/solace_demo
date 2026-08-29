@@ -15,7 +15,9 @@ from aerial_rescue_fleet_simulator import event_source
 from aerial_rescue_fleet_simulator.main import (
     FleetConfiguration,
     FleetConfigurationError,
+    FleetConfigurationRefusal,
     _stamps,
+    broker_configuration,
     configuration,
     main,
 )
@@ -136,6 +138,41 @@ class FleetConfigurationTests(unittest.TestCase):
         self.assertEqual("TRUST_STORE", absent.value.value)
         self.assertEqual("FLEET_CONTROL_SECRET_FILE", weak.value.value)
         self.assertNotIn("short", str(weak.value))
+
+    def test_broker_configuration_refuses_blank_settings_and_oversized_material(self) -> None:
+        # Arrange
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        environment = _environment(Path(temporary.name))
+        blank = {**environment, "SOLACE_BROKER_VPN": " "}
+        oversized_value = "sensitive-" + "x" * 4096
+        Path(environment["SOLACE_BROKER_PASSWORD_FILE"]).write_text(
+            oversized_value,
+            encoding="ascii",
+        )
+
+        # Act
+        with pytest.raises(FleetConfigurationError) as missing:
+            broker_configuration(blank)
+        with pytest.raises(FleetConfigurationError) as oversized:
+            configuration(environment)
+
+        # Assert
+        self.assertEqual(
+            (
+                FleetConfigurationRefusal.MISSING_SETTING,
+                "SOLACE_BROKER_VPN",
+                FleetConfigurationRefusal.MATERIAL_INVALID,
+                "SOLACE_BROKER_PASSWORD_FILE",
+            ),
+            (
+                missing.value.refusal,
+                missing.value.value,
+                oversized.value.refusal,
+                oversized.value.value,
+            ),
+        )
+        self.assertNotIn(oversized_value, str(oversized.value))
 
     def test_main_uses_the_internal_listener_and_reports_only_redacted_configuration_failure(
         self,

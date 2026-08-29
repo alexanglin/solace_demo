@@ -26,6 +26,35 @@ class SelectionTestCase(QualityGateTestCase):
             path.write_text(source, encoding="utf-8")
         return root
 
+    def package_tree(self, sources: dict[str, str]) -> tuple[dict[str, str], Path]:
+        """Build and write a package fixture from the sources specific to one test."""
+        files = {"pkg/__init__.py": "", **sources}
+        return files, self.tree(files)
+
+    def mission_tree(
+        self,
+        *,
+        mission_source: str = "VALUE = 1\n",
+        test_path: str = "tests/test_mission.py",
+        test_source: str = "from pkg.mission import VALUE\n",
+        other_sources: dict[str, str] | None = None,
+    ) -> tuple[dict[str, str], Path]:
+        """Build and write the common single-module import fixture."""
+        sources = {
+            "pkg/mission.py": mission_source,
+            test_path: test_source,
+            **(other_sources or {}),
+        }
+        return self.package_tree(sources)
+
+    def planner_tree(self, *, planner_source: str, test_source: str) -> tuple[dict[str, str], Path]:
+        """Build and write the common relative-import fixture."""
+        return self.mission_tree(
+            test_path="tests/test_planner.py",
+            test_source=test_source,
+            other_sources={"pkg/planner.py": planner_source},
+        )
+
     def select(
         self, root: Path, files: dict[str, str], changed: tuple[str, ...]
     ) -> tuple[str, ...]:
@@ -89,12 +118,10 @@ class ModuleNameTests(unittest.TestCase):
 class DirectEdgeTests(SelectionTestCase):
     def test_changing_a_source_module_selects_the_test_that_imports_it(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "def plan() -> int:\n    return 1\n",
-            "tests/test_mission.py": "from pkg.mission import plan\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(
+            mission_source="def plan() -> int:\n    return 1\n",
+            test_source="from pkg.mission import plan\n",
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -104,12 +131,7 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_changing_a_test_selects_that_test(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree()
 
         # Act
         selected = self.select(root, files, ("tests/test_mission.py",))
@@ -119,12 +141,7 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_a_submodule_imported_through_its_package_creates_an_edge(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg import mission\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(test_source="from pkg import mission\n")
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -134,13 +151,10 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_a_relative_import_creates_an_edge(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "pkg/planner.py": "from .mission import VALUE\n",
-            "tests/test_planner.py": "from pkg.planner import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.planner_tree(
+            planner_source="from .mission import VALUE\n",
+            test_source="from pkg.planner import VALUE\n",
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -150,13 +164,10 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_a_bare_relative_import_of_a_sibling_creates_an_edge(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "pkg/planner.py": "from . import mission\n",
-            "tests/test_planner.py": "from pkg.planner import mission\n",
-        }
-        root = self.tree(files)
+        files, root = self.planner_tree(
+            planner_source="from . import mission\n",
+            test_source="from pkg.planner import mission\n",
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -166,13 +177,10 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_a_relative_import_climbing_past_the_top_package_creates_no_edge(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "pkg/planner.py": "from ... import mission\n",
-            "tests/test_planner.py": "from pkg.planner import mission\n",
-        }
-        root = self.tree(files)
+        files, root = self.planner_tree(
+            planner_source="from ... import mission\n",
+            test_source="from pkg.planner import mission\n",
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -182,12 +190,7 @@ class DirectEdgeTests(SelectionTestCase):
 
     def test_a_plain_import_statement_creates_an_edge(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "import pkg.mission\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(test_source="import pkg.mission\n")
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -199,14 +202,14 @@ class DirectEdgeTests(SelectionTestCase):
 class TransitiveEdgeTests(SelectionTestCase):
     def test_a_change_reaches_a_test_through_an_intermediate_module(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/low.py": "VALUE = 1\n",
-            "pkg/middle.py": "from pkg.low import VALUE\n",
-            "pkg/high.py": "from pkg.middle import VALUE\n",
-            "tests/test_high.py": "from pkg.high import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.package_tree(
+            {
+                "pkg/low.py": "VALUE = 1\n",
+                "pkg/middle.py": "from pkg.low import VALUE\n",
+                "pkg/high.py": "from pkg.middle import VALUE\n",
+                "tests/test_high.py": "from pkg.high import VALUE\n",
+            }
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/low.py",))
@@ -216,15 +219,15 @@ class TransitiveEdgeTests(SelectionTestCase):
 
     def test_every_test_reached_by_a_widely_imported_module_is_selected(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/shared.py": "VALUE = 1\n",
-            "pkg/first.py": "from pkg.shared import VALUE\n",
-            "pkg/second.py": "from pkg.shared import VALUE\n",
-            "tests/test_first.py": "from pkg.first import VALUE\n",
-            "tests/test_second.py": "from pkg.second import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.package_tree(
+            {
+                "pkg/shared.py": "VALUE = 1\n",
+                "pkg/first.py": "from pkg.shared import VALUE\n",
+                "pkg/second.py": "from pkg.shared import VALUE\n",
+                "tests/test_first.py": "from pkg.first import VALUE\n",
+                "tests/test_second.py": "from pkg.second import VALUE\n",
+            }
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/shared.py",))
@@ -234,13 +237,13 @@ class TransitiveEdgeTests(SelectionTestCase):
 
     def test_an_import_cycle_terminates_instead_of_recurring_forever(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/left.py": "from pkg.right import VALUE\nVALUE = 1\n",
-            "pkg/right.py": "from pkg.left import VALUE\nVALUE = 2\n",
-            "tests/test_left.py": "from pkg.left import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.package_tree(
+            {
+                "pkg/left.py": "from pkg.right import VALUE\nVALUE = 1\n",
+                "pkg/right.py": "from pkg.left import VALUE\nVALUE = 2\n",
+                "tests/test_left.py": "from pkg.left import VALUE\n",
+            }
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/right.py",))
@@ -252,14 +255,12 @@ class TransitiveEdgeTests(SelectionTestCase):
 class NarrowingTests(SelectionTestCase):
     def test_a_test_the_change_cannot_reach_is_not_selected(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "pkg/unrelated.py": "OTHER = 2\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-            "tests/test_unrelated.py": "from pkg.unrelated import OTHER\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(
+            other_sources={
+                "pkg/unrelated.py": "OTHER = 2\n",
+                "tests/test_unrelated.py": "from pkg.unrelated import OTHER\n",
+            }
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -269,12 +270,12 @@ class NarrowingTests(SelectionTestCase):
 
     def test_a_source_no_test_reaches_selects_nothing(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/orphan.py": "VALUE = 1\n",
-            "tests/test_other.py": "VALUE = 2\n",
-        }
-        root = self.tree(files)
+        files, root = self.package_tree(
+            {
+                "pkg/orphan.py": "VALUE = 1\n",
+                "tests/test_other.py": "VALUE = 2\n",
+            }
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/orphan.py",))
@@ -284,13 +285,10 @@ class NarrowingTests(SelectionTestCase):
 
     def test_a_third_party_import_creates_no_edge_and_does_not_fail(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "import json\nimport pydantic\nVALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-            "tests/test_other.py": "import pydantic\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(
+            mission_source="import json\nimport pydantic\nVALUE = 1\n",
+            other_sources={"tests/test_other.py": "import pydantic\n"},
+        )
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -302,12 +300,7 @@ class NarrowingTests(SelectionTestCase):
 class FailSafeTests(SelectionTestCase):
     def test_a_changed_path_that_is_not_python_widens_to_the_whole_suite(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree()
 
         # Act
         selected = self.select(root, files, (".pre-commit-config.yaml",))
@@ -317,13 +310,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_a_changed_conftest_widens_to_the_whole_suite(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "conftest.py": "",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(other_sources={"conftest.py": ""})
 
         # Act
         selected = self.select(root, files, ("conftest.py",))
@@ -333,12 +320,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_a_changed_path_absent_from_the_listing_widens_to_the_whole_suite(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree()
 
         # Act
         selected = self.select(root, files, ("pkg/deleted.py",))
@@ -348,12 +330,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_a_source_file_that_cannot_be_parsed_widens_to_the_whole_suite(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "def broken(:\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree(mission_source="def broken(:\n")
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py",))
@@ -363,11 +340,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_a_source_file_that_cannot_be_decoded_widens_to_the_whole_suite(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "tests/test_mission.py": "VALUE = 1\n",
-        }
-        root = self.tree(files)
+        files, root = self.package_tree({"tests/test_mission.py": "VALUE = 1\n"})
         (root / "pkg" / "mission.py").write_bytes(b"\xfe\xff VALUE = 1\n")
         listing = (*files, "pkg/mission.py")
 
@@ -380,12 +353,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_one_widening_path_widens_the_whole_selection(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree()
 
         # Act
         selected = self.select(root, files, ("pkg/mission.py", "justfile"))
@@ -395,12 +363,7 @@ class FailSafeTests(SelectionTestCase):
 
     def test_no_changed_path_selects_nothing(self) -> None:
         # Arrange
-        files = {
-            "pkg/__init__.py": "",
-            "pkg/mission.py": "VALUE = 1\n",
-            "tests/test_mission.py": "from pkg.mission import VALUE\n",
-        }
-        root = self.tree(files)
+        files, root = self.mission_tree()
 
         # Act
         selected = self.select(root, files, ())

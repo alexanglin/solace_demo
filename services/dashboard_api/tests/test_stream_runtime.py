@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import pytest
 from aerial_rescue_contracts import canonical
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.cursor import CursorCodec
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import CurrentRun, RunMode, SnapshotBasis, StoredEvent
 from aerial_rescue_dashboard_api.snapshot import SnapshotService
 from aerial_rescue_dashboard_api.sse import ClientBuffer

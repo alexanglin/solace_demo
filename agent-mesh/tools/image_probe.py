@@ -30,6 +30,8 @@ EXPECTED_VERSIONS: Final[dict[str, str]] = {
     "solace-agent-mesh": "1.28.7",
     "sam-event-mesh-gateway": "1.1.0",
     "sam-event-mesh-tool": "0.1.1",
+    "solace-ai-connector": "3.3.12",
+    "solace-pubsubplus": "1.11.0",
 }
 PLUGIN_GROUP: Final = "solace_agent_mesh.plugins"
 GATEWAY_ENTRY_POINT: Final = "sam_event_mesh_gateway"
@@ -37,6 +39,12 @@ GATEWAY_CLASS: Final = "EventMeshGatewayApp"
 TOOL_MODULE: Final = "sam_event_mesh_tool.tools"
 TOOL_CLASS: Final = "EventMeshTool"
 RUNTIME_SYMBOLS: Final[tuple[tuple[str, str], ...]] = (
+    ("aerial_rescue_runtime_compat.messaging", "install_hardened_messaging"),
+    ("aerial_rescue_event_mesh_gateway.app", "AerialRescueEventMeshGatewayApp"),
+    (
+        "aerial_rescue_event_mesh_gateway.component",
+        "AerialRescueEventMeshGatewayComponent",
+    ),
     ("solace_agent_mesh.agent.tools.dynamic_tool", "DynamicTool"),
     ("solace_agent_mesh.agent.sac.component", "SamAgentComponent"),
     ("solace_agent_mesh.agent.tools.tool_config_types", "AnyToolConfig"),
@@ -47,10 +55,81 @@ RUNTIME_SYMBOLS: Final[tuple[tuple[str, str], ...]] = (
 )
 """What the two plugins import from the runtime. A pin cannot prove any of it: a release that
 moved or renamed one would install cleanly and fail at load time, inside the image."""
+DIRECT_OUTPUT_METHODS: Final[tuple[tuple[str, str, str], ...]] = (
+    (
+        "solace.messaging.messaging_service",
+        "MessagingService",
+        "create_direct_message_publisher_builder",
+    ),
+    (
+        "solace.messaging.builder.direct_message_publisher_builder",
+        "DirectMessagePublisherBuilder",
+        "on_back_pressure_reject",
+    ),
+    (
+        "solace.messaging.builder.direct_message_publisher_builder",
+        "DirectMessagePublisherBuilder",
+        "build",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "set_publish_failure_listener",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "set_publisher_readiness_listener",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "start",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "is_ready",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "notify_when_ready",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "publish",
+    ),
+    (
+        "solace.messaging.publisher.direct_message_publisher",
+        "DirectMessagePublisher",
+        "terminate",
+    ),
+    (
+        "solace.messaging.publisher.persistent_message_publisher",
+        "PersistentMessagePublisher",
+        "set_message_publish_receipt_listener",
+    ),
+    ("solace.messaging.resources.topic", "Topic", "of"),
+)
+PUBLISH_RECEIPT_CLASS: Final = (
+    "solace.messaging.publisher.persistent_message_publisher",
+    "PublishReceipt",
+)
+PUBLISH_RECEIPT_PROPERTIES: Final = ("exception", "is_persisted", "user_context")
 
 
 class ProbeError(RuntimeError):
     """A check whose answer differs from what the pins promise."""
+
+
+class DirectOutputApiError(ProbeError):
+    """The runtime image lacks part of the owned gateway's pinned SDK seam."""
+
+    def __init__(self) -> None:
+        """Create the fixed, credential-safe probe diagnostic."""
+        super().__init__("direct output SDK surface is absent")
 
 
 def _interpreter() -> str:
@@ -59,7 +138,7 @@ def _interpreter() -> str:
 
 
 def _versions() -> str:
-    """Report the three pinned distributions, refusing any version other than the pin.
+    """Report the attested runtime distributions, refusing any version other than the pin.
 
     Raises:
         ProbeError: If a distribution is absent or resolves to another version.
@@ -132,17 +211,48 @@ def _runtime_symbols() -> str:
     return f"runtime symbols: {len(RUNTIME_SYMBOLS)} resolved"
 
 
+def _direct_output_api() -> str:
+    """Resolve every public SDK member used by the owned Direct output component.
+
+    Raises:
+        ProbeError: If the runtime image does not provide the attested SDK surface.
+    """
+    try:
+        methods = tuple(
+            getattr(getattr(importlib.import_module(module), class_name), method_name)
+            for module, class_name, method_name in DIRECT_OUTPUT_METHODS
+        )
+        receipt_class = getattr(
+            importlib.import_module(PUBLISH_RECEIPT_CLASS[0]),
+            PUBLISH_RECEIPT_CLASS[1],
+        )
+        receipt_properties = tuple(
+            getattr(receipt_class, property_name) for property_name in PUBLISH_RECEIPT_PROPERTIES
+        )
+    except Exception as absent:
+        raise DirectOutputApiError from absent
+    if not all(callable(method) for method in methods) or not all(
+        isinstance(value, property) for value in receipt_properties
+    ):
+        raise DirectOutputApiError
+    return (
+        f"direct output API: {len(methods)} methods and "
+        f"{len(receipt_properties)} receipt properties resolved"
+    )
+
+
 CHECKS: Final[tuple[Callable[[], str], ...]] = (
     _interpreter,
     _versions,
     _gateway_entry_point,
     _tool_module,
     _runtime_symbols,
+    _direct_output_api,
 )
 
 
 def main() -> int:
-    """Run every check, printing one line each, and report the first failure.
+    """Run every check, printing one redacted evidence line for every outcome.
 
     Returns:
         0 when every check answered as the pins promise, 1 otherwise.
@@ -153,6 +263,9 @@ def main() -> int:
             print(f"PASS {check()}")
         except ProbeError as failure:
             print(f"FAIL {check.__name__}: {failure}", file=sys.stderr)
+            failures += 1
+        except Exception:
+            print(f"FAIL {check.__name__}: unexpected probe failure", file=sys.stderr)
             failures += 1
     return 1 if failures else 0
 

@@ -31,14 +31,14 @@ from aerial_rescue_contracts.view import (
     state_document,
 )
 
-from aerial_rescue_dashboard_api.cursor import CursorCodec
-from aerial_rescue_dashboard_api.documents import (
+from aerial_rescue_dashboard_api.boundary.documents import (
     ORDERED_EVENT_SCHEMA,
     REDUCED_STATE_SCHEMA,
     SCHEMA_PREFIX,
     validated_document,
 )
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.cursor import CursorCodec
 from aerial_rescue_dashboard_api.ports import CurrentRun, SnapshotBasis, StoredEvent, StorePort
 
 DASHBOARD_EVENT_SCHEMA: Final = f"{SCHEMA_PREFIX}dashboard-event.schema.json"
@@ -110,7 +110,7 @@ class SnapshotService:
         """Reconstruct no more than 512 events from exact prepared bytes through a watermark."""
         if through_ordinal < 0 or through_ordinal > basis.audit_watermark:
             raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE)
-        checkpoint = _checkpoint_from_bytes(basis.prepared_initial_state)
+        checkpoint = checkpoint_from_prepared_state(basis.prepared_initial_state)
         timeline: list[Mapping[str, object]] = []
         read_count = 0
         while checkpoint.state.latest_audit_ordinal < through_ordinal:
@@ -226,7 +226,7 @@ def _fold_snapshot_page(
     return checkpoint, read_count
 
 
-def _checkpoint_from_bytes(raw: bytes) -> ReducerCheckpoint:
+def checkpoint_from_prepared_state(raw: bytes) -> ReducerCheckpoint:
     """Validate and adapt exact prepared reduced-state bytes into one checkpoint."""
     document = validated_document(
         REDUCED_STATE_SCHEMA,

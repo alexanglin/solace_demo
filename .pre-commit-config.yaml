@@ -326,8 +326,8 @@ repos:
       # these are the fast staged-file passes.
       - id: mypy-root
         name: mypy (root, py3.14)
-        entry: uv run --frozen mypy
-        language: system
+        entry: scripts/hooks/python/mypy-root.sh
+        language: script
         types_or: [python, pyi]
         exclude: ^agent-mesh/
         require_serial: true

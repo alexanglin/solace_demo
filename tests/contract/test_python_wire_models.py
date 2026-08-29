@@ -22,6 +22,7 @@ DASHBOARD_SERVER_SCHEMA_IDS = frozenset(
         f"{SCHEMA_PREFIX}dashboard/{name}.schema.json"
         for name in (
             "bootstrap",
+            "command-response",
             "dashboard-event-frame",
             "dashboard-event",
             "dashboard-reduced-state",
@@ -29,6 +30,9 @@ DASHBOARD_SERVER_SCHEMA_IDS = frozenset(
             "error",
             "health",
             "ordered-dashboard-event",
+            "operator-command-request",
+            "proposal-decision-request",
+            "proposal-decision-response",
             "readiness",
             "replay-bundle",
             "replay-integrity",
@@ -121,9 +125,9 @@ def _fixture_path(schema_id: str, fixture_name: str) -> Path:
 class PythonWireModelInventoryTests(unittest.TestCase):
     def test_each_service_owns_exactly_its_server_client_file_and_browser_shapes(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         scenario = _wire_module("aerial_rescue_scenario_service.wire")
-        fleet = _wire_module("aerial_rescue_fleet_simulator.control_wire")
+        fleet = _wire_module("aerial_rescue_fleet_simulator.control_plane.wire")
         expected: tuple[
             tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]], ...
         ] = (
@@ -156,16 +160,16 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, actual)
         self.assertEqual(
-            18,
+            22,
             len(DASHBOARD_SERVER_SCHEMA_IDS | DASHBOARD_BROWSER_ONLY_SCHEMA_IDS),
         )
 
     def test_every_owned_baseline_round_trips_through_its_strict_model(self) -> None:
         # Arrange
         modules = (
-            _wire_module("aerial_rescue_dashboard_api.wire"),
+            _wire_module("aerial_rescue_dashboard_api.boundary.wire"),
             _wire_module("aerial_rescue_scenario_service.wire"),
-            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
         )
         cases = tuple(
             (module, schema_id, _fixture_path(schema_id, "baseline").read_bytes())
@@ -193,9 +197,9 @@ class PythonWireModelInventoryTests(unittest.TestCase):
     def test_every_owned_unknown_member_fixture_is_refused(self) -> None:
         # Arrange
         modules = (
-            _wire_module("aerial_rescue_dashboard_api.wire"),
+            _wire_module("aerial_rescue_dashboard_api.boundary.wire"),
             _wire_module("aerial_rescue_scenario_service.wire"),
-            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
         )
         cases = tuple(
             (module, schema_id, _fixture_path(schema_id, "unknown-member").read_bytes())
@@ -218,7 +222,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_canonical_duplicate_keys_and_floats_are_refused_before_model_validation(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         schema_id = f"{SCHEMA_PREFIX}dashboard/health.schema.json"
         duplicate = b'{"healthVersion":"dashboard-health/v1","status":"alive","status":"alive"}'
         floating = b'{"healthVersion":"dashboard-health/v1","status":"alive","unexpected":1.5}'
@@ -235,7 +239,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_strict_models_refuse_boolean_integer_coercion(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         schema_id = f"{SCHEMA_PREFIX}dashboard/readiness.schema.json"
         value = cast(
             "dict[str, object]",
@@ -251,11 +255,92 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Assert
         self.assertNotIsInstance(captured.value, canonical.CanonicalizationError)
 
+    def test_dashboard_event_model_accepts_the_closed_gateway_response_projection(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
+        schema_id = f"{SCHEMA_PREFIX}dashboard/dashboard-event.schema.json"
+        document = {
+            "kind": "gatewayResponse",
+            "eventClass": "AUDIT",
+            "mission": "mission-01",
+            "time": "2026-08-25T12:00:00.000Z",
+            "data": {
+                "rpcVersion": 1,
+                "requestId": "request-01",
+                "operation": "command-authority",
+                "commandType": "escalate-rescue",
+                "outcome": "answered",
+                "actuated": False,
+                "authority": "operator-approval",
+            },
+        }
+
+        # Act
+        parsed = dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(document))
+
+        # Assert
+        self.assertEqual(document, parsed.model_dump(mode="python", by_alias=True))
+
+    def test_dashboard_event_model_accepts_every_new_recorded_projection(self) -> None:
+        # Arrange
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
+        schema_id = f"{SCHEMA_PREFIX}dashboard/dashboard-event.schema.json"
+        base = {
+            "mission": "mission-01",
+            "time": "2026-08-25T12:00:00.000Z",
+        }
+        documents = (
+            {
+                **base,
+                "kind": "salientObservation",
+                "eventClass": "EVIDENCE",
+                "data": {
+                    "droneId": "drone-01",
+                    "observation": "thermal-anomaly",
+                    "latitudeMicrodegrees": 44_475_000,
+                    "longitudeMicrodegrees": -79_245_000,
+                    "detail": "bounded synthetic observation",
+                },
+            },
+            {
+                **base,
+                "kind": "droneCommand",
+                "eventClass": "COMMAND",
+                "data": {
+                    "droneId": "drone-01",
+                    "commandId": "command-01",
+                    "sectorId": "sector-01",
+                },
+            },
+            {
+                **base,
+                "kind": "commandResult",
+                "eventClass": "COMMAND",
+                "data": {
+                    "droneId": "drone-01",
+                    "commandId": "command-01",
+                    "outcome": "succeeded",
+                },
+            },
+        )
+
+        # Act
+        parsed = tuple(
+            dashboard.parse_wire_document(schema_id, canonical.canonical_bytes(document))
+            for document in documents
+        )
+
+        # Assert
+        self.assertEqual(
+            documents,
+            tuple(model.model_dump(mode="python", by_alias=True) for model in parsed),
+        )
+
     def test_integer_constants_refuse_boolean_equivalence_at_each_service_boundary(self) -> None:
         # Arrange
         cases = (
             (
-                _wire_module("aerial_rescue_dashboard_api.wire"),
+                _wire_module("aerial_rescue_dashboard_api.boundary.wire"),
                 f"{SCHEMA_PREFIX}dashboard/start-request.schema.json",
                 "scenarioRevision",
             ),
@@ -270,7 +355,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
                 "controlVersion",
             ),
             (
-                _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+                _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
                 f"{SCHEMA_PREFIX}rpc/fleet-control-start-request.schema.json",
                 "controlVersion",
             ),
@@ -305,7 +390,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_dashboard_models_do_not_invent_an_unowned_document_byte_limit(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         schema_id = f"{SCHEMA_PREFIX}dashboard/scenario-catalog.schema.json"
         value = cast(
             "dict[str, object]",
@@ -329,9 +414,9 @@ class PythonWireModelInventoryTests(unittest.TestCase):
     def test_each_service_refuses_a_schema_it_does_not_own(self) -> None:
         # Arrange
         modules = (
-            _wire_module("aerial_rescue_dashboard_api.wire"),
+            _wire_module("aerial_rescue_dashboard_api.boundary.wire"),
             _wire_module("aerial_rescue_scenario_service.wire"),
-            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
         )
         schema_id = f"{SCHEMA_PREFIX}dashboard/not-owned.schema.json"
         raw = b"{}"
@@ -350,7 +435,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         # Arrange
         modules = (
             _wire_module("aerial_rescue_scenario_service.wire"),
-            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
         )
         schema_ids = (
             f"{SCHEMA_PREFIX}scenario/catalog.schema.json",
@@ -370,7 +455,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_calendar_invalid_dashboard_instants_are_refused_semantically(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         schema_id = f"{SCHEMA_PREFIX}dashboard/dashboard-event.schema.json"
         value = cast(
             "dict[str, object]",
@@ -391,7 +476,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_dashboard_anchor_models_require_the_ordered_event_witness(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         schema_ids = tuple(
             f"{SCHEMA_PREFIX}dashboard/{name}.schema.json"
             for name in ("dashboard-snapshot", "replay-bundle")
@@ -421,7 +506,7 @@ class PythonWireModelInventoryTests(unittest.TestCase):
 
     def test_dashboard_anchor_models_refuse_an_ordinal_witness_mismatch(self) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         baselines = tuple(
             (
                 schema_id,
@@ -472,9 +557,9 @@ class PythonWireModelInventoryTests(unittest.TestCase):
         self,
     ) -> None:
         # Arrange
-        dashboard = _wire_module("aerial_rescue_dashboard_api.wire")
+        dashboard = _wire_module("aerial_rescue_dashboard_api.boundary.wire")
         scenario = _wire_module("aerial_rescue_scenario_service.wire")
-        fleet = _wire_module("aerial_rescue_fleet_simulator.control_wire")
+        fleet = _wire_module("aerial_rescue_fleet_simulator.control_plane.wire")
         pairs = tuple(
             (
                 dashboard.CLIENT_MODEL_BY_SCHEMA_ID[schema_id],
@@ -505,9 +590,9 @@ class PythonWireModelInventoryTests(unittest.TestCase):
             f"https://aerial-rescue.invalid/{cast('str', entry['schema'])}" for entry in entries
         }
         modules = (
-            _wire_module("aerial_rescue_dashboard_api.wire"),
+            _wire_module("aerial_rescue_dashboard_api.boundary.wire"),
             _wire_module("aerial_rescue_scenario_service.wire"),
-            _wire_module("aerial_rescue_fleet_simulator.control_wire"),
+            _wire_module("aerial_rescue_fleet_simulator.control_plane.wire"),
         )
 
         # Act

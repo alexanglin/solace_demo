@@ -4,7 +4,7 @@
 ``asteval==1.0.6`` pin that ``solace-agent-mesh`` 1.28.7 declares, to 1.0.9, because 1.0.6
 carries a sandbox escape and Agent Mesh evaluates math embeds taken from model output with that
 sandbox. These probes prove that the override is in force, that it still has a reason (the
-vendor's pin is unchanged), that the manifest overrides this one package and nothing else, and
+vendor's pin is unchanged), that the manifest carries only the reviewed leaf overrides, and
 that Agent Mesh's own math-embed evaluator produces on the overridden wheel the result the pinned
 runtime produced before. They run in the black-box compatibility stage; the day upstream raises
 its own pin, the vendor-pin probe fails, which is the instruction to delete the override.
@@ -24,6 +24,7 @@ import pytest
 pytestmark = [pytest.mark.phase0, pytest.mark.compatibility]
 
 OVERRIDDEN_ASTEVAL: Final = "1.0.9"
+OVERRIDDEN_SOLACE_SDK: Final = "1.11.0"
 VENDOR_ASTEVAL_PIN: Final = "asteval==1.0.6"
 MANIFEST: Final = Path(__file__).resolve().parents[1] / "pyproject.toml"
 EVALUATORS: Final = "solace_agent_mesh.common.utils.embeds.evaluators"
@@ -76,9 +77,12 @@ class OverriddenAstevalTests(unittest.TestCase):
         # Assert
         self.assertIn(expected, declared)
 
-    def test_the_manifest_overrides_exactly_asteval(self) -> None:
+    def test_the_manifest_overrides_only_the_two_reviewed_leaf_dependencies(self) -> None:
         # Arrange
-        expected = [f"asteval=={OVERRIDDEN_ASTEVAL}"]
+        expected = [
+            f"asteval=={OVERRIDDEN_ASTEVAL}",
+            f"solace-pubsubplus=={OVERRIDDEN_SOLACE_SDK}",
+        ]
         manifest = tomllib.loads(MANIFEST.read_text(encoding="utf-8"))
 
         # Act

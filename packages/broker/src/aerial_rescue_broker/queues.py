@@ -41,6 +41,7 @@ from aerial_rescue_broker.subscriptions import (
     LEVEL_SEPARATOR,
     connectivity_subscription,
     drone_command_subscription,
+    salient_subscription,
     subscription_for,
 )
 
@@ -48,7 +49,10 @@ QUEUE_NAME_ROOT: Final = "aerial-rescue/v1"
 """The prefix every owned queue name carries, so Broker Manager sorts them together."""
 
 DEAD_MESSAGE_QUEUE: Final = "#DEAD_MSG_QUEUE"
-"""The dead-message target, which is also the broker's own default for every queue."""
+"""The broker's shared factory DMQ, which this project deliberately does not own."""
+
+DMQ_SUFFIX: Final = "_dmq"
+"""Suffix appended to a primary queue to create its isolated dead-message queue."""
 
 RECORDER_LIFECYCLE_QUEUE: Final = "aerial-rescue/v1/recorder/dashboard.lifecycle"
 """One exclusive queue preserving broker arrival order across all lifecycle producers."""
@@ -61,6 +65,18 @@ MAX_REDELIVERY_COUNT: Final = 3
 MAX_TTL_SECONDS: Final = 300
 MAX_BIND_COUNT: Final = 1
 """The four written bounds; see ``docs/operating-parameters.md`` for each derivation."""
+
+APPLICATION_MAX_MESSAGE_BYTES: Final = 262_144
+"""Largest complete application wire document admitted to an owned durable queue."""
+
+APPLICATION_MAX_DELIVERED_UNACKED: Final = 1
+"""One durable application message at a time reaches a commit-before-settlement consumer."""
+
+UPSTREAM_MAX_MESSAGE_BYTES: Final = 10_000_000
+"""Pinned upstream temporary-queue limit until its integration contract is narrowed."""
+
+UPSTREAM_MAX_DELIVERED_UNACKED: Final = 10_000
+"""Pinned upstream flow default retained until plugin concurrency is measured."""
 
 QUEUE_ACCESS_TYPE: Final = "exclusive"
 """One consumer flow at a time, so a producer's sequence order survives the endpoint."""
@@ -89,7 +105,6 @@ _ENDPOINTS: Final[Mapping[Principal, Endpoint]] = {
     Principal.FLEET_SIMULATOR: Endpoint.PER_DRONE,
     Principal.COMMAND_GATEWAY: Endpoint.FAMILY,
     Principal.DASHBOARD_API: Endpoint.FAMILY,
-    Principal.SCENARIO_SERVICE: Endpoint.NONE,
     Principal.EVIDENCE_SERVICE: Endpoint.FAMILY,
     Principal.RECORDER: Endpoint.COMBINED_LIFECYCLE,
     Principal.EVENT_MESH_GATEWAY: Endpoint.UPSTREAM,
@@ -113,13 +128,6 @@ class QueueRefusal(Enum):
     NOT_A_FAMILY_CONSUMER = "role's endpoints are not one queue per family"
 
 
-class QueueProjection(Enum):
-    """Which active consumers receive endpoints in one provisioning run."""
-
-    GLOBAL = "global"
-    MISSION_CONTROL = "mission-control"
-
-
 class QueueError(ValueError):
     """A queue this module refuses to name, carrying the refusal as structured data."""
 
@@ -140,6 +148,53 @@ class QueueSpec:
     name: str
     owner: str
     subscriptions: frozenset[str]
+    dead_message_queue: str | None
+    max_message_bytes: int
+    max_delivered_unacked: int
+
+
+@dataclass(frozen=True)
+class QueueTemplateSpec:
+    """One bounded template used only by a pinned upstream component's temporary queue."""
+
+    role: Principal
+    name: str
+    dead_message_queue: str
+    durability: str
+    name_filter: str
+    max_message_bytes: int
+    max_delivered_unacked: int
+
+
+_QUEUE_TEMPLATES: Final = (
+    QueueTemplateSpec(
+        Principal.AGENT_MESH_AGENT,
+        "aerial-rescue-agent-mesh-temp",
+        "aerial-rescue-agent-mesh-temp_dmq",
+        "non-durable",
+        "",
+        UPSTREAM_MAX_MESSAGE_BYTES,
+        UPSTREAM_MAX_DELIVERED_UNACKED,
+    ),
+    QueueTemplateSpec(
+        Principal.EVENT_MESH_GATEWAY,
+        "aerial-rescue-event-mesh-gateway-temp",
+        "aerial-rescue-event-mesh-gateway-temp_dmq",
+        "non-durable",
+        "",
+        UPSTREAM_MAX_MESSAGE_BYTES,
+        UPSTREAM_MAX_DELIVERED_UNACKED,
+    ),
+    QueueTemplateSpec(
+        Principal.EVENT_MESH_TOOL,
+        "aerial-rescue-event-mesh-tool-temp",
+        "aerial-rescue-event-mesh-tool-temp_dmq",
+        "non-durable",
+        "",
+        UPSTREAM_MAX_MESSAGE_BYTES,
+        UPSTREAM_MAX_DELIVERED_UNACKED,
+    ),
+)
 
 
 def endpoint_for(role: Principal) -> Endpoint:
@@ -159,6 +214,40 @@ def guaranteed_grants(role: Principal) -> frozenset[Family]:
     """
     subscribed = grants(role, Access.SUBSCRIBE)
     return frozenset(family for family in subscribed if delivery_for(family) is Delivery.GUARANTEED)
+
+
+def dead_message_queue_name(queue: str) -> str:
+    """Return the isolated DMQ name paired with ``queue``."""
+    return queue + DMQ_SUFFIX
+
+
+def queue_templates() -> tuple[QueueTemplateSpec, ...]:
+    """Return the three templates bound to pinned upstream temporary-queue creators."""
+    return _QUEUE_TEMPLATES
+
+
+def _application_queue(name: str, owner: str, subscriptions: frozenset[str]) -> QueueSpec:
+    """Return one primary application queue with its isolated DMQ binding."""
+    return QueueSpec(
+        name,
+        owner,
+        subscriptions,
+        dead_message_queue_name(name),
+        APPLICATION_MAX_MESSAGE_BYTES,
+        APPLICATION_MAX_DELIVERED_UNACKED,
+    )
+
+
+def _dead_message_queue(name: str, max_message_bytes: int, max_delivered_unacked: int) -> QueueSpec:
+    """Return one unowned and unsubscribed DMQ that cannot forward to another DMQ."""
+    return QueueSpec(
+        name,
+        UNOWNED,
+        frozenset(),
+        None,
+        max_message_bytes,
+        max_delivered_unacked,
+    )
 
 
 def family_queue_name(role: Principal, family: Family) -> str:
@@ -216,7 +305,7 @@ def _family_queues(role: Principal) -> tuple[QueueSpec, ...]:
     """Return one queue per guaranteed family ``role`` may subscribe to, in family order."""
     owed = guaranteed_grants(role)
     return tuple(
-        QueueSpec(
+        _application_queue(
             family_queue_name(role, family), role.value, frozenset({subscription_for(family)})
         )
         for family in Family
@@ -227,7 +316,7 @@ def _family_queues(role: Principal) -> tuple[QueueSpec, ...]:
 def _drone_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     """Return one command queue per drone, in the order the scenario declared them."""
     return tuple(
-        QueueSpec(
+        _application_queue(
             drone_queue_name(drone),
             Principal.FLEET_SIMULATOR.value,
             frozenset({drone_command_subscription(drone)}),
@@ -238,16 +327,47 @@ def _drone_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
 
 def _recorder_lifecycle_queue() -> QueueSpec:
     """Return the recorder's one queue over all guaranteed dashboard lifecycle sources."""
-    families = guaranteed_grants(Principal.RECORDER)
+    families = (Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT)
     subscriptions = {
         connectivity_subscription() if family is Family.DRONE_EVENT else subscription_for(family)
         for family in families
     }
-    return QueueSpec(
+    return _application_queue(
         RECORDER_LIFECYCLE_QUEUE,
         Principal.RECORDER.value,
         frozenset(subscriptions),
     )
+
+
+def _recorder_queues() -> tuple[QueueSpec, ...]:
+    """Return the combined lifecycle queue and every other Guaranteed recorder queue.
+
+    The drone-event family is split into two exact subscriptions: connectivity enters the
+    combined lifecycle queue and salient events enter the ordinary drone-event queue. This
+    retains the feature recorder's complete applicable-family grant without delivering one
+    connectivity event twice.
+    """
+    lifecycle = frozenset({Family.DRONE_EVENT, Family.MISSION_EVENT, Family.SECTOR_EVENT})
+    remaining = guaranteed_grants(Principal.RECORDER) - lifecycle
+    family_queues = tuple(
+        _application_queue(
+            LEVEL_SEPARATOR.join(
+                (QUEUE_NAME_ROOT, Principal.RECORDER.value, family.literal_suffix)
+            ),
+            Principal.RECORDER.value,
+            frozenset({subscription_for(family)}),
+        )
+        for family in Family
+        if family in remaining
+    )
+    salient = _application_queue(
+        LEVEL_SEPARATOR.join(
+            (QUEUE_NAME_ROOT, Principal.RECORDER.value, Family.DRONE_EVENT.literal_suffix)
+        ),
+        Principal.RECORDER.value,
+        frozenset({salient_subscription()}),
+    )
+    return (_recorder_lifecycle_queue(), salient, *family_queues)
 
 
 def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
@@ -268,29 +388,45 @@ def queues_for(role: Principal, drones: Sequence[str]) -> tuple[QueueSpec, ...]:
     if endpoint is Endpoint.FAMILY:
         return _family_queues(role)
     if endpoint is Endpoint.COMBINED_LIFECYCLE:
-        return (_recorder_lifecycle_queue(),)
+        return _recorder_queues()
     if endpoint is Endpoint.PER_DRONE:
         return _drone_queues(drones)
     return ()
 
 
-def desired_queues(
-    drones: Sequence[str],
-    projection: QueueProjection = QueueProjection.GLOBAL,
-) -> tuple[QueueSpec, ...]:
-    """Return every owned queue, the dead-message queue first.
+def primary_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
+    """Return every durable application queue before adding its paired DMQ."""
+    return tuple(queue for role in Principal for queue in queues_for(role, drones))
+
+
+def desired_queues(drones: Sequence[str]) -> tuple[QueueSpec, ...]:
+    """Return the upstream DMQs and each application DMQ/primary pair.
 
     Args:
         drones: The drone identifiers the scenario declares.
-        projection: The explicit global or mission-control endpoint inventory.
 
     Returns:
-        The dead-message queue, then each role's queues in role declaration order. It comes
-        first because every other queue names it as its discard target, so it has to exist
-        before one of them can be written.
+        Each DMQ appears before the primary that names it. The three upstream template DMQs
+        appear first so queue templates can be written before their client profiles.
     """
-    dead = QueueSpec(DEAD_MESSAGE_QUEUE, UNOWNED, frozenset())
-    if projection is QueueProjection.MISSION_CONTROL:
-        return (dead, _recorder_lifecycle_queue())
-    owned = tuple(queue for role in Principal for queue in queues_for(role, drones))
-    return (dead, *owned)
+    template_dmqs = tuple(
+        _dead_message_queue(
+            template.dead_message_queue,
+            template.max_message_bytes,
+            template.max_delivered_unacked,
+        )
+        for template in queue_templates()
+    )
+    application = tuple(
+        endpoint
+        for primary in primary_queues(drones)
+        for endpoint in (
+            _dead_message_queue(
+                dead_message_queue_name(primary.name),
+                primary.max_message_bytes,
+                primary.max_delivered_unacked,
+            ),
+            primary,
+        )
+    )
+    return (*template_dmqs, *application)

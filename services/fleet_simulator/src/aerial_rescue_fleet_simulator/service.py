@@ -6,10 +6,10 @@ as a :class:`Runtime`. There is no environment read and no filesystem read anywh
 member: ``docs/adr/0077`` puts the scenario at the composition boundary, and the endpoint
 and the credential are there for the same reason.
 
-The production module entry point receives each validated scenario through the scenario
-service's authenticated private-control hop. The loop itself stays independent of HTTP,
-environment, and filesystem access because the process composition root supplies the
-resulting frozen value as part of :class:`Runtime`.
+This injected runner remains the deterministic single-scenario seam used by unit and live
+probes. The long-running entry point lives in ``aerial_rescue_fleet_simulator.console``;
+its private authenticated control plane supplies scenarios and its runtime/store adapters
+own durable receipts and critical outbox recovery.
 
 Telemetry is published direct, because ``docs/CONTRACTS.md`` puts routine telemetry on
 direct delivery, and a refused publication is counted rather than fatal: telemetry is
@@ -24,19 +24,16 @@ that has stopped ticking stops intaking. It polls rather than waiting: a blockin
 window would make command traffic the pacer of a loop that has none, so the tick rate would
 run fast under load and slow when idle.
 
-Settlement has one rule. A condition that could differ on the next delivery is ``FAILED``,
-which returns the message for the redelivery the queue bounds; a condition that cannot is
-``REJECTED``, which reaches the dead-message queue at once rather than after four arrivals.
+This legacy seam's settlement has one rule. A condition that could differ on the next
+delivery is ``FAILED``, which returns the message for the redelivery the queue bounds; a
+condition that cannot is ``REJECTED``, which reaches the dead-message queue at once rather
+than after four arrivals.
 Nothing is settled on receipt, and nothing is settled before its results are on the wire and
 acknowledged by the broker.
 
-**What this does not claim.** The command receipts and result-source counters are
-process-local. A restart between publishing a result and settling its command yields a
-redelivery this process no longer recognises, so it re-answers. Live routine telemetry
-instead uses ADR-0140's mission-scoped producer epoch, so a successor mission does not
-collide with retained recorder high-water. The command claim is at-least-once with
-duplicates possible across a restart -- never exactly-once, zero loss, backlog recovery,
-or reconnect reconciliation.
+**Scope.** This seam retains its process-local inbox for compatibility. Production composes
+the durable command processor instead: effect, receipt, exact result, and outbox rows commit
+before settlement, and reconnect recovery publishes only exact committed bytes.
 """
 
 from __future__ import annotations
@@ -57,6 +54,7 @@ from aerial_rescue_broker.messaging import (
     MessagePublisher,
     MessagingError,
     Outcome,
+    inbound_payload,
 )
 from aerial_rescue_broker.queues import drone_queue_name
 from aerial_rescue_contracts.canonical import canonical_bytes
@@ -75,7 +73,12 @@ from aerial_rescue_domain.principals import Principal
 
 from aerial_rescue_fleet_simulator import FleetSimulatorError, run_event_source
 from aerial_rescue_fleet_simulator.fleet import FleetState, Reading, advance_tick, initial_fleet
-from aerial_rescue_fleet_simulator.intake import IncomingCommand, IntakeError, accept
+from aerial_rescue_fleet_simulator.intake import (
+    AssignSectorCommand,
+    IncomingCommand,
+    IntakeError,
+    accept,
+)
 from aerial_rescue_fleet_simulator.lifecycle import FleetLifecyclePort
 from aerial_rescue_fleet_simulator.protocol import ProtocolError, apply, received
 from aerial_rescue_fleet_simulator.results import ResultError, ResultStamp, result_record
@@ -246,6 +249,14 @@ class CountingStamps:
     sequences: dict[str, int] = field(default_factory=dict)
     sequence_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
+    def begin_run(self, correlation_id: str) -> None:
+        """Bind subsequent telemetry to a newly accepted private-control run."""
+        self.correlation_id = correlation_id
+
+    def processed_at(self) -> str:
+        """Return the canonical instant used by a committed command receipt."""
+        return format_instant(self.clock())
+
     def next_stamp(self, producer: str) -> TelemetryStamp:
         """Return the next stamp for one producer and advance only that producer's stream."""
         sequence = self._next_sequence(producer)
@@ -363,11 +374,12 @@ def _publish(
 def _resolution(scenario: FleetScenario, command: IncomingCommand) -> CommandEvent:
     """Return whether this drone can carry the command out.
 
-    A sector this run holds succeeds; anything else fails. The simulator changes no sector
-    state either way: reassigning a sector mid-run is a mission-coordination decision no
-    record has made, and this member does not get to invent one.
+    A sector this run holds succeeds; anything else fails. A fully bound rescue escalation
+    succeeds as the simulator's reportable rescue effect because the gateway has already
+    consumed the exact approval before publishing it. The simulator changes no sector state:
+    reassigning a sector mid-run is a mission-coordination decision this member cannot invent.
     """
-    if command.sector_id in sectors(scenario):
+    if not isinstance(command, AssignSectorCommand) or command.sector_id in sectors(scenario):
         return CommandEvent.SUCCEED
     return CommandEvent.FAIL
 
@@ -441,7 +453,7 @@ def _handle(
     """
     try:
         command = accept(
-            message.get_payload_as_bytes(),
+            inbound_payload(message),
             message.get_destination_name() or "",
             drone_id,
             runtime.scenario.mission_id,

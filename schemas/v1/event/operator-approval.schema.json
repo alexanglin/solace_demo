@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/operator-approval.schema.json",
+  "description": "An operator approval or rejection with its decision, producer, type, and payload schema bound together.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/approve"
+    },
+    {
+      "$ref": "#/$defs/reject"
+    }
+  ],
+  "$defs": {
+    "approve": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:dashboard-api:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.operator.approval.approve"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json#/$defs/approve"
+            }
+          }
+        }
+      ]
+    },
+    "reject": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:dashboard-api:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.operator.approval.reject"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/operator-approval.schema.json#/$defs/reject"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

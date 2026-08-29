@@ -513,6 +513,19 @@ class DigestTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, computed)
 
+    def test_the_proposal_digest_omits_the_proposal_s_own_self_integrity_member(self) -> None:
+        # Arrange
+        carried = Proposal("m-1", "p-1", {**PARAMETERS, "proposalDigest": "f" * 64})
+
+        # Act
+        computed = proposal_digest(carried)
+
+        # Assert
+        self.assertEqual(
+            (proposal_digest(PROPOSAL), digest.proposal_digest(carried.parameters)),
+            (computed, computed),
+        )
+
 
 class ApprovalErrorTests(unittest.TestCase):
     def test_the_message_names_the_refusal_and_the_value(self) -> None:

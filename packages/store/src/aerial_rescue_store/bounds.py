@@ -137,3 +137,18 @@ class EngineBounds:
                 BoundsRefusal.TRANSACTION_BELOW_ITS_PARTS,
                 self.idle_in_transaction_timeout_milliseconds,
             )
+
+
+def production_bounds() -> EngineBounds:
+    """Return the complete bounded engine policy used by live application services."""
+    return EngineBounds(
+        pool_size=POOL_SIZE,
+        pool_overflow=POOL_OVERFLOW,
+        checkout_timeout_seconds=CHECKOUT_TIMEOUT_SECONDS,
+        connect_timeout_seconds=CONNECT_TIMEOUT_SECONDS,
+        connect_retries=CONNECT_RETRIES,
+        statement_timeout_milliseconds=STATEMENT_TIMEOUT_MILLISECONDS,
+        lock_timeout_milliseconds=LOCK_TIMEOUT_MILLISECONDS,
+        idle_in_transaction_timeout_milliseconds=IDLE_IN_TRANSACTION_TIMEOUT_MILLISECONDS,
+        shutdown_grace_seconds=SHUTDOWN_GRACE_SECONDS,
+    )

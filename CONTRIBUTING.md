@@ -14,7 +14,7 @@ pre-commit install --install-hooks
 
 That installs hooks for six git stages: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, `post-merge`, and `pre-merge-commit`. A bare `pre-commit install` would only wire up `pre-commit` and your commit-message and push checks would silently never run.
 
-Prerequisites: `pre-commit` 4.5, `uv` 0.12.5, Python 3.14.7, Graphviz
+Prerequisites: `pre-commit` 4.6.2, `uv` 0.12.5, Python 3.14.7, Graphviz
 (`brew install graphviz`), `shellcheck`, and `trivy` 0.74.0 (`brew install trivy`), which the pre-push
 misconfiguration audit of `deploy/` fails closed without. Running the stack in `deploy/` additionally
 needs Docker Desktop with Compose v2 and `openssl`; no hook needs Docker. Agent Mesh work additionally requires Python 3.13.15. When
@@ -249,9 +249,10 @@ just mission-control-logs                         # logs for the 7 dashboard ext
 just mission-control-down                         # stop only 5 long-running dashboard services
 ```
 
-The recipe applies migration `0005` to the shared PostgreSQL database and the bounded mission-control
-projection to the shared broker. That projection reconciles the fleet, scenario, and recorder authority
-needed by the dashboard; verification treats the required queues and grants as a subset because the
+The recipe applies the current linear migration head to the shared PostgreSQL database and the bounded
+mission-control projection to the shared broker. That projection reconciles fleet, recorder, dashboard,
+command-gateway, and evidence authority; scenario control remains private HTTP and has no broker
+principal. Verification treats the required queues and grants as a subset because the
 shared broker may also carry endpoints for the rest of the runtime. Additional Compose `up` flags affect
 only the seven extension targets: `--no-deps` prevents them from creating, starting, or updating broker
 or PostgreSQL, and the post-start identity check detects replacement. The browser entry point remains
@@ -345,8 +346,8 @@ just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone dr
 `just up` starts the default profile, which now includes the Agent Mesh
 ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
 order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.
-Add another profile with `COMPOSE_PROFILES=services just up`; command and evidence remain import probes,
-while the production mission services are selected through the guarded shared-project extension above. Editing a file
+Add another profile with `COMPOSE_PROFILES=services just up`; the guarded shared-project extension
+selects the production mission services, including command and evidence processing. Editing a file
 under `agent-mesh/configs/` does **not** restart the mesh: the
 directory is a bind mount, so `up --wait` reports the running container healthy and keeps serving the
 old configuration. Run `just up --force-recreate` after a configuration change. Broker Manager is `https://localhost:1943`, and the browser warns until `deploy/certs/ca.pem`
@@ -443,14 +444,11 @@ Dockerfiles, and the compose file through `.github/dependabot.yml`.
   `MODEL_LOCK_REQUIRED` until the lock representation is decided
   ([ADR-0035](docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md)). Live PubSub+ and Ollama
   messaging is the next Phase 0 evidence; a green offline result does not attest it.
-- The Tier 2 members contain no co-located mutation tests, and the scaffolds contain no
-  mutation-eligible behavior at all. This does not turn the pre-push tier red: a member with nothing to
-  measure is reported as `SCAFFOLD` rather than failed
-  ([ADR-0053](docs/adr/0053-report-scaffolded-workspace-members-instead-of-failing-them.md)), and both
-  the coverage and mutation gates pass on `main` today. All three Tier 1 members --
-  `packages/contracts`, `packages/domain`, and `services/command_gateway` -- are fully scored. What
-  remains is the AAA checker's three modules, carried as a row in
-  [`TECH_DEBT.md`](TECH_DEBT.md) with its clearing condition.
+- Tier 2 members have no mutation obligation, while all three Tier 1 members -- `packages/contracts`,
+  `packages/domain`, and `services/command_gateway` -- are fully scored. The scaffold classification
+  remains fail-closed behavior for a future docstring-only member, but every currently declared
+  workspace member is active. The AAA checker's three modules remain a row in
+  [`TECH_DEBT.md`](TECH_DEBT.md) with their clearing condition.
 - The `services` and `event-portal` profiles are defined and held to the policy gate but have never
   been started, so the Event Management Agent's secret mount is still design rather than measurement.
   The Agent Mesh management-server probe is measurement: it decides whether the default stack is up. The broker image's `curl` and the `openssl` flags

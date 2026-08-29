@@ -4,13 +4,17 @@
  */
 
 import type { DashboardBootstrap } from "./bootstrap";
+import type { DashboardCommandResponse } from "./command-response";
 import type { DashboardEventFrame } from "./dashboard-event-frame";
 import type { DashboardEvent } from "./dashboard-event";
 import type { DashboardReducedState } from "./dashboard-reduced-state";
 import type { DashboardSnapshot } from "./dashboard-snapshot";
 import type { DashboardError } from "./error";
 import type { DashboardHealth } from "./health";
+import type { DashboardOperatorCommandRequest } from "./operator-command-request";
 import type { OrderedDashboardEvent } from "./ordered-dashboard-event";
+import type { DashboardProposalDecisionRequest } from "./proposal-decision-request";
+import type { DashboardProposalDecisionResponse } from "./proposal-decision-response";
 import type { DashboardReadiness } from "./readiness";
 import type { DashboardReplayBundle } from "./replay-bundle";
 import type { DashboardReplayIntegrity } from "./replay-integrity";
@@ -23,13 +27,17 @@ import type { DashboardStartResponse } from "./start-response";
 import type { DashboardStreamOverloaded } from "./stream-overloaded";
 
 export type { DashboardBootstrap } from "./bootstrap";
+export type { DashboardCommandResponse } from "./command-response";
 export type { DashboardEventFrame } from "./dashboard-event-frame";
 export type { DashboardEvent } from "./dashboard-event";
 export type { DashboardReducedState } from "./dashboard-reduced-state";
 export type { DashboardSnapshot } from "./dashboard-snapshot";
 export type { DashboardError } from "./error";
 export type { DashboardHealth } from "./health";
+export type { DashboardOperatorCommandRequest } from "./operator-command-request";
 export type { OrderedDashboardEvent } from "./ordered-dashboard-event";
+export type { DashboardProposalDecisionRequest } from "./proposal-decision-request";
+export type { DashboardProposalDecisionResponse } from "./proposal-decision-response";
 export type { DashboardReadiness } from "./readiness";
 export type { DashboardReplayBundle } from "./replay-bundle";
 export type { DashboardReplayIntegrity } from "./replay-integrity";
@@ -43,13 +51,17 @@ export type { DashboardStreamOverloaded } from "./stream-overloaded";
 
 export interface DashboardDocumentBySchemaId {
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json": DashboardBootstrap;
+  readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json": DashboardCommandResponse;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json": DashboardEventFrame;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json": DashboardEvent;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json": DashboardReducedState;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json": DashboardSnapshot;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json": DashboardError;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/health.schema.json": DashboardHealth;
+  readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json": DashboardOperatorCommandRequest;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/ordered-dashboard-event.schema.json": OrderedDashboardEvent;
+  readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json": DashboardProposalDecisionRequest;
+  readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json": DashboardProposalDecisionResponse;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json": DashboardReadiness;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-bundle.schema.json": DashboardReplayBundle;
   readonly "https://aerial-rescue.invalid/schemas/v1/dashboard/replay-integrity.schema.json": DashboardReplayIntegrity;

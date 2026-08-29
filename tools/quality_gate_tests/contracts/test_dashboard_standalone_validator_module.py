@@ -24,6 +24,8 @@ class DashboardStandaloneValidatorModuleTests(QualityGateTestCase):
             "validateDashboardEventFrame",
             "validateDashboardSnapshot",
             "validateError",
+            "validateProposalDecisionRequest",
+            "validateProposalDecisionResponse",
             "validateReadiness",
             "validateReplayBundle",
             "validateResetResponse",
@@ -94,7 +96,10 @@ class DashboardStandaloneValidatorModuleTests(QualityGateTestCase):
             'import * as ajvUcs2LengthRuntime from "ajv/dist/runtime/ucs2length.js";',
             validator,
         )
-        self.assertIn("const func1 = ajvUcs2LengthRuntime.default;", validator)
+        self.assertRegex(
+            validator,
+            r"const func\d+ = ajvUcs2LengthRuntime\.default;",
+        )
         self.assertNotIn(
             'import ajvUcs2LengthRuntime from "ajv/dist/runtime/ucs2length.js";',
             validator,

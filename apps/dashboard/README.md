@@ -1,47 +1,33 @@
 # Aerial Rescue Mesh dashboard
 
-This package is the production browser command center for the fixed synthetic wilderness mission
-slice. The shell, generated contracts, canonical digests, reducer, event-source adapters, mutation
-client, map-first presentation, FastAPI boundary, and shared-project runtime integration are
-complete. On clean committed revision `db2b640`, the deterministic fixture inventory passed exactly
-64 Playwright cases in 42.0 seconds.
-
-The separate production inventory contains eight serial cases: four operator/replay workflows and
-four resilience workflows. All eight passed against the shared `aerial-rescue-mesh` runtime in 1.6
-minutes. The dedicated resource soak passed its single case and all 61 samples in 30.3 minutes with
-accepted RSS/file-descriptor growth plus stable dashboard API process, broker-container, and
-PostgreSQL-container identities. The final in-app replay reached ordinal 48 in `EXHAUSTED` state
-with its digest shown as `Verified`. This evidence completes A8 for twenty simulated members plus
-three declared-only descriptors; recorder receipt remains best-effort, and broader approval,
-evidence, command, executable edge-agent, and rescue workflows remain outside this slice
-([production evidence](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md),
-[operating parameters](../../docs/operating-parameters.md#workload-and-service-level-profile)).
+This package is the browser command center for the wilderness mission slice. It validates the
+dynamic bootstrap and broker-backed snapshot/SSE stream, folds normalized events, retains the last
+validated state through interruption, and renders explicit mode, mission, fleet, timeline, recovery,
+proposal, and evidence state. The protected live flow includes an accessible,
+double-submission-resistant exact proposal approval/rejection client and panel; replay renders
+recorded facts without constructing that action path. The 23 browser schemas, generated types,
+offline Ajv registry, canonical encoder, domain-separated Web Crypto digests, ordered-event
+witnesses, fixture isolation, and freshness gates remain its trust boundary. The corresponding
+workspace implements the FastAPI server, SQLAlchemy and Solace adapters, Unix-socket console,
+packaged Vite bundle, and Caddy relay. The map, scenario start/reset, general operator-command
+controls, replay playback, and complete production-stack browser acceptance remain open; generated
+OpenAPI is absent.
 
 ## Contract boundary
 
-Production browser types are generated from the 18 schemas under `schemas/v1/dashboard/`; the
+Production browser types are generated from the 23 schemas under `schemas/v1/dashboard/`; the
 hand-written Playwright fixtures are serialized examples, never a type authority. One committed
 module per schema and a schema-ID mapping index live under `src/contracts/generated/`. The
-hand-written Ajv 2020-12 registry exposes the 11 schemas that validate raw browser input. Its
-precompiled module resolves those schemas plus the canonical vocabulary and nested event, state, and
-integrity references without a browser or generator network request, then validates unknown values
+hand-written Ajv 2020-12 registry statically imports those schemas and the canonical vocabulary,
+resolves references without a browser or generator network request, and validates unknown values
 before narrowing them to the generated types. It neither coerces nor mutates rejected candidates.
 
 `src/domain/canonical.ts` accepts only already-decoded canonical values, snapshots own data
 properties without invoking accessors, rejects unsupported arrays and objects, and hashes only with
-the platform Web Crypto API. Replay-state and ordered-event contexts remain separate. Dashboard
-snapshots and replay bundles carry the required top-level `latestEventDigest`: it is `null` exactly
-at ordinal zero and otherwise witnesses the ordered event represented by the anchor. The witness
-stays outside reduced mission state, event frames, replay integrity, and the replay-state digest.
-
-`src/domain/reducer.ts` owns empty, prepared, snapshot, and replay checkpoints plus asynchronous
-ordered folding. Boundary and anchor validation precede ordinal/witness checks; mission and target
-checks precede the copy-on-write state transition; and a supplied server digest is verified before a
-successor is exposed. Structured applied, duplicate, and refused outcomes retain the prior immutable
-checkpoint on every refusal. `src/domain/timeline.ts` replaces a snapshot timeline and appends only
-verified, meaningful non-telemetry suffix events in audit-ordinal order. Shared validated documents
-exercise the Python and TypeScript implementations across ten independent runs, covering canonical
-state bytes, replay-state digests, ordered-event witnesses, fold outcomes, and timeline ordinals.
+the platform Web Crypto API. Replay-state and ordered-event contexts remain separate; the latest
+ordered-event witness stays outside reduced mission state. Python owns the corresponding
+ordered-state fold and digest contexts; the explicit ten-run cross-language acceptance proof is
+still pending.
 
 Bootstrap parsing applies the canonical JSON profile before Ajv. Malformed JSON, duplicate keys,
 floating-point values, unpaired surrogates, unknown members, and other schema failures become typed,
@@ -59,7 +45,16 @@ The contract keeps three facts explicit:
   `DECLARED ONLY — NOT EXECUTED` never becomes fabricated connectivity or telemetry; the scenario
   descriptor separately carries its truthful role and explicit execution label.
 
-## Component boundaries
+The four application-data-plane additions are the closed operator-command request and response and
+the closed proposal-decision request and response. New normalized event variants expose operator
+commands, operator approvals, canonical proposals, evidence decisions, rescue commands, and typed
+audit records as non-droppable timeline facts. Projection removes `missionId` from every payload and
+also removes the internal `evidenceDecisionDigest` from an evidence decision. The direct
+`AGENT_RESPONSE` integration body is not a CloudEvent and never enters the ordered browser timeline.
+The live source and exact proposal-decision control consume these contracts. The other mutation and
+replay controls listed below remain incomplete.
+
+## Intended component boundaries
 
 | Surface           | Responsibility                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------- |
@@ -70,13 +65,10 @@ The contract keeps three facts explicit:
 | Mission timeline  | Non-telemetry events ordered only by audit ordinal                                          |
 | Replay controls   | Local play, pause, restart, step, seek, speed, and digest verification                      |
 
-Live SSE, replay bundles, and the Playwright fixture source implement one event-source interface and
-feed the same pure reducer. Server state, mission state, and presentation state remain independently
-owned. Playback timing, filters, selected panels, marker interpolation, and notifications never
-enter the mission digest. A validated overload triggers an immediate resnapshot; only its one-second
-accessible notice is presentation-owned. Accepted live mutation identities remain server-owned until
-a validated snapshot matches both their mission and run, while the snapshot's live mission identity
-must always match reduced state.
+Live SSE and deterministic test inputs feed the same reducer-facing boundary. A replay-bundle
+browser adapter remains open. Server state, mission state, and presentation state remain
+independently owned. Playback timing, filters, selected panels, marker interpolation, and
+notifications never enter the mission digest.
 
 ## Visual and accessibility contract
 
@@ -111,24 +103,15 @@ The 64 acceptance cases under `tests/e2e/` cover:
 
 The test harness injects only serialized trust-boundary inputs before navigation: bootstrap, HTTP
 responses, snapshots, ordered events, source signals, terminal control frames, and replay bundles.
-The deterministic fixture path parses, validates, and folds those inputs through the test-build-only
-`TestFixtureSource`; the production bundle excludes it, and tests never provide a finished
-presentation model. Every source update has a monotonically increasing revision, and helpers wait
-for the post-render acknowledgement before inspecting UI state.
+The production-only data path must parse, validate, and fold those inputs through
+`TestFixtureSource`; tests never provide a finished presentation model. Every source update has a
+monotonically increasing revision, and helpers wait for the post-render acknowledgement before
+inspecting UI state.
 
 The adapter is not selected through a query string, browser storage, or production bootstrap data.
 Traces, videos, HAR files, and automatic screenshots are disabled, and a synthetic bearer sentinel
 is checked against the DOM, URL/history, cookies, storage, console, page errors, resource URLs, and
 retained attachments.
-
-Production bootstrap validation anchors the API runtime before the first live EventSource opens. A
-snapshot from another runtime retains the last validated mission state, locks mutations, and renders
-a real reload control. The validated non-secret anchor is rendered as a concise runtime suffix with
-its full value in the accessible label and title; screenshot masks therefore cover actual dynamic
-data. Transport signals remain the four browser-local values `connecting`, `disconnected`,
-`offline`, and `recovered`: after an EventSource error the live adapter moves from disconnected to
-offline at the six-second bound and reports recovered only when the stream reopens. Neither
-transport state infers member connectivity.
 
 ## Commands
 
@@ -144,46 +127,8 @@ pnpm --dir apps/dashboard run format:check
 pnpm --dir apps/dashboard run build
 pnpm --dir apps/dashboard exec playwright test --list
 pnpm --dir apps/dashboard run test:e2e
-pnpm --dir apps/dashboard run test:e2e:production
-pnpm --dir apps/dashboard run test:e2e:soak
 just check-dashboard-browser
 ```
-
-The fixture command is self-contained. Production and soak execution reuse the broker and PostgreSQL
-containers already running in the single `aerial-rescue-mesh` Compose project. Build and start only
-the dashboard extension before either live command:
-
-```sh
-just up
-just mission-control-up --build --force-recreate
-just mission-control-ps
-pnpm --dir apps/dashboard run test:e2e:production
-pnpm --dir apps/dashboard run test:e2e:soak
-just mission-control-down
-```
-
-`mission-control-down` stops only dashboard-owned long-running services. Never substitute Compose
-`down`, remove a shared volume, or delete retained PostgreSQL mission history. Both live drivers
-sample the broker and PostgreSQL container identities before and after their run and fail if either
-changes.
-
-The normal production driver runs replay last so isolated replay cannot contaminate an operational
-workflow. The separate soak driver enforces the accepted browser-state, RSS, file-descriptor,
-process, and shared-container identity envelope. Neither driver adds an application route or
-browser-global control surface. The overload workflow keeps the dashboard API producer running while
-it pauses the downstream Caddy relay. Its bounded sources target the retained `EXHAUSTED`
-predecessor after reset, while assertions hold the current `PLANNED` successor and its audit ordinal
-unchanged. The exact source and buffer bounds live in
-[the operating parameters](../../docs/operating-parameters.md#dashboard-event-stream). The case
-proves the same API process emits one terminal frame and the browser resnapshots as selected by
-[ADR-0138](../../docs/adr/0138-stall-the-publisher-not-the-api-for-sse-pressure.md),
-[ADR-0141](../../docs/adr/0141-exhaust-deployed-sse-buffers-with-two-bounded-producers.md), and
-[ADR-0142](../../docs/adr/0142-retain-dashboard-pressure-history-in-the-shared-runtime.md).
-
-The production build actively measures every emitted JavaScript chunk and CSS asset before writing
-the bundle. Its aggregate gate and Vite's chunk-warning value share one owner, and the deterministic
-integration suite proves both the real build and the over-budget refusal
-([ADR-0122](../../docs/adr/0122-bound-production-dashboard-script-and-style-bytes.md)).
 
 `just check-dashboard-browser` is the authoritative local wrapper used by the pre-push gate. It
 refuses un-pinned Node or pnpm runtimes, verifies discovery against the manifest's 64-test
@@ -213,34 +158,17 @@ hand-written production source before applying the four coverage dimensions. Tes
 contract types, and declaration files are the only coverage exclusions; an empty inventory, missing
 report, skipped count, unexpected file, or coverage-ignore directive fails closed.
 
-The same report applies a stricter per-file gate to the five browser trust-boundary modules selected
-by [ADR-0130](../../docs/adr/0130-enforce-dashboard-tier-one-coverage-per-file.md): bootstrap
-decoding, the Ajv registry, canonical digesting, ordered reduction, and mutation security each
-require 100% statements and 100% branches. Missing modules or per-file evidence fail closed.
-Transport/session orchestration and presentation modules remain within the global 95%
-four-dimensional package gate; Playwright cannot contribute to either result.
-
 The generated modules are excluded because their source is the schema and their byte-for-byte
 freshness has a separate gate. The hand-written registry and bootstrap boundary remain in the normal
-unit and integration inventory and carry the stricter Tier 1 coverage rule.
+unit and integration inventory and must satisfy the same four-dimensional threshold as every other
+hand-written production source.
 
 `dashboard-integration-full.sh` separately proves that the dedicated deterministic integration suite
 is non-empty. Playwright remains separate browser acceptance and does not contribute to package
-coverage. Production-stack end-to-end execution is also separate. Its eight serial cases comprise
-four operator/replay workflows and four resilience workflows: API restart before the first validated
-snapshot, recorder readiness loss and recovery, bounded publisher outage and recovery, and durable
-SSE overload/resnapshot. The live mission case asserts the fleet publication target in
-[the operating parameters](../../docs/operating-parameters.md#workload-and-service-level-profile)
-independently from the recorder's best-effort receipt count; receipt is not a completeness or
-delivery guarantee. The test-runner process may control only dashboard-owned services in the shared
-project; it never runs Compose `down`, removes volumes, or stops the shared broker or PostgreSQL.
-The browser receives no test hook, interception, or production control route. Clean committed
-revision `db2b640` passed all eight cases in 1.6 minutes; that bounded result is recorded separately
-from the 64-case fixture inventory and package coverage
-([ADR-0105](../../docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md),
-[ADR-0125](../../docs/adr/0125-anchor-browser-runtime-and-bound-transport-outages.md),
-[ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md),
-[production evidence](../../release-evidence/phase-3/wilderness-dashboard-production-first-run.md)).
+coverage. Production-stack end-to-end execution is also separate. The API, live fleet control, and
+exact mission-control package closure now exist in code; replay completion and execution of that
+packaged stack remain blocking evidence
+([ADR-0105](../../docs/adr/0105-adjudicate-dashboard-coverage-and-separate-browser-evidence.md)).
 
 ```sh
 pnpm --dir apps/dashboard run test:coverage

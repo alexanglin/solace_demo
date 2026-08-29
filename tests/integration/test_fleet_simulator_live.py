@@ -30,14 +30,12 @@ import unittest
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Final, override
 from uuid import uuid4
 
 import pytest
-from aerial_rescue_broker.deployment import DEFAULT_VPN, read_credential
 from aerial_rescue_broker.messaging import (
-    BrokerEndpoint,
+    DIRECT_TELEMETRY_RECEIVER_CAPACITY,
     BrokerSession,
     open_fleet_session,
     open_session,
@@ -59,13 +57,10 @@ from aerial_rescue_fleet_simulator.service import (
     run,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
+from tests.broker_live_support import LOCAL_BROKER_ENDPOINT as ENDPOINT
+from tests.broker_live_support import SHARED_PROBE_DRONES, role_credential
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn=DEFAULT_VPN, trust_store=str(DEPLOY / "certs")
-)
+pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
 
 MISSION: Final = "m-live-0001"
 TICKS: Final = 4
@@ -74,7 +69,7 @@ RECEIVE_WINDOW_MILLISECONDS: Final = 2_000
 DRAIN_WINDOW_MILLISECONDS: Final = 500
 
 VISION: Final = DroneStart(
-    drone_id="drone-vision-01",
+    drone_id=SHARED_PROBE_DRONES[2],
     sector_id="sector-north",
     latitude_microdegrees=47_000_000,
     longitude_microdegrees=-122_000_000,
@@ -86,8 +81,8 @@ VISION: Final = DroneStart(
     east_microdegrees_per_tick=0,
     battery_drain_permille_per_tick=5,
 )
-THERMAL: Final = replace(VISION, drone_id="drone-thermal-02", sector_id="sector-south")
-GUARD: Final = replace(VISION, drone_id="drone-audio-03", sector_id="sector-east")
+THERMAL: Final = replace(VISION, drone_id=SHARED_PROBE_DRONES[3], sector_id="sector-south")
+GUARD: Final = replace(VISION, drone_id=SHARED_PROBE_DRONES[4], sector_id="sector-east")
 ROSTER: Final = (VISION, THERMAL, GUARD)
 
 SCENARIO: Final = FleetScenario(
@@ -149,14 +144,15 @@ class FleetSimulatorLiveTests(unittest.TestCase):
         reader = open_session(
             ENDPOINT,
             Principal.DASHBOARD_API,
-            read_credential(DEPLOY, Principal.DASHBOARD_API),
+            role_credential(Principal.DASHBOARD_API),
             (subscription_for(Family.DRONE_TELEMETRY),),
+            direct_receiver_capacity=DIRECT_TELEMETRY_RECEIVER_CAPACITY,
         )
         try:
             report = run(
                 Runtime(
                     endpoint=ENDPOINT,
-                    credential=read_credential(DEPLOY, Principal.FLEET_SIMULATOR),
+                    credential=role_credential(Principal.FLEET_SIMULATOR),
                     open_broker=open_fleet_session,
                     scenario=SCENARIO,
                     stamps=_stamps(),
@@ -267,7 +263,7 @@ def _drain(reader: BrokerSession) -> list[Mapping[str, object]]:
         window = DRAIN_WINDOW_MILLISECONDS
         body = message.get_payload_as_bytes()
         assert body is not None
-        envelope = decode_envelope(body)
+        envelope = decode_envelope(bytes(body))
         check_topic_binding(envelope, parse_topic(message.get_destination_name()))
         payloads.append(envelope.data)
 

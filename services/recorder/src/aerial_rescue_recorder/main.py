@@ -29,8 +29,8 @@ from aerial_rescue_contracts.topics import Family
 from aerial_rescue_domain.principals import Principal
 from aerial_rescue_store import StoreError
 from aerial_rescue_store.bounds import SHUTDOWN_GRACE_SECONDS
-from aerial_rescue_store.dashboard_events import EventSession
-from aerial_rescue_store.dashboard_runs import RunSession, current_run
+from aerial_rescue_store.dashboard.events import EventSession
+from aerial_rescue_store.dashboard.runs import RunSession, current_run
 from aerial_rescue_store.engine import create_engine
 from aerial_rescue_store.session import (
     Disposable,

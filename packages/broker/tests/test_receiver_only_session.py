@@ -24,7 +24,11 @@ class _Receiver:
     def receive_message(self, *, timeout: int) -> None:
         self._calls.append(f"receive:{timeout}")
 
-    def terminate(self) -> None:
+    def set_termination_notification_listener(self, _listener: object) -> None:
+        """Accept the hardened endpoint lifecycle listener."""
+
+    def terminate(self, *, grace_period: int) -> None:
+        del grace_period
         self._calls.append("receiver-stop")
 
 
@@ -35,6 +39,11 @@ class _Builder:
 
     def with_subscriptions(self, subscriptions: Sequence[object]) -> _Builder:
         self._calls.append(f"subscriptions:{len(subscriptions)}")
+        return self
+
+    def on_back_pressure_drop_oldest(self, *, buffer_capacity: int) -> _Builder:
+        """Accept the bounded direct backpressure strategy."""
+        del buffer_capacity
         return self
 
     def build(self) -> _Receiver:
@@ -50,6 +59,10 @@ class _Service:
         self.calls.append("receiver-builder")
         return _Builder(self.receiver, self.calls)
 
+    def metrics(self) -> _Metrics:
+        """Return the aggregate direct-discard counter."""
+        return _Metrics()
+
     def create_direct_message_publisher_builder(self) -> object:
         self.calls.append("direct-publisher-builder")
         return object()
@@ -60,6 +73,12 @@ class _Service:
 
     def disconnect(self) -> None:
         self.calls.append("disconnect")
+
+
+class _Metrics:
+    def get_value(self, _metric: object) -> int:
+        """Report no direct-message discards."""
+        return 0
 
 
 class DirectConsumingSessionTests(unittest.TestCase):

@@ -12,11 +12,15 @@ requires-python = ">=3.14,<3.15"
 # classes, so the untyped-import relaxation docs/adr/0028 had to grant the Solace client is
 # not needed here.
 dependencies = [
+    "aerial-rescue-contracts",
     "aerial-rescue-domain",
     "alembic==1.19.1",
     "asyncpg==0.31.0",
     "sqlalchemy[asyncio]==2.0.52",
 ]
+
+[project.scripts]
+aerial-rescue-migrate = "aerial_rescue_store.migrations.console:main"
 
 [build-system]
 requires = ["hatchling"]

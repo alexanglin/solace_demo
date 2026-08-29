@@ -31,6 +31,7 @@ Keep each test with the concern whose claim it proves:
 | `contracts/` | Contract artifacts, import boundaries, environment templates, dashboard package and TypeScript policy |
 | `coverage/` | Workspace discovery, per-member coverage verdicts, inventory, empty evidence, and scaffold classification |
 | `deploy/` | Image inventory and pins, scan orchestration, broker secret generation, and static deployment/configuration agreement |
+| `deploy/mission_control/` | Closed mission-control Compose topology, one-shot policy, project reuse, and operator-recipe isolation |
 | `hooks/` | Component activation, fail-closed prerequisites, wrapper behavior, hook registration, CI parity, range handling, and terminal safety |
 | `selection/` | Pure import-graph selection plus commit-stage narrowing and unconditional push-stage execution |
 | `support.py` | Shared hermetic repositories, process environments, executable recorders, terminal runner, and mutation fixture writers |

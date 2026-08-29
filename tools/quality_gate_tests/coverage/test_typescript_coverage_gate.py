@@ -10,9 +10,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from tools import typescript_coverage_gate
+from tools.quality_gate_tests.coverage.support import MetricCounts, coverage_summary
 
 METRICS = ("statements", "branches", "functions", "lines")
-MetricCounts = tuple[object, object, object, object]
 
 COVERAGE_IGNORE_DIRECTIVES = (
     "/* c8 ignore next */",
@@ -57,18 +57,7 @@ def _source(
 
 def _summary(overrides: Mapping[str, MetricCounts] | None = None) -> dict[str, object]:
     """Arrange one Vitest JSON-summary measurement."""
-    counts: dict[str, MetricCounts] = {metric: (100, 95, 0, 95) for metric in METRICS}
-    if overrides is not None:
-        counts.update(overrides)
-    return {
-        metric: {
-            "total": values[0],
-            "covered": values[1],
-            "skipped": values[2],
-            "pct": values[3],
-        }
-        for metric, values in counts.items()
-    }
+    return coverage_summary(METRICS, (100, 95, 0, 95), overrides)
 
 
 def _aggregate_summary(file_count: int) -> dict[str, object]:
@@ -94,15 +83,107 @@ def _write_report(
     return path
 
 
+def _conforming_coverage(test_case: unittest.TestCase) -> tuple[Path, Path, Path]:
+    """Arrange a dashboard, its default source, and a conforming report."""
+    dashboard_root = _dashboard(test_case)
+    source = _source(dashboard_root)
+    report = _write_report(
+        dashboard_root / "coverage" / "coverage-summary.json",
+        {source: _summary()},
+    )
+    return dashboard_root, source, report
+
+
+def _metric_reports(
+    dashboard_root: Path,
+    source: Path,
+    metrics: tuple[str, ...],
+    counts: MetricCounts,
+    *,
+    filename_prefix: str,
+) -> dict[str, Path]:
+    """Arrange one independently varied report for each requested metric."""
+    return {
+        metric: _write_report(
+            dashboard_root / "coverage" / f"{filename_prefix}-{metric}.json",
+            {source: _summary({metric: counts})},
+        )
+        for metric in metrics
+    }
+
+
+def _v8_aggregate_report(
+    test_case: unittest.TestCase,
+    *,
+    total: int,
+    covered: int,
+    percentage: object,
+) -> tuple[Path, Path, Path]:
+    """Arrange one report with Vitest's optional branchesTrue aggregate metadata."""
+    dashboard_root = _dashboard(test_case)
+    source = _source(dashboard_root)
+    aggregate = _summary()
+    aggregate["branchesTrue"] = {
+        "total": total,
+        "covered": covered,
+        "skipped": 0,
+        "pct": percentage,
+    }
+    report = _write_report(
+        dashboard_root / "coverage" / "coverage-summary.json",
+        {source: _summary()},
+        total=aggregate,
+    )
+    return dashboard_root, source, report
+
+
+def _main_arguments(
+    report: Path,
+    dashboard_root: Path,
+    *,
+    sources: tuple[Path, ...] = (),
+    inventory: Path | None = None,
+) -> list[str]:
+    """Arrange the command-line boundary without hiding its invocation."""
+    arguments = ["--report", str(report), "--dashboard-root", str(dashboard_root)]
+    for source in sources:
+        arguments.extend(("--source", str(source)))
+    if inventory is not None:
+        arguments.extend(("--source-inventory", str(inventory)))
+    return arguments
+
+
+def _captured_main_arguments(
+    report: Path,
+    dashboard_root: Path,
+    *,
+    sources: tuple[Path, ...] = (),
+    inventory: Path | None = None,
+) -> tuple[io.StringIO, list[str]]:
+    """Arrange the stderr capture and arguments for one explicit main invocation."""
+    return io.StringIO(), _main_arguments(
+        report,
+        dashboard_root,
+        sources=sources,
+        inventory=inventory,
+    )
+
+
+def _captured_inventory_arguments(
+    report: Path,
+    dashboard_root: Path,
+    content: bytes,
+) -> tuple[io.StringIO, list[str]]:
+    """Arrange one inventory file plus stderr and arguments for an explicit invocation."""
+    inventory = dashboard_root / "coverage" / "source-inventory.bin"
+    inventory.write_bytes(content)
+    return _captured_main_arguments(report, dashboard_root, inventory=inventory)
+
+
 class TypeScriptCoverageGateTests(unittest.TestCase):
     def test_exactly_ninety_five_percent_in_every_metric_passes(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        source = _source(dashboard_root)
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {source: _summary()},
-        )
+        dashboard_root, source, report = _conforming_coverage(self)
 
         # Act
         findings = typescript_coverage_gate.evaluate_coverage(report, dashboard_root, [source])
@@ -114,19 +195,20 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
         # Arrange
         dashboard_root = _dashboard(self)
         source = _source(dashboard_root)
-        reports = {
-            metric: _write_report(
-                dashboard_root / "coverage" / f"coverage-{metric}.json",
-                {source: _summary({metric: (100, 94, 0, 100)})},
-            )
-            for metric in METRICS
-        }
+        reports = _metric_reports(
+            dashboard_root,
+            source,
+            METRICS,
+            (100, 94, 0, 100),
+            filename_prefix="coverage",
+        )
 
         # Act
-        findings_by_metric = {
-            metric: typescript_coverage_gate.evaluate_coverage(report, dashboard_root, [source])
-            for metric, report in reports.items()
-        }
+        findings_by_metric: dict[str, list[str]] = {}
+        for metric, report in reports.items():
+            findings_by_metric[metric] = typescript_coverage_gate.evaluate_coverage(
+                report, dashboard_root, [source]
+            )
 
         # Assert
         for metric, findings in findings_by_metric.items():
@@ -334,13 +416,13 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
         # Arrange
         dashboard_root = _dashboard(self)
         source = _source(dashboard_root)
-        reports = {
-            metric: _write_report(
-                dashboard_root / "coverage" / f"zero-{metric}.json",
-                {source: _summary({metric: (0, 0, 0, 100)})},
-            )
-            for metric in ("statements", "lines")
-        }
+        reports = _metric_reports(
+            dashboard_root,
+            source,
+            ("statements", "lines"),
+            (0, 0, 0, 100),
+            filename_prefix="zero",
+        )
 
         # Act
         findings_by_metric = {
@@ -415,19 +497,11 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_the_exact_v8_aggregate_metadata_is_accepted(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        source = _source(dashboard_root)
-        aggregate = _summary()
-        aggregate["branchesTrue"] = {
-            "total": 0,
-            "covered": 0,
-            "skipped": 0,
-            "pct": "Unknown",
-        }
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {source: _summary()},
-            total=aggregate,
+        dashboard_root, source, report = _v8_aggregate_report(
+            self,
+            total=0,
+            covered=0,
+            percentage="Unknown",
         )
 
         # Act
@@ -438,19 +512,11 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_malformed_v8_aggregate_metadata_fails_closed(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        source = _source(dashboard_root)
-        aggregate = _summary()
-        aggregate["branchesTrue"] = {
-            "total": 1,
-            "covered": 1,
-            "skipped": 0,
-            "pct": 100,
-        }
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {source: _summary()},
-            total=aggregate,
+        dashboard_root, source, report = _v8_aggregate_report(
+            self,
+            total=1,
+            covered=1,
+            percentage=100,
         )
 
         # Act
@@ -523,14 +589,9 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_javascript_and_jsx_production_sources_are_refused(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        production = _source(dashboard_root)
+        dashboard_root, production, report = _conforming_coverage(self)
         javascript = _source(dashboard_root, "src/legacy.js")
         jsx = _source(dashboard_root, "src/legacy-view.jsx")
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {production: _summary()},
-        )
 
         # Act
         findings = typescript_coverage_gate.evaluate_coverage(
@@ -598,17 +659,12 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_symlink_and_nonregular_production_sources_are_refused(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        production = _source(dashboard_root)
+        dashboard_root, production, report = _conforming_coverage(self)
         target = _source(dashboard_root, "support/target.ts")
         symlink = dashboard_root / "src" / "linked.ts"
         symlink.symlink_to(target)
         nonregular = dashboard_root / "src" / "nonregular.ts"
         nonregular.mkdir()
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {production: _summary()},
-        )
 
         # Act
         findings = typescript_coverage_gate.evaluate_coverage(
@@ -687,21 +743,8 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_main_returns_zero_for_a_conforming_report(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        source = _source(dashboard_root)
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {source: _summary()},
-        )
-        stderr = io.StringIO()
-        arguments = [
-            "--report",
-            str(report),
-            "--dashboard-root",
-            str(dashboard_root),
-            "--source",
-            str(source),
-        ]
+        dashboard_root, source, report = _conforming_coverage(self)
+        stderr, arguments = _captured_main_arguments(report, dashboard_root, sources=(source,))
 
         # Act
         with contextlib.redirect_stderr(stderr):
@@ -722,20 +765,16 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
             dashboard_root / "coverage" / "coverage-summary.json",
             {source: _summary() for source in sources},
         )
-        inventory = dashboard_root / "coverage" / "source-inventory.bin"
-        inventory.write_bytes(b"".join(os.fsencode(source) + b"\0" for source in sources))
-        stderr = io.StringIO()
-        arguments = [
-            "--report",
-            str(report),
-            "--dashboard-root",
-            str(dashboard_root),
-            "--source-inventory",
-            str(inventory),
-        ]
+        inventory_content = b"".join(os.fsencode(source) + b"\0" for source in sources)
+        stderr, arguments = _captured_inventory_arguments(
+            report,
+            dashboard_root,
+            inventory_content,
+        )
+        stderr_context = contextlib.redirect_stderr(stderr)
 
         # Act
-        with contextlib.redirect_stderr(stderr):
+        with stderr_context:
             status = typescript_coverage_gate.main(arguments)
 
         # Assert
@@ -744,23 +783,12 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
 
     def test_an_invalid_nul_inventory_fails_closed_without_echoing_its_value(self) -> None:
         # Arrange
-        dashboard_root = _dashboard(self)
-        source = _source(dashboard_root)
-        report = _write_report(
-            dashboard_root / "coverage" / "coverage-summary.json",
-            {source: _summary()},
+        dashboard_root, _source_path, report = _conforming_coverage(self)
+        stderr, arguments = _captured_inventory_arguments(
+            report,
+            dashboard_root,
+            b"not-nul-terminated SECRET_SENTINEL",
         )
-        inventory = dashboard_root / "coverage" / "source-inventory.bin"
-        inventory.write_bytes(b"not-nul-terminated SECRET_SENTINEL")
-        stderr = io.StringIO()
-        arguments = [
-            "--report",
-            str(report),
-            "--dashboard-root",
-            str(dashboard_root),
-            "--source-inventory",
-            str(inventory),
-        ]
 
         # Act
         with contextlib.redirect_stderr(stderr):
@@ -780,17 +808,11 @@ class TypeScriptCoverageGateTests(unittest.TestCase):
             dashboard_root / "coverage" / "coverage-summary.json",
             {},
         )
-        stderr = io.StringIO()
-        arguments = [
-            "--report",
-            str(report),
-            "--dashboard-root",
-            str(dashboard_root),
-            "--source",
-            str(first),
-            "--source",
-            str(second),
-        ]
+        stderr, arguments = _captured_main_arguments(
+            report,
+            dashboard_root,
+            sources=(first, second),
+        )
 
         # Act
         with contextlib.redirect_stderr(stderr):

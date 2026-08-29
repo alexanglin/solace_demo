@@ -1,6 +1,7 @@
-"""Run production private scenario control."""
+"""Execute the scenario service's one console composition as a module."""
 
-from aerial_rescue_scenario_service.main import main
+from aerial_rescue_scenario_service.service import main
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
+    raise SystemExit(0)

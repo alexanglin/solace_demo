@@ -37,20 +37,11 @@ import time
 import unittest
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Final, override
 from uuid import uuid4
 
 import pytest
-from aerial_rescue_broker.deployment import (
-    ADMIN_CREDENTIAL,
-    ADMIN_USERNAME,
-    CERTIFICATE_AUTHORITY,
-    DEFAULT_HOST,
-    DEFAULT_PORT,
-    DEFAULT_VPN,
-    read_credential,
-)
+from aerial_rescue_broker.deployment import read_credential
 from aerial_rescue_broker.messaging import (
     AcknowledgingReceiver,
     BrokerEndpoint,
@@ -58,14 +49,14 @@ from aerial_rescue_broker.messaging import (
     InboundMessage,
     MessagePublisher,
     Outcome,
-    SolacePersistentReceiver,
     SolacePublisher,
-    build_service,
     open_fleet_session,
 )
-from aerial_rescue_broker.provisioning import message_count
-from aerial_rescue_broker.queues import DEAD_MESSAGE_QUEUE, drone_queue_name, family_queue_name
-from aerial_rescue_broker.semp import SempEndpoint, SempSession, connect
+from aerial_rescue_broker.queues import (
+    dead_message_queue_name,
+    drone_queue_name,
+    family_queue_name,
+)
 from aerial_rescue_contracts.canonical import canonical_bytes
 from aerial_rescue_contracts.envelope import Envelope, envelope_document, sequence_text
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
@@ -84,7 +75,12 @@ from aerial_rescue_fleet_simulator.service import (
     SessionOpener,
     run,
 )
-from solace.messaging.messaging_service import MessagingService
+
+from tests.broker_live_support import DEPLOY_ROOT as DEPLOY
+from tests.broker_live_support import LOCAL_BROKER_ENDPOINT as ENDPOINT
+from tests.broker_live_support import SHARED_PROBE_DRONES, drain_queue
+from tests.broker_live_support import connected_service as _service
+from tests.broker_live_support import queue_depth as _depth
 
 pytestmark = [
     pytest.mark.performance,
@@ -92,12 +88,6 @@ pytestmark = [
     pytest.mark.docker,
     pytest.mark.broker,
 ]
-
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn=DEFAULT_VPN, trust_store=str(DEPLOY / "certs")
-)
 
 FLEET_SIZE: Final = 23
 """The reference fleet, because the target's own derivation is 23 drones at 1 Hz."""
@@ -117,11 +107,8 @@ MISSION: Final = "m-backlog-probe"
 DRONE_IDS: Final = tuple(f"drone-backlog-{ordinal:02d}" for ordinal in range(1, FLEET_SIZE + 1))
 SECTOR_IDS: Final = tuple(f"sector-backlog-{ordinal:02d}" for ordinal in range(1, FLEET_SIZE + 1))
 
-PROVISIONING: Final = (
-    "just provision --namespace aerial-rescue-mesh"
-    " --drone drone-delivery-probe --drone drone-dispatch-probe"
-    " --drone drone-vision-01 --drone drone-thermal-02 --drone drone-audio-03"
-    + "".join(f" --drone {drone}" for drone in DRONE_IDS)
+PROVISIONING: Final = "just provision --namespace aerial-rescue-mesh" + "".join(
+    f" --drone {drone}" for drone in (*SHARED_PROBE_DRONES, *DRONE_IDS)
 )
 """Every drone every live probe declares. One invocation, because the applier converges."""
 
@@ -132,6 +119,7 @@ GATEWAY_SOURCE: Final = "urn:aerial-rescue:service:command-gateway"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
 
 DRONE_QUEUES: Final = tuple(drone_queue_name(drone) for drone in DRONE_IDS)
+DRONE_DEAD_MESSAGE_QUEUES: Final = tuple(dead_message_queue_name(queue) for queue in DRONE_QUEUES)
 RESULT_QUEUE: Final = family_queue_name(Principal.COMMAND_GATEWAY, Family.DRONE_COMMAND_RESULT)
 COLLATERAL_QUEUES: Final = (
     (Principal.DASHBOARD_API, family_queue_name(Principal.DASHBOARD_API, Family.DRONE_COMMAND)),
@@ -177,34 +165,6 @@ SCENARIO: Final = FleetScenario(
     ticks_to_sweep=999,
     absent_heartbeats={},
 )
-
-
-def _semp_endpoint() -> SempEndpoint:
-    """Return the administrator SEMP endpoint, over the per-checkout authority."""
-    return SempEndpoint(
-        host=DEFAULT_HOST,
-        port=DEFAULT_PORT,
-        username=ADMIN_USERNAME,
-        password=(DEPLOY / ADMIN_CREDENTIAL).read_text().strip(),
-        certificate_authority=str(DEPLOY / CERTIFICATE_AUTHORITY),
-    )
-
-
-def _depth(queue: str) -> int:
-    """Return how many messages are on ``queue`` right now, by counting them."""
-    endpoint = _semp_endpoint()
-    connection = connect(endpoint)
-    try:
-        return message_count(SempSession(connection, endpoint), DEFAULT_VPN, queue)
-    finally:
-        connection.close()
-
-
-def _service(role: Principal) -> MessagingService:
-    """Return a connected service on one role's own least-privilege identity."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
 
 
 def _command_bytes(ordinal: int, drone: str, sector: str) -> bytes:
@@ -407,19 +367,12 @@ def _measure_once() -> Measurement:
 
 def _discard(role: Principal, queue: str) -> None:
     """Accept everything on ``queue`` without reading it, so the next run starts level."""
-    service = _service(role)
-    receiver = SolacePersistentReceiver(service, queue)
-    window = RECEIVE_WINDOW_MILLISECONDS
-    try:
-        while True:
-            message = receiver.receive(window)
-            if message is None:
-                return
-            window = DRAIN_WINDOW_MILLISECONDS
-            receiver.settle(message, Outcome.ACCEPTED)
-    finally:
-        receiver.close()
-        service.disconnect()
+    drain_queue(
+        role,
+        queue,
+        first_window_milliseconds=RECEIVE_WINDOW_MILLISECONDS,
+        subsequent_window_milliseconds=DRAIN_WINDOW_MILLISECONDS,
+    )
 
 
 def _clear() -> None:
@@ -457,7 +410,7 @@ class BacklogRecoveryLiveTests(unittest.TestCase):
     def test_a_spooled_backlog_drains_completely_once_a_consumer_binds(self) -> None:
         """One warm-up run and three samples, under the ADR-0084 instrument."""
         # Arrange
-        dead_before = _depth(DEAD_MESSAGE_QUEUE)
+        dead_before = tuple(_depth(queue) for queue in DRONE_DEAD_MESSAGE_QUEUES)
         for _ in range(WARM_UP_RUNS):
             _measure_once()
             _clear()
@@ -480,7 +433,12 @@ class BacklogRecoveryLiveTests(unittest.TestCase):
         print(f"\nbacklog drain seconds={seconds} ticks={ticks} handled={handled}")
         self.assertEqual(
             ([COMMANDS] * SAMPLE_RUNS, [0] * SAMPLE_RUNS, 0, dead_before),
-            (handled, other, drained, _depth(DEAD_MESSAGE_QUEUE)),
+            (
+                handled,
+                other,
+                drained,
+                tuple(_depth(queue) for queue in DRONE_DEAD_MESSAGE_QUEUES),
+            ),
         )
 
 

@@ -24,11 +24,8 @@ script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 . "$script_directory/../quality-components.sh"
 
-quality_root_python_active || exit 0
-[ -f pyproject.toml ] || {
-	printf 'MISSING: pyproject.toml is required by owned root Python source\n' >&2
-	exit 1
-}
+root_active=$(quality_root_python_manifest_state)
+[ "$root_active" = true ] || exit 0
 command -v uv >/dev/null 2>&1 || {
 	printf 'MISSING: uv is not installed, so commit-stage tests cannot run\n' >&2
 	exit 1

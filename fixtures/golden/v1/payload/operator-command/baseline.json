@@ -1,0 +1,11 @@
+{
+  "operatorCommandVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "commandId": "command-synthetic-0001",
+  "operatorId": "operator-synthetic-0001",
+  "action": {
+    "commandType": "assign-sector",
+    "droneId": "drone-synthetic-01",
+    "sectorId": "sector-synthetic-01"
+  }
+}

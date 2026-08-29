@@ -27,6 +27,7 @@ from aerial_rescue_store.settings import (
     POSTGRES_DB_SETTING,
     POSTGRES_USER_SETTING,
     REDACTED,
+    DatabaseResolver,
     DatabaseSettings,
     SettingsError,
     SettingsRefusal,
@@ -128,6 +129,17 @@ class ReadCredentialTests(unittest.TestCase):
 
 
 class DatabaseSettingsTests(unittest.TestCase):
+    def test_the_public_resolver_protocol_matches_the_canonical_resolver(self) -> None:
+        # Arrange
+        deploy = _deploy(self)
+        resolver: DatabaseResolver = database_settings
+
+        # Act
+        settings = resolver(ENVIRONMENT, deploy, host=CONTAINER_HOST)
+
+        # Assert
+        self.assertEqual(CONTAINER_HOST, settings.host)
+
     def test_the_environment_and_the_generated_file_supply_the_whole_target(self) -> None:
         # Arrange
         deploy = _deploy(self)

@@ -1,0 +1,9 @@
+{
+  "missionId": "mission-synthetic-0001",
+  "action": {
+    "commandType": "assign-sector",
+    "droneId": "drone-synthetic-01",
+    "sectorId": "sector-synthetic-01"
+  },
+  "unexpected": true
+}

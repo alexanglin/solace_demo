@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Final, cast
 
 import yaml
+from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 SECRET_NAME_PATTERN: Final = re.compile(
     r"(^|_)(API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH|AUTHORIZATION|BEARER"
@@ -57,6 +58,8 @@ DECLARATION_PATTERN: Final = re.compile(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=")
 
 BROKER_SERVICE: Final = "broker"
 AGENT_MESH_SERVICE: Final = "agent-mesh"
+SCHEMA_MIGRATION_SERVICE: Final = "migration"
+SCHEMA_MIGRATION_COMMAND: Final = ("/app/.venv/bin/aerial-rescue-migrate",)
 BROKER_TLS_SMF_PORT: Final = 55443
 BROKER_FORBIDDEN_PORTS: Final = frozenset({55555, 8080})
 """Plaintext SMF and SEMP; published neither to the host nor anywhere else."""
@@ -64,9 +67,16 @@ BROKER_FORBIDDEN_PORTS: Final = frozenset({55555, 8080})
 PLATFORM_ALLOWLIST: Final[Mapping[str, str]] = {"event-management-agent": "linux/amd64"}
 """The one image published for amd64 only; everything else runs native arm64."""
 
-KNOWN_PROFILES: Final = frozenset({"mesh", "services", "event-portal", "mission-control"})
-ONE_SHOT_SERVICES: Final = frozenset({"migration", "replay-validator"})
+KNOWN_PROFILES: Final = frozenset(
+    {"mesh", "services", "mission-control", "event-portal", "semp-monitor"}
+)
+ONE_SHOT_SERVICES: Final = frozenset({"replay-validator"})
 COMPOSE_FILE_SOURCE_ROOT: Final = "./secrets/"
+SECRET_FILE_NAME_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+EXPLICIT_SECRET_FILE_PATTERN: Final = re.compile(
+    r"^\$\{AERIAL_RESCUE_SECRET_DIRECTORY:-\./secrets\}/"
+    r"[A-Za-z0-9][A-Za-z0-9._-]*$"
+)
 CONTAINER_MOUNT_PREFIX: Final = "/run/secrets/"
 LOOPBACK: Final = "127.0.0.1"
 LATEST_TAG: Final = "latest"
@@ -155,6 +165,11 @@ def load_template(path: Path, errors: list[str]) -> frozenset[str]:
 def parse_compose(path: str, text: str, errors: list[str]) -> ComposeFile | None:
     """Parse one compose document, recording every shape defect instead of raising."""
     try:
+        syntax_tree = yaml.compose(text, Loader=yaml.SafeLoader)
+        duplicate = _first_duplicate_mapping_key(syntax_tree)
+        if duplicate is not None:
+            errors.append(f"{path}: duplicate mapping key {duplicate!r}")
+            return None
         loaded = cast("object", yaml.safe_load(text))
     except yaml.YAMLError as error:
         errors.append(f"{path}: invalid YAML: {error}")
@@ -164,6 +179,45 @@ def parse_compose(path: str, text: str, errors: list[str]) -> ComposeFile | None
         return None
     document = {str(key): value for key, value in loaded.items()}
     return ComposeFile(path, document, text) if _services_valid(path, document, errors) else None
+
+
+def _duplicate_mapping_key(node: MappingNode) -> str | None:
+    """Return the first duplicate explicit scalar key in one mapping node."""
+    seen: set[tuple[str, str]] = set()
+    for key, _value in node.value:
+        if not isinstance(key, ScalarNode) or key.tag == "tag:yaml.org,2002:merge":
+            continue
+        value = str(key.value)
+        identity = (key.tag, value)
+        if identity in seen:
+            return value
+        seen.add(identity)
+    return None
+
+
+def _child_nodes(node: Node) -> tuple[Node, ...]:
+    """Return one syntax node's children without flattening YAML merge aliases."""
+    if isinstance(node, MappingNode):
+        return tuple(child for pair in node.value for child in pair)
+    if isinstance(node, SequenceNode):
+        return tuple(node.value)
+    return ()
+
+
+def _first_duplicate_mapping_key(root: Node | None) -> str | None:
+    """Return the first repeated explicit scalar key without flattening YAML merges."""
+    pending = [] if root is None else [root]
+    visited: set[int] = set()
+    while pending:
+        node = pending.pop()
+        if id(node) in visited:
+            continue
+        visited.add(id(node))
+        duplicate = _duplicate_mapping_key(node) if isinstance(node, MappingNode) else None
+        if duplicate is not None:
+            return duplicate
+        pending.extend(_child_nodes(node))
+    return None
 
 
 def load_compose(path: Path, errors: list[str]) -> ComposeFile | None:
@@ -253,7 +307,12 @@ def _secret_source_valid(spec: object) -> bool:
         return False
     file = spec.get("file")
     if isinstance(file, str):
-        return file.startswith(COMPOSE_FILE_SOURCE_ROOT)
+        if EXPLICIT_SECRET_FILE_PATTERN.fullmatch(file) is not None:
+            return True
+        if not file.startswith(COMPOSE_FILE_SOURCE_ROOT):
+            return False
+        filename = file.removeprefix(COMPOSE_FILE_SOURCE_ROOT)
+        return SECRET_FILE_NAME_PATTERN.fullmatch(filename) is not None
     return isinstance(spec.get("environment"), str)
 
 
@@ -377,7 +436,21 @@ def _healthcheck_issues(name: str, service: Mapping[str, object]) -> list[str]:
         and healthcheck.get("disable") is not True
     ):
         return []
+    if _is_schema_migration_one_shot(name, service):
+        return []
     return [f"services.{name} lacks a healthcheck.test"]
+
+
+def _is_schema_migration_one_shot(name: str, service: Mapping[str, object]) -> bool:
+    """Use completion status only for the exact package-owned Alembic process."""
+    dependencies = service.get("depends_on")
+    return (
+        name == SCHEMA_MIGRATION_SERVICE
+        and service.get("command") == list(SCHEMA_MIGRATION_COMMAND)
+        and service.get("restart") == "no"
+        and service.get("profiles") == ["services", "mission-control"]
+        and dependencies == {"postgres": {"condition": "service_healthy"}}
+    )
 
 
 def _one_shot_issues(name: str, service: Mapping[str, object]) -> list[str]:

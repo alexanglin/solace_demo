@@ -31,16 +31,13 @@ import http.client
 import json
 import unittest
 import uuid
-from pathlib import Path
 from typing import Final
 
 import pytest
-from aerial_rescue_broker.deployment import read_credential
 from aerial_rescue_broker.messaging import (
-    BrokerEndpoint,
+    DIRECT_INTEGRATION_RECEIVER_CAPACITY,
     SolacePublisher,
     SolaceReceiver,
-    build_service,
 )
 from aerial_rescue_broker.subscriptions import subscription_for
 from aerial_rescue_contracts import canonical
@@ -58,15 +55,11 @@ from aerial_rescue_contracts.topics import (
 )
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.errors.pubsubplus_client_error import PubSubPlusClientError
-from solace.messaging.messaging_service import MessagingService
+
+from tests.broker_live_support import connected_service as _connected
 
 pytestmark = [pytest.mark.phase0, pytest.mark.docker, pytest.mark.broker, pytest.mark.ollama]
 
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
-ENDPOINT: Final = BrokerEndpoint(
-    url="tcps://localhost:55443", vpn="default", trust_store=str(DEPLOY / "certs")
-)
 NAMESPACE: Final = "aerial-rescue-mesh"
 
 MISSION: Final = "m-2026-0001"
@@ -124,13 +117,6 @@ def _properties(reply_topic: str, request_id: str) -> dict[str, object]:
     }
 
 
-def _connected(role: Principal) -> MessagingService:
-    """Return a connected service on ``role``'s identity, validating the checkout's authority."""
-    service = build_service(ENDPOINT, role, read_credential(DEPLOY, role))
-    service.connect()
-    return service
-
-
 def _ask(request: bytes, topic: str, seconds: int = REPLY_WINDOW_SECONDS) -> list[bytes]:
     """Publish one request as the tool's identity and return the reply it receives.
 
@@ -142,7 +128,9 @@ def _ask(request: bytes, topic: str, seconds: int = REPLY_WINDOW_SECONDS) -> lis
     reply_topic = _reply_topic()
     request_id = str(uuid.uuid4())
     service = _connected(Principal.EVENT_MESH_TOOL)
-    receiver = SolaceReceiver(service, (reply_topic,))
+    receiver = SolaceReceiver(
+        service, (reply_topic,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     publisher = SolacePublisher(service)
     seen: list[bytes] = []
     try:
@@ -168,7 +156,9 @@ def _request_topic(operation: str = "command-authority") -> str:
 def _observe(role: Principal, subscription: str, seconds: int) -> list[str]:
     """Return the topics ``subscription`` carries within the window, on ``role``'s identity."""
     service = _connected(role)
-    receiver = SolaceReceiver(service, (subscription,))
+    receiver = SolaceReceiver(
+        service, (subscription,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     seen: list[str] = []
     try:
         for _ in range(seconds):
@@ -224,7 +214,9 @@ def _observe_while_asking(
     The receiver starts before the task is submitted, for the same reason ``_ask`` does.
     """
     service = _connected(role)
-    receiver = SolaceReceiver(service, (subscription,))
+    receiver = SolaceReceiver(
+        service, (subscription,), buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY
+    )
     seen: list[str] = []
     try:
         _send_to(TARGET_AGENT, prompt)
@@ -323,7 +315,11 @@ class ReplyChannelAuthorityTests(unittest.TestCase):
 
         # Act
         try:
-            SolaceReceiver(service, (forbidden,))
+            SolaceReceiver(
+                service,
+                (forbidden,),
+                buffer_capacity=DIRECT_INTEGRATION_RECEIVER_CAPACITY,
+            )
         except PubSubPlusClientError as denial:
             outcome = type(denial).__name__
         else:

@@ -32,8 +32,51 @@ class AgentMeshOwnedToolingTests(QualityGateTestCase):
 
         # Assert
         self.assertIn("--cov=tools.agent_mesh_config_validator", source)
+        self.assertIn("--cov=aerial_rescue_event_mesh_gateway", source)
         self.assertIn("--cov-branch", source)
         self.assertIn("--cov-fail-under=100", source)
+
+    def test_every_static_gate_includes_both_owned_runtime_packages(self) -> None:
+        # Arrange
+        paths = (
+            "scripts/hooks/quality-components.sh",
+            "scripts/hooks/python/bandit-full.sh",
+            "scripts/hooks/python/cognitive-complexity-full.sh",
+            "scripts/hooks/repo/duplication-full.sh",
+        )
+
+        # Act
+        sources = tuple((REPOSITORY_ROOT / path).read_text(encoding="utf-8") for path in paths)
+
+        # Assert
+        self.assertTrue(
+            all("agent-mesh/aerial_rescue_event_mesh_gateway" in source for source in sources),
+            paths,
+        )
+        self.assertTrue(
+            all("agent-mesh/aerial_rescue_runtime_compat" in source for source in sources),
+            paths,
+        )
+
+    def test_runtime_image_installs_both_owned_packages_in_the_leaf_overlay(self) -> None:
+        # Arrange
+        dockerfile = REPOSITORY_ROOT / "deploy" / "agent-mesh" / "Dockerfile"
+
+        # Act
+        source = dockerfile.read_text(encoding="utf-8")
+
+        # Assert
+        self.assertIn(
+            "COPY agent-mesh/aerial_rescue_event_mesh_gateway/ "
+            "/opt/aerial-rescue-runtime/aerial_rescue_event_mesh_gateway/",
+            source,
+        )
+        self.assertIn(
+            "COPY agent-mesh/aerial_rescue_runtime_compat/ "
+            "/opt/aerial-rescue-runtime/aerial_rescue_runtime_compat/",
+            source,
+        )
+        self.assertIn("ENV PYTHONPATH=/opt/aerial-rescue-runtime", source)
 
     def test_agent_mesh_manifest_declares_validator_risk_and_quality_tools(self) -> None:
         # Arrange

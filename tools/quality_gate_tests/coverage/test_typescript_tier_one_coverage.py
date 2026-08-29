@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 from tools import typescript_coverage_gate, typescript_policy_gate
+from tools.quality_gate_tests.coverage.support import MetricCounts, coverage_summary
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
 TIER_ONE_SOURCE_PATHS = (
@@ -20,7 +21,6 @@ TIER_ONE_SOURCE_PATHS = (
     "src/domain/reducer.ts",
 )
 METRICS = ("statements", "branches", "functions", "lines")
-MetricCounts = tuple[int, int, int, int]
 
 
 def _dashboard(test_case: unittest.TestCase) -> tuple[Path, dict[str, Path]]:
@@ -37,18 +37,7 @@ def _dashboard(test_case: unittest.TestCase) -> tuple[Path, dict[str, Path]]:
 
 
 def _summary(overrides: Mapping[str, MetricCounts] | None = None) -> dict[str, object]:
-    counts: dict[str, MetricCounts] = {metric: (100, 100, 0, 100) for metric in METRICS}
-    if overrides is not None:
-        counts.update(overrides)
-    return {
-        metric: {
-            "total": values[0],
-            "covered": values[1],
-            "skipped": values[2],
-            "pct": values[3],
-        }
-        for metric, values in counts.items()
-    }
+    return coverage_summary(METRICS, (100, 100, 0, 100), overrides)
 
 
 def _metric_count(entry: Mapping[str, object], metric: str, member: str) -> int:

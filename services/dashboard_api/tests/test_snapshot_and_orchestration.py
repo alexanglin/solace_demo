@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 from aerial_rescue_contracts import canonical
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.cursor import CursorCodec
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.orchestration import (
     CANCELLATION_BUDGET_SECONDS,
     OperationCoordinator,
@@ -31,7 +31,7 @@ from aerial_rescue_dashboard_api.ports import (
 )
 from aerial_rescue_dashboard_api.snapshot import (
     SnapshotService,
-    _checkpoint_from_bytes,
+    checkpoint_from_prepared_state,
 )
 from aerial_rescue_dashboard_api.snapshot import (
     _integer as snapshot_integer,
@@ -305,7 +305,7 @@ class SnapshotTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         # Arrange
         operations = (
-            lambda: _checkpoint_from_bytes(dashboard_fixture("dashboard-reduced-state")),
+            lambda: checkpoint_from_prepared_state(dashboard_fixture("dashboard-reduced-state")),
             lambda: snapshot_mapping(None),
             lambda: snapshot_sequence("not-an-array"),
             lambda: snapshot_string(1),

@@ -327,7 +327,9 @@ class PolicyConstantTests(QualityGateTestCase):
 
     def test_the_known_profiles_are_the_closed_set(self) -> None:
         # Arrange
-        expected = frozenset({"mesh", "services", "event-portal", "mission-control"})
+        expected = frozenset(
+            {"mesh", "services", "mission-control", "event-portal", "semp-monitor"}
+        )
 
         # Act
         profiles = compose_policy_gate.KNOWN_PROFILES

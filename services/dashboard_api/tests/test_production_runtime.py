@@ -15,6 +15,7 @@ import httpx
 import pytest
 from aerial_rescue_contracts import canonical
 from aerial_rescue_dashboard_api import scenario_client as scenario_module
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.delivery import assets as dashboard_assets
 from aerial_rescue_dashboard_api.delivery import production
 from aerial_rescue_dashboard_api.delivery.assets import load_built_dashboard
@@ -30,7 +31,6 @@ from aerial_rescue_dashboard_api.delivery.production import (
     RecorderLeaseReadiness,
     configuration,
 )
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import (
     ScenarioCancellationNotEstablishedError,
     ScenarioRunNotFoundError,
@@ -631,21 +631,32 @@ class ReplayAndCleanupTests(unittest.IsolatedAsyncioTestCase):
         # Arrange
         environment, _asset_root = _environment(self)
         configured = configuration(environment)
-        first_scenario = _Closable()
-        first_store = _Closable()
-        first = ProductionResources(
-            cast("ScenarioHttpClient", first_scenario), cast("SqlStore", first_store)
+        first_scenario, first_store, failed_scenario, fallback_store = (
+            _Closable(),
+            _Closable(),
+            _Closable(fail=True),
+            _Closable(),
         )
-        failed_scenario = _Closable(fail=True)
-        fallback_store = _Closable()
-        fallback = ProductionResources(
-            cast("ScenarioHttpClient", failed_scenario), cast("SqlStore", fallback_store)
+        first, fallback = (
+            ProductionResources(
+                cast("ScenarioHttpClient", first_scenario), cast("SqlStore", first_store)
+            ),
+            ProductionResources(
+                cast("ScenarioHttpClient", failed_scenario), cast("SqlStore", fallback_store)
+            ),
         )
-        composed_store = cast("SqlStore", _Closable())
-        composed_scenario = cast("ScenarioHttpClient", _Closable())
-        composed_replay = cast("ReplayFilePort", object())
-        application = FastAPI()
-        entrypoint = Mock()
+        composed_store, composed_scenario, composed_replay = (
+            cast("SqlStore", _Closable()),
+            cast("ScenarioHttpClient", _Closable()),
+            cast("ReplayFilePort", object()),
+        )
+        composed_broker, composed_mutations = Mock(), Mock()
+        composed_solace, application, entrypoint = (
+            Mock(broker=composed_broker, mutations=composed_mutations),
+            FastAPI(),
+            Mock(),
+        )
+        create_application = Mock(return_value=application)
 
         # Act
         await first.close()
@@ -658,7 +669,9 @@ class ReplayAndCleanupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(production, "SqlStore", return_value=composed_store),
             patch.object(production, "ScenarioHttpClient", return_value=composed_scenario),
             patch.object(production, "ReplayFilePort", return_value=composed_replay),
-            patch.object(production, "create_app", return_value=application),
+            patch.object(production, "solace_settings_from_environment", return_value=object()),
+            patch.object(production, "build_solace_runtime", return_value=composed_solace),
+            patch.object(production, "create_app", create_application),
         ):
             runtime = production.compose(configured)
         with patch.object(production, "main", entrypoint):
@@ -678,6 +691,9 @@ class ReplayAndCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((1, 1), (failed_scenario.calls, fallback_store.calls))
         self.assertIs(application, runtime.application)
         self.assertIs(composed_store, runtime.resources.store)
+        injected = create_application.call_args.args[1]
+        self.assertIs(composed_broker, injected.broker)
+        self.assertIs(composed_mutations, injected.mutations)
         self.assertEqual(Path(environment["DASHBOARD_SOCKET"]), runtime.socket_path)
         entrypoint.assert_called_once_with()
 

@@ -28,11 +28,10 @@ Markers keep these out of every blocking suite: they need Docker, the broker, an
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
 import pytest
-from aerial_rescue_broker.deployment import credential_path
 from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.digest import source_event_digest
 from aerial_rescue_contracts.envelope import (
     Envelope,
     binding_for,
@@ -42,31 +41,18 @@ from aerial_rescue_contracts.envelope import (
 )
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
 from aerial_rescue_domain.principals import Principal
-from solace.messaging.config.solace_properties import (
-    authentication_properties as auth,
-)
-from solace.messaging.config.solace_properties import (
-    service_properties as service_property,
-)
-from solace.messaging.config.solace_properties import (
-    transport_layer_properties as transport,
-)
-from solace.messaging.config.transport_security_strategy import TLS
-from solace.messaging.messaging_service import MessagingService
+from solace.messaging.config.solace_properties import message_properties
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
+from tests.broker_live_support import SHARED_PROBE_DRONES, connected_native_role_service
+
 pytestmark = [pytest.mark.phase0, pytest.mark.docker, pytest.mark.broker, pytest.mark.ollama]
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEPLOY = REPOSITORY_ROOT / "deploy"
-TRUST_STORE = DEPLOY / "certs"
-BROKER_URL = "tcps://localhost:55443"
-VPN = "default"
 NAMESPACE = "aerial-rescue-mesh"
 
 MISSION = "m-2026-0001"
-DRONE = "drone-vision-01"
+DRONE = SHARED_PROBE_DRONES[2]
 EVENT_TYPE = "salient"
 TARGET_AGENT = "MissionCoordinator"
 
@@ -84,43 +70,15 @@ RESPONSE_WINDOW_SECONDS = 240
 SILENCE_WINDOW_SECONDS = 45
 RECEIVE_POLL_MILLISECONDS = 1000
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 10000
+SOURCE_DIGEST_PROPERTY = "aerial-rescue-source-event-digest"
 
 
 class _UnpublishableEventError(RuntimeError):
     """The event this test intends to publish is not one the contract accepts."""
 
 
-def _properties(role: Principal) -> dict[str, object]:
-    """Return the connection properties binding one authorization role to the container."""
-    credential = credential_path(DEPLOY, role).read_text(encoding="utf-8").strip()
-    return {
-        transport.HOST: BROKER_URL,
-        service_property.VPN_NAME: VPN,
-        auth.SCHEME_BASIC_USER_NAME: role.value,
-        auth.SCHEME_BASIC_PASSWORD: credential,
-        transport.CONNECTION_RETRIES: 0,
-        transport.RECONNECTION_ATTEMPTS: 0,
-    }
-
-
-def _connected(role: Principal) -> MessagingService:
-    """Return a connected service on ``role``'s identity, validating the checkout's authority."""
-    service = (
-        MessagingService.builder()
-        .from_properties(_properties(role))
-        .with_transport_security_strategy(
-            TLS.create().with_certificate_validation(
-                True, validate_server_name=True, trust_store_file_path=str(TRUST_STORE)
-            )
-        )
-        .build()
-    )
-    service.connect()
-    return service
-
-
-def _salient_event() -> tuple[str, bytes]:
-    """Return the topic and canonical bytes of one salient drone event the contract accepts.
+def _salient_event() -> tuple[str, bytes, str]:
+    """Return one accepted salient event and its complete source-envelope digest.
 
     Raises:
         _UnpublishableEventError: If the contract refuses the event, so a broken fixture can
@@ -153,18 +111,26 @@ def _salient_event() -> tuple[str, bytes]:
     except ValueError as refusal:
         message = f"the contract refused the event this test publishes: {refusal}"
         raise _UnpublishableEventError(message) from refusal
-    return format_topic(topic), canonical.canonical_bytes(document)
+    return format_topic(topic), canonical.canonical_bytes(document), source_event_digest(envelope)
 
 
-def _publish(payload: bytes, topic: str) -> None:
+def _publish(publication: tuple[str, bytes, str]) -> None:
     """Publish one guaranteed message as the fleet simulator and wait for the broker's answer."""
-    service = _connected(Principal.FLEET_SIMULATOR)
+    topic, payload, digest = publication
+    service = connected_native_role_service(Principal.FLEET_SIMULATOR)
     try:
         publisher = service.create_persistent_message_publisher_builder().build()
         publisher.start()
         # The builder takes a bytearray or a str, never bytes; the canonical encoder emits
         # bytes, so the conversion is here rather than at every call site.
-        message = service.message_builder().build(bytearray(payload))
+        message = service.message_builder().build(
+            bytearray(payload),
+            additional_message_properties={
+                SOURCE_DIGEST_PROPERTY: digest,
+                message_properties.PERSISTENT_ACK_IMMEDIATELY: True,
+                message_properties.PERSISTENT_DMQ_ELIGIBLE: True,
+            },
+        )
         publisher.publish_await_acknowledgement(
             message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
         )
@@ -174,7 +140,10 @@ def _publish(payload: bytes, topic: str) -> None:
 
 
 def _observe_while_publishing(
-    role: Principal, subscription: str, seconds: int, payload: bytes, topic: str
+    role: Principal,
+    subscription: str,
+    seconds: int,
+    publication: tuple[str, bytes, str],
 ) -> list[str]:
     """Return what ``subscription`` carries after one event is published beneath it.
 
@@ -183,7 +152,7 @@ def _observe_while_publishing(
     nothing here subclasses the untyped upstream handler
     (``docs/adr/0028-untyped-solace-client-boundary.md``).
     """
-    service = _connected(role)
+    service = connected_native_role_service(role)
     receiver = service.create_direct_message_receiver_builder().with_subscriptions(
         [TopicSubscription.of(subscription)]
     )
@@ -191,7 +160,7 @@ def _observe_while_publishing(
     built = receiver.build()
     try:
         built.start()
-        _publish(payload, topic)
+        _publish(publication)
         for _ in range(seconds):
             message = built.receive_message(timeout=RECEIVE_POLL_MILLISECONDS)
             if message is not None:
@@ -206,11 +175,14 @@ def _observe_while_publishing(
 class SalientEventIngressTests(unittest.TestCase):
     def test_one_salient_cloud_event_becomes_one_a2a_task(self) -> None:
         # Arrange
-        topic, payload = _salient_event()
+        publication = _salient_event()
 
         # Act
         observed = _observe_while_publishing(
-            Principal.AGENT_MESH_AGENT, A2A_REQUEST_TOPIC, REQUEST_WINDOW_SECONDS, payload, topic
+            Principal.AGENT_MESH_AGENT,
+            A2A_REQUEST_TOPIC,
+            REQUEST_WINDOW_SECONDS,
+            publication,
         )
 
         # Assert
@@ -222,11 +194,14 @@ class SalientEventIngressTests(unittest.TestCase):
 
     def test_the_agent_answer_is_routed_back_onto_the_agent_response_family(self) -> None:
         # Arrange
-        topic, payload = _salient_event()
+        publication = _salient_event()
 
         # Act
         observed = _observe_while_publishing(
-            Principal.DASHBOARD_API, AGENT_RESPONSE_TOPIC, RESPONSE_WINDOW_SECONDS, payload, topic
+            Principal.RECORDER,
+            AGENT_RESPONSE_TOPIC,
+            RESPONSE_WINDOW_SECONDS,
+            publication,
         )
 
         # Assert
@@ -240,12 +215,15 @@ class SalientEventIngressTests(unittest.TestCase):
 class UndecodableEventTests(unittest.TestCase):
     def test_an_event_the_handler_cannot_decode_produces_no_task(self) -> None:
         # Arrange
-        topic, _ = _salient_event()
+        topic, _, digest = _salient_event()
         payload = b"this is not the JSON the handler declares"
 
         # Act
         observed = _observe_while_publishing(
-            Principal.AGENT_MESH_AGENT, A2A_REQUEST_TOPIC, SILENCE_WINDOW_SECONDS, payload, topic
+            Principal.AGENT_MESH_AGENT,
+            A2A_REQUEST_TOPIC,
+            SILENCE_WINDOW_SECONDS,
+            (topic, payload, digest),
         )
 
         # Assert

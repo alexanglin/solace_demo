@@ -11,7 +11,12 @@ import {
   type DashboardSourceScript,
 } from "../tests/e2e/support/dashboard-fixtures";
 import type { DashboardTestHarness } from "../tests/e2e/support/dashboard-harness";
-import { canonicalBytes } from "./domain/canonical";
+import type {
+  DashboardEvent,
+  DashboardReducedState,
+  OrderedDashboardEvent,
+} from "./contracts/generated";
+import { canonicalBytes, replayStateDigest } from "./domain/canonical";
 import { DashboardApplication } from "./dashboard-app";
 
 vi.mock("./components/search-map", () => ({
@@ -69,6 +74,179 @@ async function appendInputs(
   });
 }
 
+const PROPOSAL_DIGEST = "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761";
+const EVIDENCE_DIGEST = "3c3775801fc324695e0f1eca64cf8fa91d6f213eec7968c71ffe8db61ce6abe3";
+
+function applicationTimelineEvents(): readonly DashboardEvent[] {
+  const mission = "mission-synthetic-0001";
+  const shared = { mission, time: "2026-08-24T12:01:00.000Z" };
+  return [
+    {
+      ...shared,
+      data: {
+        action: {
+          commandType: "assign-sector",
+          droneId: "drone-sim-01",
+          sectorId: "sector-01",
+        },
+        commandId: "command-synthetic-0001",
+        operatorCommandVersion: 1,
+        operatorId: "operator-synthetic-0001",
+      },
+      eventClass: "COMMAND",
+      kind: "operatorCommand",
+    },
+    {
+      ...shared,
+      data: {
+        action: {
+          commandType: "escalate-rescue",
+          droneId: "drone-sim-01",
+          latitudeMicrodegrees: 44_475_000,
+          longitudeMicrodegrees: -79_245_000,
+        },
+        approvalId: "approval-synthetic-0001",
+        decision: "reject",
+        evidenceDecisionDigest: EVIDENCE_DIGEST,
+        evidenceDecisionId: "decision-synthetic-0001",
+        evidenceDecisionVersion: 1,
+        issuedAt: "2026-08-24T12:00:59.000Z",
+        operatorApprovalVersion: 1,
+        operatorId: "operator-synthetic-0001",
+        proposalDigest: PROPOSAL_DIGEST,
+        proposalId: "proposal-synthetic-0001",
+        proposalVersion: 1,
+      },
+      eventClass: "APPROVAL",
+      kind: "operatorApproval",
+    },
+    {
+      ...shared,
+      data: {
+        agentName: "VisionAgent",
+        canonicalizationVersion: 1,
+        commandType: "escalate-rescue",
+        droneId: "drone-sim-01",
+        latitudeMicrodegrees: 44_475_000,
+        longitudeMicrodegrees: -79_245_000,
+        proposalDigest: PROPOSAL_DIGEST,
+        proposalId: "proposal-synthetic-0001",
+        proposalType: "candidate-location",
+        proposalVersion: 1,
+        sourceEventDigest: "9".repeat(64),
+        sourceEventId: "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6c",
+        sourceInvocationId: "invocation-synthetic-0001",
+      },
+      eventClass: "EVIDENCE",
+      kind: "agentProposal",
+    },
+    {
+      ...shared,
+      data: {
+        canonicalizationVersion: 1,
+        evidenceDecisionId: "decision-synthetic-0001",
+        evidenceDecisionVersion: 1,
+        outcome: "manual-review",
+        proposalDigest: PROPOSAL_DIGEST,
+        proposalId: "proposal-synthetic-0001",
+        proposalVersion: 1,
+        reason: "insufficient-live-sources",
+      },
+      eventClass: "EVIDENCE",
+      kind: "evidenceDecision",
+    },
+    {
+      ...shared,
+      data: {
+        detail: "bounded synthetic observation",
+        droneId: "drone-sim-01",
+        latitudeMicrodegrees: 44_475_000,
+        longitudeMicrodegrees: -79_245_000,
+        observation: "thermal-anomaly",
+      },
+      eventClass: "EVIDENCE",
+      kind: "salientObservation",
+    },
+    {
+      ...shared,
+      data: {
+        commandId: "command-synthetic-0001",
+        droneId: "drone-sim-01",
+        sectorId: "sector-01",
+      },
+      eventClass: "COMMAND",
+      kind: "droneCommand",
+    },
+    {
+      ...shared,
+      data: {
+        commandId: "command-synthetic-0001",
+        droneId: "drone-sim-01",
+        outcome: "succeeded",
+      },
+      eventClass: "COMMAND",
+      kind: "commandResult",
+    },
+    {
+      ...shared,
+      data: {
+        actuated: false,
+        commandType: "escalate-rescue",
+        operation: "command-authority",
+        outcome: "refused",
+        refusal: "unknown-operation",
+        requestId: "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+        rpcVersion: 1,
+      },
+      eventClass: "AUDIT",
+      kind: "gatewayResponse",
+    },
+    {
+      ...shared,
+      data: {
+        agentName: "VisionAgent",
+        auditVersion: 1,
+        correlationId: "correlation-synthetic-0001",
+        invocationId: "invocation-synthetic-0001",
+        outcome: "abstained",
+        reason: "timeout",
+        recordId: "audit-synthetic-0001",
+        recordType: "proposal-normalization",
+      },
+      eventClass: "AUDIT",
+      kind: "auditRecord",
+    },
+  ];
+}
+
+async function applicationTimelineInputs(
+  sourceScript: DashboardSourceScript,
+): Promise<readonly DashboardSourceInput[]> {
+  const snapshotInput = sourceScript.inputs.find(({ name }) => name === "snapshot");
+  if (snapshotInput === undefined) throw new Error("running fixture is missing its snapshot");
+  const snapshot = JSON.parse(snapshotInput.raw) as { state: DashboardReducedState };
+  let state = snapshot.state;
+  const inputs: DashboardSourceInput[] = [];
+  for (const event of applicationTimelineEvents()) {
+    const ordered: OrderedDashboardEvent = {
+      auditOrdinal: state.latestAuditOrdinal + 1,
+      event,
+    };
+    state = { ...state, latestAuditOrdinal: ordered.auditOrdinal };
+    inputs.push({
+      channel: "sse-frame",
+      name: "dashboard-event",
+      raw: JSON.stringify({
+        cursor: `cursor-application-event-${String(ordered.auditOrdinal)}`,
+        digest: await replayStateDigest(state),
+        event: ordered,
+        frameVersion: "ordered-dashboard-event-frame/v1",
+      }),
+    });
+  }
+  return inputs;
+}
+
 test("composes live server, mission, and presentation owners through semantic controls", async () => {
   // Arrange
   await renderFixture(fixtureForState("running"));
@@ -105,6 +283,31 @@ test("composes live server, mission, and presentation owners through semantic co
   expect(screen.getByRole("status", { name: "Marker interpolation" }).textContent).toBe(
     "Sample applied for drone-sim-01",
   );
+});
+
+test("projects every validated application event as a timeline-only broker fact", async () => {
+  // Arrange
+  const source = fixtureForState("running");
+  const harness = await renderFixture(source);
+  const inputs = await applicationTimelineInputs(source);
+
+  // Act
+  await appendInputs(harness, inputs);
+  const timeline = screen.getByRole("list", { name: "Ordered mission events" });
+
+  // Assert
+  expect(timeline.textContent).toContain("Operator command · command-synthetic-0001");
+  expect(timeline.textContent).toContain("Rejection · proposal-synthetic-0001");
+  expect(timeline.textContent).toContain("Proposal · proposal-synthetic-0001");
+  expect(timeline.textContent).toContain("Evidence · decision-synthetic-0001 · manual-review");
+  expect(timeline.textContent).toContain("drone-sim-01 · thermal-anomaly");
+  expect(timeline.textContent).toContain("Drone command · command-synthetic-0001");
+  expect(timeline.textContent).toContain("Command result · command-synthetic-0001 · succeeded");
+  expect(timeline.textContent).toContain(
+    "Gateway · b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e · refused",
+  );
+  expect(timeline.textContent).toContain("Audit · proposal-normalization · audit-synthetic-0001");
+  expect(screen.getByRole("status", { name: "Latest audit ordinal" }).textContent).toBe("60");
 });
 
 test.each([

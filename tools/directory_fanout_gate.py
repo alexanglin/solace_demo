@@ -3,8 +3,9 @@
 Every other maintainability property in this repository is a gate with a number in
 ``docs/operating-parameters.md``. Directory fan-out was the one dimension of structure
 left to review, and ``docs/adr/0011`` records why review is not an acceptable
-enforcement mechanism here. The decision, the limit, and the two structural exemptions
-are in ``docs/adr/0033-bound-directory-fan-out.md``.
+enforcement mechanism here. The decision and limit are in
+``docs/adr/0033-bound-directory-fan-out.md``; current structural exemptions are held by
+the fail-closed registry.
 
 This module is pure: it performs no process launch and no repository discovery. The
 enumeration is the hook script's job, because ``docs/adr/0025`` confines ``subprocess``

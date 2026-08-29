@@ -587,7 +587,7 @@ function snapshot(
 ): DashboardSourceInput {
   const digest = replayStateDigest(state);
   const latestEventDigest =
-    state.latestAuditOrdinal === 0 ? null : orderedDashboardEventWitness(latestEvent);
+    state.latestAuditOrdinal === 0 ? null : orderedEventWitnessDigest(latestEvent);
   return sourceInput("sse-frame", "snapshot", {
     currentRun: {
       missionId: "mission-synthetic-0001",
@@ -684,16 +684,15 @@ export function replayStateDigest(state: DashboardReducedState): string {
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
-function orderedDashboardEventWitness(orderedEvent: OrderedDashboardEventFixture | null): string {
+function orderedEventWitnessDigest(orderedEvent: OrderedDashboardEventFixture | null): string {
   if (orderedEvent === null) {
-    throw new TypeError("a nonempty dashboard checkpoint requires its latest ordered event");
+    throw new Error("snapshot fixture is missing its latest ordered event witness");
   }
-  const document = {
+  const material = `aerial-rescue/canonical/v1\nordered-dashboard-event\n${canonicalJson({
     auditOrdinal: orderedEvent.auditOrdinal,
     canonicalizationVersion: 1,
     event: orderedEvent.event,
-  };
-  const material = `aerial-rescue/canonical/v1\nordered-dashboard-event\n${canonicalJson(document)}`;
+  })}`;
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
@@ -702,7 +701,7 @@ function latestOrderedEvent(
 ): OrderedDashboardEventFixture {
   const latest = orderedEvents.at(-1);
   if (latest === undefined) {
-    throw new TypeError("dashboard fixture has no latest ordered event");
+    throw new Error("snapshot fixture is missing its latest ordered event witness");
   }
   return latest;
 }

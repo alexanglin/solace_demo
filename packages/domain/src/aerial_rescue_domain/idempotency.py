@@ -44,6 +44,19 @@ class IdempotencyKind(Enum):
 
     COMMAND = "command"
     APPROVAL_CONSUMPTION = "approval consumption"
+    DASHBOARD_COMMAND = "dashboard command"
+    DASHBOARD_DECISION = "dashboard decision"
+
+
+DASHBOARD_IDEMPOTENCY_KINDS = (
+    IdempotencyKind.DASHBOARD_COMMAND,
+    IdempotencyKind.DASHBOARD_DECISION,
+)
+"""The two generic dashboard mutations whose repeats return their exact response.
+
+Scenario start and reset keep the purpose-specific ``dashboard_operation`` authority selected
+by ADR-0113 and are deliberately absent from this generic command/decision vocabulary.
+"""
 
 
 class IdempotencyDecision(Enum):
@@ -80,8 +93,8 @@ def idempotency_decision(kind: IdempotencyKind, *, known: bool) -> IdempotencyDe
         known: Whether the identifier has been seen before.
 
     Returns:
-        Execute on first sight; return the prior result for a known command; deny a known
-        approval consumption, which is the documented exception to replay-as-success.
+        Execute on first sight; return the prior result for a known repeatable operation; deny
+        a known approval consumption, which is the documented exception to replay-as-success.
     """
     if not known:
         return IdempotencyDecision.EXECUTE

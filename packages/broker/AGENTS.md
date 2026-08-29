@@ -11,9 +11,10 @@ before changing topic or event handling.
 This package is the infrastructure boundary between typed application code and PubSub+. It implements
 the management-plane authorization and queue projection over SEMP, wildcard subscription rendering,
 both publishers, the direct receiver, and the queue-bound receiver that settles explicitly. It does
-not yet implement the bounded edge outbox, reconnect reconciliation, or acknowledgement after a
-durable store commit. Do not report planned behavior or the package description as implemented
-evidence.
+not own service transactions, durable outboxes, or the decision to settle after a durable store
+commit. It supplies bounded reconnect/readiness signals and message-bound settlement capabilities;
+only each service composition can complete rebind, outbox reconciliation, commit-before-settlement,
+and nonzero-exit behavior. Do not report an adapter test as service or live-broker evidence.
 
 Read the authority for the concern before editing it:
 
@@ -37,8 +38,16 @@ Read the authority for the concern before editing it:
 | Delivery guarantee per topic family | [ADR-0079](../../docs/adr/0079-bind-each-topic-family-to-its-delivery-guarantee.md) |
 | Durable queue set, ownership, and the four written bounds | [ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md) |
 | Lifecycle source families, scenario identity, grants, and queue delta | [ADR-0111](../../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
-| Recorder grant, combined lifecycle queue, and provisioning projections | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
-| Shared-project mission-control projection and lifecycle | [ADR-0123](../../docs/adr/0123-isolate-mission-control-state-and-broker-identities.md), [ADR-0139](../../docs/adr/0139-reuse-the-aerial-rescue-mesh-runtime-for-the-dashboard.md) |
+| Bounded reconnect, readiness, queue retirement, and shared-stack recovery | [ADR-0145](../../docs/adr/0145-bound-solace-recovery-and-queue-retirement.md) |
+| Owned least-privilege client profiles and typed delivery routing | [ADR-0153](../../docs/adr/0153-own-bounded-least-privilege-pubsub-clients.md) |
+| One application connection per owned identity | [ADR-0168](../../docs/adr/0168-bind-application-identities-to-one-connection.md) |
+| Immediate ACKs for individually confirmed publications | [ADR-0169](../../docs/adr/0169-request-immediate-acks-for-confirmed-publications.md) |
+| Publisher-owned DMQ eligibility | [ADR-0170](../../docs/adr/0170-force-dmq-eligibility-at-the-publisher.md) |
+| Isolated DMQs, paired retirement, and paced aggregate monitoring | [ADR-0157](../../docs/adr/0157-pace-and-coalesce-read-only-semp-monitoring.md) |
+| Pinned-broker queue depth and active-bind monitoring | [ADR-0190](../../docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md) |
+| Solace-native W3C trace propagation | [ADR-0156](../../docs/adr/0156-pin-solace-native-trace-propagation.md) |
+| Body-free Direct trace refusal | [ADR-0180](../../docs/adr/0180-persist-direct-ingress-refusals-without-stopping-consumers.md) |
+| Recorder grant and combined lifecycle queue | [ADR-0120](../../docs/adr/0120-run-only-the-recorder-endpoints-the-dashboard-consumes.md) |
 | Fixed Agent Mesh A2A namespace | [ADR-0064](../../docs/adr/0064-fix-the-agent-mesh-a2a-namespace.md) |
 
 An Accepted ADR governs if code, tests, comments, or older evidence disagree. A change to a broker
@@ -53,9 +62,16 @@ requires a decision record.
 | --- | --- |
 | `src/aerial_rescue_broker/subscriptions.py` | Render bounded application-family subscriptions, one drone's command subscription, the isolated A2A subscription, and the reserved command-gateway reply channel |
 | `src/aerial_rescue_broker/queues.py` | Derive the durable queue set from the grant tables and the delivery guarantees, and carry the values every queue is written with ([ADR-0080](../../docs/adr/0080-provision-one-durable-queue-per-guaranteed-consumer.md)) |
-| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, the guaranteed and direct publishers, the direct receiver, the queue-bound receiver that settles explicitly, and session lifecycle |
+| `src/aerial_rescue_broker/messaging.py` | The typed façade over the untyped Solace client: connection properties, TLS, publishers/requester, bounded direct and queue-bound receivers, one-shot message settlement, receiver-only and mixed session graphs, and lifecycle/readiness |
+| `src/aerial_rescue_broker/routing.py` | Parse, authorize, validate, and derive Direct, Guaranteed, or request/reply publication from the closed topic-family table before broker I/O |
+| `src/aerial_rescue_broker/ingress.py` | Execute canonical envelope/topic binding and the exact committed payload JSON Schema from an offline, reference-complete runtime registry |
+| `src/aerial_rescue_broker/tracing.py` | Inject and read back the official Solace outbound W3C carrier and validate inbound native TraceID agreement before application processing |
 | `src/aerial_rescue_broker/provisioning.py` | Derive current SEMP desired state, upsert its profiles, usernames, and queues, and reconcile their exceptions and subscriptions |
 | `src/aerial_rescue_broker/semp.py` | Perform bounded TLS SEMP requests, page reads on the configuration and monitoring planes, response parsing, and failure redaction |
+| `src/aerial_rescue_broker/monitoring.py` | Pace and coalesce aggregate queue health reads behind a dedicated read-only management identity and a capability with no writer |
+| `src/aerial_rescue_broker/monitor_console.py` | Compose the opt-in continuous SEMP monitor behind the interactive VPN-scoped prerequisite, count-only output, fail-closed reads, and explicit connection close ([ADR-0181](../../docs/adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md)) |
+| `src/aerial_rescue_broker/event_monitor.py` | Validate broker-native JSON events against the closed standalone capability catalog and emit bounded tenant-neutral alerts |
+| `src/aerial_rescue_broker/event_source.py` | Follow the read-only retained event log across bounded EOF polling, rename rotation, copy-truncation, and cooperative shutdown |
 | `src/aerial_rescue_broker/deployment.py` | Read generated local material and compose the operator-facing provision command |
 | `src/aerial_rescue_broker/__main__.py` | `python -m aerial_rescue_broker` entry point |
 | `tests/` | Offline unit, refusal, repeat-apply, reconciliation, redaction, boundary, and property evidence |
@@ -75,22 +91,51 @@ wildcard subscription strings because concrete publish topics must reject wildca
 - Keep all imports of the untyped `solace-pubsubplus` distribution behind a fully typed broker façade.
   Do not let `Any`, native client objects, callbacks, or vendor exceptions escape into domain or service
   code. No other application package may import `solace` directly.
-- Declare every imported project package as a member dependency. Production code imports
-  `aerial_rescue_domain.principals`, but the current member manifest omits `aerial-rescue-domain`; the
-  root workspace masks that packaging defect by installing every member together. Do not claim the
-  broker wheel is independently complete until the manifest, lock, and an isolated install prove it.
+- Give each application identity one long-lived service connection and construct only its required
+  endpoint capabilities. In particular, the dashboard session has confirmed publication, named durable
+  receivers, and one bounded Direct receiver; it has no requester or Direct publisher. Every endpoint
+  shares the session lifecycle, installs termination notification, and closes before disconnect.
+- Declare every imported project package and third-party integration as a direct member dependency.
+  The broker manifest owns contracts, domain, observability, JSON Schema, OpenTelemetry, the reviewed
+  Solace carrier integration, and the pinned PubSub+ SDK; do not rely on another workspace member to
+  mask a missing dependency. An isolated wheel install remains the packaging proof.
 - Validate every broker message and management response as untrusted input before it affects state or
-  policy. Use Pydantic at broker ingress, then adapt accepted values into typed internal dataclasses or
-  protocols. The current SEMP parser does not yet meet this rule: `_rows()` drops non-object list
-  entries, while `_present()` ignores rows missing the expected member and coerces arbitrary values with
-  `str()`. Do not extend those permissive paths; replace the boundary through TDD before relying on new
-  response fields.
+  policy. Notification ingress must canonical-decode, bind its topic/envelope, execute the registered
+  JSON Schema, and then let the service validate its Pydantic wire model. The registry loads only exact
+  payload identities from local committed files, resolves every `$ref` offline at startup, and never
+  fetches the reserved `.invalid` host. SEMP collection and monitor decoders refuse malformed, partial,
+  duplicate, coerced, or misaligned rows rather than dropping them.
 - Keep management-plane SEMP JSON distinct from application CloudEvent canonicalization. SEMP requests
   follow the broker API; application payloads and topics follow `packages/contracts`.
 - Keep the monitoring plane read-only. `send` performs every write and is bound to the configuration
-  root; `read_monitor` is a separate method rather than a flag so no request can mutate through a
-  monitor path. Read a queue's depth with `message_count`, which counts the queue's own message
-  collection: `spooledMsgCount` is cumulative and never falls, and `msgSpoolUsage` is bytes.
+  root; monitor reads are separate methods rather than flags so no request can mutate through a monitor
+  path. Read queue depth from the parent collection's aligned `msgs.count`, selected with literal comma
+  separators. Read active binds from the exact queue's count-only `txFlows` response; the pinned parent
+  row has no `bindCount`. Never enumerate `/msgs` or expose transmit-flow rows. `spooledMsgCount` is
+  cumulative and never falls, and `msgSpoolUsage` is bytes ([ADR-0190](../../docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)).
+- Keep the continuous SEMP composition opt-in and fail-closed. Its credential is the fixed
+  `aerialrescuemonitor` management identity, not a messaging role or provisioning administrator; its
+  externally proven scope is global `none`, VPN default `none`, and exactly one selected-VPN
+  `read-only` exception. The process may expose only monitor reads and connection close, emit only
+  aggregate counts, and exit nonzero when a complete read is lost ([ADR-0181](../../docs/adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md)).
+- Keep event monitoring separate from SEMP polling. The software broker's `event` Syslog facility is
+  retained locally and exposed once through container stdout in broker-native JSON; it already contains
+  SYSTEM and Message VPN events, so enabling the `system` facility too would duplicate them. The
+  continuous monitor receives only the retained volume's read-only `jail/logs` subpath and has no
+  network, credential, Docker socket, or whole-storage capability ([ADR-0173](../../docs/adr/0173-follow-the-retained-broker-event-log-without-runtime-authority.md)); stdout remains an operator and
+  container-runtime path. Consume the source one bounded line at a time, emit no raw `msg`, host, VPN,
+  client, or dynamic argument, and treat malformed input, an active-scope catalog gap, unexpected source
+  closure, or alert-delivery failure as degraded. HA, DMR, bridging, LDAP, replication, transactions,
+  and appliance-only events stay explicitly excluded until their topology decisions activate them.
+- Routine monitoring accepts only `aerialrescuemonitor`, exposes no configuration method, coalesces
+  successful and failed attempts for the selected interval, and paces every parent page and count-only
+  child request under its reserved SEMP share. Probe binds only for observed desired queues, in stable
+  order and inside the accepted fan-out bound. The pacer bounds this process only; live acceptance must
+  count all SEMP clients against the broker-wide ceiling. The pinned configuration specification exposes
+  no internal-management-user write; do not invent one or substitute the provisioning administrator.
+- A nonempty DMQ is retained failure evidence. Report it as degraded health, but never settle, drain,
+  purge, or delete it through the routine monitor. Queue retirement remains a separate two-step operator
+  action with immediate aggregate readback.
 - Inject connections and transports. Unit and property tests must not open sockets or require generated
   credentials. Name a real client or HTTPS connection only at the narrow composition seam.
 - Bound every request, page walk, retry loop, receive queue, reconnect attempt, callback handoff, and
@@ -136,10 +181,10 @@ exceptions. Preserve all of these properties:
 - Disable the factory client username on every apply. An enabled fallback identity makes every topic
   denial bypassable, including the command-gateway-only executable command boundary.
 
-The broker docstrings still describe the A2A namespace as unset; that prose is stale. Separately, the
-CLI defaults to `None` and accepts any renderer-valid namespace, so it can exit successfully while
-withholding A2A or provisioning a value ADR-0064 did not choose. Pass the fixed namespace explicitly and
-do not rely on implicit CLI configuration until that behavioral gap is closed.
+The CLI defaults to ADR-0064's exact `aerial-rescue-mesh` namespace. Its lower-level provision function
+retains an explicit `None` recovery path that withholds all A2A authority and reports the under-grant.
+Do not accept another renderer-valid namespace merely because it is syntactically safe; changing the
+deployed namespace is an architecture and authorization change.
 
 A new topic family requires the affected contracts, domain, wildcard, consumer, and live evidence
 owners to move together. A grant-only change requires its governing record, domain table and tests,
@@ -154,8 +199,9 @@ Build the complete desired state before issuing the first SEMP request. Missing 
 blank role credentials, and renderer-invalid namespaces must fail closed before any broker mutation.
 There is one ACL profile for each recorded role. ADR-0061 requires a distinct client username for each
 deployed process, bound to its role profile; a component with no recorded role receives no identity.
-The current code instead creates one role-named username and credential per role, so do not preserve or
-describe that implementation gap as the target identity model.
+The desired state creates one role-named messaging username for each enabled role, binds it to both its
+owned ACL and client profile, and omits the SEMP-only discovery role. A future horizontally scaled or
+independently deployed process needs its own identity rather than reusing that role username.
 
 Within the current desired set, preserve the repeat-safe exception reconciliation:
 
@@ -178,21 +224,13 @@ unprovisioned broker, keep dependent clients unready, rerun the complete apply, 
 require both permitted positive controls and forbidden negative controls before claiming authorization
 is enforced.
 
-Queues are derived, never listed. The global set follows subscribe grants and guaranteed families,
-except that ADR-0120 consolidates the recorder's three dashboard lifecycle subscriptions into one
-exclusive queue. The mission-control projection requires that queue and the dead-message queue. When it
-is applied to the shared broker, those endpoints are a required subset rather than an exclusive runtime
-inventory. A queue can narrow authority but never widen it. How each role's global endpoints are
-realised is a table total over the ten roles, and `NONE` is provable rather than asserted: a `NONE` role
-must hold no guaranteed subscribe grant, so only `UPSTREAM` can drop a consumer that has one, and exactly
-one role carries it on ADR-0071's authority.
-
-The same mission-control apply reconciles the fleet-simulator, scenario-service, and recorder ACL
-profiles and usernames because those are the broker clients among the seven dashboard extension
-targets. Other profiles, usernames, queues, and grants may be present for the shared runtime; production
-evidence asserts the required mission-control subset and must not treat unrelated inventory as a
-failure. The global projection remains total over all roles. Do not restore absent-service identities
-for symmetry.
+Queues are derived, never listed. The set is the subscribe grants intersected with the guaranteed
+families, except that ADR-0120 consolidates the recorder's lifecycle subscriptions into one exclusive
+queue. A queue exists only where the ACL already permits the subscription and can narrow authority but
+never widen it. How each role's endpoints are realised is a table total over every role, and `NONE` is
+provable rather than asserted: a `NONE` role must hold no guaranteed subscribe grant, so only
+`UPSTREAM` can drop a consumer that has one, and exactly one role carries it on ADR-0071's authority.
+The scenario service is brokerless and receives no profile, username, secret, or queue projection.
 
 Every queue value is written rather than inherited. Five broker defaults are wrong here — redelivery
 retries forever, expiry is ignored, the per-queue spool exceeds the whole message VPN's, the
@@ -205,9 +243,8 @@ derivation recorded with it.
 
 - Read only material generated by `scripts/broker-secrets.sh` under the ignored `deploy/certs/` and
   `deploy/secrets/` layout. Missing files and blank role credentials refuse the run before broker
-  mutation; do not fall back to blank, shared, factory, or environment-guessed credentials. The current
-  endpoint path accepts a blank admin credential after stripping it, so add boundary validation and a
-  failing test before claiming every required credential is checked before transport.
+  mutation; do not fall back to blank, shared, factory, or environment-guessed credentials. Both role
+  and administrator readers reject blank or unreadable text before constructing a transport.
 - Never print, log, snapshot, persist, or include in an exception a password, private key,
   `Authorization` header, rendered secret environment, live tenant value, secret-bearing request body,
   or `SempEndpoint` representation.
@@ -220,15 +257,13 @@ derivation recorded with it.
 - Authenticate SEMP over TLS with certificate and hostname validation enabled. The local endpoint uses
   its per-checkout generated authority. An unreadable authority must fail rather than silently switching
   to system trust or plaintext.
-- Every owned username currently binds to the broker image's factory `default` client profile, whose
-  measured state permits TLS downgrade. Unpublished plaintext ports contain the exposure but do not make
-  that permission disappear. Treat it as an unresolved TLS gap, not evidence of complete data-plane TLS
-  enforcement, until an owned client-profile policy and live test close it.
-- `SempEndpoint` currently has a generated dataclass representation containing its plaintext password;
-  never pass it to diagnostics, and close that representation hazard before expanding its use. The CLI
-  failure test also does not prove that an injected secret-bearing `SempError` is redacted: it checks the
-  exit status and prefix but not the emitted credential. Do not claim that negative path as redaction
-  evidence until a failing test and fix establish it.
+- Every messaging username binds to its role-owned client profile. Those profiles explicitly disable
+  TLS downgrade, compression, eliding, shared subscriptions, transactions, bridges, and permission
+  override, and grant only the Guaranteed directions, endpoint creation, and resource ceilings that
+  role needs. A live reconnect
+  and exact SEMP readback are still required because several profile changes affect only a new session.
+- `SempEndpoint.__repr__` redacts its password and secret-bearing SEMP failures suppress broker prose.
+  Preserve those controls and prove both whenever a new management request or diagnostic path is added.
 - Preserve the bounded request timeout and zero blind retries. Changing either value is an operating
   parameter and behavior decision, not a local tuning edit.
 - The Docker broker is the substrate for every broker-dependent live and acceptance path. Most package
@@ -244,7 +279,14 @@ recreation and a complete reapply so credentials, clients, and ACLs agree.
 The package contains both halves of the application data plane. `SolacePublisher` is the guaranteed
 publisher, `SolaceDirectPublisher` is the direct one that routine telemetry uses, `SolaceReceiver` is
 the direct receiver, and `SolacePersistentReceiver` binds one durable queue and settles nothing on
-its own.
+its own. `ReceiverOnlySession` composes one bounded direct receiver and multiple named durable
+receivers on one long-lived service without exposing a publisher or requester. It constructs in stable
+order, unwinds and shuts down in reverse order, continues cleanup after a refusal, and leaves readiness
+false across reconnect until the application confirms its reconciliation work and every registered
+durable receiver's SDK activation/passivation listener has reported that its flow is active again.
+Every publisher, requester, Direct receiver, and durable receiver registers the SDK's non-recoverable
+termination listener before it starts and shares the composition lifecycle; a terminal endpoint
+exhausts readiness without copying the vendor event's free-text detail into application diagnostics.
 
 Three port distinctions are load-bearing and none of them is enforced by the type system on its own.
 A protocol is satisfied structurally, so `publish` on both publishers would let a direct publisher
@@ -253,16 +295,30 @@ For the same reason `AcknowledgingReceiver` requires `settle` rather than standi
 `MessageReceiver`, so a direct receiver cannot be passed where a consumer must acknowledge what it
 took. Preserve both. Client acknowledgement is asked for explicitly: auto-acknowledgement removes a
 message as soon as it is handed over, which would end the guarantee at the socket instead of at the
-durable outcome.
+durable outcome. A service receives Guaranteed input as `GuaranteedMessage`; its `MessageSettlement`
+is bound to that exact SDK message and can send `ACCEPTED`, `FAILED`, or `REJECTED` exactly once. A
+native-trace refusal raises `UnsettledMessageError` with the same one-shot capability rather than
+settling inside the adapter, so the owning service can durably record a permanent refusal before it
+chooses the dead-message path. A malformed Direct native carrier raises `InvalidDirectMessageError`
+with body-free metadata and no settlement capability; the owning service records and drops it without
+pretending that best-effort delivery can be recovered.
 
-Still absent: the bounded edge outbox, reconnect reconciliation, and exactly-once effects. The recorder
-now consumes its combined lifecycle queue and settles only after the owning store transaction commits;
-that narrow consumer does not prove those broader claims. Keep the untyped vendor client behind the typed
-façade, and prove the official Solace client satisfies each need before adding a project-owned transport. Require Pydantic ingress,
-deterministic fakes, failure injection, and authorized live broker evidence before claiming
-reconnect, durability, or shutdown behavior. The offline suite proves what the adapter passes to the
-client, never that the broker accepted it — the first live apply refused two members the fake had
-happily accepted.
+Still absent here: the bounded edge outbox, the service-owned reconciliation transaction, and
+exactly-once domain effects. This package supplies the capability that lets a service enforce
+commit-before-settlement; it does not and cannot prove that the service committed PostgreSQL state.
+Keep that transaction in the owning service/store, contain the untyped vendor client behind this
+typed façade, and prove the official Solace client satisfies the need before adding a project-owned
+transport. Require Pydantic ingress, deterministic fakes, failure injection, and authorized live
+broker evidence before claiming broker reconnect or durability behavior. The offline suite proves
+what the adapter passes to the client, never that the broker accepted it — the first live apply
+refused two members the fake had happily accepted.
+The recorder's combined lifecycle consumer does not prove those broader claims. Keep its transaction
+and every other reconciliation transaction in the owning service/store, contain the untyped vendor
+client behind this typed façade, and prove the official Solace client satisfies the need before adding
+a project-owned transport. Require Pydantic ingress, deterministic fakes, failure injection, and
+authorized live broker evidence before claiming broker reconnect, durability, or shutdown behavior.
+The offline suite proves what the adapter passes to the client, never that the broker accepted it —
+the first live apply refused two members the fake had happily accepted.
 
 ## 8. Testing and cross-tree coordination
 

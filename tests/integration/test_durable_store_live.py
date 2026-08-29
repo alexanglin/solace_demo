@@ -1,4 +1,4 @@
-"""The complete store history applied to a real cluster on disposable run databases.
+"""The first revision applied to a real cluster, on a database this run creates and drops.
 
 Everything `packages/store` could establish before this file was that Alembic *emits* a data
 definition: `packages/store/tests/test_migration.py` runs the revision bodies against a
@@ -26,13 +26,12 @@ Carries `integration` and `docker`, and deliberately **not** `broker`: a resourc
 what a test needs, this module needs no broker, and `docker` alone already excludes it from every
 blocking stage (`tests/integration/AGENTS.md` section 3).
 
-What a green run establishes: PostgreSQL accepts all five revisions one step at a time,
-enforces the selected constraints and transaction behavior below, and returns through the same
-history on downgrade. For revision 0005 it also establishes additive upgrade/downgrade,
-start/reset exact-byte replay, pending same-run recovery, retained predecessor history, broker
-deduplication, scenario-bound live runs, missionless replay rows, and snapshot reads on a real
-disposable database. It does not establish killed-process recovery, pool cancellation, or use of the
-operator's persistent database.
+What a green run establishes: PostgreSQL accepts the first revision, stamps it, is unchanged by a
+second application of the same head, enforces the two constraints the revision declares rather
+than only carrying their text, and returns to an empty schema on the downgrade. What it does not
+establish: transaction visibility, isolation behaviour, restart durability, pool cancellation,
+concurrent races, migration from a *prior* revision, mismatch, or failure recovery. Each of those
+needs its own case, and several need a second revision or a mechanism no record has selected yet.
 """
 
 from __future__ import annotations
@@ -44,13 +43,12 @@ import unittest
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast, override
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.orchestration import OperationCoordinator
 from aerial_rescue_dashboard_api.ports import (
     CurrentRun,
@@ -93,20 +91,20 @@ from aerial_rescue_store.bounds import (
     STATEMENT_TIMEOUT_MILLISECONDS,
     EngineBounds,
 )
-from aerial_rescue_store.dashboard_events import (
+from aerial_rescue_store.dashboard.events import (
     BrokerEvent,
     BrokerEventOutcome,
     EventSession,
     append_broker_event,
 )
-from aerial_rescue_store.dashboard_runs import (
+from aerial_rescue_store.dashboard.runs import (
     DashboardMission,
     DashboardRun,
     create_mission,
     create_run,
     run_by_identity,
 )
-from aerial_rescue_store.dashboard_runs import (
+from aerial_rescue_store.dashboard.runs import (
     RunMode as StoredRunMode,
 )
 from aerial_rescue_store.engine import ISOLATION_LEVEL, create_engine
@@ -117,20 +115,36 @@ from aerial_rescue_store.idempotency import (
     record_result,
 )
 from aerial_rescue_store.migration import (
+    APPLICATION_OUTBOX_TABLE,
+    APPROVAL_BINDING_TABLE,
     APPROVAL_TABLE,
     AUDIT_RECORD_TABLE,
     AUDIT_SEQUENCE_TABLE,
     BASE_REVISION,
+    BROKER_INBOX_TABLE,
+    BROKER_REFUSAL_TABLE,
     COMMAND_OUTBOX_TABLE,
+    COMMAND_PROGRESS_TABLE,
     DASHBOARD_BROKER_EVENT_TABLE,
     DASHBOARD_BROKER_SOURCE_TABLE,
     DASHBOARD_CURRENT_RUN_TABLE,
     DASHBOARD_MISSION_TABLE,
     DASHBOARD_OPERATION_TABLE,
     DASHBOARD_RUN_TABLE,
+    DRONE_COMMAND_EFFECT_TABLE,
+    DRONE_COMMAND_RECEIPT_TABLE,
+    DRONE_STREAM_STATE_TABLE,
+    EVIDENCE_DECISION_TABLE,
+    EVIDENCE_ITEM_TABLE,
     HEAD_REVISION,
     IDEMPOTENCY_CLAIM_TABLE,
+    PENDING_INVOCATION_TABLE,
+    PROPOSAL_TABLE,
+    SOURCE_EVENT_TABLE,
+    SOURCE_EVIDENCE_ITEM_TABLE,
     live_config,
+    migration_config,
+    revisions,
 )
 from aerial_rescue_store.outbox import (
     MAXIMUM_UNCONFIRMED_RECORDS,
@@ -156,15 +170,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from tests.broker_live_support import DEPLOY_ROOT as DEPLOY
+from tests.broker_live_support import REPOSITORY_ROOT
+
 if TYPE_CHECKING:
     from aerial_rescue_store.settings import DatabaseSettings
     from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.sql.elements import TextClause
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker]
-
-REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
-DEPLOY: Final = REPOSITORY_ROOT / "deploy"
 
 MAINTENANCE_DATABASE: Final = "postgres"
 """The database the autocommit connection addresses, because `CREATE DATABASE` needs one."""
@@ -178,6 +192,12 @@ SECOND_REVISION: Final = "0002_approval"
 THIRD_REVISION: Final = "0003_idempotency"
 FOURTH_REVISION: Final = "0004_command_outbox"
 FIFTH_REVISION: Final = "0005_dashboard_runtime"
+SIXTH_REVISION: Final = "0006_application_processing"
+SEVENTH_REVISION: Final = "0007_durable_fleet_processing"
+EIGHTH_REVISION: Final = "0008_command_gateway_authority"
+NINTH_REVISION: Final = "0009_broker_refusal"
+TENTH_REVISION: Final = "0010_dashboard_idempotency"
+ELEVENTH_REVISION: Final = "0011_audit_kind"
 
 _FIRST_TABLES: Final = (AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE, VERSION_TABLE)
 _SECOND_TABLES: Final = (*_FIRST_TABLES, APPROVAL_TABLE)
@@ -192,6 +212,31 @@ _FIFTH_TABLES: Final = (
     DASHBOARD_OPERATION_TABLE,
     DASHBOARD_RUN_TABLE,
 )
+_SIXTH_TABLES: Final = (
+    *_FIFTH_TABLES,
+    BROKER_INBOX_TABLE,
+    SOURCE_EVENT_TABLE,
+    SOURCE_EVIDENCE_ITEM_TABLE,
+    APPLICATION_OUTBOX_TABLE,
+    PROPOSAL_TABLE,
+    EVIDENCE_ITEM_TABLE,
+    EVIDENCE_DECISION_TABLE,
+    COMMAND_PROGRESS_TABLE,
+    DRONE_COMMAND_RECEIPT_TABLE,
+)
+_SEVENTH_TABLES: Final = (
+    *_SIXTH_TABLES,
+    DRONE_STREAM_STATE_TABLE,
+    DRONE_COMMAND_EFFECT_TABLE,
+)
+_EIGHTH_TABLES: Final = (
+    *_SEVENTH_TABLES,
+    PENDING_INVOCATION_TABLE,
+    APPROVAL_BINDING_TABLE,
+)
+_NINTH_TABLES: Final = (*_EIGHTH_TABLES, BROKER_REFUSAL_TABLE)
+_TENTH_TABLES: Final = _NINTH_TABLES
+_ELEVENTH_TABLES: Final = _TENTH_TABLES
 
 HISTORY: Final = (
     (FIRST_REVISION, tuple(sorted(_FIRST_TABLES))),
@@ -199,14 +244,20 @@ HISTORY: Final = (
     (THIRD_REVISION, tuple(sorted(_THIRD_TABLES))),
     (FOURTH_REVISION, tuple(sorted(_FOURTH_TABLES))),
     (FIFTH_REVISION, tuple(sorted(_FIFTH_TABLES))),
+    (SIXTH_REVISION, tuple(sorted(_SIXTH_TABLES))),
+    (SEVENTH_REVISION, tuple(sorted(_SEVENTH_TABLES))),
+    (EIGHTH_REVISION, tuple(sorted(_EIGHTH_TABLES))),
+    (NINTH_REVISION, tuple(sorted(_NINTH_TABLES))),
+    (TENTH_REVISION, tuple(sorted(_TENTH_TABLES))),
+    (ELEVENTH_REVISION, tuple(sorted(_ELEVENTH_TABLES))),
 )
 """Every step and what the database holds after it. Literals, so a new revision is noticed here
 too (`tests/AGENTS.md` section 4), and a list rather than a head because a one-revision tree could
 express neither a path nor a step back along one."""
 
-HEAD_REVISION_ID: Final = FIFTH_REVISION
-APPLIED_TABLES: Final = tuple(sorted(_FIFTH_TABLES))
-"""Every table a migrated database holds: the history's five, and Alembic's own."""
+HEAD_REVISION_ID: Final = ELEVENTH_REVISION
+APPLIED_TABLES: Final = tuple(sorted(_ELEVENTH_TABLES))
+"""Every table a migrated database holds, including Alembic's own version table."""
 
 BOUNDS: Final = EngineBounds(
     pool_size=POOL_SIZE,
@@ -405,6 +456,16 @@ async def _stamped_revision(engine: AsyncEngine) -> str | None:
 
 
 class RunDatabaseNameTests(unittest.TestCase):
+    def test_the_live_walk_inventory_covers_the_complete_package_history(self) -> None:
+        # Arrange
+        expected = revisions(migration_config("postgresql+asyncpg://offline"))
+
+        # Act
+        walked = tuple(revision for revision, _tables in reversed(HISTORY))
+
+        # Assert
+        self.assertEqual(expected, walked)
+
     def test_a_run_database_is_named_for_the_run_that_creates_it(self) -> None:
         # Arrange
         discriminator = "0123456789abcdef"

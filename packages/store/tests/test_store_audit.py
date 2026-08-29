@@ -19,7 +19,7 @@ refused. It proves call order, not concurrency.
 from __future__ import annotations
 
 import unittest
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
@@ -31,6 +31,8 @@ from aerial_rescue_store.audit import (
     AuditRefusal,
     append,
     next_ordinal_statement,
+    ordered_statement,
+    read_ordered,
     record_statement,
 )
 from aerial_rescue_store.migration import AUDIT_RECORD_TABLE, AUDIT_SEQUENCE_TABLE
@@ -39,6 +41,7 @@ from sqlalchemy import create_engine
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.dml import Insert
+    from sqlalchemy.sql.selectable import Select
 
 DIALECT: Final = create_engine(f"{DRIVER}://aerial_rescue@127.0.0.1:5432/aerial_rescue").dialect
 """The dialect the member's own driver pin resolves to, so what is asserted is what asyncpg
@@ -48,6 +51,7 @@ is lazy, and only its dialect is ever touched."""
 
 MISSION: Final = "m-store-unit"
 ISSUED_ORDINAL: Final = 7
+READ_LIMIT: Final = 7
 
 RECORD: Final = AuditRecord(
     mission_id=MISSION,
@@ -233,6 +237,126 @@ class AppendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (AuditRefusal.NO_ORDINAL_ISSUED, MISSION, []),
             (refused.value.refusal, refused.value.value, session.executed),
+        )
+
+
+@dataclass
+class _SelectedRows:
+    """Return scripted audit rows from one bounded read."""
+
+    rows: Sequence[Sequence[object]]
+
+    def all(self) -> Sequence[Sequence[object]]:
+        """Return every scripted row."""
+        return self.rows
+
+
+@dataclass
+class _ReadSession:
+    """Record the one read statement and expose no write operation."""
+
+    rows: Sequence[Sequence[object]] = ()
+    statements: list[str] = field(default_factory=list)
+
+    async def execute(self, statement: Select[tuple[object, ...]], /) -> _SelectedRows:
+        """Record and answer one audit read."""
+        self.statements.append(str(DIALECT.statement_compiler(DIALECT, statement)))
+        return _SelectedRows(self.rows)
+
+
+def _stored_row(ordinal: object = ISSUED_ORDINAL) -> tuple[object, ...]:
+    """Return one complete audit row in migrated column order."""
+    return (
+        RECORD.mission_id,
+        ordinal,
+        RECORD.kind,
+        RECORD.occurred_at,
+        RECORD.payload,
+        RECORD.correlation_id,
+        RECORD.causation_id,
+        RECORD.traceparent,
+    )
+
+
+class OrderedAuditReadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_reader_returns_complete_rows_in_authoritative_ordinal_order(self) -> None:
+        # Arrange
+        first = _stored_row(1)
+        second = _stored_row(2)
+        session = _ReadSession(rows=(first, second))
+
+        # Act
+        rows = await read_ordered(session, MISSION, 2)
+
+        # Assert
+        self.assertEqual(
+            (
+                (1, 2),
+                (RECORD.payload, RECORD.payload),
+                1,
+                True,
+                True,
+            ),
+            (
+                tuple(row.ordinal for row in rows),
+                tuple(row.payload for row in rows),
+                len(session.statements),
+                "ORDER BY audit_record.ordinal" in session.statements[0],
+                "LIMIT" in session.statements[0],
+            ),
+        )
+
+    async def test_invalid_bound_is_refused_before_database_io(self) -> None:
+        # Arrange
+        session = _ReadSession()
+
+        # Act
+        with pytest.raises(AuditError) as captured:
+            await read_ordered(session, MISSION, 0)
+
+        # Assert
+        self.assertEqual(
+            (AuditRefusal.INVALID_READ_LIMIT, []),
+            (captured.value.refusal, session.statements),
+        )
+
+    async def test_malformed_mission_or_nonascending_rows_are_refused_without_coercion(
+        self,
+    ) -> None:
+        # Arrange
+        wrong_mission = list(_stored_row(1))
+        wrong_mission[0] = "other-mission"
+        cases = (
+            ((_stored_row("1"),), AuditRefusal.UNREADABLE_ROW),
+            ((wrong_mission,), AuditRefusal.UNREADABLE_ROW),
+            ((_stored_row(2), _stored_row(1)), AuditRefusal.ORDER_VIOLATION),
+        )
+
+        # Act
+        refusals = []
+        for rows, expected in cases:
+            with self.subTest(expected=expected):
+                with pytest.raises(AuditError) as captured:
+                    await read_ordered(_ReadSession(rows=rows), MISSION, 2)
+                refusals.append(captured.value.refusal)
+
+        # Assert
+        self.assertEqual([expected for _, expected in cases], refusals)
+
+    def test_the_statement_selects_only_one_mission_with_the_supplied_bound(self) -> None:
+        # Arrange
+        statement = ordered_statement(MISSION, READ_LIMIT)
+
+        # Act
+        compiled = DIALECT.statement_compiler(DIALECT, statement)
+
+        # Assert
+        self.assertEqual(
+            (True, True),
+            (
+                "audit_record.mission_id = " in str(compiled),
+                READ_LIMIT in compiled.params.values(),
+            ),
         )
 
 

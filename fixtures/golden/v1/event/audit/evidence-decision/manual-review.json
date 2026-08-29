@@ -1,0 +1,26 @@
+{
+  "specversion": "1.0",
+  "id": "event-audit-evidence-review-0001",
+  "source": "urn:aerial-rescue:evidence-service:evidence-synthetic-01",
+  "type": "aerial-rescue.v1.audit.evidence-decision",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:07:01.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json",
+  "data": {
+    "auditVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "recordId": "audit-evidence-review-0001",
+    "recordType": "evidence-decision",
+    "proposalId": "proposal-synthetic-0001",
+    "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+    "proposalVersion": 1,
+    "evidenceDecisionId": "decision-synthetic-0002",
+    "evidenceDecisionDigest": "f8fd167a611f0a29f58da13ea7596f1d3e32ac1a17fe66726ec4974be1fbe71d",
+    "outcome": "manual-review",
+    "reason": "insufficient-live-sources"
+  },
+  "sequence": "000000000000015",
+  "correlationid": "correlation-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

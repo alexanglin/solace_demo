@@ -37,7 +37,7 @@ digraph DashboardBuildIncrements {
     color="#2F6FB7";
     style="rounded";
     a1 [label="A1 — complete\nentry point + app shell\nharness revision ACK", fillcolor="#DFF7EE", color="#008F6B"];
-    a2 [label="A2 — complete\n19 generated type modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
+    a2 [label="A2 — complete\n22 generated schema modules\noffline Ajv registry\ncanonical bootstrap refusal\nproduction isolation + freshness", fillcolor="#DFF7EE", color="#008F6B"];
     a3 [label="A3 — complete\ncanonical browser digests\n10-run parity oracle", fillcolor="#DFF7EE", color="#008F6B"];
     a4 [label="A4 — complete\nimmutable ordered reducer\n+ verified timeline append", fillcolor="#DFF7EE", color="#008F6B"];
     a5 [label="A5 — complete\nfixture / live / replay adapters\nproduction endpoints connected", fillcolor="#DFF7EE", color="#008F6B"];
@@ -55,17 +55,24 @@ digraph DashboardBuildIncrements {
     r1 [label="R1 — complete\nbrowser + scenario + private RPC\nschemas/fixtures + strict models\nHTTP registries green\nADR-0108 / 0109", fillcolor="#DFF7EE", color="#008F6B"];
     r2 [label="R2 — complete\nscenario catalog + bounded loader\n20 simulated-only fleet projection\nADR-0100", fillcolor="#DFF7EE", color="#008F6B"];
     r3 [label="R3 — complete\nPython checkpoint + ordered fold\nstate/event digest parity\nADR-0111 / 0112", fillcolor="#DFF7EE", color="#008F6B"];
-    r4 [label="R4 — complete\n0005 runtime store + ordered reads\nfocused PostgreSQL evidence\nADR-0113", fillcolor="#DFF7EE", color="#008F6B"];
+    r4 [label="R4 — base qualified\n0005 runtime store + ordered reads\n0006–0010 adoption code\nlive upgrade still pending\nADR-0113 / 0189", fillcolor="#FFF2CC", color="#B58900"];
     r5 [label="R5 — complete\ndashboard API + Caddy / UDS\nclean production E2E evidence\nADR-0096 / 0116 / 0143", fillcolor="#DFF7EE", color="#008F6B"];
-    r6 [label="R6 — complete\ndirect telemetry + 1 lifecycle queue\nrequired subset: 2 endpoints / 20 MB\nbounded replay validator\nADR-0094 / 0111 / 0120 / 0139", fillcolor="#DFF7EE", color="#008F6B"];
+    r6 [label="R6 — base qualified\nreceiver-only recorder + combined lifecycle\ncomplete applicable adoption stream\nbounded replay validator\nnew live capture pending", fillcolor="#FFF2CC", color="#B58900"];
     r7 [label="R7 — complete\ncanonical docs + release evidence\ncurrent editable diagrams", fillcolor="#DFF7EE", color="#008F6B"];
-    r8 [label="R8 — complete\nprivate live control + lifecycle\n14 ticks / 280 publications\nADR-0111 / 0121", fillcolor="#DFF7EE", color="#008F6B"];
-    r9 [label="R9 — complete\nshared project: 7 start / 5 stop\nbase container IDs guarded\n8/8 production + soak evidence\nADR-0117 / 0120 / 0139 / 0142", fillcolor="#DFF7EE", color="#008F6B"];
+    r8 [label="R8 — base qualified\nbrokerless private scenario control\nfleet telemetry + critical sources\n14 ticks / 280 publications\nADR-0111 / 0158 / 0189", fillcolor="#DFF7EE", color="#008F6B"];
+    r9 [label="R9 — base qualified\nshared project + guarded state\n8/8 production + 61-sample soak\nfull adoption services pending\nADR-0139 / 0189", fillcolor="#FFF2CC", color="#B58900"];
   }
+
+  solace_layer [
+    shape=note,
+    label="Solace application layer — deterministic green, live pending\nOperationCoordinator + Solace supervisor\nproposal/evidence/decision projection • durable command flow\nreconnect, rebind, outbox drain, and shared-stack browser acceptance owed",
+    fillcolor="#FFF2CC",
+    color="#B58900"
+  ];
 
   initial_release_gaps [
     shape=note,
-    label="Initial-release gaps remain\ncurrent slice: 20 simulated + 3 declared only\nno executable edge agents, Agent Mesh/model evidence,\napproval, command, rescue, or escalation workflow",
+    label="Initial-release gaps remain\ncurrent qualified slice: 20 simulated + 3 declared only\nexecutable edge-agent/model evidence still owed\ngeneral command UI + prepared-artifact panels still owed",
     fillcolor="#F2F4F7",
     color="#697586"
   ];
@@ -85,5 +92,6 @@ digraph DashboardBuildIncrements {
   r8 -> r9 [label="live runtime", style=dashed];
   r7 -> a8 [label="release record + current diagrams", color="#008F6B", penwidth=1.4];
   r9 -> a8 [label="production E2E evidence", color="#008F6B", penwidth=1.4];
-  a8 -> initial_release_gaps [label="dashboard slice only", style=dashed, color="#697586"];
+  a8 -> solace_layer [label="preserved base", color="#B58900", fontcolor="#8A6500"];
+  solace_layer -> initial_release_gaps [label="acceptance boundary", style=dashed, color="#697586"];
 }

@@ -1,0 +1,14 @@
+{
+  "kind": "salientObservation",
+  "eventClass": "EVIDENCE",
+  "mission": "mission-synthetic-0001",
+  "time": "2026-08-24T12:00:01.000Z",
+  "data": {
+    "droneId": "drone-sim-01",
+    "observation": "thermal-anomaly",
+    "latitudeMicrodegrees": 44475000,
+    "longitudeMicrodegrees": -79245000,
+    "detail": "bounded synthetic observation"
+  },
+  "unexpected": true
+}

@@ -146,7 +146,14 @@ def transition(state: ApprovalState, event: ApprovalEvent) -> ApprovalState:
 
 
 def proposal_digest(proposal: Proposal) -> str:
-    """Return the contracts digest of a proposal's parameters in the proposal context.
+    """Return the contracts proposal digest of a proposal's parameters.
+
+    This is ADR-0148's definition: the ``proposal-digest`` context over the parameters with
+    exactly their own ``proposalDigest`` member omitted, so a proposal that carries its
+    self-integrity digest and one that does not digest alike. The generic context digest
+    omitted only a member named ``digest``, and the first live run found every approval
+    the dashboard bound refused at consumption because the gateway hands the domain the
+    complete stored proposal payload.
 
     Args:
         proposal: The proposal whose parameters are digested.
@@ -159,7 +166,7 @@ def proposal_digest(proposal: Proposal) -> str:
             the contracts refusal as the cause.
     """
     try:
-        return digest.digest(digest.Context.PROPOSAL, proposal.parameters)
+        return digest.proposal_digest(proposal.parameters)
     except (digest.DigestError, CanonicalizationError) as error:
         raise ApprovalError(ApprovalRefusal.PARAMETERS, proposal.parameters) from error
 

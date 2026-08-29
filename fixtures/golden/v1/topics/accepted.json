@@ -117,14 +117,24 @@
       "type": "aerial-rescue.v1.gateway.request.fleet-status"
     },
     {
-      "topic": "aerial-rescue/v1/m1/gateway/response/r1",
+      "topic": "aerial-rescue/v1/reply/gateway/response/r1",
       "verdict": "accept",
       "family": "GATEWAY_RESPONSE",
+      "missionId": "reply",
+      "parameters": {
+        "requestorId": "r1"
+      },
+      "type": "aerial-rescue.v1.gateway.response"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/gateway/record/r1",
+      "verdict": "accept",
+      "family": "GATEWAY_RECORD",
       "missionId": "m1",
       "parameters": {
         "requestId": "r1"
       },
-      "type": "aerial-rescue.v1.gateway.response"
+      "type": "aerial-rescue.v1.gateway.record"
     },
     {
       "topic": "aerial-rescue/v1/m1/agent/proposal/MissionCoordinator/reassignment",
@@ -146,6 +156,16 @@
         "agentName": "sam_test_agent"
       },
       "type": "aerial-rescue.v1.agent.response"
+    },
+    {
+      "topic": "aerial-rescue/v1/m1/evidence/decision/proposal-1",
+      "verdict": "accept",
+      "family": "EVIDENCE_DECISION",
+      "missionId": "m1",
+      "parameters": {
+        "proposalId": "proposal-1"
+      },
+      "type": "aerial-rescue.v1.evidence.decision"
     },
     {
       "topic": "aerial-rescue/v1/m1/audit/note",

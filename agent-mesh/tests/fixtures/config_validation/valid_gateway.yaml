@@ -1,6 +1,6 @@
 apps:
   - name: validation-event-mesh-gateway
-    app_module: sam_event_mesh_gateway.app
+    app_module: aerial_rescue_event_mesh_gateway.app
     broker:
       dev_mode: false
       broker_url: ${SOLACE_BROKER_URL}
@@ -30,16 +30,125 @@ apps:
       event_handlers:
         - name: salient-event
           subscriptions:
-            - topic: aerial-rescue/v1/+/drone/+/event/salient
+            - topic: aerial-rescue/v1/*/drone/*/event/salient
               qos: 1
-          input_expression: 'template:Analyze {{json://input.payload}}'
+          input_expression: input.payload:data
           payload_encoding: utf-8
           payload_format: json
+          structured_invocation:
+            input_schema: {type: object}
+            output_schema:
+              type: object
+              required: [latitudeMicrodegrees, longitudeMicrodegrees]
+              additionalProperties: false
+              properties:
+                latitudeMicrodegrees:
+                  type: integer
+                  minimum: -90000000
+                  maximum: 90000000
+                longitudeMicrodegrees:
+                  type: integer
+                  minimum: -180000000
+                  maximum: 180000000
+          target_agent_name: MissionCoordinator
           on_success: validation-response
-          target_agent_name: ValidationAgent
+          on_error: validation-failure
+          forward_context:
+            missionId: input.topic_levels:2
+            droneId: input.topic_levels:4
+            eventMissionId: input.payload:data.missionId
+            eventDroneId: input.payload:data.droneId
+            sourceEventId: input.payload:id
+            sourceEventDigest: input.user_properties:aerial-rescue-source-event-digest
+            correlationId: input.payload:correlationid
+            agentName: static:MissionCoordinator
       output_handlers:
         - name: validation-response
-          topic_expression: 'template:aerial-rescue/v1/{{text://task_response:id}}/gateway/response/result'
-          payload_expression: task_response:text
+          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
+          payload_expression: task_response:agent_response
           payload_encoding: utf-8
-          payload_format: text
+          payload_format: json
+          output_schema: &agent_response_schema
+            anyOf:
+              - type: object
+                required:
+                  - agentResponseVersion
+                  - missionId
+                  - agentName
+                  - invocationId
+                  - correlationId
+                  - outcome
+                  - result
+                additionalProperties: false
+                properties:
+                  agentResponseVersion: {const: 1}
+                  missionId: &identifier
+                    type: string
+                    pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
+                  agentName:
+                    type: string
+                    pattern: '^[A-Za-z0-9_]{1,64}$'
+                  invocationId: *identifier
+                  correlationId: *identifier
+                  outcome: {const: candidate}
+                  result:
+                    type: object
+                    required:
+                      - proposalType
+                      - sourceEventId
+                      - sourceEventDigest
+                      - droneId
+                      - latitudeMicrodegrees
+                      - longitudeMicrodegrees
+                      - commandType
+                    additionalProperties: false
+                    properties:
+                      proposalType: {const: candidate-location}
+                      sourceEventId: *identifier
+                      sourceEventDigest:
+                        type: string
+                        pattern: '^[0-9a-f]{64}$'
+                      droneId: *identifier
+                      latitudeMicrodegrees:
+                        type: integer
+                        minimum: -90000000
+                        maximum: 90000000
+                      longitudeMicrodegrees:
+                        type: integer
+                        minimum: -180000000
+                        maximum: 180000000
+                      commandType: {const: escalate-rescue}
+              - type: object
+                required:
+                  - agentResponseVersion
+                  - missionId
+                  - agentName
+                  - invocationId
+                  - correlationId
+                  - outcome
+                  - reason
+                additionalProperties: false
+                properties:
+                  agentResponseVersion: {const: 1}
+                  missionId: *identifier
+                  agentName:
+                    type: string
+                    pattern: '^[A-Za-z0-9_]{1,64}$'
+                  invocationId: *identifier
+                  correlationId: *identifier
+                  outcome: {const: abstained}
+                  reason:
+                    enum:
+                      - timeout
+                      - transport-error
+                      - model-error
+                      - invalid-output
+                      - identity-mismatch
+          on_validation_error: drop
+        - name: validation-failure
+          topic_expression: 'template:aerial-rescue/v1/{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator'
+          payload_expression: task_response:agent_response
+          payload_encoding: utf-8
+          payload_format: json
+          output_schema: *agent_response_schema
+          on_validation_error: drop

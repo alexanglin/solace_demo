@@ -9,14 +9,14 @@ from urllib.parse import urlsplit
 import httpx
 from aerial_rescue_contracts import canonical
 
-from aerial_rescue_dashboard_api.documents import CATALOG_SCHEMA, validated_document
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.documents import CATALOG_SCHEMA, validated_document
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.wire import parse_wire_document
 from aerial_rescue_dashboard_api.ports import (
     ScenarioCancellationNotEstablishedError,
     ScenarioRunNotFoundError,
     ScenarioRunStatus,
 )
-from aerial_rescue_dashboard_api.wire import parse_wire_document
 
 _RPC_PREFIX: Final = "https://aerial-rescue.invalid/schemas/v1/rpc/"
 _START_SCHEMA: Final = f"{_RPC_PREFIX}scenario-control-start-request.schema.json"

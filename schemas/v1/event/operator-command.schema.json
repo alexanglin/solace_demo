@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/event/operator-command.schema.json",
+  "description": "An operator command with its action, producer, type, and payload schema bound together.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/assignSector"
+    },
+    {
+      "$ref": "#/$defs/escalateRescue"
+    }
+  ],
+  "$defs": {
+    "assignSector": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:dashboard-api:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.operator.command.assign-sector"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/operator-command.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/operator-command.schema.json#/$defs/assignSector"
+            }
+          }
+        }
+      ]
+    },
+    "escalateRescue": {
+      "allOf": [
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/envelope.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "pattern": "^urn:aerial-rescue:dashboard-api:(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$"
+            },
+            "type": {
+              "const": "aerial-rescue.v1.operator.command.escalate-rescue"
+            },
+            "dataschema": {
+              "const": "https://aerial-rescue.invalid/schemas/v1/payload/operator-command.schema.json"
+            },
+            "data": {
+              "$ref": "https://aerial-rescue.invalid/schemas/v1/payload/operator-command.schema.json#/$defs/escalateRescue"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

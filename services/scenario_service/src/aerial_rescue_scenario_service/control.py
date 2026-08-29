@@ -1,455 +1,439 @@
-"""Scenario lifecycle orchestration over catalog, fleet HTTP, and mission publication ports."""
+"""Scenario lifecycle coordination over injected catalog and fleet-control ports."""
 
 from __future__ import annotations
 
-import threading
-import time
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Final, Literal, Protocol
+import asyncio
+import hmac
+from dataclasses import dataclass, replace
+from enum import StrEnum
+from typing import Final, Protocol
 
-from aerial_rescue_contracts.canonical import canonical_bytes
+from aerial_rescue_contracts import canonical
+from pydantic import ValidationError
 
-from aerial_rescue_scenario_service.catalog import (
-    CatalogRefusal,
-    LoadedScenario,
-    ScenarioCatalogError,
-    ScenarioCatalogLoader,
-    project_fleet_scenario,
-)
-from aerial_rescue_scenario_service.fleet_client import FleetClientCode, FleetClientError
-from aerial_rescue_scenario_service.lifecycle import MissionLifecycle, MissionLifecyclePort
 from aerial_rescue_scenario_service.wire import (
+    DeclaredOnlyMember,
     FleetControlCancelRequest,
+    FleetControlDroneStart,
     FleetControlRunStatus,
+    FleetControlScenario,
     FleetControlStartRequest,
     ScenarioCatalogResponse,
+    ScenarioControlCancelRequest,
     ScenarioControlRecoveryRequest,
     ScenarioControlRunStatus,
     ScenarioControlStartRequest,
+    ScenarioDefinition,
+    SimulatedMember,
 )
 
-_CONTROL_VERSION: Final = 1
-_DECLARED_COUNT: Final = 23
+from .http_runtime import ControlError, ControlRefusal
+
 _SIMULATED_COUNT: Final = 20
 _DECLARED_ONLY_COUNT: Final = 3
 _TERMINAL_STATES: Final = frozenset({"EXHAUSTED", "ABORTED"})
+MAXIMUM_BINDINGS: Final = 32
 
-type ScenarioState = MissionLifecycle
 
+class FleetControlRefusal(StrEnum):
+    """Closed refusals a fleet-control caller can receive."""
 
-class ScenarioControlCode(Enum):
-    """Operation refusals mapped to the closed scenario-control vocabulary."""
-
+    HOST_INVALID = "HOST_INVALID"
+    AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
+    UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE"
+    BODY_TOO_LARGE = "BODY_TOO_LARGE"
+    CANONICAL_JSON_INVALID = "CANONICAL_JSON_INVALID"
+    SCHEMA_INVALID = "SCHEMA_INVALID"
+    PATH_BODY_MISMATCH = "PATH_BODY_MISMATCH"
     RUN_CONFLICT = "RUN_CONFLICT"
     RUN_NOT_FOUND = "RUN_NOT_FOUND"
     CANCELLATION_NOT_ESTABLISHED = "CANCELLATION_NOT_ESTABLISHED"
-    SCENARIO_NOT_FOUND = "SCENARIO_NOT_FOUND"
-    SCENARIO_REVISION_MISMATCH = "SCENARIO_REVISION_MISMATCH"
-    FLEET_UNAVAILABLE = "FLEET_UNAVAILABLE"
+    CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
+    RUN_FAILED = "RUN_FAILED"
     INTERNAL_FAILURE = "INTERNAL_FAILURE"
 
 
-class ScenarioControlError(ValueError):
-    """A typed, redacted scenario-control operation refusal."""
+class FleetControlError(RuntimeError):
+    """One typed, redacted failure at the fleet-control client boundary."""
 
-    def __init__(self, code: ScenarioControlCode, value: object) -> None:
-        """Retain the closed refusal code and bounded diagnostic value."""
-        super().__init__(f"{code.value}: {value!r}")
-        self.code = code
-        self.value = value
-
-
-class FleetControlPort(Protocol):
-    """The separate-process fleet-control calls scenario orchestration may make."""
-
-    def start(self, request: FleetControlStartRequest) -> FleetControlRunStatus:
-        """Start once or reconcile an uncertain start by status."""
-
-    def status(self, run_id: str) -> FleetControlRunStatus:
-        """Return one stable fleet run's current status."""
-
-    def cancel(
-        self, request: FleetControlCancelRequest, remaining_seconds: float
-    ) -> FleetControlRunStatus:
-        """Stop a fleet run inside the caller's shared remaining budget."""
+    def __init__(self, refusal: FleetControlRefusal) -> None:
+        """Record only the closed refusal, never transport response content."""
+        super().__init__(refusal.value)
+        self.refusal = refusal
 
 
-MonitorWait = Callable[[threading.Event], bool]
-
-
-@dataclass
-class _Run:
-    """One bounded scenario run and the lifecycle facts acknowledged for it."""
-
-    scenario_id: str
-    scenario_revision: Literal[1]
-    mission_id: str
-    run_id: str
-    canonical_start: bytes | None
-    canonical_recovery: bytes | None
-    state: ScenarioState | None = None
-    published: set[ScenarioState] = field(default_factory=set)
-    monitor_stop: threading.Event = field(default_factory=threading.Event)
-    done: threading.Event = field(default_factory=threading.Event)
-    event_lock: threading.Lock = field(default_factory=threading.Lock)
-    monitor_started: bool = False
-    monitor_thread: threading.Thread | None = None
-    recovered: bool = False
-    handoff_pending: bool = False
-    handoff_lock: threading.Lock = field(default_factory=threading.Lock)
+class ScenarioDefinitions(Protocol):
+    """A strict scenario-definition source owned outside lifecycle coordination."""
 
     @property
-    def identity(self) -> tuple[str, int, str, str]:
-        """Return the stable semantic identity shared by start and recovery."""
-        return (self.scenario_id, self.scenario_revision, self.mission_id, self.run_id)
+    def ready(self) -> bool:
+        """Whether the source can resolve accepted definitions."""
+        ...
 
+    async def startup(self) -> None:
+        """Validate and acquire the definition source."""
+        ...
 
-@dataclass
-class ScenarioControl:
-    """Coordinate scenario-only mission lifecycle around one bounded fleet registry."""
+    async def shutdown(self) -> None:
+        """Release source resources."""
+        ...
 
-    loader: ScenarioCatalogLoader
-    fleet: FleetControlPort
-    mission_events: MissionLifecyclePort
-    maximum_runs: int
-    monitor_wait: MonitorWait
-    cancellation_budget_seconds: float
-    monotonic: Callable[[], float] = time.monotonic
-    _runs: dict[str, _Run] = field(default_factory=dict, init=False)
-    _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
-
-    def __post_init__(self) -> None:
-        """Refuse an unbounded registry or cancellation budget."""
-        if self.maximum_runs < 1:
-            message = "maximum_runs must be positive"
-            raise ValueError(message)
-        if self.cancellation_budget_seconds <= 0:
-            message = "cancellation_budget_seconds must be positive"
-            raise ValueError(message)
+    async def load(self, scenario_id: str, revision: int) -> ScenarioDefinition:
+        """Resolve an exact catalog identity and revision."""
+        ...
 
     def catalog_response(self) -> ScenarioCatalogResponse:
-        """Return the strict browser-facing projection from the single catalog loader."""
-        return self.loader.catalog_response()
+        """Return the dashboard catalog projection validated at startup."""
+        ...
 
-    def start(self, request: ScenarioControlStartRequest) -> ScenarioControlRunStatus:
-        """Publish PLANNED, start fleet once, then actively monitor mission completion."""
-        canonical_start = canonical_bytes(request.model_dump(by_alias=True))
-        known = self._existing_start(request.run_id, canonical_start)
-        if known is not None:
-            return self._reconcile_pending_handoff(known)
-        loaded = self._load_prepared(request.scenario_id, request.scenario_revision)
-        run = _Run(
-            scenario_id=request.scenario_id,
-            scenario_revision=request.scenario_revision,
-            mission_id=request.mission_id,
-            run_id=request.run_id,
-            canonical_start=canonical_start,
-            canonical_recovery=None,
-            handoff_pending=True,
-        )
-        registered = self._register_start(run, canonical_start)
-        if registered is not run:
-            return self._reconcile_pending_handoff(registered)
+
+class FleetControl(Protocol):
+    """The distinct authenticated private fleet-control caller capability."""
+
+    @property
+    def ready(self) -> bool:
+        """Whether the private caller can accept work."""
+        ...
+
+    async def startup(self) -> None:
+        """Acquire the caller transport."""
+        ...
+
+    async def shutdown(self) -> None:
+        """Close the caller transport."""
+        ...
+
+    async def start(self, request: FleetControlStartRequest) -> FleetControlRunStatus:
+        """Start or reconcile one stable fleet run."""
+        ...
+
+    async def status(self, run_id: str) -> FleetControlRunStatus:
+        """Return one stable fleet run status."""
+        ...
+
+    async def cancel(
+        self, request: FleetControlCancelRequest, remaining_seconds: float
+    ) -> FleetControlRunStatus:
+        """Cancel within the scenario caller's remaining shared budget."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class _RunBinding:
+    request_bytes: bytes
+    scenario_id: str
+    scenario_revision: int
+    mission_id: str
+    run_id: str
+    terminal_state: str | None = None
+
+
+_STATE_BY_FLEET_STATE = {
+    "ACCEPTED": "PLANNED",
+    "RUNNING": "SEARCHING",
+    "EXHAUSTED": "EXHAUSTED",
+    "CANCELLED": "ABORTED",
+    "FAILED": "ABORTED",
+}
+
+
+class ScenarioCoordinator:
+    """Coordinate one process epoch without claiming durable mission authority."""
+
+    def __init__(
+        self,
+        definitions: ScenarioDefinitions,
+        fleet: FleetControl,
+        *,
+        maximum_bindings: int = MAXIMUM_BINDINGS,
+    ) -> None:
+        """Bind the distinct definition and private fleet-control capabilities."""
+        if maximum_bindings < 1:
+            message = "maximum_bindings must be positive"
+            raise ValueError(message)
+        self._definitions = definitions
+        self._fleet = fleet
+        self._maximum_bindings = maximum_bindings
+        self._bindings: dict[str, _RunBinding] = {}
+        self._lock = asyncio.Lock()
+        self._started = False
+
+    @property
+    def ready(self) -> bool:
+        """Require the process epoch plus both explicit dependencies."""
+        return self._started and self._definitions.ready and self._fleet.ready
+
+    async def startup(self) -> None:
+        """Start the definition source before the outbound private caller."""
+        await self._definitions.startup()
         try:
-            return self._begin_handoff(run, loaded)
+            await self._fleet.startup()
+        except Exception:
+            await self._definitions.shutdown()
+            raise
+        self._started = True
+
+    async def shutdown(self) -> None:
+        """Stop accepting before closing the caller and definition source."""
+        self._started = False
+        try:
+            await self._fleet.shutdown()
         finally:
-            run.handoff_lock.release()
+            await self._definitions.shutdown()
 
-    def status(self, run_id: str) -> ScenarioControlRunStatus:
-        """Return the current scenario-owned status without manufacturing a fleet fact."""
-        with self._lock:
-            run = self._known(run_id)
-        return self._reconcile_pending_handoff(run)
+    async def catalog(self) -> ScenarioCatalogResponse:
+        """Serve the startup-validated catalog projection; an unready source refuses."""
+        return self._definitions.catalog_response()
 
-    def cancel(self, run_id: str, mission_id: str) -> ScenarioControlRunStatus:
-        """Stop fleet inside one monotonic budget, then publish ABORTED if it stopped."""
-        started = self.monotonic()
-        with self._lock:
-            run = self._known(run_id)
-            if run.mission_id != mission_id:
-                raise ScenarioControlError(ScenarioControlCode.RUN_CONFLICT, run_id)
-            if run.state in _TERMINAL_STATES:
-                return self._status(run)
-        remaining = self.cancellation_budget_seconds - (self.monotonic() - started)
-        if remaining <= 0:
-            raise ScenarioControlError(ScenarioControlCode.CANCELLATION_NOT_ESTABLISHED, run_id)
-        request = FleetControlCancelRequest(
-            controlVersion=_CONTROL_VERSION,
-            missionId=mission_id,
-            runId=run_id,
-        )
-        try:
-            status = self.fleet.cancel(request, remaining)
-        except FleetClientError as error:
-            code = (
-                ScenarioControlCode.CANCELLATION_NOT_ESTABLISHED
-                if error.code is FleetClientCode.CANCELLATION_NOT_ESTABLISHED
-                else ScenarioControlCode.FLEET_UNAVAILABLE
+    async def start(self, request: ScenarioControlStartRequest) -> ScenarioControlRunStatus:
+        """Project and start once, or reconcile the same stable request by status."""
+        request_bytes = canonical.canonical_bytes(request.model_dump(mode="json", by_alias=True))
+        async with self._lock:
+            binding = self._bindings.get(request.run_id)
+            if binding is not None:
+                if not hmac_bytes_equal(binding.request_bytes, request_bytes):
+                    raise ControlError(ControlRefusal.RUN_CONFLICT)
+                if binding.terminal_state is not None:
+                    return _terminal_status(binding)
+                fleet_status = await self._fleet_status(request.run_id)
+                return self._remember(binding, fleet_status)
+
+            self._admit_capacity()
+            definition = await self._definitions.load(
+                request.scenario_id, request.scenario_revision
             )
-            raise ScenarioControlError(code, run_id) from error
-        if status.state in {"ACCEPTED", "RUNNING"}:
-            raise ScenarioControlError(ScenarioControlCode.CANCELLATION_NOT_ESTABLISHED, run_id)
-        self._apply_fleet(run, status, publish=True)
-        return self._status(run)
+            fleet_request = _fleet_start_request(request, definition)
+            try:
+                fleet_status = await self._fleet.start(fleet_request)
+            except FleetControlError as error:
+                raise _translate_fleet_error(error) from error
+            binding = _RunBinding(
+                request_bytes=request_bytes,
+                scenario_id=request.scenario_id,
+                scenario_revision=request.scenario_revision,
+                mission_id=request.mission_id,
+                run_id=request.run_id,
+            )
+            _validate_fleet_binding(binding, fleet_status)
+            self._bindings[request.run_id] = binding
+            return self._remember(binding, fleet_status)
 
-    def recover(self, request: ScenarioControlRecoveryRequest) -> ScenarioControlRunStatus:
-        """Reconcile fleet first and publish one ABORTED fact only for an unknown run."""
-        canonical_recovery = canonical_bytes(request.model_dump(by_alias=True))
-        expected = (
+    async def status(self, run_id: str) -> ScenarioControlRunStatus:
+        """Return status only for a run bound during this process epoch."""
+        async with self._lock:
+            binding = self._binding(run_id)
+            if binding.terminal_state is not None:
+                return _terminal_status(binding)
+            fleet_status = await self._fleet_status(run_id)
+            return self._remember(binding, fleet_status)
+
+    async def recover(self, request: ScenarioControlRecoveryRequest) -> ScenarioControlRunStatus:
+        """Reconcile a durable run against the fleet; a run the fleet lost is ABORTED for good."""
+        request_bytes = canonical.canonical_bytes(request.model_dump(mode="json", by_alias=True))
+        identity = (
             request.scenario_id,
             request.scenario_revision,
             request.mission_id,
             request.run_id,
         )
-        with self._lock:
-            run = self._runs.get(request.run_id)
-            if run is not None:
-                if run.identity != expected or (
-                    run.canonical_recovery is not None
-                    and run.canonical_recovery != canonical_recovery
-                ):
-                    raise ScenarioControlError(ScenarioControlCode.RUN_CONFLICT, request.run_id)
-                if run.recovered:
-                    return self._status(run)
+        async with self._lock:
+            binding = self._bindings.get(request.run_id)
+            if binding is not None:
+                if _identity(binding) != identity:
+                    raise ControlError(ControlRefusal.RUN_CONFLICT)
+                if binding.terminal_state is not None:
+                    return _terminal_status(binding)
             else:
                 self._admit_capacity()
-        self._load_prepared(request.scenario_id, request.scenario_revision)
-        if run is None:
-            candidate = _Run(
-                scenario_id=request.scenario_id,
-                scenario_revision=request.scenario_revision,
-                mission_id=request.mission_id,
-                run_id=request.run_id,
-                canonical_start=None,
-                canonical_recovery=canonical_recovery,
-            )
-            with self._lock:
-                run = self._runs.setdefault(request.run_id, candidate)
-                if run.identity != expected:
-                    raise ScenarioControlError(ScenarioControlCode.RUN_CONFLICT, request.run_id)
-        run.canonical_recovery = canonical_recovery
-        try:
-            status = self.fleet.status(request.run_id)
-        except FleetClientError as error:
-            if error.code is not FleetClientCode.RUN_NOT_FOUND:
-                raise ScenarioControlError(
-                    ScenarioControlCode.FLEET_UNAVAILABLE, request.run_id
-                ) from error
-            self._transition(run, "ABORTED")
-            run.recovered = True
-            run.done.set()
-            return self._status(run)
-        self._apply_fleet(run, status, publish=False)
-        run.recovered = True
-        self._start_monitor(run)
-        return self._status(run)
-
-    def wait(self, run_id: str, timeout_seconds: float) -> ScenarioControlRunStatus:
-        """Wait within a caller-owned bound for one run to finish."""
-        with self._lock:
-            run = self._known(run_id)
-            done = run.done
-        done.wait(timeout_seconds)
-        return self.status(run_id)
-
-    def close(self) -> None:
-        """Stop every monitor and join them within one shared shutdown bound."""
-        deadline = self.monotonic() + self.cancellation_budget_seconds
-        with self._lock:
-            runs = tuple(self._runs.values())
-            for run in runs:
-                run.monitor_stop.set()
-            threads = tuple(run.monitor_thread for run in runs if run.monitor_thread is not None)
-        for thread in threads:
-            remaining = deadline - self.monotonic()
-            if remaining <= 0:
-                raise ScenarioControlError(
-                    ScenarioControlCode.CANCELLATION_NOT_ESTABLISHED, thread.name
+                await self._definitions.load(request.scenario_id, request.scenario_revision)
+                binding = _RunBinding(
+                    request_bytes=request_bytes,
+                    scenario_id=request.scenario_id,
+                    scenario_revision=request.scenario_revision,
+                    mission_id=request.mission_id,
+                    run_id=request.run_id,
                 )
-            thread.join(remaining)
-            if thread.is_alive():
-                raise ScenarioControlError(
-                    ScenarioControlCode.CANCELLATION_NOT_ESTABLISHED, thread.name
-                )
+            try:
+                fleet_status = await self._fleet.status(request.run_id)
+            except FleetControlError as error:
+                if error.refusal is not FleetControlRefusal.RUN_NOT_FOUND:
+                    raise _translate_fleet_error(error) from error
+                lost = replace(binding, terminal_state="ABORTED")
+                self._bindings[request.run_id] = lost
+                return _terminal_status(lost)
+            _validate_fleet_binding(binding, fleet_status)
+            self._bindings[request.run_id] = binding
+            return self._remember(binding, fleet_status)
 
-    def _load_prepared(self, scenario_id: str, revision: int) -> LoadedScenario:
-        try:
-            loaded = self.loader.load(scenario_id, revision)
-        except ScenarioCatalogError as error:
-            if error.reason is CatalogRefusal.SCENARIO_NOT_FOUND:
-                code = ScenarioControlCode.SCENARIO_NOT_FOUND
-            elif error.reason is CatalogRefusal.REVISION_NOT_FOUND:
-                code = ScenarioControlCode.SCENARIO_REVISION_MISMATCH
-            else:
-                code = ScenarioControlCode.INTERNAL_FAILURE
-            raise ScenarioControlError(code, (scenario_id, revision)) from error
-        simulated = sum(
-            member.participation == "SIMULATED_DRONE" for member in loaded.definition.members
-        )
-        declared_only = len(loaded.definition.members) - simulated
-        if (len(loaded.definition.members), simulated, declared_only) != (
-            _DECLARED_COUNT,
-            _SIMULATED_COUNT,
-            _DECLARED_ONLY_COUNT,
-        ):
-            raise ScenarioControlError(
-                ScenarioControlCode.SCENARIO_REVISION_MISMATCH, (scenario_id, revision)
+    async def cancel(
+        self, request: ScenarioControlCancelRequest, remaining_seconds: float
+    ) -> ScenarioControlRunStatus:
+        """Cancel and report success only once the fleet state is terminal."""
+        async with self._lock:
+            binding = self._binding(request.run_id)
+            if binding.mission_id != request.mission_id:
+                raise ControlError(ControlRefusal.RUN_CONFLICT)
+            if remaining_seconds <= 0:
+                raise ControlError(ControlRefusal.CANCELLATION_NOT_ESTABLISHED)
+            fleet_request = FleetControlCancelRequest.model_validate(
+                {
+                    "controlVersion": 1,
+                    "missionId": request.mission_id,
+                    "runId": request.run_id,
+                }
             )
-        return loaded
+            try:
+                fleet_status = await self._fleet.cancel(fleet_request, remaining_seconds)
+            except FleetControlError as error:
+                if binding.terminal_state is not None:
+                    return _terminal_status(binding)
+                raise _translate_fleet_error(error) from error
+            _validate_fleet_binding(binding, fleet_status)
+            if fleet_status.state in {"ACCEPTED", "RUNNING"}:
+                raise ControlError(ControlRefusal.CANCELLATION_NOT_ESTABLISHED)
+            return self._remember(binding, fleet_status)
+
+    def snapshot(self) -> dict[str, int | bool]:
+        """Return non-sensitive process-epoch diagnostics for deterministic probes."""
+        return {"runCount": len(self._bindings), "started": self._started}
+
+    def _remember(
+        self, binding: _RunBinding, fleet_status: FleetControlRunStatus
+    ) -> ScenarioControlRunStatus:
+        """Map one fleet status and pin a terminal state so the fleet is never asked again."""
+        status = _scenario_status(binding, fleet_status)
+        if status.state in _TERMINAL_STATES:
+            self._bindings[binding.run_id] = replace(binding, terminal_state=status.state)
+        return status
 
     def _admit_capacity(self) -> None:
-        if len(self._runs) >= self.maximum_runs:
-            raise ScenarioControlError(ScenarioControlCode.INTERNAL_FAILURE, "run capacity")
+        """Refuse a new binding once the process epoch holds its bounded number of runs."""
+        if len(self._bindings) >= self._maximum_bindings:
+            raise ControlError(ControlRefusal.INTERNAL_FAILURE, "binding capacity")
 
-    def _known(self, run_id: str) -> _Run:
-        run = self._runs.get(run_id)
-        if run is None:
-            raise ScenarioControlError(ScenarioControlCode.RUN_NOT_FOUND, run_id)
-        return run
-
-    def _status(self, run: _Run) -> ScenarioControlRunStatus:
-        if run.state is None:
-            raise ScenarioControlError(ScenarioControlCode.INTERNAL_FAILURE, run.run_id)
-        return ScenarioControlRunStatus(
-            controlVersion=_CONTROL_VERSION,
-            scenarioId=run.scenario_id,
-            scenarioRevision=run.scenario_revision,
-            missionId=run.mission_id,
-            runId=run.run_id,
-            state=run.state,
-        )
-
-    def _existing_start(self, run_id: str, canonical_start: bytes) -> _Run | None:
-        with self._lock:
-            known = self._runs.get(run_id)
-            if known is None:
-                self._admit_capacity()
-            elif known.canonical_start != canonical_start:
-                raise ScenarioControlError(ScenarioControlCode.RUN_CONFLICT, run_id)
-            return known
-
-    def _register_start(self, run: _Run, canonical_start: bytes) -> _Run:
-        run.handoff_lock.acquire()
+    def _binding(self, run_id: str) -> _RunBinding:
         try:
-            with self._lock:
-                known = self._runs.get(run.run_id)
-                if known is None:
-                    self._admit_capacity()
-                    self._runs[run.run_id] = run
-                    return run
-                if known.canonical_start != canonical_start:
-                    raise ScenarioControlError(ScenarioControlCode.RUN_CONFLICT, run.run_id)
-                return known
-        finally:
-            with self._lock:
-                registered = self._runs.get(run.run_id)
-            if registered is not run:
-                run.handoff_lock.release()
+            return self._bindings[run_id]
+        except KeyError as error:
+            raise ControlError(ControlRefusal.RUN_NOT_FOUND) from error
 
-    def _begin_handoff(self, run: _Run, loaded: LoadedScenario) -> ScenarioControlRunStatus:
-        self._transition(run, "PLANNED")
-        fleet_request = FleetControlStartRequest(
-            controlVersion=_CONTROL_VERSION,
-            runId=run.run_id,
-            scenario=project_fleet_scenario(loaded.definition, run.mission_id),
-        )
+    async def _fleet_status(self, run_id: str) -> FleetControlRunStatus:
         try:
-            status = self.fleet.start(fleet_request)
-        except FleetClientError as error:
-            if error.code is FleetClientCode.RUN_NOT_FOUND:
-                self._abort_lost_handoff(run)
-                return self._status(run)
-            raise ScenarioControlError(ScenarioControlCode.FLEET_UNAVAILABLE, run.run_id) from error
-        self._establish_handoff(run, status)
-        return self._status(run)
+            return await self._fleet.status(run_id)
+        except FleetControlError as error:
+            raise _translate_fleet_error(error) from error
 
-    def _reconcile_pending_handoff(self, run: _Run) -> ScenarioControlRunStatus:
-        with run.handoff_lock:
-            with self._lock:
-                if not run.handoff_pending:
-                    return self._status(run)
-            try:
-                status = self.fleet.status(run.run_id)
-            except FleetClientError as error:
-                if error.code is FleetClientCode.RUN_NOT_FOUND:
-                    self._abort_lost_handoff(run)
-                    return self._status(run)
-                raise ScenarioControlError(
-                    ScenarioControlCode.FLEET_UNAVAILABLE, run.run_id
-                ) from error
-            self._establish_handoff(run, status)
-            return self._status(run)
 
-    def _abort_lost_handoff(self, run: _Run) -> None:
-        self._transition(run, "ABORTED")
-        with self._lock:
-            run.handoff_pending = False
+def hmac_bytes_equal(left: bytes, right: bytes) -> bool:
+    """Compare canonical request identities without content-dependent early exit."""
+    return hmac.compare_digest(left, right)
 
-    def _establish_handoff(self, run: _Run, status: FleetControlRunStatus) -> None:
-        self._apply_fleet(run, status, publish=True)
-        with self._lock:
-            run.handoff_pending = False
-        self._start_monitor(run)
 
-    def _transition(self, run: _Run, state: ScenarioState) -> None:
-        with run.event_lock:
-            with self._lock:
-                if run.state in _TERMINAL_STATES or state in run.published:
-                    return
-            self.mission_events.publish(run.run_id, run.mission_id, state)
-            with self._lock:
-                run.published.add(state)
-                run.state = state
-                if state in _TERMINAL_STATES:
-                    run.done.set()
-                    run.monitor_stop.set()
-
-    def _apply_fleet(self, run: _Run, status: FleetControlRunStatus, *, publish: bool) -> None:
-        if status.run_id != run.run_id or status.mission_id != run.mission_id:
-            raise ScenarioControlError(ScenarioControlCode.FLEET_UNAVAILABLE, run.run_id)
-        target: ScenarioState
-        if status.state in {"ACCEPTED", "RUNNING"}:
-            target = "SEARCHING"
-        elif status.state == "EXHAUSTED":
-            target = "EXHAUSTED"
-        else:
-            target = "ABORTED"
-        if publish:
-            if target == "EXHAUSTED" and run.state == "PLANNED":
-                self._transition(run, "SEARCHING")
-            self._transition(run, target)
-        else:
-            with self._lock:
-                run.state = target
-                if target in _TERMINAL_STATES:
-                    run.done.set()
-
-    def _start_monitor(self, run: _Run) -> None:
-        with self._lock:
-            if run.state in _TERMINAL_STATES or run.monitor_started:
-                return
-            run.monitor_started = True
-        thread = threading.Thread(
-            target=self._monitor,
-            args=(run,),
-            name=f"scenario-run-{run.run_id}",
-            daemon=True,
+def _fleet_start_request(
+    request: ScenarioControlStartRequest, definition: ScenarioDefinition
+) -> FleetControlStartRequest:
+    if (
+        definition.identifier != request.scenario_id
+        or definition.revision != request.scenario_revision
+    ):
+        raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH)
+    simulated = tuple(
+        member for member in definition.members if isinstance(member, SimulatedMember)
+    )
+    declared = tuple(
+        member for member in definition.members if isinstance(member, DeclaredOnlyMember)
+    )
+    if len(simulated) != _SIMULATED_COUNT or len(declared) != _DECLARED_ONLY_COUNT:
+        raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH)
+    drones = [_drone(member) for member in simulated]
+    try:
+        scenario = FleetControlScenario.model_validate(
+            {
+                "missionId": request.mission_id,
+                "drones": [drone.model_dump(mode="json", by_alias=True) for drone in drones],
+                "tickIntervalMilliseconds": definition.tick_interval_milliseconds,
+                "connectivityThresholds": definition.connectivity_thresholds.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "ticksToSweep": definition.ticks_to_sweep,
+                "absentHeartbeats": [
+                    absence.model_dump(mode="json", by_alias=True)
+                    for absence in definition.absent_heartbeats
+                ],
+            }
         )
-        with self._lock:
-            run.monitor_thread = thread
-        thread.start()
+        return FleetControlStartRequest.model_validate(
+            {
+                "controlVersion": 1,
+                "runId": request.run_id,
+                "scenario": scenario.model_dump(mode="json", by_alias=True),
+            }
+        )
+    except ValidationError as error:
+        raise ControlError(ControlRefusal.SCENARIO_REVISION_MISMATCH) from error
 
-    def _monitor(self, run: _Run) -> None:
-        while not run.monitor_stop.is_set():
-            if self.monitor_wait(run.monitor_stop):
-                return
-            try:
-                status = self.fleet.status(run.run_id)
-            except FleetClientError:
-                self._transition(run, "ABORTED")
-                return
-            self._apply_fleet(run, status, publish=True)
-            if status.state in {"EXHAUSTED", "CANCELLED", "FAILED"}:
-                return
+
+def _drone(member: SimulatedMember) -> FleetControlDroneStart:
+    return FleetControlDroneStart.model_validate(
+        {
+            "droneId": member.identifier,
+            "sectorId": member.sector_id,
+            "latitudeMicrodegrees": member.latitude_microdegrees,
+            "longitudeMicrodegrees": member.longitude_microdegrees,
+            "altitudeMetres": member.altitude_metres,
+            "headingDegrees": member.heading_degrees,
+            "groundSpeedCentimetresPerSecond": member.ground_speed_centimetres_per_second,
+            "batteryPermille": member.battery_permille,
+            "northMicrodegreesPerTick": member.north_microdegrees_per_tick,
+            "eastMicrodegreesPerTick": member.east_microdegrees_per_tick,
+            "batteryDrainPermillePerTick": member.battery_drain_permille_per_tick,
+        }
+    )
+
+
+def _validate_fleet_binding(binding: _RunBinding, status: FleetControlRunStatus) -> None:
+    if status.run_id != binding.run_id or status.mission_id != binding.mission_id:
+        raise ControlError(ControlRefusal.FLEET_UNAVAILABLE)
+
+
+def _identity(binding: _RunBinding) -> tuple[str, int, str, str]:
+    return (binding.scenario_id, binding.scenario_revision, binding.mission_id, binding.run_id)
+
+
+def _terminal_status(binding: _RunBinding) -> ScenarioControlRunStatus:
+    return ScenarioControlRunStatus.model_validate(
+        {
+            "controlVersion": 1,
+            "scenarioId": binding.scenario_id,
+            "scenarioRevision": binding.scenario_revision,
+            "missionId": binding.mission_id,
+            "runId": binding.run_id,
+            "state": binding.terminal_state,
+        }
+    )
+
+
+def _scenario_status(
+    binding: _RunBinding, fleet_status: FleetControlRunStatus
+) -> ScenarioControlRunStatus:
+    _validate_fleet_binding(binding, fleet_status)
+    return ScenarioControlRunStatus.model_validate(
+        {
+            "controlVersion": 1,
+            "scenarioId": binding.scenario_id,
+            "scenarioRevision": binding.scenario_revision,
+            "missionId": binding.mission_id,
+            "runId": binding.run_id,
+            "state": _STATE_BY_FLEET_STATE[fleet_status.state],
+        }
+    )
+
+
+def _translate_fleet_error(error: FleetControlError) -> ControlError:
+    if error.refusal is FleetControlRefusal.RUN_CONFLICT:
+        return ControlError(ControlRefusal.RUN_CONFLICT)
+    if error.refusal is FleetControlRefusal.RUN_NOT_FOUND:
+        return ControlError(ControlRefusal.RUN_NOT_FOUND)
+    if error.refusal is FleetControlRefusal.CANCELLATION_NOT_ESTABLISHED:
+        return ControlError(ControlRefusal.CANCELLATION_NOT_ESTABLISHED)
+    return ControlError(ControlRefusal.FLEET_UNAVAILABLE)

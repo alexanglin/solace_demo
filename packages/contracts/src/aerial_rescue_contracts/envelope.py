@@ -85,6 +85,18 @@ _OPTIONAL_RULES: Final = {"causationid": IDENTIFIER_PATTERN, "tracestate": TRACE
 _CONSTANTS: Final = {"specversion": SPEC_VERSION, "datacontenttype": DATA_CONTENT_TYPE}
 _MISSION_KEY: Final = "missionId"
 
+_TOPIC_PAYLOAD_PATHS: Final[Mapping[Family, Mapping[str, tuple[str, ...]]]] = {
+    Family.OPERATOR_COMMAND: {"commandType": ("action", "commandType")},
+    Family.OPERATOR_APPROVAL: {"decision": ("decision",)},
+    Family.AGENT_PROPOSAL: {
+        "agentName": ("agentName",),
+        "proposalType": ("proposalType",),
+    },
+    Family.EVIDENCE_DECISION: {"proposalId": ("proposalId",)},
+    Family.AUDIT: {"recordType": ("recordType",)},
+}
+"""Discriminators repeated by the closed ADR-0148 payloads, including one nested action."""
+
 
 class EnvelopeRefusal(Enum):
     """Why a document is not an application event envelope."""
@@ -99,6 +111,7 @@ class EnvelopeRefusal(Enum):
     SOURCE_BINDING = "source is not the producer kind bound to the event type"
     DATASCHEMA_BINDING = "dataschema is not the schema bound to the type"
     SUBJECT_BINDING = "subject does not equal the payload mission identifier"
+    PAYLOAD_BINDING = "payload member does not equal its bound envelope attribute"
     TOPIC_BINDING = "envelope does not bind to the arriving topic"
 
 
@@ -130,6 +143,30 @@ def _lifecycle_source_pattern(producer_kind: str) -> str:
 
 
 BINDINGS: Final[Mapping[str, Binding]] = {
+    "aerial-rescue.v1.operator.command.assign-sector": Binding(
+        "aerial-rescue.v1.operator.command.assign-sector",
+        Family.OPERATOR_COMMAND,
+        SCHEMA_ID_BASE + "schemas/v1/payload/operator-command.schema.json",
+        _lifecycle_source_pattern("dashboard-api"),
+    ),
+    "aerial-rescue.v1.operator.command.escalate-rescue": Binding(
+        "aerial-rescue.v1.operator.command.escalate-rescue",
+        Family.OPERATOR_COMMAND,
+        SCHEMA_ID_BASE + "schemas/v1/payload/operator-command.schema.json",
+        _lifecycle_source_pattern("dashboard-api"),
+    ),
+    "aerial-rescue.v1.operator.approval.approve": Binding(
+        "aerial-rescue.v1.operator.approval.approve",
+        Family.OPERATOR_APPROVAL,
+        SCHEMA_ID_BASE + "schemas/v1/payload/operator-approval.schema.json",
+        _lifecycle_source_pattern("dashboard-api"),
+    ),
+    "aerial-rescue.v1.operator.approval.reject": Binding(
+        "aerial-rescue.v1.operator.approval.reject",
+        Family.OPERATOR_APPROVAL,
+        SCHEMA_ID_BASE + "schemas/v1/payload/operator-approval.schema.json",
+        _lifecycle_source_pattern("dashboard-api"),
+    ),
     "aerial-rescue.v1.drone.telemetry": Binding(
         "aerial-rescue.v1.drone.telemetry",
         Family.DRONE_TELEMETRY,
@@ -158,20 +195,57 @@ BINDINGS: Final[Mapping[str, Binding]] = {
         SCHEMA_ID_BASE + "schemas/v1/payload/sector-event-lifecycle.schema.json",
         _lifecycle_source_pattern("sector-lifecycle"),
     ),
-    "aerial-rescue.v1.gateway.response": Binding(
-        "aerial-rescue.v1.gateway.response",
-        Family.GATEWAY_RESPONSE,
+    "aerial-rescue.v1.gateway.record": Binding(
+        "aerial-rescue.v1.gateway.record",
+        Family.GATEWAY_RECORD,
         SCHEMA_ID_BASE + "schemas/v1/payload/gateway-response.schema.json",
+        _lifecycle_source_pattern("command-gateway"),
+    ),
+    "aerial-rescue.v1.agent.proposal.candidate-location": Binding(
+        "aerial-rescue.v1.agent.proposal.candidate-location",
+        Family.AGENT_PROPOSAL,
+        SCHEMA_ID_BASE + "schemas/v1/payload/agent-proposal.schema.json",
+        _lifecycle_source_pattern("command-gateway"),
+    ),
+    "aerial-rescue.v1.evidence.decision": Binding(
+        "aerial-rescue.v1.evidence.decision",
+        Family.EVIDENCE_DECISION,
+        SCHEMA_ID_BASE + "schemas/v1/payload/evidence-decision.schema.json",
+        _lifecycle_source_pattern("evidence-service"),
     ),
     "aerial-rescue.v1.drone.command.assign-sector": Binding(
         "aerial-rescue.v1.drone.command.assign-sector",
         Family.DRONE_COMMAND,
         SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-assign-sector.schema.json",
     ),
+    "aerial-rescue.v1.drone.command.escalate-rescue": Binding(
+        "aerial-rescue.v1.drone.command.escalate-rescue",
+        Family.DRONE_COMMAND,
+        SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-escalate-rescue.schema.json",
+        _lifecycle_source_pattern("command-gateway"),
+    ),
     "aerial-rescue.v1.drone.command-result": Binding(
         "aerial-rescue.v1.drone.command-result",
         Family.DRONE_COMMAND_RESULT,
         SCHEMA_ID_BASE + "schemas/v1/payload/drone-command-result.schema.json",
+    ),
+    "aerial-rescue.v1.audit.proposal-normalization": Binding(
+        "aerial-rescue.v1.audit.proposal-normalization",
+        Family.AUDIT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/audit.schema.json",
+        _lifecycle_source_pattern("command-gateway"),
+    ),
+    "aerial-rescue.v1.audit.evidence-decision": Binding(
+        "aerial-rescue.v1.audit.evidence-decision",
+        Family.AUDIT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/audit.schema.json",
+        _lifecycle_source_pattern("evidence-service"),
+    ),
+    "aerial-rescue.v1.audit.command-authorization": Binding(
+        "aerial-rescue.v1.audit.command-authorization",
+        Family.AUDIT,
+        SCHEMA_ID_BASE + "schemas/v1/payload/audit.schema.json",
+        _lifecycle_source_pattern("command-gateway"),
     ),
 }
 """A new row lands together with its payload schema, event schema, fixtures, and manifest entry."""
@@ -275,6 +349,12 @@ def _bind(texts: Mapping[str, str], data: Mapping[str, object]) -> None:
         raise EnvelopeError(EnvelopeRefusal.DATASCHEMA_BINDING, "dataschema", texts["dataschema"])
     if data.get(_MISSION_KEY) != texts["subject"]:
         raise EnvelopeError(EnvelopeRefusal.SUBJECT_BINDING, "subject", texts["subject"])
+    if binding.family is Family.OPERATOR_APPROVAL and data.get("issuedAt") != texts["time"]:
+        raise EnvelopeError(
+            EnvelopeRefusal.PAYLOAD_BINDING,
+            "data.issuedAt",
+            data.get("issuedAt"),
+        )
 
 
 def sequence_text(value: int) -> str | None:
@@ -385,6 +465,16 @@ def check_topic_binding(envelope: Envelope, topic: Topic) -> None:
         raise EnvelopeError(EnvelopeRefusal.TOPIC_BINDING, "type", envelope.type)
     if topic.mission_id != envelope.subject:
         raise EnvelopeError(EnvelopeRefusal.TOPIC_BINDING, "subject", envelope.subject)
-    for name, expected in topic.parameters.items():
-        if rule_for(name) is Rule.IDENTIFIER and envelope.data.get(name) != expected:
-            raise EnvelopeError(EnvelopeRefusal.TOPIC_BINDING, name, envelope.data.get(name))
+    repeated = _TOPIC_PAYLOAD_PATHS.get(topic.family, {})
+    payload_bindings = (
+        (repeated.get(name, (name,)), expected)
+        for name, expected in topic.parameters.items()
+        if name in repeated or rule_for(name) is Rule.IDENTIFIER
+    )
+    for path, expected in payload_bindings:
+        attribute = ".".join(path)
+        value: object = envelope.data
+        for member in path:
+            value = value.get(member) if isinstance(value, Mapping) else None
+        if value != expected:
+            raise EnvelopeError(EnvelopeRefusal.TOPIC_BINDING, attribute, value)

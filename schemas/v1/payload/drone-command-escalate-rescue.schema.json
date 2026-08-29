@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-escalate-rescue.schema.json",
+  "description": "One approval-, proposal-, and evidence-bound rescue-escalation command.",
+  "type": "object",
+  "required": [
+    "missionId",
+    "droneId",
+    "commandId",
+    "approvalId",
+    "proposalId",
+    "proposalDigest",
+    "proposalVersion",
+    "evidenceDecisionId",
+    "evidenceDecisionDigest",
+    "evidenceDecisionVersion",
+    "latitudeMicrodegrees",
+    "longitudeMicrodegrees"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "missionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "droneId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "commandId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "approvalId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "proposalId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "proposalDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "proposalVersion": {
+      "const": 1
+    },
+    "evidenceDecisionId": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/identifier"
+    },
+    "evidenceDecisionDigest": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+    },
+    "evidenceDecisionVersion": {
+      "const": 1
+    },
+    "latitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/latitudeMicrodegrees"
+    },
+    "longitudeMicrodegrees": {
+      "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/longitudeMicrodegrees"
+    }
+  }
+}

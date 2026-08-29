@@ -1,0 +1,13 @@
+{
+  "canonicalizationVersion": 1,
+  "evidenceDecisionVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "proposalId": "proposal-synthetic-0001",
+  "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+  "proposalVersion": 1,
+  "evidenceDecisionId": "decision-synthetic-0004",
+  "outcome": "rejected",
+  "reason": "recorded-origin",
+  "evidenceDecisionDigest": "e202343c5b4c3191451c73b3c3f5701dee7e3706dc8247e9c237c8039e0af9f8",
+  "unexpected": true
+}

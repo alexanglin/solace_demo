@@ -10,7 +10,7 @@ from typing import Final
 
 from aerial_rescue_contracts.view import ReducerCheckpoint
 
-from aerial_rescue_dashboard_api.errors import ApiError, ErrorCode
+from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import StorePort
 from aerial_rescue_dashboard_api.snapshot import SnapshotCapture, SnapshotService
 from aerial_rescue_dashboard_api.sse import BufferDisposition, BufferedEvent, ClientBuffer

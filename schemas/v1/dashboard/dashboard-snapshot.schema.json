@@ -8,9 +8,9 @@
     "runtimeId",
     "cursor",
     "digest",
+    "latestEventDigest",
     "currentRun",
     "state",
-    "latestEventDigest",
     "timeline"
   ],
   "additionalProperties": false,
@@ -29,6 +29,16 @@
     "digest": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
     },
+    "latestEventDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      ]
+    },
     "currentRun": {
       "anyOf": [
         {
@@ -44,16 +54,6 @@
     },
     "state": {
       "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-reduced-state.schema.json"
-    },
-    "latestEventDigest": {
-      "anyOf": [
-        {
-          "type": "null"
-        },
-        {
-          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
-        }
-      ]
     },
     "timeline": {
       "type": "array",
@@ -72,6 +72,33 @@
               },
               {
                 "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/sectorLifecycle"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/operatorCommand"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/operatorApproval"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/agentProposal"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/evidenceDecision"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/salientObservation"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/droneCommand"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/commandResult"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/gatewayResponse"
+              },
+              {
+                "$ref": "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event.schema.json#/$defs/auditRecord"
               }
             ]
           }
@@ -79,14 +106,47 @@
       }
     }
   },
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "object",
+          "required": ["latestAuditOrdinal"],
+          "properties": {
+            "latestAuditOrdinal": {
+              "const": 0
+            }
+          }
+        },
+        "latestEventDigest": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "object",
+          "required": ["latestAuditOrdinal"],
+          "properties": {
+            "latestAuditOrdinal": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "latestEventDigest": {
+          "$ref": "https://aerial-rescue.invalid/schemas/v1/canonical.schema.json#/$defs/lowercaseSha256"
+        }
+      }
+    }
+  ],
   "$defs": {
     "liveRun": {
       "type": "object",
-      "required": [
-        "mode",
-        "missionId",
-        "runId"
-      ],
+      "required": ["mode", "missionId", "runId"],
       "additionalProperties": false,
       "properties": {
         "mode": {
@@ -102,10 +162,7 @@
     },
     "replayRun": {
       "type": "object",
-      "required": [
-        "mode",
-        "sessionId"
-      ],
+      "required": ["mode", "sessionId"],
       "additionalProperties": false,
       "properties": {
         "mode": {

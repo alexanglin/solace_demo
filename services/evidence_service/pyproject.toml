@@ -3,7 +3,16 @@ name = "aerial-rescue-evidence-service"
 version = "0.0.0"
 description = "Model-observation validation, provenance, and domain-score coordination."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = [
+    "aerial-rescue-broker",
+    "aerial-rescue-contracts",
+    "aerial-rescue-domain",
+    "aerial-rescue-store",
+    "pydantic==2.13.4",
+]
+
+[project.scripts]
+aerial-rescue-evidence-service = "aerial_rescue_evidence_service.console:main"
 
 [build-system]
 requires = ["hatchling"]

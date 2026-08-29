@@ -16,7 +16,7 @@ from aerial_rescue_broker.messaging import (
 from aerial_rescue_domain.mission import MissionError, MissionRefusal
 from aerial_rescue_recorder.service import CaptureLoop, DashboardAppender, _mission_lifecycle
 from aerial_rescue_store.audit import AuditRecord
-from aerial_rescue_store.dashboard_events import (
+from aerial_rescue_store.dashboard.events import (
     BrokerEvent,
     BrokerEventOutcome,
     BrokerEventReceipt,

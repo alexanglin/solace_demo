@@ -14,8 +14,9 @@ Use the source that owns a requirement rather than making a test or fixture its 
 | Executable-test structure, classification, coverage, and claim ceilings | [`TESTING.md`](../../docs/TESTING.md) and [ADR-0018](../../docs/adr/0018-enforced-arrange-act-assert.md) |
 | Python-domain isolation, Agent Mesh verification, and commit-stage selection | [ADR-0004](../../docs/adr/0004-split-python-runtimes.md), [ADR-0029](../../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md), [ADR-0062](../../docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md), and [ADR-0066](../../docs/adr/0066-select-commit-stage-tests-from-an-import-graph.md) |
 | Validator behavior and fail-closed refusals | [ADR-0032](../../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0035](../../docs/adr/0035-refuse-unprovable-agent-mesh-configuration.md), and [`tools/AGENTS.md`](../tools/AGENTS.md) |
-| Runtime pins, warning containment, native overrides, and image evidence | [ADR-0034](../../docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md), [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0047](../../docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md), and [`TECH_DEBT.md`](../../TECH_DEBT.md) |
+| Runtime pins, warning containment, native overrides, and image evidence | [ADR-0034](../../docs/adr/0034-scope-agent-mesh-warning-filters-to-upstream-modules.md), [ADR-0044](../../docs/adr/0044-docker-compose-runtime-with-official-agent-mesh-image.md), [ADR-0047](../../docs/adr/0047-override-the-asteval-pin-to-close-cve-2026-55244.md), [ADR-0177](../../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md), and [`TECH_DEBT.md`](../../TECH_DEBT.md) |
 | Local-model, Web UI, gateway, and Event Mesh Tool boundaries | [ADR-0063](../../docs/adr/0063-lock-local-models-by-manifest-digest.md), [ADR-0065](../../docs/adr/0065-validate-the-web-ui-gateway-and-keep-the-platform-service-out.md), [ADR-0068](../../docs/adr/0068-command-gateway-request-reply-is-schema-bound-rpc.md), [ADR-0069](../../docs/adr/0069-close-the-gateway-operation-set-with-a-deny-by-default-table.md), and [ADR-0070](../../docs/adr/0070-reserve-the-reply-mission-level-and-narrow-the-tool-grant.md) |
+| Closed Agent Response and trusted source binding | [ADR-0148](../../docs/adr/0148-close-the-application-data-plane-wire-documents.md), [ADR-0152](../../docs/adr/0152-bind-proposals-to-the-complete-source-event.md), and [`CONTRACTS.md`](../../docs/CONTRACTS.md) |
 | Event, safety, and numeric requirements | [`CONTRACTS.md`](../../docs/CONTRACTS.md), [`SAFETY.md`](../../docs/SAFETY.md), and [`operating-parameters.md`](../../docs/operating-parameters.md) |
 
 Tests provide bounded evidence. They must independently detect drift, but a passing expectation does
@@ -27,8 +28,12 @@ a test, fixture, old evidence record, or this guide disagrees with it.
 | Path | Responsibility |
 | --- | --- |
 | `test_config_validator.py` | Behavioral, security-boundary, distribution-provenance, configuration-conformance, and CLI evidence for the offline semantic validator |
+| `test_owned_gateway_output.py` | Direct-output behavior, pinned gateway subclass seam, receipt truthfulness, backpressure, and bounded shutdown |
+| `test_structured_gateway_response.py` | Trusted-context wrapping, closed candidate/abstention output, deterministic A2A correlation, timeout and upstream-diagnostic redaction, and official output-schema enforcement |
+| `test_image_probe.py` | Deterministic behavior of the hardened runtime-image compatibility probe |
 | `test_pinned_plugin_compatibility.py` | Native-environment evidence for exact installed Agent Mesh and Event Mesh plugin versions, entry points, base classes, and selected runtime symbols |
 | `test_pinned_runtime_overrides.py` | Native-environment evidence that the approved dependency override is installed and that the selected Agent Mesh arithmetic paths still work |
+| `test_runtime_compatibility.py` | Exact SDK properties, transport refusal, source-shape sentinels, asynchronous-initialization readiness, terminal lifecycle, and derived-image evidence for ADR-0177 and ADR-0201 |
 | `test_warning_policy.py` | Evidence that warnings from owned code remain fatal under the local pytest policy |
 | `fixtures/config_validation/` | Synthetic accepted inputs shared by validator tests |
 
@@ -122,8 +127,9 @@ selected tests rather than assuming only the apparent consumer can change.
 | Local fixtures | Reusable controlled inputs for consuming tests | Deployed configuration validity or any live, container, broker, model, or release claim |
 
 The full wrapper's statement and branch coverage gate applies to
-`tools.agent_mesh_config_validator`; it is not semantic completeness and does not cover upstream
-packages or `tools/image_probe.py`. Native compatibility tests never substitute for the authorized,
+`tools.agent_mesh_config_validator` and `aerial_rescue_event_mesh_gateway`; it is not semantic
+completeness and does not cover upstream packages or `tools/image_probe.py`. Native compatibility tests
+never substitute for the authorized,
 network-disabled in-container probe. Refer current limitations and accepted upstream debt to
 `TECH_DEBT.md` and the governing ADR rather than freezing mutable debt details into test names or this
 guide.
@@ -172,7 +178,7 @@ uv run --frozen pytest -q -m \
 Use the corresponding concern-named path instead of `test_config_validator.py` for compatibility,
 override, warning-policy, or future image-probe work. Then return to the repository root and run the
 canonical wrapper list in the parent guide. The full Agent Mesh wrapper is authoritative for marker
-exclusions and its validator coverage gate. Finish with all repository pre-commit and pre-push gates
+exclusions and its owned-code coverage gate. Finish with all repository pre-commit and pre-push gates
 required by the root instructions.
 
 When this guide or its alias changes, also run:

@@ -10,6 +10,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Solace PubSub+ now carries the continuously running application data plane end to end.** Typed
+  delivery routing derives Direct, Guaranteed, or request/reply behavior from the closed topic family
+  before broker I/O; bounded TLS sessions publish, receive, settle, reconnect, and expose readiness
+  without caller-selected delivery. The command gateway, fleet simulator, evidence service, recorder,
+  and dashboard API now run as broker-connected services with durable inbox/outbox, idempotency,
+  proposal, evidence, command-progress, and per-drone receipt state. The private scenario-control
+  service remains deliberately brokerless, and replay constructs no publisher or outbound connection.
+
+  The existing `0005_dashboard_runtime` migration remains immutable. Five additive Alembic revisions
+  extend the chain through revision `0010`, and the complete 25-table application schema is declared by
+  SQLAlchemy metadata and exercised through upgrade, downgrade, restart, concurrency, and transaction
+  tests. Dashboard start/reset idempotency stays in `dashboard_operation`; the generic idempotency table
+  owns only operator commands, approval consumption, dashboard commands, and proposal decisions
+  ([ADR-0189](docs/adr/0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md)).
+
+  Deployment preserves the shared broker and PostgreSQL volumes while adding real service entrypoints,
+  migrations, least-privilege identities, receiver-only compositions, bounded outbox workers, queue
+  reconciliation, broker-event monitoring, and an opt-in read-only SEMP monitor. Contract, unit,
+  integration, security-policy, image, and live application-data-plane gates cover malformed ingress,
+  duplicate and conflicting identities, ambiguous publication, reconnect recovery, approval bypasses,
+  exact-once logical command effects, and writer-free replay.
+
+  Queue health now uses the pinned broker's supported literal `queueName,msgs.count` parent selection
+  and obtains active binds from count-only per-queue transmit-flow reads. Depth-only operations make no
+  child request; routine bind checks are stable, sequential, fail closed, and bounded to the exact
+  89-queue reference topology ([ADR-0190](docs/adr/0190-count-active-queue-binds-through-transmit-flow-aggregates.md)).
+
 - **The fixed synthetic wilderness dashboard slice is production-qualified on a clean committed
   revision.** Revision `db2b640` passed all 64 fixture cases in 42.0 seconds, all eight serial production
   cases in 1.6 minutes, and the 61-sample soak in 30.3 minutes with the accepted RSS and file-descriptor
@@ -1731,6 +1758,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **The Mission Coordinator answers the gateway's structured request instead of writing artifacts.**
+  It runs `ollama_chat/llama3:8b`, keeps only the read-only Event Mesh Tool the configuration
+  declares (`auto_inject_artifact_tools: false`), and is bounded to four model calls per task, so a
+  non-converging agent stays inside the Event Mesh Gateway's acknowledgment window rather than
+  running past it while every salient event is dead-lettered (ADR-0198).
+- **The scenario service runs one composition.** The `scenario-service` console entry point now
+  serves catalog discovery and lost-run recovery beside start, status, cancel, and the Compose
+  liveness and readiness probes; a mission-identity mismatch on cancel is `RUN_CONFLICT`; documents
+  carry `Cache-Control: no-store` and a trailing slash is not redirected (ADR-0197).
+- **The active reconnection budget is 60 attempts, up from 30.** A broker restart on the Apple Silicon
+  reference host is about 14 s of graceful stop plus 20 s of boot before the listen ports open, and
+  30 attempts 1 000 ms apart are refused at once while the ports are closed, so every application
+  session reached `EXHAUSTED` five seconds before the broker returned
+  ([ADR-0192](docs/adr/0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md)).
 - Dashboard snapshot/recorder control flow and repeated test arrangements are factored into focused
   helpers so the repository-wide cognitive-complexity and duplication authorities pass without changing
   production behavior, test identities, Acts, or assertions.
@@ -1995,6 +2036,121 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Recorder-first salient events no longer crash-loop the evidence service.** The recorder and
+  evidence service intentionally share the immutable `source_event` row, but the evidence writer
+  treated an exact row with no child facts as a reused immutable fact set. It now locks that exact
+  shared source, rechecks for a concurrent winner, and attaches the first complete sensor-provenance
+  set atomically; changed or partial nonempty sets still fail closed. The salient-chain probe now joins
+  `source_evidence_item`, so recorder capture alone cannot falsely satisfy its provenance assertion,
+  and it resolves required store settings before its only publication.
+- **Agent Mesh no longer reports ready before coordinator tools initialize.** The pinned Connector
+  marked `/readyz` ready after starting flow threads even though Agent Mesh was still creating tools and
+  request/reply sessions asynchronously. The owned entrypoint now uses the Connector's pre-readiness
+  callback to wait at most 60 seconds total for every component future while checking its stop signal at
+  most every half-second. A component failure, timeout, or malformed future prevents that incarnation
+  from becoming ready; requested shutdown remains prompt, and terminal failure follows the existing
+  bounded nonzero path ([ADR-0201](docs/adr/0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md)).
+- **The mission coordinator runs on a model that supports tools again.** [ADR-0198](docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) moved the
+  agent to `llama3:8b` and constrained its tool surface in one change, and a hook stashed the
+  configuration before either half ran. The first run that loaded it failed every completion with
+  `llama3:8b does not support tools`: the local daemon reports `['completion']` for that model and
+  `['completion', 'tools', 'thinking']` for the locked one. A delegating coordinator always carries
+  a tool, so no structured answer was possible, no candidate was published, and nothing was scored.
+  The coordinator is back on the locked tool-capable model, the unreferenced lock entry is gone, and
+  ADR-0198's tool-surface and call-bound decisions stand and get their first real measurement
+  ([ADR-0200](docs/adr/0200-give-the-coordinator-a-tool-capable-model.md)).
+- **Compose gives the Agent Mesh long enough to stop itself.** The service declared no
+  `stop_grace_period`, so Compose's 10 s default expired during the pinned Connector's own cleanup
+  and answered an ordinary recreate with SIGKILL and exit 137 — the graceful path could not finish
+  and the owned settle window could never fire. The service now declares 46 s, and a deployment
+  test holds it against the asynchronous-initialization poll, Connector cleanup allowance, and
+  `THREAD_SETTLE_SECONDS` so raising any term without the grace fails.
+- **The Agent Mesh entrypoint now stops when its lifecycle is finished.** The owned entrypoint ran
+  `stop()` and `cleanup()` and chose a failure status exactly as
+  [ADR-0177](docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) requires, and then never
+  exited: the pinned Solace SDK's `ThreadPoolExecutor` workers are nondaemon, and
+  `concurrent.futures` joins them without a bound at interpreter shutdown. One run left the
+  container reported `Up` with a frozen restart count for fourteen minutes, so Compose could not see
+  a mesh that had already failed. The entrypoint now waits a bounded settle window for surviving
+  nondaemon threads and, if any outlive it, flushes its diagnostics and stops the process with the
+  status the lifecycle had already chosen
+  ([ADR-0199](docs/adr/0199-terminate-the-owned-agent-mesh-entrypoint.md)).
+- **The dashboard API starts against the composed scenario service.** Its catalog and lost-run
+  recovery calls were 404s on the deployed scenario composition, and its Compose readiness probe
+  named a Host the production composition refuses; both are corrected (ADR-0197; findings 7 and 9
+  of `release-evidence/phase-3/merged-runtime-first-run.md`).
+- **The broker event monitor accepts the pinned broker's JSON severity names.** On a storage element
+  first initialised under the merged Compose file the broker writes JSON events with upper-case
+  syslog severities (`INFO`, `NOTICE`, `WARNING`, `ERR`); the monitor's strict wire model knew only
+  the lower-case names and refused every line as `BROKER_EVENT_INPUT_REFUSED`. The model now
+  normalises the case on input; emitted alerts are unchanged.
+- **The deployed recorder console now publishes its readiness lease.** `aerial-rescue-recorder`
+  (`console:main`) never wrote the `RECORDER_READINESS_PATH` freshness lease that the Compose
+  healthcheck reads — the writer lived only in the parallel `main.py` composition — so the merged
+  runtime's first composition (2026-08-28) left the container permanently unhealthy after every
+  queue had bound. `serve()` now reports the lifecycle's readiness after every poll and the
+  console activates, refreshes, and withdraws the lease from it; `default_runtime()` resolves the
+  lease path with an owned default and refuses a blank override.
+- **The Agent Mesh identity may own five endpoints.** The live steady state holds exactly the four
+  ADR-0153 allowed, so the MissionCoordinator's peer-delegation reply queue was refused with
+  `SOLCLIENT_SUBCODE_NO_MORE_NON_DURABLE_QUEUE_OR_TE` and the container restart-looped
+  ([ADR-0196](docs/adr/0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md)).
+- **The broker is healthy only once Guaranteed messaging is active.** The Compose health check probed
+  `health-check/direct-active`, so the first merged composition provisioned 21 s after the container
+  started and was refused with `code=412 message spool data not available`; it now probes
+  `health-check/guaranteed-active` ([ADR-0194](docs/adr/0194-gate-broker-health-on-guaranteed-messaging.md)).
+- **The broker event monitor can read the retained log.** The pinned broker image keeps `jail/logs` at
+  mode 0700 owned by its user 1000001, so the monitor at user 10001 exited with
+  `BROKER_EVENT_SOURCE_FAILED` on its first real start; it now runs as `1000001:10001` on its read-only
+  subpath mount ([ADR-0195](docs/adr/0195-run-the-event-monitor-as-the-retained-log-s-owner.md)).
+- **The owned Event Mesh Gateway component starts inside the Connector.** Its `info` dictionary lived in
+  the app module while the Connector reads it from the component class's module, so every flow failed
+  with `Could not find 'info' dictionary` and the agent-mesh container restart-looped; the component
+  module now defines `info`, carrying the pinned upstream parameters and schemas unchanged.
+- **The recorder's source-event row carries the event's own time.** The evidence service and the
+  recorder both persist a salient event into the shared immutable `source_event` table; the recorder
+  stamped `observed_at` with its receive clock while the evidence service used the event's `time`, so
+  the second writer was refused as an identity reused for different content. The row now carries
+  the event time; the recorder's inbox completion keeps the receive clock.
+- **The audit record's kind holds an event type.** `audit_record.kind` was 32 characters, the bound of one
+  KIND level, while the dashboard binds every audit record to its event by `kind == type` and a type
+  runs to 70; the first live run to survive a broker restart stopped in the recorder's drain on
+  `aerial-rescue.v1.agent.proposal.candidate-location`. Revision `0011_audit_kind` widens the column
+  to 96 ([ADR-0193](docs/adr/0193-size-the-audit-kind-for-event-types.md)).
+- **An operator's approval can be consumed for the proposal it binds.** The domain's
+  `proposal_digest` used the generic context digest, which omits only a member named `digest`, while
+  every service binds proposals by ADR-0148's digest, which omits exactly `proposalDigest`; the
+  gateway hands the domain the complete stored payload, so `consume()` refused every live approval
+  as a digest mismatch (`proposal-mismatch`) after the dashboard had bound it. The domain now uses
+  the contracts proposal digest, so both forms of a proposal's parameters digest alike.
+- **Several proposals can draw on one source fact.** The evidence service minted a durable evidence
+  item's identity from the source fact alone while the store keeps one item row per proposal, so the
+  second proposal scored against one salient event was refused as an already-stored identity; the
+  first live run met it on its three proposals. The row identity is now derived from the proposal
+  and the fact; the published `evidenceItemId` is still the fact's.
+- **The command gateway can publish the proposals it normalizes.** Its publication gate compared an
+  outbox row's `family` with the dotted `Family.literal_suffix` (`agent.proposal`) while every
+  producer and the store use the hyphenated form (`agent-proposal`), so each normalized proposal
+  was refused as an identity mismatch before any broker I/O; the first live run stopped there.
+  `Family.outbox_family` now names that literal once, and the gate, the gateway's staging, and the
+  dashboard API's staging read it.
+- **Inbound bodies are normalized to immutable bytes at the SDK boundary.** The pinned Python
+  API returns a `bytearray`, which compares equal to `bytes` while failing every `isinstance`
+  check, so the first live delivery was refused by the dashboard API, command gateway, recorder,
+  and evidence service at once. `InboundMessage` now declares the SDK's real return type and the
+  one `inbound_payload()` normalizer is the only reader every ingress uses.
+- **`canonical.decode` refuses undecodable bytes as malformed text.** Bytes that fit none of
+  JSON's encodings raised the codec's `UnicodeDecodeError` past the typed `CanonicalizationError`,
+  so a foreign body on a durable queue broke the receiver's bounded shutdown instead of becoming
+  a typed refusal; the first live application data-plane run met one.
+- **Every owned client profile now reserves one subscription for the SDK reply inbox.** The first
+  live apply of the ADR-0153 profile table refused every connection from a profile with zero direct
+  subscriptions and refused the command gateway's second application subscription, because the
+  broker counts the `#P2P` reply-inbox subscription the pinned SDK installs on every session against
+  `maxSubscriptionCount`. The rendered ceiling is now the table's application subscriptions plus one
+  for each connectable profile
+  ([ADR-0191](docs/adr/0191-reserve-one-subscription-for-the-sdk-reply-inbox.md)).
+
 - The telemetry projection boundary test now reads its byte-identical member-local baseline, so Tier 1
   mutation runs remain independent of the repository-root fixture layout.
 
@@ -2105,3 +2261,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   control -- rather than the absence of the vulnerability. The advisory is reported as
   `PYSEC-2026-344`; the register named a CVE alias, which would have failed the waiver gate in both
   directions at once.
+
+### Removed
+
+- **The parallel scenario-service composition** (`main.py`, `http.py`, `fleet_client.py`,
+  `lifecycle.py`, `ScenarioControl`) and its five test modules (ADR-0197).

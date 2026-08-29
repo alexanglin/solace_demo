@@ -13,6 +13,7 @@ import unittest
 from typing import Final
 
 from aerial_rescue_contracts.envelope import BINDINGS, Envelope
+from aerial_rescue_contracts.topics import Family
 from aerial_rescue_contracts.view import (
     MAX_BUFFERED_EVENTS,
     PROJECTIONS,
@@ -28,6 +29,11 @@ TELEMETRY_TYPE: Final = "aerial-rescue.v1.drone.telemetry"
 CONNECTIVITY_TYPE: Final = "aerial-rescue.v1.drone.event.connectivity-changed"
 MISSION_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.mission.event.lifecycle"
 SECTOR_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.sector.event.lifecycle"
+EVIDENCE_DECISION_TYPE: Final = "aerial-rescue.v1.evidence.decision"
+GATEWAY_RECORD_TYPE: Final = "aerial-rescue.v1.gateway.record"
+SALIENT_EVENT_TYPE: Final = "aerial-rescue.v1.drone.event.salient"
+ASSIGN_SECTOR_COMMAND_TYPE: Final = "aerial-rescue.v1.drone.command.assign-sector"
+COMMAND_RESULT_TYPE: Final = "aerial-rescue.v1.drone.command-result"
 TELEMETRY_SCHEMA: Final = (
     "https://aerial-rescue.invalid/schemas/v1/payload/drone-telemetry.schema.json"
 )
@@ -92,6 +98,96 @@ def _lifecycle_envelope(event_type: str, data: dict[str, object]) -> Envelope:
         dataschema=BINDINGS[event_type].dataschema,
         sequence="000000000000043",
         correlation_id="c-0000000001",
+        traceparent=TRACEPARENT,
+        data=data,
+    )
+
+
+def _evidence_decision_envelope() -> Envelope:
+    """Return one accepted evidence decision at the normalized projection boundary."""
+    return Envelope(
+        id="event-evidence-0001",
+        source="urn:aerial-rescue:evidence-service:run-synthetic-0001",
+        type=EVIDENCE_DECISION_TYPE,
+        subject=MISSION,
+        time=TIME,
+        dataschema=(
+            "https://aerial-rescue.invalid/schemas/v1/payload/evidence-decision.schema.json"
+        ),
+        sequence="000000000000044",
+        correlation_id="correlation-evidence-0001",
+        traceparent=TRACEPARENT,
+        data={
+            "canonicalizationVersion": 1,
+            "evidenceDecisionVersion": 1,
+            "missionId": MISSION,
+            "proposalId": "proposal-0001",
+            "proposalDigest": "1" * 64,
+            "proposalVersion": 1,
+            "evidenceDecisionId": "decision-0001",
+            "outcome": "contributing",
+            "scoreVersion": 1,
+            "score": 75,
+            "band": "corroborated",
+            "contributors": [
+                {
+                    "evidenceItemId": "evidence-0001",
+                    "sourceId": "drone-vision-01",
+                    "origin": "live-sensor",
+                    "weight": 40,
+                    "provenanceDigest": "2" * 64,
+                },
+                {
+                    "evidenceItemId": "evidence-0002",
+                    "sourceId": "model-thermal-01",
+                    "origin": "live-model",
+                    "weight": 35,
+                    "provenanceDigest": "3" * 64,
+                },
+            ],
+            "evidenceDecisionDigest": "4" * 64,
+        },
+    )
+
+
+def _gateway_record_envelope() -> Envelope:
+    """Return one accepted gateway record at the normalized projection boundary."""
+    return Envelope(
+        id="event-gateway-0001",
+        source="urn:aerial-rescue:command-gateway:command-gateway",
+        type=GATEWAY_RECORD_TYPE,
+        subject=MISSION,
+        time=TIME,
+        dataschema=(
+            "https://aerial-rescue.invalid/schemas/v1/payload/gateway-response.schema.json"
+        ),
+        sequence="000000000000045",
+        correlation_id="request-0001",
+        traceparent=TRACEPARENT,
+        data={
+            "rpcVersion": 1,
+            "missionId": MISSION,
+            "requestId": "request-0001",
+            "operation": "command-authority",
+            "commandType": "escalate-rescue",
+            "outcome": "answered",
+            "actuated": False,
+            "authority": "operator-approval",
+        },
+    )
+
+
+def _application_envelope(event_type: str, data: dict[str, object]) -> Envelope:
+    """Return one recordable application envelope at the projection boundary."""
+    return Envelope(
+        id="event-application-0001",
+        source="urn:aerial-rescue:drone:drone-vision-01",
+        type=event_type,
+        subject=MISSION,
+        time=TIME,
+        dataschema=BINDINGS[event_type].dataschema,
+        sequence="000000000000046",
+        correlation_id="correlation-application-0001",
         traceparent=TRACEPARENT,
         data=data,
     )
@@ -203,6 +299,61 @@ class ProjectionTests(unittest.TestCase):
             tuple(event.kind for event in events),
         )
 
+    def test_every_closed_lifecycle_value_projects_without_a_hidden_default(self) -> None:
+        # Arrange
+        envelopes = (
+            *(
+                _lifecycle_envelope(
+                    CONNECTIVITY_TYPE,
+                    {"missionId": MISSION, "droneId": DRONE, "connectivity": value},
+                )
+                for value in ("CONNECTED", "DEGRADED", "OFFLINE")
+            ),
+            *(
+                _lifecycle_envelope(
+                    MISSION_LIFECYCLE_TYPE,
+                    {"missionId": MISSION, "lifecycle": value},
+                )
+                for value in ("PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED")
+            ),
+            *(
+                _lifecycle_envelope(
+                    SECTOR_LIFECYCLE_TYPE,
+                    {
+                        "missionId": MISSION,
+                        "sectorId": "sector-01",
+                        "state": value,
+                        "assignedMemberId": None if value == "UNASSIGNED" else DRONE,
+                    },
+                )
+                for value in ("UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED")
+            ),
+        )
+
+        # Act
+        projected_values = tuple(
+            event.data.get("connectivity", event.data.get("lifecycle", event.data.get("state")))
+            for event in (project(envelope) for envelope in envelopes)
+        )
+
+        # Assert
+        self.assertEqual(
+            (
+                "CONNECTED",
+                "DEGRADED",
+                "OFFLINE",
+                "PLANNED",
+                "SEARCHING",
+                "EXHAUSTED",
+                "ABORTED",
+                "UNASSIGNED",
+                "ASSIGNED",
+                "AT_RISK",
+                "SEARCHED",
+            ),
+            projected_values,
+        )
+
     def test_malformed_lifecycle_payloads_are_refused_before_normalized_projection(self) -> None:
         # Arrange
         cases = (
@@ -256,89 +407,181 @@ class ProjectionTests(unittest.TestCase):
             outcomes,
         )
 
-
-class ClosedVocabularyProjectionTests(unittest.TestCase):
-    """Every member of every closed lifecycle vocabulary crosses the boundary."""
-
-    def test_every_connectivity_value_projects(self) -> None:
+    def test_an_evidence_decision_projects_without_mission_or_its_internal_digest(self) -> None:
         # Arrange
-        values = ("CONNECTED", "DEGRADED", "OFFLINE")
-        envelopes = tuple(
-            _lifecycle_envelope(
-                CONNECTIVITY_TYPE,
-                {"missionId": MISSION, "droneId": DRONE, "connectivity": value},
-            )
-            for value in values
-        )
+        envelope = _evidence_decision_envelope()
+        expected_data = {
+            key: value
+            for key, value in envelope.data.items()
+            if key not in {"missionId", "evidenceDecisionDigest"}
+        }
 
         # Act
-        events = tuple(project(envelope) for envelope in envelopes)
-
-        # Assert
-        self.assertEqual(values, tuple(str(event.data["connectivity"]) for event in events))
-
-    def test_every_mission_lifecycle_value_projects(self) -> None:
-        # Arrange
-        values = ("PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED")
-        envelopes = tuple(
-            _lifecycle_envelope(
-                MISSION_LIFECYCLE_TYPE,
-                {"missionId": MISSION, "lifecycle": value},
-            )
-            for value in values
-        )
-
-        # Act
-        events = tuple(project(envelope) for envelope in envelopes)
-
-        # Assert
-        self.assertEqual(values, tuple(str(event.data["lifecycle"]) for event in events))
-
-    def test_every_sector_state_projects_under_its_own_assignment_rule(self) -> None:
-        # Arrange
-        values = ("UNASSIGNED", "ASSIGNED", "AT_RISK", "SEARCHED")
-        envelopes = tuple(
-            _lifecycle_envelope(
-                SECTOR_LIFECYCLE_TYPE,
-                {
-                    "missionId": MISSION,
-                    "sectorId": "sector-01",
-                    "state": value,
-                    "assignedMemberId": None if value == "UNASSIGNED" else DRONE,
-                },
-            )
-            for value in values
-        )
-
-        # Act
-        events = tuple(project(envelope) for envelope in envelopes)
-
-        # Assert
-        self.assertEqual(values, tuple(str(event.data["state"]) for event in events))
-
-    def test_the_first_unknown_member_refused_is_the_lowest_in_byte_order(self) -> None:
-        # Arrange
-        envelope = _lifecycle_envelope(
-            MISSION_LIFECYCLE_TYPE,
-            {
-                "missionId": MISSION,
-                "lifecycle": "SEARCHING",
-                "zeta": "last-inserted-but-highest",
-                "alpha": "later-inserted-but-lowest",
-            },
-        )
-
-        # Act
-        refusal = _refusal_of(envelope)
+        event = project(envelope)
 
         # Assert
         self.assertEqual(
-            (ViewRefusal.MALFORMED_PAYLOAD, "alpha", "later-inserted-but-lowest"),
-            refusal,
+            DashboardEvent("evidenceDecision", EventClass.EVIDENCE, MISSION, TIME, expected_data),
+            event,
+        )
+
+    def test_a_gateway_record_projects_to_one_closed_timeline_event(self) -> None:
+        # Arrange
+        envelope = _gateway_record_envelope()
+        expected_data = {key: value for key, value in envelope.data.items() if key != "missionId"}
+
+        # Act
+        event = project(envelope)
+
+        # Assert
+        self.assertEqual(
+            DashboardEvent("gatewayResponse", EventClass.AUDIT, MISSION, TIME, expected_data),
+            event,
+        )
+
+    def test_each_previously_missing_recorded_event_projects_without_transport_members(
+        self,
+    ) -> None:
+        # Arrange
+        cases = (
+            (
+                _application_envelope(
+                    SALIENT_EVENT_TYPE,
+                    {
+                        "missionId": MISSION,
+                        "droneId": DRONE,
+                        "observation": "thermal-anomaly",
+                        "latitudeMicrodegrees": 47_123_456,
+                        "longitudeMicrodegrees": -122_654_321,
+                        "detail": "bounded synthetic observation",
+                    },
+                ),
+                "salientObservation",
+                EventClass.EVIDENCE,
+            ),
+            (
+                _application_envelope(
+                    ASSIGN_SECTOR_COMMAND_TYPE,
+                    {
+                        "missionId": MISSION,
+                        "droneId": DRONE,
+                        "commandId": "command-0001",
+                        "sectorId": "sector-01",
+                    },
+                ),
+                "droneCommand",
+                EventClass.COMMAND,
+            ),
+            (
+                _application_envelope(
+                    COMMAND_RESULT_TYPE,
+                    {
+                        "missionId": MISSION,
+                        "droneId": DRONE,
+                        "commandId": "command-0001",
+                        "outcome": "succeeded",
+                    },
+                ),
+                "commandResult",
+                EventClass.COMMAND,
+            ),
+        )
+
+        # Act
+        projected = tuple(project(envelope) for envelope, _kind, _event_class in cases)
+
+        # Assert
+        self.assertEqual(
+            tuple(
+                DashboardEvent(
+                    kind,
+                    event_class,
+                    MISSION,
+                    TIME,
+                    {name: value for name, value in envelope.data.items() if name != "missionId"},
+                )
+                for envelope, kind, event_class in cases
+            ),
+            projected,
         )
 
 
 class ProjectionTableTests(unittest.TestCase):
+    def test_the_table_closes_all_eighteen_recordable_notification_projections(self) -> None:
+        # Arrange
+        expected = {
+            TELEMETRY_TYPE: ("droneTelemetry", EventClass.TELEMETRY),
+            CONNECTIVITY_TYPE: ("connectivityChanged", EventClass.CONNECTIVITY),
+            MISSION_LIFECYCLE_TYPE: ("missionLifecycle", EventClass.MISSION),
+            SECTOR_LIFECYCLE_TYPE: ("sectorLifecycle", EventClass.MISSION),
+            "aerial-rescue.v1.operator.command.assign-sector": (
+                "operatorCommand",
+                EventClass.COMMAND,
+            ),
+            "aerial-rescue.v1.operator.command.escalate-rescue": (
+                "operatorCommand",
+                EventClass.COMMAND,
+            ),
+            "aerial-rescue.v1.operator.approval.approve": (
+                "operatorApproval",
+                EventClass.APPROVAL,
+            ),
+            "aerial-rescue.v1.operator.approval.reject": (
+                "operatorApproval",
+                EventClass.APPROVAL,
+            ),
+            "aerial-rescue.v1.agent.proposal.candidate-location": (
+                "agentProposal",
+                EventClass.EVIDENCE,
+            ),
+            EVIDENCE_DECISION_TYPE: ("evidenceDecision", EventClass.EVIDENCE),
+            GATEWAY_RECORD_TYPE: ("gatewayResponse", EventClass.AUDIT),
+            SALIENT_EVENT_TYPE: ("salientObservation", EventClass.EVIDENCE),
+            ASSIGN_SECTOR_COMMAND_TYPE: ("droneCommand", EventClass.COMMAND),
+            "aerial-rescue.v1.drone.command.escalate-rescue": (
+                "droneCommand",
+                EventClass.COMMAND,
+            ),
+            COMMAND_RESULT_TYPE: ("commandResult", EventClass.COMMAND),
+            "aerial-rescue.v1.audit.proposal-normalization": (
+                "auditRecord",
+                EventClass.AUDIT,
+            ),
+            "aerial-rescue.v1.audit.evidence-decision": (
+                "auditRecord",
+                EventClass.AUDIT,
+            ),
+            "aerial-rescue.v1.audit.command-authorization": (
+                "auditRecord",
+                EventClass.AUDIT,
+            ),
+        }
+
+        # Act
+        actual = {
+            event_type: (projection.kind, projection.event_class)
+            for event_type, projection in PROJECTIONS.items()
+        }
+
+        # Assert
+        self.assertEqual(expected, actual)
+
+    def test_the_projection_table_is_total_over_every_recorder_recorded_binding(self) -> None:
+        # Arrange
+        excluded = {
+            Family.AGENT_RESPONSE,
+            Family.GATEWAY_REQUEST,
+            Family.GATEWAY_RESPONSE,
+        }
+
+        # Act
+        recordable = {
+            event_type for event_type, binding in BINDINGS.items() if binding.family not in excluded
+        }
+
+        # Assert
+        self.assertEqual(recordable, set(PROJECTIONS))
+
     def test_every_projection_names_an_event_type_with_a_bound_payload_schema(self) -> None:
         # Arrange
         projected = frozenset(PROJECTIONS)

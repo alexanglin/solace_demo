@@ -1,0 +1,25 @@
+{
+  "specversion": "1.0",
+  "id": "event-audit-evidence-contributing-0001",
+  "source": "urn:aerial-rescue:evidence-service:evidence-synthetic-01",
+  "type": "aerial-rescue.v1.drone.telemetry",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:07:00.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json",
+  "data": {
+    "auditVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "recordId": "audit-evidence-contributing-0001",
+    "recordType": "evidence-decision",
+    "proposalId": "proposal-synthetic-0001",
+    "proposalDigest": "e3b6c8a4c2a075031275dc288bad3f780c992338617978dcb5863bc51aa6f761",
+    "proposalVersion": 1,
+    "evidenceDecisionId": "decision-synthetic-0001",
+    "evidenceDecisionDigest": "3c3775801fc324695e0f1eca64cf8fa91d6f213eec7968c71ffe8db61ce6abe3",
+    "outcome": "contributing"
+  },
+  "sequence": "000000000000014",
+  "correlationid": "correlation-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

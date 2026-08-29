@@ -115,9 +115,13 @@ def decode(text: str | bytes) -> object:
     """
     try:
         value = json.loads(text, object_pairs_hook=_object_from_pairs)
-    except json.JSONDecodeError as error:
+        canonical_bytes(value)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        # Bytes that fit none of JSON's encodings raise the codec's error, not the parser's.
         raise CanonicalizationError(Refusal.MALFORMED_TEXT, text) from error
-    canonical_bytes(value)
+    except RecursionError as error:
+        # A document nested beyond the interpreter's limit is refused as text, never re-raised.
+        raise CanonicalizationError(Refusal.MALFORMED_TEXT, text) from error
     return value
 
 

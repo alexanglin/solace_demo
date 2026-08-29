@@ -78,15 +78,15 @@ class ReceiveTests(unittest.TestCase):
 
 
 class DecisionTests(unittest.TestCase):
-    def test_an_unknown_identifier_executes_for_both_kinds(self) -> None:
+    def test_an_unknown_identifier_executes_for_every_kind(self) -> None:
         # Arrange
-        kinds = (IdempotencyKind.COMMAND, IdempotencyKind.APPROVAL_CONSUMPTION)
+        kinds = tuple(IdempotencyKind)
 
         # Act
         decisions = tuple(idempotency_decision(kind, known=False) for kind in kinds)
 
         # Assert
-        self.assertEqual((IdempotencyDecision.EXECUTE, IdempotencyDecision.EXECUTE), decisions)
+        self.assertEqual((IdempotencyDecision.EXECUTE,) * len(kinds), decisions)
 
     def test_a_known_command_identifier_returns_the_prior_result(self) -> None:
         # Arrange
@@ -122,6 +122,10 @@ class DecisionTests(unittest.TestCase):
                 IdempotencyDecision.RETURN_PRIOR_RESULT,
                 IdempotencyDecision.EXECUTE,
                 IdempotencyDecision.DENY,
+                IdempotencyDecision.EXECUTE,
+                IdempotencyDecision.RETURN_PRIOR_RESULT,
+                IdempotencyDecision.EXECUTE,
+                IdempotencyDecision.RETURN_PRIOR_RESULT,
             ),
             decisions,
         )

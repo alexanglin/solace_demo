@@ -1,0 +1,17 @@
+{
+  "canonicalizationVersion": 1,
+  "proposalVersion": 1,
+  "missionId": "mission-synthetic-0001",
+  "proposalId": "proposal-synthetic-0001",
+  "proposalType": "candidate-location",
+  "agentName": "VisionAgent",
+  "sourceInvocationId": "invocation-synthetic-0001",
+  "sourceEventId": "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6c",
+  "sourceEventDigest": "9716b17a9f5a0cfcb645d9e7abdf1e5905fdf17c327d7e0f955eedd444057b52",
+  "commandType": "escalate-rescue",
+  "droneId": "drone-synthetic-01",
+  "latitudeMicrodegrees": 45123456,
+  "longitudeMicrodegrees": -75123456,
+  "proposalDigest": "aab7b28676001898a6bf176218eb607e19f12984709e67e7753aa3e2bd5a45eb",
+  "unexpected": true
+}

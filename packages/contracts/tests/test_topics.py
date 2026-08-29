@@ -1,4 +1,4 @@
-"""The thirteen topic families, their level grammar, and the type binding.
+"""The fifteen topic families, their level grammar, and the type binding.
 
 Each refusal is asserted by its structured reason and, where a level is at fault, by the
 parameter it occupied, so a producer learns which value to fix rather than reading prose.
@@ -35,7 +35,8 @@ EXAMPLES = (
     Topic(Family.DRONE_COMMAND, "m1", {"droneId": "d1", "commandType": "reassign-sector"}),
     Topic(Family.DRONE_COMMAND_RESULT, "m1", {"droneId": "d1", "commandId": "c1"}),
     Topic(Family.GATEWAY_REQUEST, "m1", {"operation": "fleet-status"}),
-    Topic(Family.GATEWAY_RESPONSE, "m1", {"requestId": "r1"}),
+    Topic(Family.GATEWAY_RESPONSE, "reply", {"requestorId": "r1"}),
+    Topic(Family.GATEWAY_RECORD, "m1", {"requestId": "r1"}),
     Topic(
         Family.AGENT_PROPOSAL,
         "m1",
@@ -52,7 +53,8 @@ EXAMPLE_TEXTS = (
     "aerial-rescue/v1/m1/drone/d1/command/reassign-sector",
     "aerial-rescue/v1/m1/drone/d1/command-result/c1",
     "aerial-rescue/v1/m1/gateway/request/fleet-status",
-    "aerial-rescue/v1/m1/gateway/response/r1",
+    "aerial-rescue/v1/reply/gateway/response/r1",
+    "aerial-rescue/v1/m1/gateway/record/r1",
     "aerial-rescue/v1/m1/agent/proposal/MissionCoordinator/reassignment",
     "aerial-rescue/v1/m1/agent/response/MissionCoordinator",
     "aerial-rescue/v1/m1/audit/note",
@@ -66,6 +68,7 @@ EXAMPLE_TYPES = (
     "aerial-rescue.v1.drone.command-result",
     "aerial-rescue.v1.gateway.request.fleet-status",
     "aerial-rescue.v1.gateway.response",
+    "aerial-rescue.v1.gateway.record",
     "aerial-rescue.v1.agent.proposal.reassignment",
     "aerial-rescue.v1.agent.response",
     "aerial-rescue.v1.audit.note",
@@ -144,12 +147,12 @@ class FamilyFormattingTests(unittest.TestCase):
         # Assert
         self.assertEqual(EXAMPLE_TEXTS, formatted)
 
-    def test_every_family_begins_with_the_namespace_prefix_and_mission(self) -> None:
+    def test_every_family_begins_with_the_namespace_prefix(self) -> None:
         # Arrange
         topics = EXAMPLES
 
         # Act
-        prefixes = {format_topic(topic).split("/m1/")[0] for topic in topics}
+        prefixes = {"/".join(format_topic(topic).split("/")[:2]) for topic in topics}
 
         # Assert
         self.assertEqual({namespace_prefix()}, prefixes)
@@ -177,6 +180,13 @@ class FamilyFormattingTests(unittest.TestCase):
                 {"sectorId": "sector-01", "eventType": "lifecycle"},
                 "aerial-rescue/v1/mission-01/sector/sector-01/event/lifecycle",
                 "aerial-rescue.v1.sector.event.lifecycle",
+            ),
+            (
+                "EVIDENCE_DECISION",
+                "evidence/decision/{proposalId}",
+                {"proposalId": "1"},
+                "aerial-rescue/v1/mission-01/evidence/decision/1",
+                "aerial-rescue.v1.evidence.decision",
             ),
         )
 
@@ -209,7 +219,7 @@ class FamilyFormattingTests(unittest.TestCase):
 
 
 class FamilyInvariantTests(unittest.TestCase):
-    def test_the_thirteen_templates_are_pairwise_distinguishable_by_literal_levels(self) -> None:
+    def test_the_fifteen_templates_are_pairwise_distinguishable_by_literal_levels(self) -> None:
         # Arrange
         signatures = tuple(
             (
@@ -223,7 +233,7 @@ class FamilyInvariantTests(unittest.TestCase):
         distinct = len(set(signatures))
 
         # Assert
-        self.assertEqual((13, 13), (len(Family), distinct))
+        self.assertEqual((15, 15), (len(Family), distinct))
 
     def test_parameters_and_type_suffix_are_read_from_the_template(self) -> None:
         # Arrange
@@ -291,7 +301,8 @@ class IdentifierRuleTests(unittest.TestCase):
         uuid = "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6b"
         topics = (
             Topic(Family.DRONE_COMMAND_RESULT, "m1", {"droneId": "d1", "commandId": uuid}),
-            Topic(Family.GATEWAY_RESPONSE, "7", {"requestId": "r"}),
+            Topic(Family.GATEWAY_RESPONSE, "reply", {"requestorId": "r"}),
+            Topic(Family.GATEWAY_RECORD, "7", {"requestId": "r"}),
         )
 
         # Act
@@ -301,7 +312,8 @@ class IdentifierRuleTests(unittest.TestCase):
         self.assertEqual(
             (
                 "aerial-rescue/v1/m1/drone/d1/command-result/" + uuid,
-                "aerial-rescue/v1/7/gateway/response/r",
+                "aerial-rescue/v1/reply/gateway/response/r",
+                "aerial-rescue/v1/7/gateway/record/r",
             ),
             formatted,
         )
@@ -688,8 +700,10 @@ class FamilyNameTests(unittest.TestCase):
             "drone.command-result",
             "gateway.request",
             "gateway.response",
+            "gateway.record",
             "agent.proposal",
             "agent.response",
+            "evidence.decision",
             "audit",
             "mission.event",
             "sector.event",
@@ -720,3 +734,29 @@ class FamilyNameTests(unittest.TestCase):
 
         # Assert
         self.assertEqual((), offending)
+
+    def test_every_family_renders_its_outbox_literal_with_hyphens(self) -> None:
+        # Arrange
+        expected = (
+            "operator-command",
+            "operator-approval",
+            "drone-telemetry",
+            "drone-event",
+            "drone-command",
+            "drone-command-result",
+            "gateway-request",
+            "gateway-response",
+            "gateway-record",
+            "agent-proposal",
+            "agent-response",
+            "evidence-decision",
+            "audit",
+            "mission-event",
+            "sector-event",
+        )
+
+        # Act
+        literals = tuple(family.outbox_family for family in Family)
+
+        # Assert
+        self.assertEqual(expected, literals)

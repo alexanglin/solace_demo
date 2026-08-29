@@ -19,7 +19,7 @@ Use the canonical source for the fact being changed instead of copying its curre
 | Diagram generation and integrity | [ADR-0022](../docs/adr/0022-recursive-diagram-integrity.md) |
 | Agent Mesh configuration and execution context | [ADR-0029](../docs/adr/0029-verify-the-agent-mesh-domain-with-its-own-toolchain.md), [ADR-0032](../docs/adr/0032-agent-mesh-semantic-configuration-validator.md), [ADR-0062](../docs/adr/0062-type-check-the-agent-mesh-domain-from-its-own-directory.md) |
 | Dynamic Python discovery and dashboard policy | [ADR-0056](../docs/adr/0056-raise-mypy-to-every-lever-the-tree-satisfies.md), [ADR-0057](../docs/adr/0057-typescript-strictness-baseline-before-the-dashboard.md) |
-| Compose, certificates, consumed secret inventory, and image scanning | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0129](../docs/adr/0129-generate-only-consumed-local-secrets.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md) |
+| Compose, certificates, consumed secret inventory, image scanning, and SBOMs | [ADR-0045](../docs/adr/0045-fail-closed-compose-policy-gate.md), [ADR-0046](../docs/adr/0046-generated-local-certificate-authority.md), [ADR-0129](../docs/adr/0129-generate-only-consumed-local-secrets.md), [ADR-0048](../docs/adr/0048-scan-images-and-deploy-configuration-with-trivy.md), [ADR-0055](../docs/adr/0055-block-on-the-image-pin-not-on-advisories-inside-it.md), [ADR-0162](../docs/adr/0162-generate-and-validate-per-image-cyclonedx-sboms.md) |
 | Broker roles, grants, and lifecycle-source identity | [ADR-0061](../docs/adr/0061-least-privilege-broker-principals-and-topic-authorization.md), [ADR-0111](../docs/adr/0111-broker-dashboard-lifecycle-sources.md) |
 | Terminal-safe execution and job budgets | [ADR-0059](../docs/adr/0059-keep-the-verification-authority-able-to-report.md), [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Test structure, classes, and toolchain | [`TESTING.md`](../docs/TESTING.md) |
@@ -40,8 +40,9 @@ executable.
 | `hooks/docs/` | Documentation facts and links plus recursive diagram freshness |
 | `hooks/python/` | Root and Agent Mesh Ruff, mypy, pytest/coverage, Bandit, complexity, and mutation orchestration |
 | `hooks/repo/` | Commit ranges and messages, secret-file refusal, directory fan-out, and duplication orchestration |
+| `ci/` | Closed continuous-integration orchestration and ADR-0186's one-shot broker-restart controller |
 | `hooks/agent-mesh-test-full.sh`, `hooks/check-env-template.sh`, `hooks/check-docs-strict.sh` | Fixed ADR-named Agent Mesh test, environment-template, and strict-docs entry points |
-| `security/` | Image-inventory pin checks and per-image scanning |
+| `security/` | Image-inventory pin checks, per-image scanning, and validated SBOM generation |
 | `broker-secrets.sh`, `diagrams.sh`, `fix.sh` | Explicit operator mutations for local credentials, diagram artifacts, and formatting fixes |
 
 Keep new hooks in the concern-named subdirectory and keep hook basenames unique; the hermetic test

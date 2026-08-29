@@ -1,0 +1,27 @@
+{
+  "specversion": "1.0",
+  "id": "event-audit-command-assign-authorized-0001",
+  "source": "urn:aerial-rescue:command-gateway:gateway-synthetic-01",
+  "type": "aerial-rescue.v1.audit.command-authorization",
+  "subject": "mission-synthetic-0001",
+  "time": "2026-08-25T12:08:00.000Z",
+  "datacontenttype": "application/json",
+  "dataschema": "https://aerial-rescue.invalid/schemas/v1/payload/audit.schema.json",
+  "data": {
+    "auditVersion": 1,
+    "missionId": "mission-synthetic-0001",
+    "recordId": "audit-command-assign-authorized-0001",
+    "recordType": "command-authorization",
+    "commandId": "command-synthetic-0001",
+    "operatorId": "operator-synthetic-0001",
+    "action": {
+      "commandType": "assign-sector",
+      "droneId": "drone-synthetic-01",
+      "sectorId": "sector-synthetic-01"
+    },
+    "outcome": "authorized"
+  },
+  "sequence": "000000000000018",
+  "correlationid": "correlation-synthetic-0001",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01"
+}

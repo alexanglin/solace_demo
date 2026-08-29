@@ -21,6 +21,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from aerial_rescue_event_mesh_gateway.app import AerialRescueEventMeshGatewayApp
 from tools import agent_mesh_config_validator as validator
 from tools.agent_mesh_config_validator import (
     ValidationIssue,
@@ -119,11 +120,117 @@ def _workflow_document() -> dict[str, object]:
 
 def _gateway_document() -> dict[str, object]:
     """Return a minimal recursively valid Event Mesh Gateway document."""
+    latitude_schema = {
+        "type": "integer",
+        "minimum": -90_000_000,
+        "maximum": 90_000_000,
+    }
+    longitude_schema = {
+        "type": "integer",
+        "minimum": -180_000_000,
+        "maximum": 180_000_000,
+    }
+    coordinate_schema = {
+        "type": "object",
+        "required": ["latitudeMicrodegrees", "longitudeMicrodegrees"],
+        "additionalProperties": False,
+        "properties": {
+            "latitudeMicrodegrees": latitude_schema,
+            "longitudeMicrodegrees": longitude_schema,
+        },
+    }
+    identifier = {
+        "type": "string",
+        "pattern": r"^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$",
+    }
+    common_properties: dict[str, object] = {
+        "agentResponseVersion": {"const": 1},
+        "missionId": identifier,
+        "agentName": {"type": "string", "pattern": r"^[A-Za-z0-9_]{1,64}$"},
+        "invocationId": identifier,
+        "correlationId": identifier,
+    }
+    response_schema = {
+        "anyOf": [
+            {
+                "type": "object",
+                "required": [
+                    "agentResponseVersion",
+                    "missionId",
+                    "agentName",
+                    "invocationId",
+                    "correlationId",
+                    "outcome",
+                    "result",
+                ],
+                "additionalProperties": False,
+                "properties": {
+                    **common_properties,
+                    "outcome": {"const": "candidate"},
+                    "result": {
+                        "type": "object",
+                        "required": [
+                            "proposalType",
+                            "sourceEventId",
+                            "sourceEventDigest",
+                            "droneId",
+                            "latitudeMicrodegrees",
+                            "longitudeMicrodegrees",
+                            "commandType",
+                        ],
+                        "additionalProperties": False,
+                        "properties": {
+                            "proposalType": {"const": "candidate-location"},
+                            "sourceEventId": identifier,
+                            "sourceEventDigest": {
+                                "type": "string",
+                                "pattern": r"^[0-9a-f]{64}$",
+                            },
+                            "droneId": identifier,
+                            "latitudeMicrodegrees": latitude_schema,
+                            "longitudeMicrodegrees": longitude_schema,
+                            "commandType": {"const": "escalate-rescue"},
+                        },
+                    },
+                },
+            },
+            {
+                "type": "object",
+                "required": [
+                    "agentResponseVersion",
+                    "missionId",
+                    "agentName",
+                    "invocationId",
+                    "correlationId",
+                    "outcome",
+                    "reason",
+                ],
+                "additionalProperties": False,
+                "properties": {
+                    **common_properties,
+                    "outcome": {"const": "abstained"},
+                    "reason": {
+                        "enum": [
+                            "timeout",
+                            "transport-error",
+                            "model-error",
+                            "invalid-output",
+                            "identity-mismatch",
+                        ]
+                    },
+                },
+            },
+        ]
+    }
+    topic_expression = (
+        "template:aerial-rescue/v1/"
+        "{{text://user_data.forward_context:missionId}}/agent/response/MissionCoordinator"
+    )
     return {
         "apps": [
             {
                 "name": "validation-gateway-app",
-                "app_module": "sam_event_mesh_gateway.app",
+                "app_module": "aerial_rescue_event_mesh_gateway.app",
                 "broker": _broker(),
                 "app_config": {
                     "namespace": "aerial-rescue/validation",
@@ -139,18 +246,47 @@ def _gateway_document() -> dict[str, object]:
                         {
                             "name": "salient-event",
                             "subscriptions": [
-                                {"topic": "aerial-rescue/v1/+/drone/+/event/salient", "qos": 1}
+                                {"topic": "aerial-rescue/v1/*/drone/*/event/salient", "qos": 1}
                             ],
-                            "input_expression": "input:payload",
-                            "target_agent_name": "ValidationAgent",
+                            "input_expression": "input.payload:data",
+                            "target_agent_name": "MissionCoordinator",
+                            "structured_invocation": {
+                                "input_schema": {"type": "object"},
+                                "output_schema": coordinate_schema,
+                            },
+                            "on_success": "candidate-response",
+                            "on_error": "failure-response",
+                            "forward_context": {
+                                "missionId": "input.topic_levels:2",
+                                "droneId": "input.topic_levels:4",
+                                "eventMissionId": "input.payload:data.missionId",
+                                "eventDroneId": "input.payload:data.droneId",
+                                "sourceEventId": "input.payload:id",
+                                "sourceEventDigest": (
+                                    "input.user_properties:aerial-rescue-source-event-digest"
+                                ),
+                                "correlationId": "input.payload:correlationid",
+                                "agentName": "static:MissionCoordinator",
+                            },
                         }
                     ],
                     "output_handlers": [
                         {
-                            "name": "validation-response",
-                            "topic_expression": "static:aerial-rescue/v1/validation/result",
-                            "payload_expression": "task_response:text",
-                        }
+                            "name": "candidate-response",
+                            "topic_expression": topic_expression,
+                            "payload_expression": "task_response:agent_response",
+                            "payload_format": "json",
+                            "output_schema": response_schema,
+                            "on_validation_error": "drop",
+                        },
+                        {
+                            "name": "failure-response",
+                            "topic_expression": topic_expression,
+                            "payload_expression": "task_response:agent_response",
+                            "payload_format": "json",
+                            "output_schema": response_schema,
+                            "on_validation_error": "drop",
+                        },
                     ],
                 },
             }
@@ -550,6 +686,20 @@ class ResultTypeTests(unittest.TestCase):
 
 
 class ValidConfigurationTests(unittest.TestCase):
+    def test_runtime_pin_set_includes_the_owned_direct_gateway_dependencies(self) -> None:
+        # Arrange
+        required = {
+            "sam-event-mesh-gateway": "1.1.0",
+            "solace-ai-connector": "3.3.12",
+            "solace-pubsubplus": "1.11.0",
+        }
+
+        # Act
+        declared = dict(validator.EXPECTED_VERSIONS)
+
+        # Assert
+        self.assertLessEqual(required.items(), declared.items())
+
     def test_official_agent_workflow_gateway_and_tool_shapes_validate(self) -> None:
         # Arrange
         paths = tuple(sorted(FIXTURES.glob("valid_*.yaml")))
@@ -582,6 +732,81 @@ class ValidConfigurationTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.valid, result.issues)
         self.assertEqual(before, after)
+
+    def test_official_gateway_module_cannot_bypass_the_owned_direct_extension(self) -> None:
+        # Arrange
+        document = _gateway_document()
+        _only_app(document)["app_module"] = "sam_event_mesh_gateway.app"
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("APP_MODULE", _rules(result))
+        self.assertIn("apps[0].app_module", {issue.location for issue in result.issues})
+
+    def test_owned_gateway_provenance_and_exact_component_selector_are_required(self) -> None:
+        # Arrange
+        verify = validator._verify_owned_gateway_extension
+        external_module = str(Path(tempfile.gettempdir()) / "shadow-gateway" / "aerial_gateway.py")
+
+        # Act
+        accepted = verify()
+        with (
+            patch.object(
+                AerialRescueEventMeshGatewayApp,
+                "_get_gateway_component_class",
+                return_value=object,
+            ),
+            pytest.raises(validator._RuntimeBoundaryError) as wrong_selector,
+        ):
+            verify()
+        with (
+            patch.object(
+                PathFinder,
+                "find_spec",
+                return_value=SimpleNamespace(origin=external_module),
+            ),
+            pytest.raises(validator._RuntimeBoundaryError) as shadow_origin,
+        ):
+            verify()
+        with (
+            patch.object(AerialRescueEventMeshGatewayApp, "_get_gateway_component_class", None),
+            pytest.raises(validator._RuntimeBoundaryError) as missing_selector,
+        ):
+            verify()
+        with (
+            patch.object(
+                AerialRescueEventMeshGatewayApp,
+                "_get_gateway_component_class",
+                side_effect=RuntimeError("selector failed"),
+            ),
+            pytest.raises(validator._RuntimeBoundaryError) as broken_selector,
+        ):
+            verify()
+        with (
+            patch.dict(
+                sys.modules,
+                {validator.GATEWAY_MODULE: SimpleNamespace(__file__=external_module)},
+            ),
+            patch.object(validator, "_attribute", return_value=object()),
+            pytest.raises(validator._RuntimeBoundaryError) as shadow_module,
+        ):
+            validator._owned_attribute(validator.GATEWAY_MODULE, validator.GATEWAY_CLASS)
+        with (
+            patch.object(validator, "_owned_attribute", return_value=object()),
+            pytest.raises(validator._RuntimeBoundaryError) as invalid_owned_shape,
+        ):
+            verify()
+
+        # Assert
+        self.assertIsNone(accepted)
+        self.assertIsInstance(wrong_selector.value, validator._RuntimeBoundaryError)
+        self.assertIsInstance(shadow_origin.value, validator._RuntimeBoundaryError)
+        self.assertIsInstance(missing_selector.value, validator._RuntimeBoundaryError)
+        self.assertIsInstance(broken_selector.value, validator._RuntimeBoundaryError)
+        self.assertIsInstance(shadow_module.value, validator._RuntimeBoundaryError)
+        self.assertIsInstance(invalid_owned_shape.value, validator._RuntimeBoundaryError)
 
 
 class EnvelopeAndModelPolicyTests(unittest.TestCase):
@@ -1503,6 +1728,70 @@ class PluginPolicyTests(unittest.TestCase):
         # Assert
         self.assertTrue(all("GATEWAY_POLICY" in _rules(result) for result in results), results)
 
+    def test_gateway_agent_response_boundary_refuses_raw_or_open_output_configuration(self) -> None:
+        # Arrange
+        raw_text = _gateway_document()
+        output = _mapping(_sequence(_app_config(raw_text)["output_handlers"])[0])
+        output["payload_expression"] = "task_response:text"
+        missing_context = _gateway_document()
+        handler = _mapping(_sequence(_app_config(missing_context)["event_handlers"])[0])
+        del _mapping(handler["forward_context"])["sourceEventDigest"]
+        open_model_output = _gateway_document()
+        handler = _mapping(_sequence(_app_config(open_model_output)["event_handlers"])[0])
+        structured = _mapping(handler["structured_invocation"])
+        _mapping(structured["output_schema"])["additionalProperties"] = True
+        open_agent_response = _gateway_document()
+        output = _mapping(_sequence(_app_config(open_agent_response)["output_handlers"])[0])
+        candidate = _mapping(_sequence(_mapping(output["output_schema"])["anyOf"])[0])
+        candidate["additionalProperties"] = True
+        validation_logs_only = _gateway_document()
+        output = _mapping(_sequence(_app_config(validation_logs_only)["output_handlers"])[0])
+        output["on_validation_error"] = "log"
+        invalid = (
+            raw_text,
+            missing_context,
+            open_model_output,
+            open_agent_response,
+            validation_logs_only,
+        )
+
+        # Act
+        accepted = _validate_text(_render(_gateway_document()))
+        results = tuple(_validate_text(_render(document)) for document in invalid)
+
+        # Assert
+        self.assertTrue(accepted.valid, accepted.issues)
+        self.assertTrue(all("GATEWAY_POLICY" in _rules(result) for result in results), results)
+
+    def test_gateway_agent_response_boundary_requires_schema_and_distinct_outputs(self) -> None:
+        # Arrange
+        missing_structured_invocation = _gateway_document()
+        handler = _mapping(
+            _sequence(_app_config(missing_structured_invocation)["event_handlers"])[0]
+        )
+        del handler["structured_invocation"]
+        invalid_input_schema = _gateway_document()
+        handler = _mapping(_sequence(_app_config(invalid_input_schema)["event_handlers"])[0])
+        _mapping(handler["structured_invocation"])["input_schema"] = "raw"
+        missing_output_reference = _gateway_document()
+        handler = _mapping(_sequence(_app_config(missing_output_reference)["event_handlers"])[0])
+        del handler["on_success"]
+        shared_output_reference = _gateway_document()
+        handler = _mapping(_sequence(_app_config(shared_output_reference)["event_handlers"])[0])
+        handler["on_error"] = handler["on_success"]
+        invalid = (
+            missing_structured_invocation,
+            invalid_input_schema,
+            missing_output_reference,
+            shared_output_reference,
+        )
+
+        # Act
+        results = tuple(_validate_text(_render(document)) for document in invalid)
+
+        # Assert
+        self.assertTrue(all("GATEWAY_POLICY" in _rules(result) for result in results), results)
+
 
 class RuntimeBoundaryTests(unittest.TestCase):
     def test_distribution_provenance_fails_closed_on_incomplete_or_drifted_records(
@@ -1731,6 +2020,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
                 side_effect=lambda distribution: validator.EXPECTED_VERSIONS[distribution],
             ),
             patch.object(validator, "_verify_gateway_entry_point", return_value=None),
+            patch.object(validator, "_verify_owned_gateway_extension", return_value=None),
             patch.object(validator, "_attribute", return_value=object()),
             pytest.raises(validator._RuntimeBoundaryError) as invalid_runtime_symbol,
         ):

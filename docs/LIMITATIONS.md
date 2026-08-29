@@ -81,6 +81,35 @@ It has not been validated against any ground-truth dataset beyond the synthetic 
 Escalation eligibility is keyed on a named ordinal band rather than on the decimal, and the escalating
 band is deliberately unreachable from a single model-generated observation alone.
 
+## Mission inputs recorded but not used
+
+The operator supplies a weather summary and a time since last contact. Both are recorded as audit
+metadata and **currently affect no decision**. Using time since last contact to bound a plausible travel
+radius, and thereby to order sector priority, is identified follow-on work rather than implemented
+behaviour.
+
+## Broker monitoring boundary
+
+The repository composes two distinct monitors. The default credentialless service continuously follows
+the broker's retained, rotation-aware event facility. The opt-in `semp-monitor` profile continuously
+polls the aggregate-only queue view, but deliberately cannot start until an operator provisions and
+reads back the dedicated management principal at global `none`, VPN default `none`, and one selected-VPN
+`read-only` exception, then passes the positive monitor-read and negative configuration-write live
+probes. The pinned SEMP v2 specification cannot automate that complete scope, and no live execution of
+the interactive prerequisite is recorded yet. Queue monitoring must therefore not be described as
+operationally live merely because its profile exists; [ADR-0157](adr/0157-pace-and-coalesce-read-only-semp-monitoring.md),
+[ADR-0173](adr/0173-follow-the-retained-broker-event-log-without-runtime-authority.md), and
+[ADR-0181](adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) define the
+boundary.
+
+## Broker deployment boundary
+
+The supported Docker Desktop broker is a standalone development, integration, acceptance, and reference
+runtime. It does not prove a production Linux host, System Resource Calculator sizing, dedicated XFS
+SSD/IOPS, host time and boot operation, production secret injection, broker high availability, or
+site-loss disaster recovery. [ADR-0167](adr/0167-qualify-production-broker-hosts-separately.md) makes
+those deployment-specific controls and measurements prerequisites for any future production-host claim.
+
 ## Scope explicitly excluded
 
 The project does not implement, and will not implement, weapons, targeting, facial recognition,

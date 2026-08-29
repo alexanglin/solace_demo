@@ -163,6 +163,66 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0143](0143-let-durable-terminal-state-establish-reset-cancellation.md) | Let durable terminal state establish reset cancellation | Accepted |
 | [0144](0144-serialize-the-related-dashboard-test-hook.md) | Serialize the related dashboard test hook | Accepted |
 
+| [0145](0145-bound-solace-recovery-and-queue-retirement.md) | Bound Solace recovery and queue retirement | Superseded in part by ADR-0192 |
+| [0146](0146-define-durable-application-processing.md) | Define durable application processing | Accepted |
+| [0147](0147-admit-pubsub-integration-to-blocking-ci.md) | Admit PubSub+ integration to blocking continuous integration | Accepted |
+| [0148](0148-close-the-application-data-plane-wire-documents.md) | Close the application data-plane wire documents | Accepted |
+| [0149](0149-preserve-mission-scoped-gateway-response-records.md) | Preserve mission-scoped gateway response records | Superseded by ADR-0150 |
+| [0150](0150-separate-gateway-records-from-private-replies.md) | Separate mission gateway records from private replies | Accepted |
+| [0151](0151-require-migrated-sqlalchemy-durable-tables.md) | Require migrated SQLAlchemy durable tables | Accepted |
+| [0152](0152-bind-proposals-to-the-complete-source-event.md) | Bind proposals to the complete source event | Accepted |
+| [0153](0153-own-bounded-least-privilege-pubsub-clients.md) | Own bounded least-privilege PubSub+ clients | Accepted |
+| [0154](0154-isolate-dead-messages-and-monitor-queues-without-enumeration.md) | Isolate dead messages and monitor queues without enumeration | Superseded by ADR-0157 |
+| [0155](0155-propagate-solace-trace-context-and-scope-topology-practices.md) | Propagate Solace trace context and scope topology practices | Superseded by ADR-0156 |
+| [0156](0156-pin-solace-native-trace-propagation.md) | Pin Solace native trace propagation and bind it by TraceID | Accepted |
+| [0157](0157-pace-and-coalesce-read-only-semp-monitoring.md) | Pace and coalesce read-only SEMP monitoring | Superseded in part by ADR-0190 |
+| [0158](0158-keep-scenario-control-brokerless.md) | Keep scenario control brokerless | Accepted |
+| [0159](0159-gate-applicable-solace-best-practices.md) | Gate every applicable Solace best practice | Accepted |
+| [0160](0160-bound-public-dashboard-mutation-bodies.md) | Bound public dashboard mutation bodies before canonical decoding | Accepted |
+| [0161](0161-give-the-broker-a-twenty-minute-clean-stop.md) | Give the broker twenty minutes to stop cleanly | Superseded in part by ADR-0194 |
+| [0162](0162-generate-and-validate-per-image-cyclonedx-sboms.md) | Generate and validate per-image CycloneDX SBOMs | Accepted |
+| [0163](0163-retain-ci-volumes-until-hosted-runner-disposal.md) | Retain integration volumes until hosted-runner disposal | Accepted |
+| [0164](0164-require-tls13-for-pubsub-clients.md) | Require TLS 1.3 for PubSub+ clients | Accepted |
+| [0165](0165-size-g1-bursts-to-the-complete-flow-set.md) | Size G-1 bursts to the complete Guaranteed flow set | Accepted |
+| [0166](0166-disable-unused-pubsub-protocol-services.md) | Disable unused PubSub+ protocol services | Accepted |
+| [0167](0167-qualify-production-broker-hosts-separately.md) | Qualify production broker hosts separately | Accepted |
+| [0168](0168-bind-application-identities-to-one-connection.md) | Bind application identities to one long-lived connection | Accepted |
+| [0169](0169-request-immediate-acks-for-confirmed-publications.md) | Request immediate ACKs for individually confirmed publications | Accepted |
+| [0170](0170-force-dmq-eligibility-at-the-publisher.md) | Force DMQ eligibility at the Guaranteed publisher | Accepted |
+| [0171](0171-close-dashboard-idempotency-kinds.md) | Close durable idempotency over every public dashboard mutation | Superseded in part by ADR-0189 |
+| [0172](0172-complete-the-protected-dashboard-operator-flow.md) | Complete the protected dashboard operator flow | Accepted |
+| [0173](0173-follow-the-retained-broker-event-log-without-runtime-authority.md) | Follow the retained broker event log without runtime authority | Superseded in part by ADR-0195 |
+| [0174](0174-recompute-evidence-digests-at-the-dashboard-boundary.md) | Recompute evidence digests at the dashboard boundary | Accepted |
+| [0175](0175-project-every-recorded-event-into-the-dashboard.md) | Project every recorded event into the ordered dashboard stream | Accepted |
+| [0176](0176-bound-dashboard-sse-clients-and-keepalives.md) | Bound dashboard SSE clients and keepalives | Accepted |
+| [0177](0177-harden-the-pinned-agent-mesh-broker-runtime.md) | Harden the pinned Agent Mesh broker runtime | Accepted |
+| [0178](0178-qualify-production-agent-mesh-separately.md) | Qualify production Agent Mesh separately | Accepted |
+| [0179](0179-make-the-official-agent-mesh-checklist-the-production-gate.md) | Make the official Agent Mesh checklist the production gate | Accepted |
+| [0180](0180-persist-direct-ingress-refusals-without-stopping-consumers.md) | Persist Direct ingress refusals without stopping consumers | Accepted |
+| [0181](0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) | Gate continuous SEMP monitoring on VPN-scoped operator provisioning | Accepted |
+| [0182](0182-bind-agent-responses-to-transport-authenticated-context.md) | Bind Agent Responses to transport-authenticated context | Accepted |
+| [0183](0183-bind-approval-authority-to-the-command-gateway-clock.md) | Bind approval authority to the command-gateway clock | Accepted |
+| [0184](0184-package-the-dashboard-and-gate-relay-startup-on-readiness.md) | Package the dashboard and gate relay startup on application readiness | Accepted |
+| [0185](0185-pause-active-fleet-runs-during-broker-recovery.md) | Pause active Fleet runs during broker recovery | Accepted |
+| [0186](0186-delegate-one-broker-restart-without-project-authority.md) | Delegate one broker restart without project authority | Accepted |
+| [0187](0187-map-mypy-modules-from-explicit-project-bases.md) | Map mypy modules from explicit project bases | Accepted |
+| [0188](0188-route-root-mypy-through-discovered-source-bases.md) | Route root mypy through discovered source bases | Accepted |
+| [0189](0189-reconcile-dashboard-runtime-with-the-solace-data-plane.md) | Reconcile the accepted dashboard runtime with the Solace application data plane | Accepted |
+| [0190](0190-count-active-queue-binds-through-transmit-flow-aggregates.md) | Count active queue binds through transmit-flow aggregates | Accepted |
+| [0191](0191-reserve-one-subscription-for-the-sdk-reply-inbox.md) | Reserve one subscription per session for the SDK reply inbox | Accepted |
+| [0192](0192-cover-a-reference-host-broker-restart-with-the-reconnection-budget.md) | Cover a reference-host broker restart with the reconnection budget | Accepted |
+| [0193](0193-size-the-audit-kind-for-event-types.md) | Size the audit kind column for event types | Accepted |
+| [0194](0194-gate-broker-health-on-guaranteed-messaging.md) | Gate broker health on guaranteed messaging | Accepted |
+| [0195](0195-run-the-event-monitor-as-the-retained-log-s-owner.md) | Run the event monitor as the retained log's owner | Accepted |
+| [0196](0196-count-the-coordinator-s-reply-queue-in-the-agent-mesh-endpoint-ceiling.md) | Count the coordinator's reply queue in the Agent Mesh endpoint ceiling | Accepted |
+| [0197](0197-standardize-scenario-control-on-the-console-composition.md) | Standardize scenario control on the console composition | Accepted |
+| [0198](0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) | Give the coordinator a model and a tool surface that answer the structured request | Accepted |
+| [0199](0199-terminate-the-owned-agent-mesh-entrypoint.md) | Terminate the owned Agent Mesh entrypoint | Accepted |
+| [0200](0200-give-the-coordinator-a-tool-capable-model.md) | Give the coordinator a tool-capable model | Accepted |
+| [0201](0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md) | Gate Agent Mesh readiness on asynchronous initialization | Accepted |
+| [0202](0202-accept-the-cyclonedx-version-the-pinned-trivy-emits.md) | Accept the CycloneDX version the pinned Trivy emits | Accepted |
+| [0203](0203-make-the-broker-s-mounted-secrets-readable-by-the-pinned-image-s-user.md) | Make the broker's mounted secrets readable by the pinned image's user | Accepted |
+
 ## Decisions still open
 
 These are known unresolved questions, recorded here so they are tracked rather than assumed. Each needs an ADR once settled.

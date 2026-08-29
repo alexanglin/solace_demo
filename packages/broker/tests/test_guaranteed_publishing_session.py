@@ -31,13 +31,29 @@ class _Publisher:
     def start(self) -> None:
         self._calls.append("persistent-start")
 
-    def terminate(self) -> None:
+    def set_termination_notification_listener(self, _listener: object) -> None:
+        """Accept the hardened endpoint lifecycle listener."""
+
+    def set_publisher_readiness_listener(self, _listener: object) -> None:
+        """Accept the hardened publisher readiness listener."""
+
+    def is_ready(self) -> bool:
+        """Report capacity without adding an unrelated construction call."""
+        return True
+
+    def terminate(self, *, grace_period: int) -> None:
+        del grace_period
         self._calls.append("persistent-stop")
 
 
 class _Builder:
     def __init__(self, publisher: _Publisher) -> None:
         self._publisher = publisher
+
+    def on_back_pressure_reject(self, *, buffer_capacity: int) -> _Builder:
+        """Accept the bounded reject strategy before construction."""
+        del buffer_capacity
+        return self
 
     def build(self) -> _Publisher:
         return self._publisher
@@ -119,7 +135,7 @@ class GuaranteedPublishingSessionTests(unittest.TestCase):
         with patch.object(messaging, "build_service", return_value=service):
             session = open_guaranteed_publishing_session(
                 endpoint,
-                Principal.SCENARIO_SERVICE,
+                Principal.EVIDENCE_SERVICE,
                 "not-a-real-credential",
             )
 
@@ -147,7 +163,7 @@ class GuaranteedPublishingSessionTests(unittest.TestCase):
         ):
             open_guaranteed_publishing_session(
                 endpoint,
-                Principal.SCENARIO_SERVICE,
+                Principal.EVIDENCE_SERVICE,
                 "not-a-real-credential",
             )
 

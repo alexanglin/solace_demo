@@ -3,8 +3,9 @@
 # Hooks and CI call the scripts under scripts/ directly, NOT these recipes, so
 # neither depends on `just` being installed. These are the human-facing names.
 
-mission_control_services := "migration fleet-simulator scenario-service recorder replay-validator dashboard-api caddy"
-mission_control_long_running_services := "fleet-simulator scenario-service recorder dashboard-api caddy"
+reference_drone_arguments := "--drone drone-sim-01 --drone drone-sim-02 --drone drone-sim-03 --drone drone-sim-04 --drone drone-sim-05 --drone drone-sim-06 --drone drone-sim-07 --drone drone-sim-08 --drone drone-sim-09 --drone drone-sim-10 --drone drone-sim-11 --drone drone-sim-12 --drone drone-sim-13 --drone drone-sim-14 --drone drone-sim-15 --drone drone-sim-16 --drone drone-sim-17 --drone drone-sim-18 --drone drone-sim-19 --drone drone-sim-20 --drone drone-vision-01 --drone drone-navigation-02 --drone drone-comms-03"
+mission_control_services := "broker-event-monitor migration fleet-simulator scenario-service recorder replay-validator dashboard-api caddy"
+mission_control_long_running_services := "broker-event-monitor fleet-simulator scenario-service recorder dashboard-api caddy"
 
 # Show available recipes.
 default:
@@ -99,7 +100,7 @@ rotate-secrets:
 # `just up --force-recreate`. Add a profile with `COMPOSE_PROFILES=services just up`.
 up *ARGS:
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait broker postgres
-    uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh
+    uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh {{reference_drone_arguments}}
     scripts/preflight-ollama.sh
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait {{ARGS}}
 
@@ -136,11 +137,11 @@ mission-control-up *ARGS:
         if [ "$build_requested" = true ]; then \
             docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control build dashboard-api; \
         fi; \
-        AERIAL_RESCUE_FLEET_COMMAND_INTAKE_MODE=publication-only docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --no-start --no-deps --no-build $recreate_arg {{mission_control_services}}; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --no-start --no-deps --no-build $recreate_arg {{mission_control_services}}; \
         docker inspect "$broker_id" | grep -q '"aerial-rescue-mesh_event-mesh"' || docker network connect --alias broker aerial-rescue-mesh_event-mesh "$broker_id"; \
         docker inspect "$postgres_id" | grep -q '"aerial-rescue-mesh_store"' || docker network connect --alias postgres aerial-rescue-mesh_store "$postgres_id"; \
-        uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh --port 1943 --queue-projection mission-control; \
-        AERIAL_RESCUE_FLEET_COMMAND_INTAKE_MODE=publication-only docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --detach --wait --no-deps --no-build --no-recreate {{mission_control_services}}; \
+        uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh --port 1943 {{reference_drone_arguments}}; \
+        docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml --profile mission-control up --detach --wait --no-deps --no-build --no-recreate {{mission_control_services}}; \
         test "$broker_id" = "$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q broker)" || { echo "mission-control changed the shared broker container" >&2; exit 1; }; \
         test "$postgres_id" = "$(docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml ps -q postgres)" || { echo "mission-control changed the shared postgres container" >&2; exit 1; }
 
@@ -168,6 +169,13 @@ down:
 # Follow the stack's logs.
 logs:
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml logs --follow --tail 200
+
+# Follow only new broker event-facility JSON and emit tenant-neutral catalog alerts. The
+# monitor intentionally exits nonzero if Docker closes the stream or alert delivery fails.
+broker-events:
+    #!/usr/bin/env bash
+    set -o errexit -o nounset -o pipefail
+    docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml logs --follow --tail 0 --no-log-prefix broker | uv run --frozen aerial-rescue-broker-events
 
 # Show the stack's services and health.
 ps:

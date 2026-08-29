@@ -74,6 +74,37 @@ class PythonRootDiscoveryTests(QualityGateTestCase):
         self.assert_hook_succeeded(result)
         self.assertNotIn("fixtures", arguments_file.read_text(encoding="utf-8"))
 
+    def test_the_whole_program_type_gate_maps_every_member_source_root(self) -> None:
+        # Arrange
+        repository = self.temporary_repository()
+        (repository / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (repository / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        for source_root in ("packages/broker/src", "services/recorder/src"):
+            path = repository / source_root
+            path.mkdir(parents=True)
+            (path / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+        output, environment = self.install_argument_recorder(
+            repository,
+            "uv",
+            "mypy-path.txt",
+        )
+        recorder = repository / "bin" / "uv"
+        recorder.write_text(
+            '#!/bin/sh\nprintf \'%s\\n\' "$MYPYPATH" >"$QUALITY_ARGUMENTS_FILE"\n',
+            encoding="utf-8",
+        )
+        recorder.chmod(0o755)
+
+        # Act
+        result = self.run_hook("mypy-full.sh", repository, environment=environment)
+
+        # Assert
+        self.assert_hook_succeeded(result)
+        self.assertEqual(
+            "packages/broker/src:services/recorder/src\n",
+            output.read_text(encoding="utf-8"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
