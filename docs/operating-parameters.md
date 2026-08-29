@@ -280,7 +280,7 @@ below, and the two images the Dockerfiles build, is scanned by Trivy on each dai
 | Postgres image | `postgres:18.6-trixie` at `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280` | `deploy/compose.yaml`, held by the compose policy gate |
 | Postgres data directory | `/var/lib/postgresql/18/docker`, inside the `/var/lib/postgresql` volume the image declares ([ADR-0060](adr/0060-postgresql-18-and-its-data-directory-layout.md)) | `show data_directory` on the running cluster; the named volume holds `18/docker/PG_VERSION` |
 | Agent Mesh base image | `solace/solace-agent-mesh:1.28.7` at `sha256:25dc09b55e8a718e5a690e4abba039cbd032872cd6d4c402b7c69d1dead70255` | `deploy/agent-mesh/Dockerfile` |
-| Application base image | `python:3.14.7-slim-trixie` at `sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83` | `deploy/application/Dockerfile` |
+| Application base image | `python:3.14.7-slim-trixie` at `sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5` | `deploy/application/Dockerfile` |
 | Dashboard builder image | `node:26.7.0-slim` at `sha256:5758d367d7b4f48b73a9bb3530e687e47efb289f3b43f9c0450a25225ae0db5d`, with pnpm 11.23.0 | `deploy/application/Dockerfile`; frozen install and production build are held by deployment conformance tests |
 | Dashboard relay image | `caddy:2.11.4-alpine` at `sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648` | `deploy/compose.yaml`, held by the compose policy and mission-control packaging tests |
 | Event Management Agent image | `solace/event-management-agent:1.9.9` at `sha256:c5f3d9bf711dd051c14b162f10ecdbd7f3f7a85306d16c438c92229719123c5b`, `linux/amd64` | `deploy/compose.yaml` |
