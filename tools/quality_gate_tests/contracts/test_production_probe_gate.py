@@ -301,6 +301,83 @@ class ProductionProbeGateTests(QualityGateTestCase):
         self.assertEqual(1, len(findings), findings)
         self.assertIn("binds no such name", findings[0])
 
+    def test_a_container_module_argument_that_resolves_passes(self) -> None:
+        # Arrange
+        probe = 'const args = ["-m", "example_package.client"];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_container_module_argument_naming_a_deleted_module_is_refused(self) -> None:
+        # Arrange
+        probe = 'const args = ["-m", "example_package.exporter"];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("example_package.exporter", findings[0])
+        self.assertIn("runnable", findings[0])
+
+    def test_a_container_module_argument_naming_an_unrunnable_package_is_refused(self) -> None:
+        # Arrange
+        probe = 'const args = ["-m", "example_package"];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("example_package", findings[0])
+        self.assertIn("runnable", findings[0])
+
+    def test_a_package_holding_a_main_module_is_runnable(self) -> None:
+        # Arrange
+        support, source_root = self._tree('const args = ["-m", "example_package"];\n')
+        (source_root / "example_package" / "__main__.py").write_text("", encoding="utf-8")
+        errors: list[str] = []
+
+        # Act
+        findings = production_probe_gate.evaluate([support], [source_root], errors) + errors
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_container_module_argument_outside_the_workspace_is_left_alone(self) -> None:
+        # Arrange
+        probe = 'const args = ["-m", "pip", "-m", "http.server"];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual([], findings)
+
+    def test_a_container_module_argument_that_is_not_a_literal_is_refused(self) -> None:
+        # Arrange
+        probe = 'const args = ["-m", moduleName];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual(1, len(findings), findings)
+        self.assertIn("not a literal module name", findings[0])
+
+    def test_a_trailing_module_flag_names_no_module_to_resolve(self) -> None:
+        # Arrange
+        probe = 'const args = ["run", "-m"];\n'
+
+        # Act
+        findings = self._findings(probe)
+
+        # Assert
+        self.assertEqual([], findings)
+
     def test_the_gate_is_inert_when_it_is_handed_no_harness_source(self) -> None:
         # Arrange
         argv: list[str] = []
