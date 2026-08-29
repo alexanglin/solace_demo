@@ -266,6 +266,42 @@ async def append_broker_event(
     return BrokerEventReceipt(BrokerEventOutcome.ACCEPTED, record.mission_id, ordinal)
 
 
+async def link_broker_event(
+    session: EventSession, event: BrokerEvent, mission_id: str, ordinal: int
+) -> BrokerEventReceipt:
+    """Advance one source and link an already-appended audit ordinal to its broker identity.
+
+    ``append_broker_event`` owns the append and the link together. A caller that has already
+    appended its own audit row -- the deployed recorder does, because it also owns an inbox claim
+    and a source event -- needs the provenance half alone, or ``watermark_statement`` never sees
+    its ordinal and the dashboard folds nothing.
+    """
+    await session.execute(ensure_source_statement(event.source))
+    source_result = await session.execute(locked_source_statement(event.source))
+    source_row = source_result.one_or_none()
+    if source_row is None:
+        raise DashboardEventError(DashboardEventRefusal.SOURCE_VANISHED, event.source)
+    high_water = _high_water(source_row)
+    known_result = await session.execute(known_broker_event_statement(event.source, event.event_id))
+    known = known_result.one_or_none()
+    if known is not None:
+        return _known_receipt(event, known)
+    reception = receive(Stream(high_water), event.source_sequence)
+    if reception.verdict is SequenceVerdict.DUPLICATE:
+        raise DashboardEventError(DashboardEventRefusal.SEQUENCE_REUSED, event.source_sequence)
+    if reception.verdict is SequenceVerdict.STALE:
+        raise DashboardEventError(DashboardEventRefusal.STALE_SEQUENCE, event.source_sequence)
+    advanced = await session.scalar(
+        source_advance_statement(event.source, high_water, event.source_sequence)
+    )
+    if advanced is None:
+        raise DashboardEventError(DashboardEventRefusal.SOURCE_MOVED, event.source)
+    linked = await session.scalar(broker_event_statement(event, mission_id, ordinal))
+    if linked is None:
+        raise DashboardEventError(DashboardEventRefusal.EVENT_WRITE_REJECTED, event.event_id)
+    return BrokerEventReceipt(BrokerEventOutcome.ACCEPTED, mission_id, ordinal)
+
+
 async def capture_snapshot_basis(session: EventSession) -> SnapshotBasis | None:
     """Capture current run and committed watermark while the caller holds one transaction."""
     run = await current_run(session, shared=True)

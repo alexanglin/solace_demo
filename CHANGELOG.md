@@ -2059,6 +2059,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   derive their event from one `project()` call. ADR-0205 records the decision, and the new
   cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
   change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The deployed recorder links the provenance the dashboard's snapshot watermark reads.**
+  `watermark_statement` inner-joins `audit_record` to `dashboard_broker_event`, and the recorder
+  composition Compose runs never wrote that table -- the row is built in `_capture_material`, which
+  belongs to the parallel `main.py` composition. `audit_watermark` was therefore structurally zero
+  for every mission the deployed recorder recorded, `fold_basis_through` never entered its loop, and
+  the dashboard's initial state and timeline stayed empty however many events committed. Measured on
+  the running stack: a started mission committed telemetry to `audit_record` while
+  `dashboard_broker_event` gained nothing and `broker_inbox` showed the recorder consuming normally.
+  This is the true root cause of finding 6's "the deployed dashboard composition folded none of
+  them"; the prepared-state seed and ADR-0205 had repaired only the broker-recovery path, which reads
+  the audit table directly and does not join. `capture.Recorder` now links each appended ordinal to
+  its broker identity in the same transaction, after the append and before the inbox completes, and
+  ADR-0206 records the decision and the new sequence enforcement it brings with it.
+
 - **The evidence service and command gateway commit an audit kind that binds to their own
   envelope.** Both wrote the payload's `recordType` -- `evidence-decision` and
   `command-authorization` -- into `audit_record.kind`, while the payload beside it is the audit

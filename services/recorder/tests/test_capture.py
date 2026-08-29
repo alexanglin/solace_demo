@@ -100,6 +100,7 @@ class _Transaction:
     source_facts: list[SourceEventFact] = field(default_factory=list)
     audit_facts: list[AuditFact] = field(default_factory=list)
     completions: list[tuple[InboxFact, int, str]] = field(default_factory=list)
+    links: list[tuple[BrokerEvent, str, int]] = field(default_factory=list)
 
     async def claim_inbox(self, fact: InboxFact, /) -> InboxOutcome:
         """Claim or replay one durable inbox result."""
@@ -120,6 +121,11 @@ class _Transaction:
             message = "injected append failure"
             raise RuntimeError(message)
         return self.audit_ordinal
+
+    async def link_broker_event(self, event: BrokerEvent, mission_id: str, ordinal: int, /) -> None:
+        """Record the provenance link the dashboard watermark reads."""
+        self.links.append((event, mission_id, ordinal))
+        self.calls.append("link-broker-event")
 
     async def complete_inbox(self, fact: InboxFact, ordinal: int, processed_at: str, /) -> None:
         """Record completion inside the same transaction."""
@@ -245,12 +251,35 @@ class GuaranteedCaptureTests(unittest.IsolatedAsyncioTestCase):
                     "claim-inbox",
                     "record-source-event",
                     "append-audit",
+                    "link-broker-event",
                     "complete-inbox",
                     "commit",
                     "settle-accepted",
                 ],
             ),
             (outcome.decision, outcome.audit_ordinal, calls),
+        )
+
+    async def test_a_recorded_fact_links_the_provenance_the_dashboard_watermark_reads(
+        self,
+    ) -> None:
+        # Arrange
+        calls: list[str] = []
+        transaction = _Transaction(calls)
+        recorder = Recorder("recorder", _Transactions(transaction))
+        notification = _notification()
+
+        # Act
+        outcome = await recorder.capture(notification, _Settlement(calls))
+
+        # Assert
+        envelope = notification.envelope
+        self.assertEqual(
+            [(envelope.source, envelope.id, 1, MISSION, outcome.audit_ordinal)],
+            [
+                (event.source, event.event_id, event.source_sequence, mission, ordinal)
+                for event, mission, ordinal in transaction.links
+            ],
         )
 
     async def test_an_exact_duplicate_reuses_its_ordinal_without_a_second_effect(self) -> None:
@@ -403,6 +432,7 @@ class DirectCaptureTests(unittest.IsolatedAsyncioTestCase):
                     "claim-inbox",
                     "record-source-event",
                     "append-audit",
+                    "link-broker-event",
                     "complete-inbox",
                     "commit",
                 ],

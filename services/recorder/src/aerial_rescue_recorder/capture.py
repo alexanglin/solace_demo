@@ -167,6 +167,7 @@ class RecordingFact:
     inbox: InboxFact
     source_event: SourceEventFact
     audit: AuditFact
+    broker_event: BrokerEvent
     observed_at: str
 
 
@@ -189,6 +190,9 @@ class RecordingTransaction(Protocol):
 
     async def append_audit(self, fact: AuditFact, /) -> int:
         """Append the accepted fact and return its authoritative mission ordinal."""
+
+    async def link_broker_event(self, event: BrokerEvent, mission_id: str, ordinal: int, /) -> None:
+        """Link the appended ordinal to its broker identity, so the watermark can see it."""
 
     async def complete_inbox(self, fact: InboxFact, ordinal: int, processed_at: str, /) -> None:
         """Store the transaction's exact prior result for a future redelivery."""
@@ -285,7 +289,13 @@ def _recording_fact(consumer: str, notification: ReceivedNotification) -> Record
         envelope.causation_id,
         envelope.traceparent,
     )
-    return RecordingFact(inbox, source, audit, notification.observed_at)
+    broker_event = BrokerEvent(
+        source=envelope.source,
+        event_id=envelope.id,
+        source_sequence=int(envelope.sequence),
+        payload_digest=hashlib.sha256(canonical_event).hexdigest(),
+    )
+    return RecordingFact(inbox, source, audit, broker_event, notification.observed_at)
 
 
 async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> CaptureOutcome:
@@ -300,6 +310,7 @@ async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> Ca
     ordinal = _positive_ordinal(
         await transaction.append_audit(fact.audit), CaptureRefusal.AUDIT_ORDINAL
     )
+    await transaction.link_broker_event(fact.broker_event, fact.audit.mission_id, ordinal)
     await transaction.complete_inbox(fact.inbox, ordinal, fact.observed_at)
     return CaptureOutcome(CaptureDecision.RECORDED, ordinal)
 

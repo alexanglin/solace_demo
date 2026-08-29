@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from aerial_rescue_contracts import canonical
 from aerial_rescue_store.audit import AuditRecord
+from aerial_rescue_store.dashboard.events import BrokerEvent
 from aerial_rescue_store.inbox import (
     InboxDecision as StoreInboxDecision,
 )
@@ -68,6 +69,15 @@ class StoreRecordingTransaction(Protocol):
 
     async def append_audit(self, record: AuditRecord, /) -> int:
         """Append one audit fact and return the store-issued ordinal."""
+
+    async def link_broker_event(
+        self,
+        event: BrokerEvent,
+        mission_id: str,
+        ordinal: int,
+        /,
+    ) -> object:
+        """Link one appended ordinal to the broker identity that produced it."""
 
     async def complete_inbox(
         self,
@@ -132,6 +142,16 @@ class RecordingTransactionAdapter:
                 traceparent=fact.traceparent,
             )
         )
+
+    async def link_broker_event(
+        self,
+        event: BrokerEvent,
+        mission_id: str,
+        ordinal: int,
+        /,
+    ) -> None:
+        """Persist the provenance row the dashboard snapshot watermark joins against."""
+        await self._transaction.link_broker_event(event, mission_id, ordinal)
 
     async def complete_inbox(
         self,
