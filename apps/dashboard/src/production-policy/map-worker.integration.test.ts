@@ -7,13 +7,18 @@ import { build } from "vite";
  * The fixture browser suite runs against Vite, which serves that file from the package, so only the
  * production build can prove it ships.
  */
-test("emits the MapLibre worker the map loads at run time", async () => {
-  // Arrange
-  const dashboardRoot = process.cwd();
+const RELATIVE_IMPORT = /(?:from|import)\s*["'](\.\.?\/[^"']+)["']/gu;
 
-  // Act
+/** The emitted-output members this invariant reads, without depending on the bundler's types. */
+interface EmittedOutput {
+  readonly code?: string;
+  readonly fileName: string;
+  readonly source?: string | Uint8Array;
+}
+
+async function emittedOutputs(): Promise<EmittedOutput[]> {
   const buildResult = await build({
-    root: dashboardRoot,
+    root: process.cwd(),
     logLevel: "silent",
     mode: "production",
     build: { write: false },
@@ -23,8 +28,42 @@ test("emits the MapLibre worker the map loads at run time", async () => {
     : "output" in buildResult
       ? [buildResult]
       : [];
-  const emitted = results.flatMap((result) => result.output).map((output) => output.fileName);
+  return results.flatMap((result) => result.output);
+}
+
+function sourceOf(output: EmittedOutput): string {
+  return output.code ?? String(output.source ?? "");
+}
+
+test("emits the MapLibre worker the map loads at run time", async () => {
+  // Arrange
+  const outputs = await emittedOutputs();
+
+  // Act
+  const workers = outputs.filter((output) => output.fileName.includes("maplibre-gl-worker"));
 
   // Assert
-  expect(emitted.filter((name) => name.includes("maplibre-gl-worker"))).toHaveLength(1);
+  expect(workers).toHaveLength(1);
+});
+
+/**
+ * An emitted asset that names a sibling the build never emitted is a file the origin answers 404 for.
+ * A module worker that cannot complete its own imports fails silently: MapLibre's dispatcher never
+ * initialises, so every GeoJSON source stops tiling while the map still reports itself loaded.
+ */
+test("emits every relative module an emitted asset imports", async () => {
+  // Arrange
+  const outputs = await emittedOutputs();
+  const emittedNames = new Set(outputs.map((output) => output.fileName.split("/").pop()));
+
+  // Act
+  const unresolved = outputs.flatMap((output) =>
+    [...sourceOf(output).matchAll(RELATIVE_IMPORT)]
+      .map((match) => match[1] ?? "")
+      .filter((specifier) => !emittedNames.has(specifier.split("/").pop() ?? ""))
+      .map((specifier) => `${output.fileName} -> ${specifier}`),
+  );
+
+  // Assert
+  expect(unresolved).toEqual([]);
 });

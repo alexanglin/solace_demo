@@ -42,6 +42,9 @@ export default defineConfig(({ command, mode }) => ({
   resolve: {
     alias: dashboardModuleAliases,
   },
+  // MapLibre creates its worker with `{ type: "module" }`, so the emitted chunk has to be a
+  // module rather than Vite's default IIFE.
+  worker: { format: "es" as const },
   server: {
     hmr: mode !== "test",
     ws: mode === "test" ? false : {},
