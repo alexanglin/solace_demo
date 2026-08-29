@@ -8,6 +8,7 @@ import pytest
 from aerial_rescue_contracts.view import MAX_BUFFERED_EVENTS
 from aerial_rescue_dashboard_api.console import (
     SettingsError,
+    SettingsRefusal,
     dashboard_bindings,
     listener_options,
     settings_from_environment,
@@ -86,3 +87,71 @@ def test_missing_required_runtime_setting_fails_without_echoing_other_values(
     # Assert
     assert str(captured.value) == "dashboard runtime setting is missing"
     assert "localhost" not in str(captured.value)
+
+
+def test_repeated_allowed_host_is_refused_before_any_other_setting_is_read(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    environment = _environment(tmp_path)
+    environment["DASHBOARD_ALLOWED_HOSTS"] = "localhost:8080, localhost:8080"
+
+    # Act
+    with pytest.raises(SettingsError) as captured:
+        settings_from_environment(environment)
+
+    # Assert
+    assert captured.value.refusal is SettingsRefusal.INVALID
+    assert "localhost" not in str(captured.value)
+
+
+def test_blank_allowed_host_entry_is_refused_rather_than_widening_the_allow_list(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    environment = _environment(tmp_path)
+    environment["DASHBOARD_ALLOWED_HOSTS"] = "localhost:8080,"
+
+    # Act
+    with pytest.raises(SettingsError) as captured:
+        settings_from_environment(environment)
+
+    # Assert
+    assert captured.value.refusal is SettingsRefusal.INVALID
+    assert "localhost" not in str(captured.value)
+
+
+def test_symlinked_bearer_file_is_refused_without_following_the_link(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    environment = _environment(tmp_path)
+    link = tmp_path / "scenario-bearer-link"
+    link.symlink_to(tmp_path / "scenario-bearer")
+    environment["SCENARIO_CONTROL_BEARER_FILE"] = str(link)
+
+    # Act
+    with pytest.raises(SettingsError) as captured:
+        settings_from_environment(environment)
+
+    # Assert
+    assert captured.value.refusal is SettingsRefusal.MATERIAL
+    assert str(link) not in str(captured.value)
+
+
+def test_oversized_bearer_file_is_refused_instead_of_being_read_into_the_process(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    environment = _environment(tmp_path)
+    oversized = tmp_path / "scenario-bearer-oversized"
+    oversized.write_text("s" * 130, encoding="ascii")
+    environment["SCENARIO_CONTROL_BEARER_FILE"] = str(oversized)
+
+    # Act
+    with pytest.raises(SettingsError) as captured:
+        settings_from_environment(environment)
+
+    # Assert
+    assert captured.value.refusal is SettingsRefusal.MATERIAL
+    assert "s" * 130 not in str(captured.value)
