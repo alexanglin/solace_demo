@@ -461,6 +461,54 @@ class RecordSourceEvidenceTests(unittest.IsolatedAsyncioTestCase):
             (decision, session.fact_inserts, len(session.statements)),
         )
 
+    async def test_exact_source_stored_by_another_consumer_accepts_the_first_fact_set(self) -> None:
+        # Arrange
+        session = _WriteSession(
+            selected_rows=[
+                (_source_row(),),
+                (),
+                ((EVENT_ID,),),
+                (),
+            ],
+        )
+
+        # Act
+        decision = await record_source_evidence(session, SOURCE_EVENT, (FACT,))
+
+        # Assert
+        self.assertEqual(
+            (SourceEvidenceDecision.STORED, 1, 1),
+            (
+                decision,
+                session.fact_inserts,
+                sum("FOR UPDATE" in statement for statement in session.statements),
+            ),
+        )
+
+    async def test_fact_set_winner_is_reused_after_waiting_on_the_shared_source(self) -> None:
+        # Arrange
+        session = _WriteSession(
+            selected_rows=[
+                (_source_row(),),
+                (),
+                ((EVENT_ID,),),
+                (_fact_row(),),
+            ],
+        )
+
+        # Act
+        decision = await record_source_evidence(session, SOURCE_EVENT, (FACT,))
+
+        # Assert
+        self.assertEqual(
+            (SourceEvidenceDecision.DUPLICATE, 0, 1),
+            (
+                decision,
+                session.fact_inserts,
+                sum("FOR UPDATE" in statement for statement in session.statements),
+            ),
+        )
+
     async def test_changed_digest_or_fact_set_is_a_conflict_without_fact_writes(self) -> None:
         # Arrange
         changed_fact = _fact_for("evidence-1", "sensor-2")
@@ -550,7 +598,26 @@ class RecordSourceEvidenceTests(unittest.IsolatedAsyncioTestCase):
             (refusals, [len(session.statements) for session in sessions]),
         )
 
-    async def test_incomplete_or_malformed_committed_fact_sets_fail_closed(self) -> None:
+    async def test_nonempty_partial_committed_fact_set_fails_closed_without_writes(self) -> None:
+        # Arrange
+        session = _WriteSession(selected_rows=[(_source_row(),), (_fact_row(),)])
+        expected = (FACT, _fact_for("evidence-2", "sensor-2"))
+
+        # Act
+        with pytest.raises(SourceEvidenceError) as captured:
+            await record_source_evidence(session, SOURCE_EVENT, expected)
+
+        # Assert
+        self.assertEqual(
+            (SourceEvidenceRefusal.IDENTITY_CONFLICT, 0, 0),
+            (
+                captured.value.refusal,
+                session.fact_inserts,
+                sum("FOR UPDATE" in statement for statement in session.statements),
+            ),
+        )
+
+    async def test_vanished_source_claim_or_malformed_committed_fact_set_fails_closed(self) -> None:
         # Arrange
         wrong_identity = list(_fact_row())
         wrong_identity[0] = "urn:aerial-rescue:drone:other"

@@ -9,17 +9,19 @@ answer and its score are read from the shared PostgreSQL store, which is also wh
 the chain must land durably. The mission identifier comes from the operator's running mission
 (``AERIAL_RESCUE_DEMO_MISSION_ID``); an absent identifier fails the case, it never skips it.
 
-What a green run establishes, and no more: the Event Mesh Gateway delivered one request to the
-coordinator's A2A queue; the command gateway normalised the coordinator's answer into one
-``candidate-location`` proposal bound to the published source event and digest; and the evidence
-service scored that proposal ``contributing`` at 75 (``corroborated``). An abstaining model leaves
-no proposal, which the assertions report by name; nothing here proves the dashboard rendered
-anything.
+What a green run establishes, and no more: in the required quiescent environment the mesh's
+cumulative A2A queue count rose after publication; the command gateway normalised the coordinator's
+answer into one ``candidate-location`` proposal bound to the published source event and digest; and
+the evidence service scored that proposal ``contributing`` at 75 (``corroborated``). An abstaining
+model leaves no proposal, which the assertions report by name; nothing here proves which A2A queue
+carried the task or that the dashboard rendered anything.
 
 One publication carries the whole chain deliberately. The Event Mesh Gateway acknowledges on
 completion at QoS 1, so concurrent publications queue behind one another and a second case would
 measure the first case's model turn. Reading the A2A counter before the publish and every stored
-consequence after it keeps the causal claim exact while costing one model turn.
+consequence after it bounds the cumulative observation to the required quiescent run; the exact
+causal bindings come from the source, proposal, and decision rows. The test resolves its store
+settings before publishing, so a malformed invocation cannot consume a coordinator turn first.
 
 Markers keep these out of every blocking suite: they need Docker, the broker, the ``services``
 profile (command gateway and evidence service), PostgreSQL, and Ollama.
@@ -55,7 +57,7 @@ from aerial_rescue_contracts.topics import Family, Topic, event_type, format_top
 from aerial_rescue_domain.principals import Principal
 from aerial_rescue_recorder.console import production_bounds
 from aerial_rescue_store.engine import create_engine
-from aerial_rescue_store.settings import database_settings
+from aerial_rescue_store.settings import DatabaseSettings, database_settings
 from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -91,9 +93,15 @@ EXPECTED_OUTCOME: Final = "contributing"
 
 _Row = Mapping[str, object] | None
 
-_SOURCE_EVENT_QUERY: Final = text(
-    "select source, canonical_digest from source_event "
-    "where mission_id = :mission and event_id = :event"
+_SOURCE_PROVENANCE_QUERY: Final = text(
+    "select source_event.source, source_event.canonical_digest, "
+    "source_evidence_item.source_id, source_evidence_item.origin "
+    "from source_event join source_evidence_item on "
+    "source_evidence_item.source_event_source = source_event.source and "
+    "source_evidence_item.source_event_id = source_event.event_id "
+    "where source_event.mission_id = :mission and source_event.event_id = :event and "
+    "source_event.source = :source and "
+    "source_evidence_item.ordinal = 1"
 )
 _PROPOSAL_QUERY: Final = text(
     "select proposal_id, agent_name, proposal_type, source_event_digest, drone_id "
@@ -220,9 +228,9 @@ def _a2a_deliveries() -> int:
     return total
 
 
-def _store_engine() -> AsyncEngine:
+def _store_engine(settings: DatabaseSettings) -> AsyncEngine:
     """Open a bounded read-only view of the shared store the services persist into."""
-    return create_engine(database_settings(os.environ, DEPLOY_ROOT), production_bounds())
+    return create_engine(settings, production_bounds())
 
 
 async def _one_row(
@@ -253,15 +261,26 @@ def _remaining(started: float, seconds: int) -> int:
 
 
 async def _stored_consequences(
-    mission: str, event_id: str, seconds: int
+    settings: DatabaseSettings,
+    mission: str,
+    event_id: str,
+    seconds: int,
 ) -> tuple[_Row, _Row, _Row]:
     """Wait for the provenance, the normalised proposal, and its decision within one window."""
-    engine = _store_engine()
+    engine = _store_engine(settings)
     try:
         started = time.monotonic()
         source_event = await _await_row(
             seconds,
-            lambda: _one_row(engine, _SOURCE_EVENT_QUERY, {"mission": mission, "event": event_id}),
+            lambda: _one_row(
+                engine,
+                _SOURCE_PROVENANCE_QUERY,
+                {
+                    "mission": mission,
+                    "event": event_id,
+                    "source": f"urn:aerial-rescue:drone:{DRONE}",
+                },
+            ),
         )
         proposal = await _await_row(
             _remaining(started, seconds),
@@ -302,12 +321,22 @@ class _ChainObservation:
     decision: _Row
 
 
-def _run_chain(event: _SalientEvent, mission: str, before: int) -> _ChainObservation:
+def _run_chain(
+    event: _SalientEvent,
+    mission: str,
+    before: int,
+    settings: DatabaseSettings,
+) -> _ChainObservation:
     """Publish one salient event and wait for every consequence the demo claims follows it."""
     _publish(event.topic, event.payload, event.digest)
     deliveries = _wait_for_requests(before, REQUEST_WINDOW_SECONDS)
     source_event, proposal, decision = asyncio.run(
-        _stored_consequences(mission, event.envelope.id, RESPONSE_WINDOW_SECONDS)
+        _stored_consequences(
+            settings,
+            mission,
+            event.envelope.id,
+            RESPONSE_WINDOW_SECONDS,
+        )
     )
     return _ChainObservation(deliveries, source_event, proposal, decision)
 
@@ -316,17 +345,18 @@ class SalientChainTests(unittest.TestCase):
     def test_one_salient_event_becomes_a_corroborated_candidate_location(self) -> None:
         # Arrange
         mission = _mission_id()
+        settings = database_settings(os.environ, DEPLOY_ROOT)
         event = _salient_event(mission)
         before = _a2a_deliveries()
 
         # Act
-        observed = _run_chain(event, mission, before)
+        observed = _run_chain(event, mission, before, settings)
 
         # Assert
         self.assertIsNotNone(
             observed.source_event,
-            "the evidence service stored no source event: the publication was refused before it "
-            "could become provenance, so nothing downstream can be scored",
+            "the evidence service stored no source-fact provenance: the publication was refused "
+            "before it could become evidence, so nothing downstream can be scored",
         )
         self.assertGreater(
             observed.deliveries,
@@ -344,7 +374,15 @@ class SalientChainTests(unittest.TestCase):
         assert observed.source_event is not None
         assert observed.proposal is not None
         assert observed.decision is not None
-        self.assertEqual(f"urn:aerial-rescue:drone:{DRONE}", observed.source_event["source"])
+        self.assertEqual(
+            (f"urn:aerial-rescue:drone:{DRONE}", event.digest, DRONE, "live-sensor"),
+            (
+                observed.source_event["source"],
+                observed.source_event["canonical_digest"],
+                observed.source_event["source_id"],
+                observed.source_event["origin"],
+            ),
+        )
         self.assertEqual(
             (TARGET_AGENT, PROPOSAL_TYPE, event.digest, DRONE),
             (

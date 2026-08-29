@@ -42,6 +42,7 @@ _FACT_START: Final = _SOURCE_MEMBER_COUNT
 _DIGEST_PATTERN: Final = re.compile(r"^[0-9a-f]{64}$")
 type SourceEvidenceSelection = Select[tuple[object, ...]]
 type SourceFactSelection = Select[tuple[object, ...]]
+type SourceFactClaimSelection = Select[tuple[str]]
 
 
 class SourceEvidenceDecision(Enum):
@@ -132,6 +133,9 @@ class SourceEvidenceRows(Protocol):
     def all(self) -> Sequence[Sequence[object]]:
         """Return rows in the statement's source-and-ordinal order."""
 
+    def one_or_none(self) -> Sequence[object] | None:
+        """Return the exact source row selected for a fact-set claim, or no row."""
+
 
 class SourceEvidenceSession(Protocol):
     """The only SQLAlchemy operation used by the read-only provenance adapter."""
@@ -147,7 +151,12 @@ class SourceEvidenceWriteSession(Protocol):
         """Return the source-event identity inserted by one immutable claim."""
 
     async def execute(
-        self, statement: Insert | SourceEvidenceSelection | SourceFactSelection, /
+        self,
+        statement: Insert
+        | SourceEvidenceSelection
+        | SourceFactSelection
+        | SourceFactClaimSelection,
+        /,
     ) -> SourceEvidenceRows:
         """Insert one fact or return exact rows for duplicate comparison."""
 
@@ -330,6 +339,24 @@ def source_facts_statement(source: str, event_id: str) -> SourceFactSelection:
     return cast("SourceFactSelection", statement)
 
 
+def source_fact_claim_statement(event: StoredSourceEvent) -> SourceFactClaimSelection:
+    """Lock one exact shared source before its first evidence fact set is attached."""
+    statement = (
+        select(SOURCE_EVENT.c.event_id)
+        .where(
+            SOURCE_EVENT.c.source == event.source,
+            SOURCE_EVENT.c.event_id == event.event_id,
+            SOURCE_EVENT.c.mission_id == event.mission_id,
+            SOURCE_EVENT.c.topic == event.topic,
+            SOURCE_EVENT.c.canonical_digest == event.canonical_digest,
+            SOURCE_EVENT.c.canonical_payload == event.canonical_payload,
+            SOURCE_EVENT.c.observed_at == event.observed_at,
+        )
+        .with_for_update()
+    )
+    return cast("SourceFactClaimSelection", statement)
+
+
 async def record_source_evidence(
     session: SourceEvidenceWriteSession,
     event: StoredSourceEvent,
@@ -345,14 +372,42 @@ async def record_source_evidence(
         ) from error
     if event_decision is SourceEventDecision.DUPLICATE:
         selected = await session.execute(source_facts_statement(event.source, event.event_id))
-        if _stored_fact_set(selected.all(), event) != validated:
-            raise SourceEvidenceError(
-                SourceEvidenceRefusal.IDENTITY_CONFLICT, (event.mission_id, event.event_id)
-            )
-        return SourceEvidenceDecision.DUPLICATE
+        if _contains_exact_fact_set(selected.all(), event, validated):
+            return SourceEvidenceDecision.DUPLICATE
+        await _claim_empty_fact_set(session, event)
+        selected = await session.execute(source_facts_statement(event.source, event.event_id))
+        if _contains_exact_fact_set(selected.all(), event, validated):
+            return SourceEvidenceDecision.DUPLICATE
     for ordinal, fact in enumerate(validated, start=1):
         await session.execute(record_source_fact_statement(event, ordinal, fact))
     return SourceEvidenceDecision.STORED
+
+
+async def _claim_empty_fact_set(
+    session: SourceEvidenceWriteSession, event: StoredSourceEvent
+) -> None:
+    """Serialize first-fact attachment to a source another consumer stored exactly."""
+    selected = await session.execute(source_fact_claim_statement(event))
+    row = selected.one_or_none()
+    if row is None or tuple(row) != (event.event_id,):
+        raise SourceEvidenceError(
+            SourceEvidenceRefusal.IDENTITY_CONFLICT, (event.mission_id, event.event_id)
+        )
+
+
+def _contains_exact_fact_set(
+    rows: Sequence[Sequence[object]],
+    event: StoredSourceEvent,
+    expected: tuple[StoredSourceEvidenceFact, ...],
+) -> bool:
+    """Return whether a complete set exists, refusing any nonempty changed set."""
+    if not rows:
+        return False
+    if _stored_fact_set(rows, event) != expected:
+        raise SourceEvidenceError(
+            SourceEvidenceRefusal.IDENTITY_CONFLICT, (event.mission_id, event.event_id)
+        )
+    return True
 
 
 def _validated_input(
@@ -414,7 +469,7 @@ def _stored_fact_set(
     rows: Sequence[Sequence[object]], event: StoredSourceEvent
 ) -> tuple[StoredSourceEvidenceFact, ...]:
     """Map one exact existing set for all-or-nothing duplicate comparison."""
-    if not rows or len(rows) > MAXIMUM_FACTS:
+    if len(rows) > MAXIMUM_FACTS:
         raise SourceEvidenceError(
             SourceEvidenceRefusal.IDENTITY_CONFLICT, (event.mission_id, event.event_id)
         )
