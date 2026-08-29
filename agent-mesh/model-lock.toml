@@ -16,4 +16,3 @@ digest = "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae
 recorded_on = "2026-08-21"
 recorded_by = "Alex Anglin"
 reason = "Phase 0 orchestration spike for the general and planning roles. Tool-capable at 2.50 GB, reported by Ollama as completion, tools, and thinking. Provisional: the roles are pinned by the Phase 4 model selection."
-
