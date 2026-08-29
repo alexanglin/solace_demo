@@ -881,6 +881,24 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
         self.assertNotIn(f"{SENSITIVE_VALUE}-fleet-control-bearer", output)
         self.assertIn("<redacted: runtime diagnostics suppressed>", output)
 
+    def test_failure_diagnostics_read_the_exact_project_container_logs(self) -> None:
+        # Arrange
+        repository, environment, calls_path = self._repository()
+        environment["CI_FAIL_FILE"] = str(AUTHORIZED_SUITE[0].path)
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        calls = calls_path.read_text(encoding="utf-8")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            f"docker compose --project-name {PROJECT} --file deploy/compose.yaml "
+            "--env-file .env.example --env-file deploy/secrets/.env.roles "
+            "logs --no-color --timestamps --tail 200",
+            calls,
+        )
+
     def test_owned_resource_after_cleanup_makes_a_green_suite_fail(self) -> None:
         # Arrange
         repository, environment, _calls_path = self._repository()

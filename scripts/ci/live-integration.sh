@@ -66,6 +66,7 @@ OWNERSHIP_MARKER=deploy/.ci-live-project
 JOB_IDENTITY=pubsub-postgres-integration
 NAMESPACE=aerial-rescue-mesh
 COMMAND_BUDGET_SECONDS=1200
+DIAGNOSTIC_LOG_LINES=200
 APPLICATION_DATA_PLANE_TEST=tests/integration/test_application_data_plane_live.py
 RESTART_CONTROLLER=scripts/ci/broker-restart-controller.sh
 RESTART_REQUEST_TOKEN=AERIAL_RESCUE_BROKER_RESTART_ONCE_V1
@@ -370,6 +371,17 @@ report_failure_diagnostics() {
 			"$work_directory/compose-ps.safe" >&2
 	else
 		printf '<redacted: project-scoped status command failed>\n' >&2
+	fi
+	# A container that never becomes healthy leaves no trace in `ps` beyond its restart
+	# count, so the bounded tail of its own output is the only evidence of why. It passes
+	# through the same fail-closed redactor as every other diagnostic.
+	printf 'runtime logs for project %s:\n' "$compose_project" >&2
+	if compose_runtime logs --no-color --timestamps --tail "$DIAGNOSTIC_LOG_LINES" \
+		>"$work_directory/compose-logs.raw" 2>&1; then
+		redact_diagnostics "$work_directory/compose-logs.raw" \
+			"$work_directory/compose-logs.safe" >&2
+	else
+		printf '<redacted: project-scoped log command failed>\n' >&2
 	fi
 }
 
