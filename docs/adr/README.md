@@ -220,6 +220,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0199](0199-terminate-the-owned-agent-mesh-entrypoint.md) | Terminate the owned Agent Mesh entrypoint | Accepted |
 | [0200](0200-give-the-coordinator-a-tool-capable-model.md) | Give the coordinator a tool-capable model | Accepted |
 | [0201](0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md) | Gate Agent Mesh readiness on asynchronous initialization | Accepted |
+| [0202](0202-accept-the-cyclonedx-version-the-pinned-trivy-emits.md) | Accept the CycloneDX version the pinned Trivy emits | Accepted |
 
 ## Decisions still open
 

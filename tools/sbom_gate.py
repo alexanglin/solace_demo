@@ -15,7 +15,7 @@ from typing import Final
 
 DIAGNOSTIC: Final = "SBOM"
 CYCLONEDX_FORMAT: Final = "CycloneDX"
-CYCLONEDX_VERSION: Final = "1.6"
+CYCLONEDX_VERSION: Final = "1.7"
 TRIVY_GROUP: Final = "aquasecurity"
 TRIVY_NAME: Final = "trivy"
 TRIVY_VERSION: Final = "0.74.0"

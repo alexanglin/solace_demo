@@ -17,7 +17,7 @@ def _sbom(**overrides: object) -> dict[str, object]:
     """Return the smallest complete Trivy CycloneDX image SBOM."""
     document: dict[str, object] = {
         "bomFormat": "CycloneDX",
-        "specVersion": "1.6",
+        "specVersion": "1.7",
         "serialNumber": "urn:uuid:12345678-1234-4321-8765-123456789abc",
         "version": 1,
         "metadata": {
@@ -104,14 +104,15 @@ class SbomGateTests(QualityGateTestCase):
 
     def test_an_unexpected_specification_version_is_refused(self) -> None:
         # Arrange
-        report = _sbom(specVersion="1.5")
+        superseded = _sbom(specVersion="1.5")
+        previous = _sbom(specVersion="1.6")
 
         # Act
-        status, _, stderr = self.invoke(report)
+        results = tuple(self.invoke(report) for report in (superseded, previous))
 
         # Assert
-        self.assertEqual(1, status)
-        self.assertIn("SBOM: specVersion must be 1.6", stderr)
+        self.assertEqual([1, 1], [status for status, _, _ in results])
+        self.assertTrue(all("SBOM: specVersion must be 1.7" in stderr for _, _, stderr in results))
 
     def test_a_root_component_that_does_not_bind_the_image_is_refused(self) -> None:
         # Arrange
