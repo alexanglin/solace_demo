@@ -6,6 +6,12 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import TYPE_CHECKING, cast
 
 from aerial_rescue_store.audit import AuditRecord, OrdinalSession, append
+from aerial_rescue_store.dashboard.events import (
+    BrokerEvent,
+    BrokerEventReceipt,
+    EventSession,
+    link_broker_event,
+)
 from aerial_rescue_store.inbox import (
     InboxIdentity,
     InboxOutcome,
@@ -47,6 +53,17 @@ class RecordingTransaction:
     async def append_audit(self, record: AuditRecord) -> int:
         """Append one audit record at the ordinal issued in this transaction."""
         return await append(cast("OrdinalSession", self._session), record)
+
+    async def link_broker_event(
+        self,
+        event: BrokerEvent,
+        mission_id: str,
+        ordinal: int,
+    ) -> BrokerEventReceipt:
+        """Link the appended ordinal to its broker identity, so the watermark can read it."""
+        return await link_broker_event(
+            cast("EventSession", self._session), event, mission_id, ordinal
+        )
 
     async def complete_inbox(
         self,

@@ -21,6 +21,7 @@ from aerial_rescue_recorder.store import (
     StoreAdapterRefusal,
 )
 from aerial_rescue_store.audit import AuditRecord
+from aerial_rescue_store.dashboard.events import BrokerEvent
 from aerial_rescue_store.inbox import (
     InboxDecision as StoreInboxDecision,
 )
@@ -74,6 +75,7 @@ class _StoreTransaction:
     sources: list[StoredSourceEvent] = field(default_factory=list)
     audits: list[AuditRecord] = field(default_factory=list)
     completions: list[tuple[InboxIdentity, bytes, str]] = field(default_factory=list)
+    links: list[tuple[BrokerEvent, str, int]] = field(default_factory=list)
 
     async def claim_inbox(self, identity: InboxIdentity) -> StoreInboxOutcome:
         """Return the scripted durable claim."""
@@ -92,6 +94,17 @@ class _StoreTransaction:
         self.calls.append("audit")
         self.audits.append(record)
         return 7
+
+    async def link_broker_event(
+        self,
+        event: BrokerEvent,
+        mission_id: str,
+        ordinal: int,
+    ) -> object:
+        """Record the provenance link the dashboard watermark joins against."""
+        self.calls.append("link")
+        self.links.append((event, mission_id, ordinal))
+        return object()
 
     async def complete_inbox(
         self,
