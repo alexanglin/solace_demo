@@ -223,6 +223,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0202](0202-accept-the-cyclonedx-version-the-pinned-trivy-emits.md) | Accept the CycloneDX version the pinned Trivy emits | Accepted |
 | [0203](0203-make-the-broker-s-mounted-secrets-readable-by-the-pinned-image-s-user.md) | Make the broker's mounted secrets readable by the pinned image's user | Accepted |
 | [0204](0204-resolve-embedded-production-probe-references-at-commit-time.md) | Resolve the dashboard's embedded production probes against workspace source | Accepted |
+| [0205](0205-project-the-committed-envelope-at-the-dashboard-store-adapter.md) | Project the recorder's committed envelope at the dashboard store adapter | Accepted |
 
 ## Decisions still open
 

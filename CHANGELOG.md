@@ -2046,6 +2046,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The dashboard's two readers of `audit_record` no longer disagree about what a committed row
+  holds.** The recorder Compose runs commits the canonical CloudEvent envelope under the envelope's
+  own type, and the broker-recovery projection reads exactly that; the snapshot reconstruction
+  validated the same column against `dashboard-event.schema.json` and so read only the parallel
+  composition's normalized view document. Exercised against both writers, no payload form was
+  accepted by both readers, and the run the merged runtime left selected holds 163 rows the snapshot
+  path could not read. Because `fold_basis_through` reads only past a non-zero watermark, a fresh
+  mission hid it entirely and it surfaced on the first snapshot or overload resynchronization after
+  events were committed. `store_adapter._normalized_event` now owns the projection from the durable
+  envelope into the normalized-event bytes `StoredEvent` has always documented, so both readers
+  derive their event from one `project()` call. ADR-0205 records the decision, and the new
+  cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
+  change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The prepared-state seed the deployed dashboard composition applies is now held by tests.** The
+  container ran with an image built 71 seconds before it died, without the `_seed_projection` fix,
+  and exited 3 four times on `ProjectionError: ... 'MISSION_UNPREPARED'`. Nothing wired the real
+  checkpoint adapter to the real projection over committed rows, so the fix had no test asserting
+  the behavior it restored. Both directions are now pinned: an unseeded checkpoint refuses the first
+  committed record with exactly the production refusal, and the prepared seed folds a complete page
+  and refolds it after a restart.
+
 - **The production fleet-status probe reaches the scenario service's deployed composition again.**
   It now reads its settings through `settings_from_environment` and drives `FleetHttpClient`'s
   asynchronous startup, status, and shutdown sequence, instead of two modules ADR-0197 deleted, a

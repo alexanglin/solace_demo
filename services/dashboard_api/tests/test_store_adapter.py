@@ -9,6 +9,8 @@ from typing import Final, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.envelope import BINDINGS, Envelope, envelope_document
 from aerial_rescue_dashboard_api import store_adapter as adapter
 from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.ports import (
@@ -321,6 +323,30 @@ class StoreAdapterOperationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.mission.event.lifecycle"
+
+
+def _committed_event(ordinal: int) -> StoredDashboardEvent:
+    """Return one row in the form ``capture.Recorder`` commits: the canonical envelope."""
+    envelope = Envelope(
+        id=f"event-{ordinal:04d}",
+        source="urn:aerial-rescue:mission-lifecycle:run-test-0001",
+        type=_LIFECYCLE_TYPE,
+        subject="mission-test-0001",
+        time="2026-08-25T12:00:03.000Z",
+        dataschema=BINDINGS[_LIFECYCLE_TYPE].dataschema,
+        sequence=f"{ordinal:015d}",
+        correlation_id="run-test-0001",
+        traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01",
+        data={"missionId": "mission-test-0001", "lifecycle": "SEARCHING"},
+    )
+    return StoredDashboardEvent(
+        ordinal,
+        envelope.type,
+        canonical.canonical_bytes(envelope_document(envelope)),
+    )
+
+
 class StoreAdapterReadTests(unittest.IsolatedAsyncioTestCase):
     async def test_mission_lifecycle_read_is_strict_and_closes_its_transaction(self) -> None:
         # Arrange
@@ -413,7 +439,7 @@ class StoreAdapterReadTests(unittest.IsolatedAsyncioTestCase):
             "run-test-0001",
             None,
         )
-        event = StoredDashboardEvent(3, "missionLifecycle", b'{"kind":"missionLifecycle"}')
+        event = _committed_event(3)
         failures: list[ErrorCode] = []
 
         # Act
@@ -447,8 +473,17 @@ class StoreAdapterReadTests(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual((), replay_page)
         self.assertIs(ErrorCode.RUN_CONFLICT, conflict.value.code)
-        self.assertEqual(event.payload, suffix[0].payload)
-        self.assertEqual(event.payload, bounded[0].payload)
+        projected = canonical.canonical_bytes(
+            {
+                "data": {"lifecycle": "SEARCHING"},
+                "eventClass": "MISSION",
+                "kind": "missionLifecycle",
+                "mission": "mission-test-0001",
+                "time": "2026-08-25T12:00:03.000Z",
+            }
+        )
+        self.assertEqual(("missionLifecycle", projected), (suffix[0].kind, suffix[0].payload))
+        self.assertEqual(("missionLifecycle", projected), (bounded[0].kind, bounded[0].payload))
         self.assertEqual([ErrorCode.DEPENDENCY_UNAVAILABLE] * 5, failures)
 
     async def test_predecessor_read_derives_started_state_and_fails_closed(self) -> None:
