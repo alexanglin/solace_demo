@@ -50,7 +50,7 @@ from aerial_rescue_store.application_outbox import (
 )
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate
 
-from aerial_rescue_fleet_simulator import FleetSimulatorError
+from aerial_rescue_fleet_simulator import FleetSimulatorError, run_event_source
 from aerial_rescue_fleet_simulator.control_plane.wire import (
     FleetControlRunStatus,
     FleetControlStartRequest,
@@ -465,6 +465,7 @@ class FleetExecutor:
                 scenario.mission_id,
                 reading,
                 self._dependencies.stamps.next_stamp(reading.drone_id),
+                producer_source=run_event_source(reading.drone_id, scenario.mission_id),
             )
             try:
                 await asyncio.to_thread(
