@@ -156,10 +156,95 @@ export interface SectorLifecycleEventFixture extends DashboardEventBaseFixture {
   readonly kind: "sectorLifecycle";
 }
 
+export interface AgentProposalEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly agentName: string;
+    readonly canonicalizationVersion: 1;
+    readonly commandType: "escalate-rescue";
+    readonly droneId: string;
+    readonly latitudeMicrodegrees: number;
+    readonly longitudeMicrodegrees: number;
+    readonly proposalDigest: string;
+    readonly proposalId: string;
+    readonly proposalType: "candidate-location";
+    readonly proposalVersion: 1;
+    readonly sourceEventDigest: string;
+    readonly sourceEventId: string;
+    readonly sourceInvocationId: string;
+  };
+  readonly eventClass: "EVIDENCE";
+  readonly kind: "agentProposal";
+}
+
+export interface EvidenceContributorFixture {
+  readonly evidenceItemId: string;
+  readonly origin: "live-model" | "live-sensor";
+  readonly provenanceDigest: string;
+  readonly sourceId: string;
+  readonly weight: 35 | 40;
+}
+
+export interface EvidenceDecisionEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly band: "corroborated" | "none" | "supported" | "weak";
+    readonly canonicalizationVersion: 1;
+    readonly contributors: readonly EvidenceContributorFixture[];
+    readonly evidenceDecisionId: string;
+    readonly evidenceDecisionVersion: 1;
+    readonly outcome: "contributing";
+    readonly proposalDigest: string;
+    readonly proposalId: string;
+    readonly proposalVersion: 1;
+    readonly score: number;
+    readonly scoreVersion: 1;
+  };
+  readonly eventClass: "EVIDENCE";
+  readonly kind: "evidenceDecision";
+}
+
+export interface OperatorApprovalEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly action: {
+      readonly commandType: "escalate-rescue";
+      readonly droneId: string;
+      readonly latitudeMicrodegrees: number;
+      readonly longitudeMicrodegrees: number;
+    };
+    readonly approvalId: string;
+    readonly decision: "approve";
+    readonly evidenceDecisionDigest: string;
+    readonly evidenceDecisionId: string;
+    readonly evidenceDecisionVersion: 1;
+    readonly expiresAt: string;
+    readonly issuedAt: string;
+    readonly operatorApprovalVersion: 1;
+    readonly operatorId: string;
+    readonly proposalDigest: string;
+    readonly proposalId: string;
+    readonly proposalVersion: 1;
+  };
+  readonly eventClass: "APPROVAL";
+  readonly kind: "operatorApproval";
+}
+
+export interface CommandResultEventFixture extends DashboardEventBaseFixture {
+  readonly data: {
+    readonly commandId: string;
+    readonly droneId: string;
+    readonly outcome: "acknowledged" | "failed" | "succeeded";
+  };
+  readonly eventClass: "COMMAND";
+  readonly kind: "commandResult";
+}
+
 export type DashboardEventFixture =
+  | AgentProposalEventFixture
+  | CommandResultEventFixture
   | ConnectivityChangedEventFixture
   | DroneTelemetryEventFixture
+  | EvidenceDecisionEventFixture
   | MissionLifecycleEventFixture
+  | OperatorApprovalEventFixture
   | SectorLifecycleEventFixture;
 
 export interface OrderedDashboardEventFixture {
@@ -736,6 +821,34 @@ function event(
 ): OrderedDashboardEventFixture;
 function event(
   auditOrdinal: number,
+  kind: "agentProposal",
+  eventClass: "EVIDENCE",
+  data: AgentProposalEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "evidenceDecision",
+  eventClass: "EVIDENCE",
+  data: EvidenceDecisionEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "operatorApproval",
+  eventClass: "APPROVAL",
+  data: OperatorApprovalEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
+  kind: "commandResult",
+  eventClass: "COMMAND",
+  data: CommandResultEventFixture["data"],
+  mission?: string,
+): OrderedDashboardEventFixture;
+function event(
+  auditOrdinal: number,
   kind: DashboardEventFixture["kind"],
   eventClass: DashboardEventFixture["eventClass"],
   data: DashboardEventFixture["data"],
@@ -745,13 +858,25 @@ function event(
   if (kind === "connectivityChanged" && eventClass === "CONNECTIVITY" && "connectivity" in data) {
     return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
   }
-  if (kind === "droneTelemetry" && eventClass === "TELEMETRY" && "latitudeMicrodegrees" in data) {
+  if (kind === "droneTelemetry" && eventClass === "TELEMETRY" && "batteryPercent" in data) {
     return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
   }
   if (kind === "missionLifecycle" && eventClass === "MISSION" && "lifecycle" in data) {
     return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
   }
   if (kind === "sectorLifecycle" && eventClass === "MISSION" && "sectorId" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "agentProposal" && eventClass === "EVIDENCE" && "proposalType" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "evidenceDecision" && eventClass === "EVIDENCE" && "contributors" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "operatorApproval" && eventClass === "APPROVAL" && "approvalId" in data) {
+    return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
+  }
+  if (kind === "commandResult" && eventClass === "COMMAND" && "commandId" in data) {
     return { auditOrdinal, event: { data, eventClass, kind, mission, time } };
   }
   throw new TypeError("dashboard event fixture variant is inconsistent");
@@ -811,6 +936,11 @@ export function applyOrderedEventForOracle(
         state: dashboardEvent.data.state,
       })),
     };
+  }
+  if (dashboardEvent.kind !== "droneTelemetry") {
+    // Timeline-only kinds advance the ordinal and contribute nothing to reduced state,
+    // exactly as the production reducer folds them.
+    return nextBase;
   }
   return {
     ...nextBase,
