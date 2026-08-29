@@ -2059,6 +2059,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   derive their event from one `project()` call. ADR-0205 records the decision, and the new
   cross-service contract test derives its fixture from the recorder's own `_recording_fact` so a
   change to what the deployed writer commits fails the contract rather than re-opening the split.
+- **The map's worker ships, is served, and is permitted.** MapLibre resolves its worker from
+  `import.meta.url` at run time, so the bundler inlined the library and emitted no worker; the browser
+  then asked the origin for `/assets/maplibre-gl-worker.mjs`, which 404'd, and Caddy's
+  `worker-src blob:` blocked the attempt regardless. Three coordinated changes close it: the build
+  emits the worker as a content-hashed asset and names it through `setWorkerUrl`, the dashboard API's
+  asset catalog accepts `.mjs`, and the policy permits the same-origin worker it now serves. The
+  fixture browser suite runs against Vite with no CSP and serves the worker from the package, so it
+  could never have caught any of the three.
+
 - **The deployed fleet scopes its telemetry producer to one mission, and the recorder no longer
   serialises its fan-in behind idle channels.** Three defects in the deployed compositions kept a
   completed mission off the screen entirely. The fleet omitted `producer_source`, violating ADR-0140,

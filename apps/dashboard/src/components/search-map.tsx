@@ -1,4 +1,6 @@
+/// <reference types="vite/client" />
 import * as maplibregl from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import type {
   GeoJSONSource,
   LngLatBoundsLike,
@@ -11,6 +13,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardReducedState, DashboardScenarioCatalog } from "../contracts/generated";
 
 type Scenario = DashboardScenarioCatalog["scenarios"][number];
+
+// MapLibre otherwise derives its worker URL from `import.meta.url`, which resolves to a file the
+// bundler never emits. Naming the emitted asset keeps the worker same-origin and local, as the
+// dashboard guide requires of every map asset.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 const emptyStyle: StyleSpecification = {
   layers: [{ id: "background", type: "background", paint: { "background-color": "#08151b" } }],
