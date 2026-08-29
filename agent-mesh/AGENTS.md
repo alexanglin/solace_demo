@@ -27,7 +27,7 @@ Use the canonical document for the fact being changed instead of copying it here
 | `.python-version`, `pyproject.toml`, `uv.lock` | The non-workspace Python verification project and its exact dependency graph |
 | `model-lock.toml` | Auditable Ollama model identifiers and measured manifest digests |
 | `aerial_rescue_event_mesh_gateway/` | Owned Direct-output, trusted-context, closed-response, and upstream-diagnostic-redaction extension for the pinned Event Mesh Gateway |
-| `aerial_rescue_runtime_compat/` | Source-shape-attested TLS 1.3, bounded retry, terminal recovery, and process lifecycle around the pinned Connector |
+| `aerial_rescue_runtime_compat/` | Source-shape-attested TLS 1.3, bounded retry, asynchronous-initialization readiness, terminal recovery, and process lifecycle around the pinned Connector |
 | [`configs/`](configs/AGENTS.md) | Owned Solace AI Connector definitions for agents, workflows, gateways, tools, and the local Web UI |
 | `tools/` | Offline, fail-closed semantic validation of every owned configuration |
 | `tests/` | Validator behavior, pinned-wheel compatibility, runtime overrides, and warning-policy evidence |

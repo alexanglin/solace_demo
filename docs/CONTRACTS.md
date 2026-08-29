@@ -210,6 +210,12 @@ constructs `sourceEventId` and `sourceEventDigest` only from trusted forward con
 service and recorder independently recompute the value from their durable source-event delivery
 ([ADR-0152](adr/0152-bind-proposals-to-the-complete-source-event.md)).
 
+The recorder and evidence service contend on one immutable `source_event` identity. Either may store
+the exact event first. If the recorder wins, the evidence service serializes attachment of the first
+complete sensor-provenance fact set on that exact source row and rechecks after waiting; an existing
+exact set is idempotent, while changed or partial nonempty facts remain an identity conflict. The
+source row alone is not evidence provenance.
+
 The command gateway normalizes an accepted candidate into the immutable `AGENT_PROPOSAL` payload. It
 mints the proposal identity and envelope metadata, preserves the source bindings, and computes the
 proposal digest over the accepted canonical payload with only `proposalDigest` removed. The evidence

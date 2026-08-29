@@ -33,7 +33,7 @@ a test, fixture, old evidence record, or this guide disagrees with it.
 | `test_image_probe.py` | Deterministic behavior of the hardened runtime-image compatibility probe |
 | `test_pinned_plugin_compatibility.py` | Native-environment evidence for exact installed Agent Mesh and Event Mesh plugin versions, entry points, base classes, and selected runtime symbols |
 | `test_pinned_runtime_overrides.py` | Native-environment evidence that the approved dependency override is installed and that the selected Agent Mesh arithmetic paths still work |
-| `test_runtime_compatibility.py` | Exact SDK properties, transport refusal, source-shape sentinels, terminal lifecycle, and derived-image evidence for ADR-0177 |
+| `test_runtime_compatibility.py` | Exact SDK properties, transport refusal, source-shape sentinels, asynchronous-initialization readiness, terminal lifecycle, and derived-image evidence for ADR-0177 and ADR-0201 |
 | `test_warning_policy.py` | Evidence that warnings from owned code remain fatal under the local pytest policy |
 | `fixtures/config_validation/` | Synthetic accepted inputs shared by validator tests |
 

@@ -72,7 +72,7 @@ This member is active and measured at Tier 2. Its current production surface is:
 | `evaluation.py` | Derives lifecycle and fixed simulation weights, then delegates scoring to the Tier 1 domain |
 | `publication.py` | Builds and self-validates exact evidence-decision and audit events plus the authoritative audit row |
 | `processing.py` | Coordinates inbox dedupe, proposal/source reads, evidence, decision, audit, outbox, inbox completion, post-commit acceptance, and durable body-free refusal before malformed-message rejection |
-| `source_processing.py` | Validates and durably records salient drone events and their initial sensor provenance before settlement |
+| `source_processing.py` | Validates and durably records salient drone events and their initial sensor provenance before settlement, including the recorder-first shared-source ordering |
 | `store_adapter.py` | Maps the service transaction port onto the store-owned SQLAlchemy unit of work without importing SQLAlchemy here |
 | `outbox.py` | Bounds recovery work to 50 rows and preserves confirmation, refusal, and ambiguity semantics |
 | `runtime.py` | Owns the two durable input channels, schema admission, outbox recovery, readiness, fair bounded polling, and reconnect exhaustion |

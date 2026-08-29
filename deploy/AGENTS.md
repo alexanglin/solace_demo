@@ -25,7 +25,7 @@ numeric values into this file:
 | Bounded broker recovery and application lifecycle | [ADR-0145](../docs/adr/0145-bound-solace-recovery-and-queue-retirement.md), [ADR-0161](../docs/adr/0161-give-the-broker-a-twenty-minute-clean-stop.md) |
 | Credentialless continuous broker-event source | [ADR-0173](../docs/adr/0173-follow-the-retained-broker-event-log-without-runtime-authority.md) |
 | Opt-in VPN-scoped continuous SEMP monitor | [ADR-0181](../docs/adr/0181-gate-continuous-semp-monitoring-on-vpn-scoped-operator-provisioning.md) |
-| Agent Mesh SDK overlay, TLS/retry hardening, and owned process lifecycle | [ADR-0177](../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) |
+| Agent Mesh SDK overlay, TLS/retry hardening, asynchronous-initialization readiness, and owned process lifecycle | [ADR-0177](../docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md), [ADR-0199](../docs/adr/0199-terminate-the-owned-agent-mesh-entrypoint.md), [ADR-0201](../docs/adr/0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md) |
 | Current runtime measurements and limits | [`operating-parameters.md`](../docs/operating-parameters.md) |
 | Supported commands, recovery, and current profile status | [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md) |
 
@@ -112,7 +112,7 @@ Dockerfile shape must enter the existing inventory, policy gates, scanner, and d
 | --- | --- |
 | Environment reference or secret | `.env.example`, its runtime consumer, the semantic validator, secret generator, and wiring tests |
 | Broker identity or grant | Governing ADR, `packages/domain`, `packages/broker`, `scripts/broker-secrets.sh`, Compose, and live denial tests |
-| Agent Mesh plugin, SDK override, lifecycle, or base | ADR-0177, `agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, hashed plugin requirements, image inventory, source-shape sentinels, and in-container compatibility evidence |
+| Agent Mesh plugin, SDK override, lifecycle, readiness, or base | ADR-0177, ADR-0199, ADR-0201, `agent-mesh/pyproject.toml`, `agent-mesh/uv.lock`, hashed plugin requirements, image inventory, source-shape sentinels, and in-container compatibility evidence |
 | Application dependency or base | Root/member manifests, `uv.lock`, hashed installer requirement when applicable, `.dockerignore`, and image build evidence |
 | Image pin | Governing ADR when required, `operating-parameters.md`, image inventory/pin tests, and image scans |
 | Service, profile, port, healthcheck, or platform | Architecture/runbook, pure policy gate, its conformance tests, and applicable live evidence |

@@ -2036,6 +2036,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Recorder-first salient events no longer crash-loop the evidence service.** The recorder and
+  evidence service intentionally share the immutable `source_event` row, but the evidence writer
+  treated an exact row with no child facts as a reused immutable fact set. It now locks that exact
+  shared source, rechecks for a concurrent winner, and attaches the first complete sensor-provenance
+  set atomically; changed or partial nonempty sets still fail closed. The salient-chain probe now joins
+  `source_evidence_item`, so recorder capture alone cannot falsely satisfy its provenance assertion,
+  and it resolves required store settings before its only publication.
+- **Agent Mesh no longer reports ready before coordinator tools initialize.** The pinned Connector
+  marked `/readyz` ready after starting flow threads even though Agent Mesh was still creating tools and
+  request/reply sessions asynchronously. The owned entrypoint now uses the Connector's pre-readiness
+  callback to wait at most 60 seconds total for every component future while checking its stop signal at
+  most every half-second. A component failure, timeout, or malformed future prevents that incarnation
+  from becoming ready; requested shutdown remains prompt, and terminal failure follows the existing
+  bounded nonzero path ([ADR-0201](docs/adr/0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md)).
 - **The mission coordinator runs on a model that supports tools again.** [ADR-0198](docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md) moved the
   agent to `llama3:8b` and constrained its tool surface in one change, and a hook stashed the
   configuration before either half ran. The first run that loaded it failed every completion with
@@ -2048,8 +2062,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - **Compose gives the Agent Mesh long enough to stop itself.** The service declared no
   `stop_grace_period`, so Compose's 10 s default expired during the pinned Connector's own cleanup
   and answered an ordinary recreate with SIGKILL and exit 137 — the graceful path could not finish
-  and the owned settle window could never fire. The service now declares 45 s, and a deployment
-  test holds it against `THREAD_SETTLE_SECONDS` so raising one without the other fails.
+  and the owned settle window could never fire. The service now declares 46 s, and a deployment
+  test holds it against the asynchronous-initialization poll, Connector cleanup allowance, and
+  `THREAD_SETTLE_SECONDS` so raising any term without the grace fails.
 - **The Agent Mesh entrypoint now stops when its lifecycle is finished.** The owned entrypoint ran
   `stop()` and `cleanup()` and chose a failure status exactly as
   [ADR-0177](docs/adr/0177-harden-the-pinned-agent-mesh-broker-runtime.md) requires, and then never

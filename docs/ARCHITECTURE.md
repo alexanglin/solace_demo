@@ -50,6 +50,12 @@ Editable source: [`docs/architecture/aerial-rescue-mesh-overview.dot`](architect
 
 SAC YAML, agent cards, prompts, inline Ollama model dictionaries, gateway/tool configuration, and plugin declarations under `agent-mesh/` are the reproducible source of truth. Do not configure `model_provider`; in Agent Mesh 1.28.7 it takes precedence over the inline `model` dictionary and would move model authority into the local Platform database. The pinned `sam` CLI initializes, runs, and exercises these files; record exact validation commands only after confirming them from `sam --help` for 1.28.7. Secrets are injected only through ignored environment files or an approved secret store.
 
+The owned runtime keeps the Connector's management readiness false until every Agent Mesh component
+future has completed asynchronous initialization, including tool-created request/reply sessions. One
+global 60-second barrier fails startup on the first component exception or on timeout; the existing
+bounded cleanup and nonzero termination path then lets Compose retry without admitting dependent work
+to a partially initialized mesh ([ADR-0201](adr/0201-gate-agent-mesh-readiness-on-asynchronous-initialization.md)).
+
 ### Offline Agent Mesh configuration validation
 
 ![Offline Agent Mesh validation flow](architecture/agent-mesh-validation-flow.png)
@@ -254,7 +260,13 @@ Reserve and document loopback-only development ports to avoid collisions: Agent 
 
 ## Observability and operating modes
 
-Every service exposes liveness and readiness. Agent Mesh readiness is composite: the expected processes are running, the Web UI gateway is healthy, all required agent cards are discovered, the Event Mesh Gateway data-plane subscription is active, Ollama reports the pinned models, the broker is connected, and a bounded black-box A2A probe succeeds. A Web UI HTTP 200 alone is not readiness. Logs are structured and correlated. Metrics must cover event counts, publish/consume failures, retry counts, queue delay, model duration, validation failures, abstention/degraded-mode activation, SSE clients, and mission state.
+Every service exposes liveness and readiness. Agent Mesh readiness is composite: asynchronous component
+and tool initialization has completed, the expected processes are running, the Web UI gateway is healthy,
+all required agent cards are discovered, the Event Mesh Gateway data-plane subscription is active, Ollama
+reports the pinned models, the broker is connected, and a bounded black-box A2A probe succeeds. A Web UI
+HTTP 200 alone is not readiness. Logs are structured and correlated. Metrics must cover event counts,
+publish/consume failures, retry counts, queue delay, model duration, validation failures,
+abstention/degraded-mode activation, SSE clients, and mission state.
 
 Supported modes are:
 
