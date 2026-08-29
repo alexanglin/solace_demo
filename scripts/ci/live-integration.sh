@@ -67,6 +67,9 @@ JOB_IDENTITY=pubsub-postgres-integration
 NAMESPACE=aerial-rescue-mesh
 COMMAND_BUDGET_SECONDS=1200
 DIAGNOSTIC_LOG_LINES=200
+DIAGNOSTIC_STOP_SECONDS=10
+BROKER_LOG_DIRECTORIES='/var/lib/solace/jail/logs
+/usr/sw/jail/logs'
 APPLICATION_DATA_PLANE_TEST=tests/integration/test_application_data_plane_live.py
 RESTART_CONTROLLER=scripts/ci/broker-restart-controller.sh
 RESTART_REQUEST_TOKEN=AERIAL_RESCUE_BROKER_RESTART_ONCE_V1
@@ -420,6 +423,36 @@ redact_substituting() {
 	cat "$safe_diagnostics"
 }
 
+# The broker writes only its container-startup narration to stdout; the reason SolOS
+# itself stopped stays in the broker's own log files. Stopping the service first is what
+# makes them readable: a container the restart policy keeps cycling refuses a copy. The
+# service is about to be torn down, so the stop costs nothing that cleanup would keep.
+report_broker_internal_logs() {
+	broker_log_copy="$work_directory/broker-internal-logs"
+	bounded docker compose --project-name "$compose_project" --file "$COMPOSE_FILE" \
+		--env-file "$TEMPLATE_ENV" --env-file "$ROLE_ENV" \
+		stop --timeout "$DIAGNOSTIC_STOP_SECONDS" broker \
+		>"$work_directory/broker-stop.log" 2>&1 || :
+	for broker_log_directory in $BROKER_LOG_DIRECTORIES; do
+		rm -rf "$broker_log_copy"
+		compose_runtime cp "broker:$broker_log_directory" "$broker_log_copy" \
+			>"$work_directory/broker-cp.log" 2>&1 || continue
+		printf 'broker internal logs from %s:\n' "$broker_log_directory" >&2
+		: >"$work_directory/broker-internal.raw"
+		find "$broker_log_copy" -type f -name '*.log' | sort |
+			while IFS= read -r broker_log_file; do
+				printf '== %s\n' "$(basename "$broker_log_file")" \
+					>>"$work_directory/broker-internal.raw"
+				tail -n "$DIAGNOSTIC_LOG_LINES" "$broker_log_file" \
+					>>"$work_directory/broker-internal.raw"
+			done
+		redact_substituting "$work_directory/broker-internal.raw" \
+			"$work_directory/broker-internal.safe" >&2
+		return 0
+	done
+	printf '<redacted: the broker internal log directory was unreachable>\n' >&2
+}
+
 report_failure_diagnostics() {
 	printf 'runtime status for project %s:\n' "$compose_project" >&2
 	if compose_runtime ps --all >"$work_directory/compose-ps.raw" 2>&1; then
@@ -439,6 +472,7 @@ report_failure_diagnostics() {
 	else
 		printf '<redacted: project-scoped log command failed>\n' >&2
 	fi
+	report_broker_internal_logs
 }
 
 template_value() {

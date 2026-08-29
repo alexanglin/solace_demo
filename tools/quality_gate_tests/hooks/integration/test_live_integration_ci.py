@@ -580,6 +580,14 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
             '"$CI_SECRET_SENTINEL" "$CI_SECRET_SENTINEL" "$CI_SECRET_SENTINEL" ;;\n'
             "*'compose '*' logs '*) printf 'broker-1  | boot refused near %s here\\n' "
             '"$CI_SECRET_SENTINEL" ;;\n'
+            "*'cp broker:/var/lib/solace/jail/logs '*)\n"
+            '  [ "${CI_BROKER_LOG_PATH:-/var/lib/solace/jail/logs}" = '
+            '"/var/lib/solace/jail/logs" ] || exit 1\n'
+            '  for destination in "$@"; do :; done\n'
+            '  mkdir -p "$destination"\n'
+            "  printf 'solacedaemon stopped: %s\\n' \"$CI_SECRET_SENTINEL\" "
+            '>"$destination/debug.log" ;;\n'
+            "*'cp broker:'*) exit 1 ;;\n"
             "*'compose '*' down '*) : >\"$CI_DOWN_CALLED\" ;;\n"
             "*'volume ls --quiet --filter label=com.docker.compose.project='*)\n"
             '  if [ -f "$CI_DOWN_CALLED" ]; then\n'
@@ -914,6 +922,39 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertNotIn(SENSITIVE_VALUE, output)
         self.assertIn("broker-1  | boot refused near <redacted> here", output)
+
+    def test_failure_diagnostics_read_the_broker_s_own_internal_log(self) -> None:
+        # Arrange
+        repository, environment, calls_path = self._repository()
+        environment["CI_FAIL_FILE"] = str(AUTHORIZED_SUITE[0].path)
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        calls = calls_path.read_text(encoding="utf-8")
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("stop --timeout 10 broker", calls)
+        self.assertIn("cp broker:/var/lib/solace/jail/logs", calls)
+        self.assertNotIn(SENSITIVE_VALUE, output)
+        self.assertIn("== debug.log", output)
+        self.assertIn("solacedaemon stopped: <redacted>", output)
+
+    def test_an_unreachable_broker_log_directory_is_reported_not_assumed_empty(self) -> None:
+        # Arrange
+        repository, environment, _calls_path = self._repository()
+        environment["CI_FAIL_FILE"] = str(AUTHORIZED_SUITE[0].path)
+        environment["CI_BROKER_LOG_PATH"] = "/absent"
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("the broker internal log directory was unreachable", output)
+        self.assertNotIn("== debug.log", output)
 
     def test_owned_resource_after_cleanup_makes_a_green_suite_fail(self) -> None:
         # Arrange
