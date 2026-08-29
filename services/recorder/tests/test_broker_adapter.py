@@ -345,7 +345,7 @@ class RecorderBrokerReceiverTests(unittest.IsolatedAsyncioTestCase):
                 MISSION,
                 OBSERVED_AT,
                 settlement,
-                [("direct", 100), ("audit", 100), ("mission", 100)],
+                [("direct", 0), ("audit", 0), ("mission", 0)],
                 1,
             ),
             (
@@ -405,7 +405,7 @@ class RecorderBrokerReceiverTests(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertEqual(
-            ("AGENT_RESPONSE", [], [("direct", 50)]),
+            ("AGENT_RESPONSE", [], [("direct", 0)]),
             (
                 ingress.family.name if isinstance(ingress, ExcludedIngress) else None,
                 schemas.calls,
@@ -553,3 +553,37 @@ class RecorderBrokerReceiverTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DrainShapeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_revolution_with_traffic_costs_no_blocking_wait_per_channel(self) -> None:
+        # Arrange
+        settlement = _Settlement()
+        message = _Message(MISSION_EVENT, MISSION_TOPIC)
+        session = _ReceiverSession(
+            direct=[None],
+            guaranteed={
+                "audit": [None],
+                "mission": [GuaranteedMessage(message, cast("MessageSettlement", settlement))],
+            },
+        )
+        receiver = RecorderBrokerReceiver(session, _Schemas(), lambda: OBSERVED_AT, 1_000)
+
+        # Act
+        for _poll in range(3):
+            await receiver.receive()
+
+        # Assert
+        self.assertEqual([0, 0, 0], [timeout for _channel, timeout in session.calls])
+
+    async def test_a_completely_quiet_revolution_then_waits_rather_than_spinning(self) -> None:
+        # Arrange
+        session = _ReceiverSession(direct=[], guaranteed={"audit": [], "mission": []})
+        receiver = RecorderBrokerReceiver(session, _Schemas(), lambda: OBSERVED_AT, 1_000)
+
+        # Act
+        for _poll in range(4):
+            await receiver.receive()
+
+        # Assert
+        self.assertEqual([0, 0, 0, 1_000], [timeout for _channel, timeout in session.calls])
