@@ -509,7 +509,10 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
             "#!/bin/sh\nset -eu\ntarget=${AERIAL_RESCUE_DEPLOY_DIR:?}\n"
             'mkdir -p "$target/certs" "$target/secrets"\n'
             f"for name in {secret_paths}; do printf '%s\\n' \"$CI_SECRET_SENTINEL\" "
-            '>"$target/secrets/$name"; chmod 600 "$target/secrets/$name"; done\n'
+            '>"$target/secrets/$name"; chmod "${CI_MATERIAL_MODE:-600}" '
+            '"$target/secrets/$name"; done\n'
+            "for name in broker-admin-password broker-server.pem; do "
+            'chmod "${CI_BROKER_MATERIAL_MODE:-644}" "$target/secrets/$name"; done\n'
             "for name in semp-monitor-password scenario-control-bearer fleet-control-bearer; do "
             'printf \'%s-%s\\n\' "$CI_SECRET_SENTINEL" "$name" '
             '>"$target/secrets/$name"; done\n'
@@ -955,6 +958,34 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("the broker internal log directory was unreachable", output)
         self.assertNotIn("== debug.log", output)
+
+    def test_an_owner_only_broker_secret_is_refused_before_the_runtime_starts(self) -> None:
+        # Arrange
+        repository, environment, calls_path = self._repository()
+        environment["CI_BROKER_MATERIAL_MODE"] = "600"
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        calls = calls_path.read_text(encoding="utf-8")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("generated private material does not have its required mode", result.stderr)
+        self.assertNotIn("up --detach", calls)
+
+    def test_a_world_readable_secret_the_broker_never_mounts_is_refused(self) -> None:
+        # Arrange
+        repository, environment, calls_path = self._repository()
+        environment["CI_MATERIAL_MODE"] = "644"
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        calls = calls_path.read_text(encoding="utf-8")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("generated private material does not have its required mode", result.stderr)
+        self.assertNotIn("up --detach", calls)
 
     def test_owned_resource_after_cleanup_makes_a_green_suite_fail(self) -> None:
         # Arrange

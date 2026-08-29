@@ -70,6 +70,10 @@ DIAGNOSTIC_LOG_LINES=200
 DIAGNOSTIC_STOP_SECONDS=10
 BROKER_LOG_DIRECTORIES='/var/lib/solace/jail/logs
 /usr/sw/jail/logs'
+# The two files deploy/compose.yaml mounts into the pinned PubSub+ image, whose processes
+# run as uid 1000001 and therefore cannot read owner-only host material (docs/adr/0203).
+BROKER_READABLE_BASENAMES='broker-admin-password
+broker-server.pem'
 APPLICATION_DATA_PLANE_TEST=tests/integration/test_application_data_plane_live.py
 RESTART_CONTROLLER=scripts/ci/broker-restart-controller.sh
 RESTART_REQUEST_TOKEN=AERIAL_RESCUE_BROKER_RESTART_ONCE_V1
@@ -313,8 +317,14 @@ load_redactions() {
 			fail "generated private material mode could not be read"
 			return
 		}
-		if [ "$private_mode" != 600 ]; then
-			fail "generated private material does not have mode 0600"
+		required_mode=600
+		for readable_basename in $BROKER_READABLE_BASENAMES; do
+			if [ "$private_basename" = "$readable_basename" ]; then
+				required_mode=644
+			fi
+		done
+		if [ "$private_mode" != "$required_mode" ]; then
+			fail "generated private material does not have its required mode"
 			return
 		fi
 		while IFS= read -r redaction_line || [ -n "$redaction_line" ]; do
