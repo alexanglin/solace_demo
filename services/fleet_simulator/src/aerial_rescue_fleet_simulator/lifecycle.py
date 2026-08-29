@@ -21,6 +21,8 @@ from aerial_rescue_domain.connectivity import ConnectivityState
 from aerial_rescue_domain.sectors import SectorState
 
 from aerial_rescue_fleet_simulator import FleetSimulatorError
+from aerial_rescue_fleet_simulator.fleet import FleetState
+from aerial_rescue_fleet_simulator.scenario import FleetScenario, ordered_drones
 from aerial_rescue_fleet_simulator.telemetry import TelemetryStamp
 
 _NO_PROPERTIES: Final[dict[str, object]] = {}
@@ -153,3 +155,36 @@ class BrokerFleetLifecycle:
         )
         self.publisher.publish(rendered, payload, _NO_PROPERTIES)
         return payload
+
+
+def publish_transitions(
+    lifecycle: FleetLifecyclePort | None,
+    scenario: FleetScenario,
+    before: FleetState,
+    after: FleetState,
+) -> None:
+    """Publish only the fleet-owned connectivity and sector edges one tick crossed.
+
+    Both compositions fold the same tick, so both derive their edges here rather than each
+    comparing the two states its own way.
+    """
+    if lifecycle is None:
+        return
+    for drone in ordered_drones(scenario):
+        connectivity_previous = before.drones[drone.drone_id].connectivity.state
+        connectivity_reached = after.drones[drone.drone_id].connectivity.state
+        if connectivity_reached is not connectivity_previous:
+            lifecycle.connectivity_changed(
+                scenario.mission_id, drone.drone_id, connectivity_reached
+            )
+    holder_by_sector = {drone.sector_id: drone.drone_id for drone in scenario.drones}
+    for sector_id in sorted(after.sectors):
+        sector_previous = before.sectors[sector_id].state
+        sector_reached = after.sectors[sector_id].state
+        if sector_reached is not sector_previous:
+            lifecycle.sector_changed(
+                scenario.mission_id,
+                sector_id,
+                holder_by_sector[sector_id],
+                sector_reached,
+            )

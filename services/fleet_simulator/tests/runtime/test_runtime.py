@@ -28,7 +28,7 @@ from aerial_rescue_broker.messaging import (
 from aerial_rescue_broker.routing import DeliveryRouter, RoutingError, RoutingRefusal
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.canonical import canonical_bytes
-from aerial_rescue_contracts.envelope import Envelope, envelope_document
+from aerial_rescue_contracts.envelope import Envelope, decode_envelope, envelope_document
 from aerial_rescue_domain.commands import CommandEvent, CommandState, SendBudget
 from aerial_rescue_domain.idempotency import SequenceVerdict
 from aerial_rescue_domain.outbox import OutboxEvent
@@ -335,22 +335,24 @@ class FakeStamps:
     """A stamp source unused by lifecycle-only tests."""
 
     def __init__(self) -> None:
-        """Start one deterministic sequence and no run binding."""
+        """Start one deterministic sequence per producer and no run binding."""
         self.correlation_id: str | None = None
         self.sequence = 0
+        self.sequences: dict[str, int] = {}
 
     def begin_run(self, correlation_id: str) -> None:
         """Accept one run correlation identifier."""
         self.correlation_id = correlation_id
 
     def next_stamp(self, drone_id: str) -> TelemetryStamp:
-        """Mint a deterministic telemetry stamp."""
-        del drone_id
+        """Advance only the named producer's stream, as the port contract requires."""
+        self.sequences[drone_id] = self.sequences.get(drone_id, 0) + 1
+        sequence = self.sequences[drone_id]
         self.sequence += 1
         return TelemetryStamp(
-            f"telemetry-{self.sequence}",
+            f"telemetry-{drone_id}-{sequence}",
             "2026-08-26T00:00:00.000Z",
-            self.sequence,
+            sequence,
             self.correlation_id or "missing-correlation",
             "00-4bf92f3577b34da6a3ce929d0e0e4738-b7ad6b7169203334-01",
         )
@@ -1055,7 +1057,7 @@ class FleetRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
             ),
             ("EXHAUSTED", 3, 60),
         )
-        self.assertEqual(evidence.telemetry_sequences, [1, 21, 43])
+        self.assertEqual(evidence.telemetry_sequences, [1, 2, 3])
         self.assertEqual(evidence.latitudes, [47_000_010, 47_000_020, 47_000_030])
         self.assertEqual(len(evidence.effects), 1)
         self.assertEqual(receiver.outcomes, [Outcome.ACCEPTED])
@@ -1541,10 +1543,14 @@ class FleetRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(publisher, FakeGuaranteedPublisher)
         self.assertEqual(status.state, "EXHAUSTED")
         self.assertEqual(receiver.outcomes, [Outcome.ACCEPTED])
-        self.assertEqual(len(publisher.sent), 2)
+        results = [
+            topic for topic, _payload, _properties in publisher.sent if "command-result" in topic
+        ]
+        self.assertEqual(len(results), 2)
         self.assertEqual(len(schemas.validated), 1)
         self.assertLess(order.index("commit"), order.index("settle-ACCEPTED"))
-        self.assertLess(order.index("settle-ACCEPTED"), order.index("publish-confirmed"))
+        last_publication = len(order) - 1 - order[::-1].index("publish-confirmed")
+        self.assertLess(order.index("settle-ACCEPTED"), last_publication)
         self.assertEqual(order.count("confirm"), 2)
 
     async def test_rescue_escalation_commits_the_complete_bound_effect_before_settlement(
@@ -1607,7 +1613,8 @@ class FleetRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertLess(order.index("commit"), order.index("settle-ACCEPTED"))
-        self.assertLess(order.index("settle-ACCEPTED"), order.index("publish-confirmed"))
+        last_publication = len(order) - 1 - order[::-1].index("publish-confirmed")
+        self.assertLess(order.index("settle-ACCEPTED"), last_publication)
 
     async def test_reconnect_drains_before_readiness_and_exhaustion_requests_nonzero_exit(
         self,
@@ -1663,3 +1670,47 @@ class FleetRuntimeLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FleetLifecyclePublicationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_swept_sector_publishes_its_lifecycle_transition(self) -> None:
+        # Arrange
+        request = _start_request()
+        drone_ids = tuple(drone.drone_id for drone in request.scenario.drones)
+        lifecycle: list[str] = []
+        session = FakeSession(lifecycle)
+        session.receivers = {drone_id: FakeReceiver([], []) for drone_id in drone_ids}
+        executor = _executor_for(session, FakeStore(lifecycle), drone_ids)
+        await executor.startup()
+
+        # Act
+        result = await executor.execute(request, asyncio.Event())
+        await executor.shutdown()
+
+        # Assert
+        published = cast("FakeGuaranteedPublisher", session.results)
+        sectors = [topic for topic, _payload, _properties in published.sent if "/sector/" in topic]
+        self.assertEqual(("EXHAUSTED", 20), (result.state, len(sectors)))
+
+    async def test_the_lifecycle_producer_is_scoped_to_the_run(self) -> None:
+        # Arrange
+        request = _start_request()
+        drone_ids = tuple(drone.drone_id for drone in request.scenario.drones)
+        lifecycle: list[str] = []
+        session = FakeSession(lifecycle)
+        session.receivers = {drone_id: FakeReceiver([], []) for drone_id in drone_ids}
+        executor = _executor_for(session, FakeStore(lifecycle), drone_ids)
+        await executor.startup()
+
+        # Act
+        await executor.execute(request, asyncio.Event())
+        await executor.shutdown()
+
+        # Assert
+        published = cast("FakeGuaranteedPublisher", session.results)
+        sources = {
+            decode_envelope(payload).source
+            for topic, payload, _properties in published.sent
+            if "/sector/" in topic
+        }
+        self.assertTrue(all(request.run_id in source for source in sources))

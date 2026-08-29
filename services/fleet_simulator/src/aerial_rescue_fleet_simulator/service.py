@@ -79,7 +79,7 @@ from aerial_rescue_fleet_simulator.intake import (
     IntakeError,
     accept,
 )
-from aerial_rescue_fleet_simulator.lifecycle import FleetLifecyclePort
+from aerial_rescue_fleet_simulator.lifecycle import FleetLifecyclePort, publish_transitions
 from aerial_rescue_fleet_simulator.protocol import ProtocolError, apply, received
 from aerial_rescue_fleet_simulator.results import ResultError, ResultStamp, result_record
 from aerial_rescue_fleet_simulator.scenario import FleetScenario, ordered_drones, sectors
@@ -533,26 +533,7 @@ def _publish_lifecycle(
     after: FleetState,
 ) -> None:
     """Publish only fleet-owned connectivity and sector state changes."""
-    if lifecycle is None:
-        return
-    for drone in ordered_drones(scenario):
-        connectivity_previous = before.drones[drone.drone_id].connectivity.state
-        connectivity_reached = after.drones[drone.drone_id].connectivity.state
-        if connectivity_reached is not connectivity_previous:
-            lifecycle.connectivity_changed(
-                scenario.mission_id, drone.drone_id, connectivity_reached
-            )
-    holder_by_sector = {drone.sector_id: drone.drone_id for drone in scenario.drones}
-    for sector_id in sorted(after.sectors):
-        sector_previous = before.sectors[sector_id].state
-        sector_reached = after.sectors[sector_id].state
-        if sector_reached is not sector_previous:
-            lifecycle.sector_changed(
-                scenario.mission_id,
-                sector_id,
-                holder_by_sector[sector_id],
-                sector_reached,
-            )
+    publish_transitions(lifecycle, scenario, before, after)
 
 
 def _drain_fleet(
