@@ -40,6 +40,7 @@ pytestmark = [pytest.mark.security, pytest.mark.docker, pytest.mark.broker]
 
 VPN = LOCAL_BROKER_ENDPOINT.vpn
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 5000
+PROBE_BODY = '{"probe":"authorization"}'
 
 MISSION = "m-1"
 DRONE_COMMAND = format_topic(
@@ -111,6 +112,12 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     Only ``PubSubPlusClientError`` is caught. Catching every exception would make a defect
     in this helper indistinguishable from a denial, and every test below asserts a denial,
     so a broad catch would turn a broken probe into ten passing security tests.
+
+    The body is canonical JSON carrying neither ``specversion`` nor ``traceparent``, which
+    is what `trace_fields_from_payload` returns ``None`` for. The ACL answer this probe
+    measures does not depend on the body at all, but a permitted publish spools one, and a
+    body the production receive path cannot decode leaves a durable queue that the next
+    file in the suite cannot drain.
     """
     service = _service(username, credential)
     try:
@@ -120,7 +127,7 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     try:
         publisher = service.create_persistent_message_publisher_builder().build()
         publisher.start()
-        message = service.message_builder().build("authorization probe")
+        message = service.message_builder().build(PROBE_BODY)
         publisher.publish_await_acknowledgement(
             message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
         )
