@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -13,8 +14,11 @@ from aerial_rescue_broker.ingress import load_runtime_schema_registry
 from aerial_rescue_contracts.envelope import decode_envelope
 from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.messaging.mission_lifecycle import (
+    LifecycleRefusal,
+    MissionLifecycleError,
     MissionLifecycleEvents,
     MissionLifecycleObserver,
+    MissionLifecycleWatch,
     ObservationOutcome,
     lifecycle_event_id,
 )
@@ -34,6 +38,7 @@ _RUN: Final = "run-synthetic-0001"
 _RUNTIME: Final = "runtime-synthetic-0001"
 _NOW: Final = "2026-08-26T12:00:00.000Z"
 _TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203332-01"
+_ADMITTED_OBSERVATIONS: Final = 3
 
 
 def _live_run(*, started: bool = True) -> CurrentRun:
@@ -333,3 +338,98 @@ async def test_repeating_the_same_observation_stages_the_same_identity_once_more
     assert {event.event_id for event in transactions.staged} == {
         lifecycle_event_id(_MISSION, MissionState.EXHAUSTED)
     }
+
+
+@dataclass
+class _Observer:
+    outcomes: list[ObservationOutcome] = field(default_factory=list)
+    failure: Exception | None = None
+    attempted: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def observe_once(self) -> ObservationOutcome:
+        self.attempted.set()
+        if self.failure is not None:
+            raise self.failure
+        self.outcomes.append(ObservationOutcome.CURRENT)
+        return ObservationOutcome.CURRENT
+
+
+class _Pause:
+    """Resolve the first ``admitted`` waits, then hold so the loop cannot outrun the test."""
+
+    def __init__(self, admitted: int) -> None:
+        self.admitted = admitted
+        self.reached = asyncio.Event()
+        self._held = asyncio.Event()
+
+    async def __call__(self) -> None:
+        self.admitted -= 1
+        if self.admitted > 0:
+            return
+        self.reached.set()
+        await self._held.wait()
+
+
+@pytest.mark.asyncio
+async def test_the_watch_observes_repeatedly_until_it_is_stopped() -> None:
+    # Arrange
+    observer = _Observer()
+    pause = _Pause(admitted=_ADMITTED_OBSERVATIONS)
+    watch = MissionLifecycleWatch(observer, pause)
+
+    # Act
+    await watch.start()
+    await pause.reached.wait()
+    await watch.stop()
+
+    # Assert
+    assert observer.outcomes == [ObservationOutcome.CURRENT] * _ADMITTED_OBSERVATIONS
+
+
+@pytest.mark.asyncio
+async def test_stopping_a_watch_that_never_started_is_inert_and_repeatable() -> None:
+    # Arrange
+    observer = _Observer()
+    watch = MissionLifecycleWatch(observer, _Pause(admitted=1))
+
+    # Act
+    await watch.stop()
+    await watch.stop()
+
+    # Assert
+    assert observer.outcomes == []
+    assert not observer.attempted.is_set()
+
+
+@pytest.mark.asyncio
+async def test_starting_the_one_owned_task_twice_is_refused() -> None:
+    # Arrange
+    watch = MissionLifecycleWatch(_Observer(), _Pause(admitted=1))
+    await watch.start()
+
+    # Act
+    with pytest.raises(MissionLifecycleError) as refused:
+        await watch.start()
+
+    # Assert
+    assert refused.value.refusal is LifecycleRefusal.ALREADY_WATCHING
+    await watch.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_failure_ends_the_task_and_surfaces_at_shutdown() -> None:
+    """Expected failures are typed outcomes, so a raise here is a defect and must not vanish."""
+    # Arrange
+    unexpected = RuntimeError("durable lifecycle is not a known state")
+    observer = _Observer(failure=unexpected)
+    watch = MissionLifecycleWatch(observer, _Pause(admitted=1))
+    await watch.start()
+    await observer.attempted.wait()
+    await asyncio.sleep(0)
+
+    # Act
+    with pytest.raises(RuntimeError, match="durable lifecycle is not a known state") as surfaced:
+        await watch.stop()
+
+    # Assert
+    assert surfaced.value is unexpected
