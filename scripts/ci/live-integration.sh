@@ -67,6 +67,7 @@ JOB_IDENTITY=pubsub-postgres-integration
 NAMESPACE=aerial-rescue-mesh
 COMMAND_BUDGET_SECONDS=1200
 DIAGNOSTIC_LOG_LINES=200
+DIAGNOSTIC_TEST_LINES=200
 DIAGNOSTIC_STOP_SECONDS=10
 BROKER_LOG_DIRECTORIES='/var/lib/solace/jail/logs
 /usr/sw/jail/logs'
@@ -463,6 +464,26 @@ report_broker_internal_logs() {
 	printf '<redacted: the broker internal log directory was unreachable>\n' >&2
 }
 
+# The runner captures each test's output so a passing suite stays quiet, and on a failure
+# that left only the container status, the container logs, and the broker's own syslog --
+# the three things that cannot say which assertion failed. The failing test's own output is
+# the diagnosis, so it is reported here through the same substituting redactor the container
+# logs use: an assertion message may legitimately contain a generated role name, and
+# discarding the whole document for that would put us back where we started.
+report_failing_test_output() {
+	printf 'failing test output (last %s lines):\n' "$DIAGNOSTIC_TEST_LINES" >&2
+	if [ ! -s "$work_directory/test.raw" ]; then
+		printf '<the failing test produced no captured output>\n' >&2
+		return
+	fi
+	if ! tail -n "$DIAGNOSTIC_TEST_LINES" "$work_directory/test.raw" \
+		>"$work_directory/test.tail" 2>/dev/null; then
+		printf '<redacted: the captured test output was unreadable>\n' >&2
+		return
+	fi
+	redact_substituting "$work_directory/test.tail" "$work_directory/test.safe" >&2
+}
+
 report_failure_diagnostics() {
 	printf 'runtime status for project %s:\n' "$compose_project" >&2
 	if compose_runtime ps --all >"$work_directory/compose-ps.raw" 2>&1; then
@@ -676,6 +697,7 @@ finish_run() {
 	if [ "$run_status" -ne 0 ]; then
 		if [ -n "$failing_test" ]; then
 			printf 'FAILED: %s\n' "$failing_test" >&2
+			report_failing_test_output
 		else
 			printf 'FAILED: ephemeral live integration did not complete\n' >&2
 		fi

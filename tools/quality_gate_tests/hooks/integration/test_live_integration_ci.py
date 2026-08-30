@@ -538,7 +538,10 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
             '#!/bin/sh\nset -eu\nprintf \'uv %s\\n\' "$*" >>"$CI_CALLS"\n'
             'case "$*" in\n'
             '*tools.live_integration_policy*) exit "${CI_POLICY_STATUS:-0}" ;;\n'
-            '*pytest*"${CI_FAIL_FILE:-never-match}"*) exit 7 ;;\n'
+            '*pytest*"${CI_FAIL_FILE:-never-match}"*)\n'
+            "  printf 'FAILED %s::case\\nE   assert 16 == 15\\n' \"$CI_FAIL_FILE\"\n"
+            "  printf 'Authorization: Bearer %s\\n' \"$CI_SECRET_SENTINEL\"\n"
+            "  exit 7 ;;\n"
             "*pytest*test_application_data_plane_live.py*)\n"
             "  printf 'pytest-capability request=%s result=%s token=%s "
             "project=%s run=%s compose=%s deploy=%s\\n' "
@@ -661,6 +664,21 @@ class LiveIntegrationRunnerTests(QualityGateTestCase):
         self.assertNotIn("docker volume prune", calls)
         self.assertFalse((repository / "deploy" / "secrets").exists())
         self.assertFalse((repository / "deploy" / "certs").exists())
+
+    def test_a_failing_test_reports_its_own_redacted_output(self) -> None:
+        """A hosted failure whose only diagnostic is the broker's syslog cannot be diagnosed."""
+        # Arrange
+        repository, environment, calls_path = self._repository()
+        environment["CI_FAIL_FILE"] = str(AUTHORIZED_SUITE[0].path)
+
+        # Act
+        result = self._run(repository, environment)
+
+        # Assert
+        del calls_path
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("E   assert 16 == 15", result.stderr)
+        self.assertNotIn(SENSITIVE_VALUE, result.stderr)
 
     def test_every_compose_call_and_resource_query_is_exactly_project_scoped(self) -> None:
         # Arrange

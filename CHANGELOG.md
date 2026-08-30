@@ -2062,6 +2062,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **A failing hosted live-integration run now says which assertion failed.** The runner captures each
+  test's output so a passing suite stays quiet, and on a failure it reported the container status, the
+  container logs, and the broker's own syslog — the three things that cannot name a failed assertion.
+  `origin/main`'s red `PubSub+ and PostgreSQL integration` job has therefore been undiagnosable from
+  its log. The failing test's own output is now reported through the same substituting redactor the
+  container logs use, bounded to its last 200 lines, because an assertion message may legitimately
+  contain a generated role name and discarding the whole document for that returns to the same dead
+  end.
+
 - **Recreating the private control plane no longer strands the operator.** `ScenarioCoordinator`
   keeps its run bindings in process memory while `dashboard_current_run` is durable, so every
   `--force-recreate` left a pointer naming a run the scenario service answers `RUN_NOT_FOUND` for.
