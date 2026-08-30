@@ -25,6 +25,10 @@ from aerial_rescue_store.approvals import ApprovalSession, StoredApproval
 from aerial_rescue_store.approvals import record as record_approval
 from aerial_rescue_store.audit import AuditReadSession, StoredAuditRecord
 from aerial_rescue_store.audit import read_ordered_after as read_audit_suffix
+from aerial_rescue_store.dashboard.runs import RunSession
+from aerial_rescue_store.dashboard.runs import (
+    mission_lifecycle_for_update as lifecycle_for_update,
+)
 from aerial_rescue_store.evidence import EvidenceSession, StoredEvidenceDecision
 from aerial_rescue_store.evidence import decisions_for as load_evidence_history
 from aerial_rescue_store.evidence import load_decision as load_evidence_record
@@ -111,6 +115,27 @@ class DashboardInboxTransaction:
         )
 
 
+class DashboardLifecycleTransaction:
+    """Decide and stage one mission-lifecycle publication under one exclusive row lock.
+
+    The recorder owns the lifecycle column, so the dashboard reads it to decide whether an
+    observed state is a legal successor. Holding that read and the staged row in one
+    transaction is what stops a recorder commit landing between the decision and the row.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        """Bind one caller-owned SQLAlchemy transaction."""
+        self._session = session
+
+    async def mission_lifecycle(self, mission_id: str) -> str:
+        """Read the recorder-owned lifecycle under an exclusive row lock."""
+        return await lifecycle_for_update(cast("RunSession", self._session), mission_id)
+
+    async def stage(self, event: StagedApplicationEvent) -> None:
+        """Stage exact event bytes under the same lock that decided them."""
+        await stage_application(cast("ApplicationOutboxSession", self._session), event)
+
+
 class DashboardMutationTransactions:
     """Construct fresh dashboard mutation units of work."""
 
@@ -133,6 +158,18 @@ class DashboardInboxTransactions:
     def open(self) -> AbstractAsyncContextManager[DashboardInboxTransaction]:
         """Return one commit-or-rollback broker inbox transaction."""
         return _open(self._factory, DashboardInboxTransaction)
+
+
+class DashboardLifecycleTransactions:
+    """Construct fresh mission-lifecycle decision-and-staging units of work."""
+
+    def __init__(self, factory: Callable[[], AsyncSession]) -> None:
+        """Retain the injected session factory without opening a connection."""
+        self._factory = factory
+
+    def open(self) -> AbstractAsyncContextManager[DashboardLifecycleTransaction]:
+        """Return one commit-or-rollback mission-lifecycle transaction."""
+        return _open(self._factory, DashboardLifecycleTransaction)
 
 
 class DashboardOutboxTransactions:
