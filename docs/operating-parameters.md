@@ -357,7 +357,7 @@ not PostgreSQL/PubSub+ interruption evidence; the shared-stack run remains requi
 
 | Parameter | Value | Instrument and current status |
 | --- | --- | --- |
-| Application-outbox drain batch | At most 50 oldest eligible `STAGED` rows per connected epoch | Ordered-claim, independent-outcome, crash, refusal, ambiguity, and service-recovery tests; live drain pending |
+| Application-outbox drain batch | At most 50 oldest eligible `STAGED` rows per drain. Recovery drains to exhaustion once per connected epoch; the dashboard and evidence serving loops additionally drain one batch per cycle ([ADR-0208](adr/0208-publish-the-dashboard-outbox-on-the-serving-cycle.md)) | Ordered-claim, independent-outcome, crash, refusal, ambiguity, service-recovery, and idle-cycle publication tests; live drain pending |
 | Per-drone critical outbox records | At most 500 unconfirmed records, independently per simulated drone | SQLAlchemy repository capacity/concurrency tests and fleet recovery tests; live reconnect drain pending |
 | Per-drone critical outbox bytes | At most 2 MiB of exact canonical topic, headers, and body bytes, independently per simulated drone | SQLAlchemy repository byte-cap and rollback tests; live saturation pending |
 | Per-drone critical overflow | Refuse the new critical record without eviction and append a continuity-breach audit outcome | Capacity rollback, audit append, and redelivery tests are implemented; live saturation remains pending |

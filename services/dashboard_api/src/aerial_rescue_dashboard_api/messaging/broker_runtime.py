@@ -254,6 +254,18 @@ class DashboardDataPlane:
             if len(records) < self._audit_page_size:
                 return
 
+    async def publish_staged(self) -> None:
+        """Publish one bounded staged batch and require recovery on refusal or ambiguity.
+
+        Recovery drains the outbox exhaustively, but it runs only on reconnect. A request
+        that stages a row while the session is healthy would otherwise wait for the next
+        inbound Guaranteed delivery, so the serving loop publishes on its own cycle the way
+        the evidence service already does.
+        """
+        drained = await drain_once(self._ports.outbox, self._ports.publisher)
+        if drained.refused or drained.ambiguous:
+            self._session.readiness.recovery_required()
+
     async def _drain_outbox(self) -> bool:
         """Drain confirmed rows and fail closed on refusal or ambiguity."""
         while True:
@@ -398,6 +410,7 @@ async def serve(
         ports.readiness(lifecycle.is_ready())
         if await _recover_if_needed(lifecycle, plane, ports):
             continue
+        await plane.publish_staged()
         channel_index = await _receive_once(session, plane, channel_index, timeout)
     terminal = session.readiness.state
     if terminal is not BrokerLifecycleState.EXHAUSTED:
