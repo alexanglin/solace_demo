@@ -2062,6 +2062,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The hosted live-integration job can be green again.** It has been red on `main` reporting only the
+  failing file's name; the first run that printed the failing test's own output named the cause at
+  once: `401 Authorization failed` for `aerialrescuemonitor`. That is not a defect. ADR-0181 makes
+  that identity an interactive operator procedure at the broker's own CLI — never created by
+  provisioning, never enabled by a profile — so a disposable broker cannot have it, and the blocking
+  job contained two cases that could never pass in it. Both cases move, unchanged, to
+  `tests/security/test_semp_monitor_authorization.py`, which is deliberately outside ADR-0147's
+  allowlist; the sixteen cases that assert the broker's own authorization answers stay in the hosted
+  suite, where they already pass
+  ([ADR-0214](docs/adr/0214-keep-the-operator-provisioned-semp-identity-out-of-the-hosted-suite.md)).
+
 - **A failing hosted live-integration run now says which assertion failed.** The runner captures each
   test's output so a passing suite stays quiet, and on a failure it reported the container status, the
   container logs, and the broker's own syslog — the three things that cannot name a failed assertion.

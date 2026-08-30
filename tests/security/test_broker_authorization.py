@@ -24,15 +24,6 @@ import unittest
 from enum import Enum
 
 import pytest
-from aerial_rescue_broker.monitor_console import MONITOR_CREDENTIAL
-from aerial_rescue_broker.monitoring import MONITOR_USERNAME, ReadOnlySempMonitor
-from aerial_rescue_broker.provisioning import (
-    Method,
-    Request,
-    queue_monitor_collection_path,
-    queue_tx_flow_monitor_path,
-)
-from aerial_rescue_broker.semp import SempEndpoint, SempError, SempFailure, SempSession, connect
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_domain.principals import Principal
 from solace.messaging.errors.pubsubplus_client_error import (
@@ -42,16 +33,13 @@ from solace.messaging.errors.pubsubplus_client_error import (
 from solace.messaging.resources.topic import Topic as SolaceTopic
 from solace.messaging.resources.topic_subscription import TopicSubscription
 
-from tests.broker_live_support import DEPLOY_ROOT as DEPLOY
 from tests.broker_live_support import LOCAL_BROKER_ENDPOINT, role_credential
 from tests.broker_live_support import native_service as _service
 
 pytestmark = [pytest.mark.security, pytest.mark.docker, pytest.mark.broker]
 
-TRUST_STORE = DEPLOY / "certs"
 VPN = LOCAL_BROKER_ENDPOINT.vpn
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 5000
-SEMP_PORT = 1943
 
 MISSION = "m-1"
 DRONE_COMMAND = format_topic(
@@ -176,18 +164,6 @@ def _subscribe_as(role: Principal, topic: str) -> Outcome:
         if started and receiver is not None:
             receiver.terminate()
         service.disconnect()
-
-
-def _monitor_endpoint() -> SempEndpoint:
-    """Return the dedicated VPN-scoped SEMP identity from generated material."""
-    credential = (DEPLOY / MONITOR_CREDENTIAL).read_text(encoding="utf-8").strip()
-    return SempEndpoint(
-        "localhost",
-        SEMP_PORT,
-        MONITOR_USERNAME,
-        credential,
-        str(TRUST_STORE / "ca.pem"),
-    )
 
 
 class PositiveControlTests(unittest.TestCase):
@@ -375,48 +351,6 @@ class FactoryIdentityTests(unittest.TestCase):
 
         # Assert
         self.assertIs(Outcome.CONNECT_DENIED, outcome)
-
-
-class SempMonitorAuthorizationTests(unittest.TestCase):
-    def test_the_dedicated_monitor_can_read_parent_depth_and_active_flow_aggregates(self) -> None:
-        # Arrange
-        endpoint = _monitor_endpoint()
-        connection = connect(endpoint)
-        monitor = ReadOnlySempMonitor(connection, endpoint)
-
-        # Act
-        try:
-            rows = monitor.read_monitor_rows(queue_monitor_collection_path(VPN))
-            queue_name = next(
-                name for row in rows if isinstance((name := row.data.get("queueName")), str)
-            )
-            active_flows = monitor.read_monitor_count(queue_tx_flow_monitor_path(VPN, queue_name))
-        finally:
-            connection.close()
-
-        # Assert
-        self.assertIsInstance(rows, tuple)
-        self.assertGreater(len(rows), 0)
-        self.assertGreaterEqual(active_flows, 0)
-        self.assertFalse(hasattr(monitor, "send"))
-
-    def test_the_dedicated_monitor_is_denied_a_same_value_configuration_write(self) -> None:
-        # Arrange
-        endpoint = _monitor_endpoint()
-        connection = connect(endpoint)
-        session = SempSession(connection, endpoint)
-        path = f"msgVpns/{VPN}"
-
-        # Act
-        try:
-            current = session.send(Request(Method.GET, path, {}))
-            with pytest.raises(SempError) as captured:
-                session.send(Request(Method.PATCH, path, {"enabled": current[0]["enabled"]}))
-        finally:
-            connection.close()
-
-        # Assert
-        self.assertIs(SempFailure.STATUS, captured.value.failure)
 
 
 if __name__ == "__main__":
