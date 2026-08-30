@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from enum import Enum
-from typing import Final
+from typing import Final, Protocol
 
 from aerial_rescue_broker.ingress import PayloadSchemaExecutor
 from aerial_rescue_contracts import canonical
@@ -17,11 +18,25 @@ from aerial_rescue_contracts.envelope import (
     sequence_text,
 )
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
-from aerial_rescue_domain.mission import MissionState
+from aerial_rescue_domain.mission import (
+    MissionError,
+    MissionEvent,
+    MissionState,
+    is_terminal,
+    transition,
+)
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
 
+from aerial_rescue_dashboard_api.boundary.errors import ApiError
 from aerial_rescue_dashboard_api.messaging.mutations import MutationStamp
 from aerial_rescue_dashboard_api.messaging.outbox import PRODUCER
+from aerial_rescue_dashboard_api.ports import (
+    CurrentRun,
+    RunMode,
+    ScenarioCancellationNotEstablishedError,
+    ScenarioRunNotFoundError,
+    ScenarioRunStatus,
+)
 
 PRODUCER_KIND: Final = "mission-lifecycle"
 """The source level ``envelope.BINDINGS`` requires of this family's producer."""
@@ -180,3 +195,161 @@ class MissionLifecycleEvents:
             causation_id=None,
             staged_at=stamp.occurred_at,
         )
+
+
+_EVENT_REACHING: Final[dict[MissionState, MissionEvent]] = {
+    MissionState.SEARCHING: MissionEvent.START,
+    MissionState.EXHAUSTED: MissionEvent.EXHAUST,
+    MissionState.ABORTED: MissionEvent.ABORT,
+}
+"""The one event that reaches each publishable non-initial state, per ADR-0072's table."""
+
+_UNAVAILABLE: Final = (
+    ApiError,
+    ScenarioRunNotFoundError,
+    ScenarioCancellationNotEstablishedError,
+)
+
+
+class ObservationOutcome(Enum):
+    """What one bounded mission-lifecycle observation established."""
+
+    STAGED = "a legal successor was staged for publication"
+    CURRENT = "the durable lifecycle already equals the observed state"
+    SETTLED = "the mission can accept no further published lifecycle event"
+    NOT_APPLICABLE = "no started live run owns an operational mission"
+    UNAVAILABLE = "a bounded store or private-control dependency did not answer"
+
+
+class CurrentRunPort(Protocol):
+    """The one durable pointer read this observer needs."""
+
+    async def current_run(self) -> CurrentRun | None:
+        """Return the current live or replay pointer, or ``None`` when unset."""
+
+
+class RunStatusPort(Protocol):
+    """The authenticated private status read this observer needs."""
+
+    async def status(self, run_id: str) -> ScenarioRunStatus:
+        """Return the private service's authoritative representation of one run."""
+
+
+class LifecycleTransaction(Protocol):
+    """Decide and stage under one exclusive lock on the recorder-owned lifecycle."""
+
+    async def mission_lifecycle(self, mission_id: str) -> str:
+        """Read the recorder-owned lifecycle under an exclusive row lock."""
+
+    async def stage(self, event: StagedApplicationEvent) -> None:
+        """Stage one exact publication inside the deciding transaction."""
+
+
+class LifecycleTransactions(Protocol):
+    """Open fresh commit-or-rollback mission-lifecycle units of work."""
+
+    def open(self) -> AbstractAsyncContextManager[LifecycleTransaction]:
+        """Return one atomic mission-lifecycle transaction."""
+
+
+class MissionLifecycleObserver:
+    """Publish the mission's own lifecycle from the run state private control reports.
+
+    The fleet owns telemetry, connectivity, and sector edges; ADR-0189 gives the dashboard
+    API the mission event. The fleet already computes the sweep's ending and the scenario
+    service already projects it onto the four wire states, so this observer reads that
+    authority rather than re-deriving exhaustion from the sector fold.
+
+    Every decision is the domain transition table's. A state private control reports that
+    the table cannot reach from the durable state is refused, not published, so a stale or
+    crossed status can never rewrite an operator's mission.
+    """
+
+    def __init__(
+        self,
+        *,
+        runs: CurrentRunPort,
+        scenario: RunStatusPort,
+        transactions: LifecycleTransactions,
+        events: MissionLifecycleEvents,
+    ) -> None:
+        """Retain only injected typed ports and this process's event builder."""
+        self._runs = runs
+        self._scenario = scenario
+        self._transactions = transactions
+        self._events = events
+
+    async def observe_once(self) -> ObservationOutcome:
+        """Observe one run and stage at most one legal successor.
+
+        Expected store and private-control failures become ``UNAVAILABLE`` rather than
+        ending the caller's loop; the next observation reads the same durable state and
+        reaches the same decision, so nothing is lost by declining to act now.
+        """
+        try:
+            return await self._observe()
+        except _UNAVAILABLE:
+            return ObservationOutcome.UNAVAILABLE
+
+    async def _observe(self) -> ObservationOutcome:
+        """Run one observation, converting only the transition table's own refusal."""
+        selected = await self._runs.current_run()
+        identity = _operational_identity(selected)
+        if identity is None:
+            return ObservationOutcome.NOT_APPLICABLE
+        mission_id, run_id = identity
+        observed = await self._settled_or_observed(mission_id, run_id)
+        if isinstance(observed, ObservationOutcome):
+            return observed
+        async with self._transactions.open() as unit:
+            current = _state(await unit.mission_lifecycle(mission_id))
+            if current is observed:
+                return ObservationOutcome.CURRENT
+            if not _reaches(current, observed):
+                return ObservationOutcome.SETTLED
+            await unit.stage(self._events.build(mission_id, run_id, observed))
+        return ObservationOutcome.STAGED
+
+    async def _settled_or_observed(
+        self,
+        mission_id: str,
+        run_id: str,
+    ) -> MissionState | ObservationOutcome:
+        """Read private control only while the mission can still reach a new state."""
+        if is_terminal(_state(await self._runs_lifecycle(mission_id))):
+            return ObservationOutcome.SETTLED
+        status = await self._scenario.status(run_id)
+        return _state(status.state)
+
+    async def _runs_lifecycle(self, mission_id: str) -> str:
+        """Read the durable lifecycle without holding a lock across private control."""
+        async with self._transactions.open() as unit:
+            return await unit.mission_lifecycle(mission_id)
+
+
+def _operational_identity(selected: CurrentRun | None) -> tuple[str, str] | None:
+    """Return the mission and run of a started live pointer, or ``None``."""
+    if selected is None or selected.mode is not RunMode.DEGRADED_LIVE or not selected.started:
+        return None
+    if selected.mission_id is None or selected.run_id is None:
+        return None
+    return selected.mission_id, selected.run_id
+
+
+def _state(name: str) -> MissionState:
+    """Return the domain state one stored or reported name denotes."""
+    try:
+        return MissionState[name]
+    except KeyError:
+        raise MissionLifecycleError(LifecycleRefusal.UNPUBLISHED_STATE) from None
+
+
+def _reaches(current: MissionState, observed: MissionState) -> bool:
+    """Report whether the transition table admits an edge from ``current`` to ``observed``."""
+    event = _EVENT_REACHING.get(observed)
+    if event is None:
+        return False
+    try:
+        return transition(current, event) is observed
+    except MissionError:
+        return False

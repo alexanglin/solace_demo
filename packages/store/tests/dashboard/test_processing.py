@@ -24,6 +24,7 @@ from aerial_rescue_store.inbox import InboxDecision, InboxIdentity, InboxOutcome
 from aerial_rescue_store.processing.dashboard import (
     DashboardAuditReader,
     DashboardInboxTransactions,
+    DashboardLifecycleTransactions,
     DashboardMutationTransactions,
     DashboardOutboxTransactions,
 )
@@ -289,3 +290,65 @@ class DashboardAuditReaderTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+async def _read_lifecycle(transactions: DashboardLifecycleTransactions) -> str:
+    """Read one lifecycle through the transaction boundary under test."""
+    async with transactions.open() as transaction:
+        return await transaction.mission_lifecycle("mission-1")
+
+
+class DashboardLifecycleTransactionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_locked_lifecycle_read_and_its_staged_event_share_one_commit(self) -> None:
+        """The read decides whether to stage, so a concurrent writer must not slip between them."""
+        # Arrange
+        session = _Session()
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_store.processing.dashboard.lifecycle_for_update",
+                AsyncMock(return_value="SEARCHING"),
+            ) as lifecycle,
+            patch(
+                "aerial_rescue_store.processing.dashboard.stage_application", AsyncMock()
+            ) as stage,
+        ):
+            transactions = DashboardLifecycleTransactions(lambda: _factory(session))
+            async with transactions.open() as transaction:
+                observed = await transaction.mission_lifecycle("mission-1")
+                await transaction.stage(EVENT)
+
+        # Assert
+        self.assertEqual("SEARCHING", observed)
+        self.assertEqual(["commit", "close"], session.calls)
+        self.assertEqual(
+            (session, session),
+            (
+                lifecycle.await_args_list[0].args[0],
+                stage.await_args_list[0].args[0],
+            ),
+        )
+
+    async def test_a_refused_lifecycle_read_stages_nothing_and_rolls_back(self) -> None:
+        # Arrange
+        session = _Session()
+        refusal = ValueError("unknown mission")
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_store.processing.dashboard.lifecycle_for_update",
+                AsyncMock(side_effect=refusal),
+            ),
+            patch(
+                "aerial_rescue_store.processing.dashboard.stage_application", AsyncMock()
+            ) as stage,
+        ):
+            transactions = DashboardLifecycleTransactions(lambda: _factory(session))
+            with pytest.raises(ValueError, match="unknown mission"):
+                await _read_lifecycle(transactions)
+
+        # Assert
+        self.assertEqual(["rollback", "close"], session.calls)
+        stage.assert_not_awaited()
