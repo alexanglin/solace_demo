@@ -45,12 +45,16 @@ class _Session:
 class _Plane:
     session: _Session
     recoveries: int = 0
+    publications: int = 0
     missions: list[str] = field(default_factory=list)
 
     async def recover(self) -> bool:
         self.recoveries += 1
         self.session.rebind_complete()
         return True
+
+    async def publish_staged(self) -> None:
+        self.publications += 1
 
     def activate_mission(self, mission_id: str) -> None:
         self.missions.append(mission_id)

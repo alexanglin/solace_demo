@@ -132,7 +132,10 @@ class _Outbox:
 
 @dataclass
 class _Publisher:
-    async def publish(self, _event: StagedApplicationEvent) -> PublicationResult:
+    published: list[StagedApplicationEvent] = field(default_factory=list)
+
+    async def publish(self, event: StagedApplicationEvent) -> PublicationResult:
+        self.published.append(event)
         return PublicationResult(PublicationOutcome.CONFIRMED, "2026-08-26T12:00:01.000Z")
 
 
@@ -218,7 +221,11 @@ class _Refusals:
 
 
 def _plane(
-    records: tuple[StoredAuditRecord, ...], *, active: bool = True
+    records: tuple[StoredAuditRecord, ...],
+    *,
+    active: bool = True,
+    outbox: _Outbox | None = None,
+    publisher: _Publisher | None = None,
 ) -> tuple[DashboardDataPlane, _Session, _Hub]:
     session = _Session()
     hub = _Hub()
@@ -228,8 +235,8 @@ def _plane(
             hub=cast("ProjectionPort", hub),
             audit=_Audit(records),
             inboxes=_Inboxes(),
-            outbox=_Outbox(),
-            publisher=_Publisher(),
+            outbox=_Outbox() if outbox is None else outbox,
+            publisher=_Publisher() if publisher is None else publisher,
             schemas=cast("PayloadSchemaExecutor", _Schemas()),
             refusals=_Refusals(),
             observed_at=lambda: "2026-08-26T12:00:01.000Z",
@@ -398,3 +405,47 @@ async def test_exhausted_session_exits_nonzero_without_claiming_recovery() -> No
     assert report.exit_status == 1
     assert session.rebound == 0
     assert signals == [False]
+
+
+def _staged() -> StagedApplicationEvent:
+    envelope = _envelope()
+    return StagedApplicationEvent(
+        producer="dashboard-api",
+        event_id=envelope.id,
+        family="mission-event",
+        topic="aerial-rescue/v1/mission-synthetic-0001/mission/event/lifecycle",
+        headers=canonical.canonical_bytes({}),
+        payload=canonical.canonical_bytes(envelope_document(envelope)),
+        traceparent=envelope.traceparent,
+        tracestate=None,
+        correlation_id=envelope.correlation_id,
+        causation_id=None,
+        staged_at=envelope.time,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_ready_idle_cycle_still_publishes_what_a_request_staged() -> None:
+    """A staged row must not wait for a reconnect or an inbound delivery to reach the broker."""
+    # Arrange
+    outbox = _Outbox(pending_rows=(_staged(),))
+    publisher = _Publisher()
+    plane, session, _hub = _plane((), outbox=outbox, publisher=publisher)
+    session.readiness.mark_ready()
+    cycles = 0
+
+    def running() -> bool:
+        nonlocal cycles
+        cycles += 1
+        return cycles <= 1
+
+    # Act
+    report = await serve(
+        cast("DashboardServingSession", session),
+        plane,
+        ServePorts(running, lambda _ready: None, lambda: None, 0),
+    )
+
+    # Assert
+    assert report.exit_status == 0
+    assert [event.event_id for event in publisher.published] == ["event-0001"]

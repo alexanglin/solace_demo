@@ -226,6 +226,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0205](0205-project-the-committed-envelope-at-the-dashboard-store-adapter.md) | Project the recorder's committed envelope at the dashboard store adapter | Accepted |
 | [0206](0206-link-the-broker-provenance-the-dashboard-watermark-reads.md) | Link the broker provenance the dashboard watermark reads | Accepted |
 | [0207](0207-drain-the-recorder-fan-in-without-a-wait-per-channel.md) | Drain the recorder fan-in without a wait per channel | Accepted |
+| [0208](0208-publish-the-dashboard-outbox-on-the-serving-cycle.md) | Publish the dashboard application outbox on the serving cycle | Accepted |
 
 ## Decisions still open
 

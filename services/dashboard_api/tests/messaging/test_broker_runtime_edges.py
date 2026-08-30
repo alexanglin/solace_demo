@@ -498,9 +498,13 @@ class _ServingPlane:
     recovered: bool = True
     direct_calls: int = 0
     guaranteed_calls: int = 0
+    publish_calls: int = 0
 
     async def recover(self) -> bool:
         return self.recovered
+
+    async def publish_staged(self) -> None:
+        self.publish_calls += 1
 
     async def handle_direct(self, _message: InboundMessage) -> broker_module.DeliveryDecision:
         self.direct_calls += 1

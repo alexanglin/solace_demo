@@ -2046,6 +2046,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **A staged dashboard publication no longer waits for unrelated inbound traffic.** `drain_once` was
+  reachable only from `DashboardDataPlane.recover()`, which runs on a reconnect or once per inbound
+  Guaranteed delivery, so an operator command or proposal decision staged while the session was
+  healthy and idle sat `STAGED` with nothing scheduled to notice it. The serving loop now publishes
+  one bounded batch per ready cycle before it polls a channel, and hands a refused or ambiguous batch
+  to recovery through `recovery_required()`, which is the shape the evidence service already had
+  ([ADR-0208](docs/adr/0208-publish-the-dashboard-outbox-on-the-serving-cycle.md)).
+
 - **The dashboard's two readers of `audit_record` no longer disagree about what a committed row
   holds.** The recorder Compose runs commits the canonical CloudEvent envelope under the envelope's
   own type, and the broker-recovery projection reads exactly that; the snapshot reconstruction
