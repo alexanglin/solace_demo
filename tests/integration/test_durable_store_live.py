@@ -40,6 +40,7 @@ import asyncio
 import contextlib
 import os
 import unittest
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -48,6 +49,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from aerial_rescue_contracts import canonical
+from aerial_rescue_contracts.envelope import BINDINGS, Envelope, envelope_document
 from aerial_rescue_dashboard_api.boundary.errors import ApiError, ErrorCode
 from aerial_rescue_dashboard_api.orchestration import OperationCoordinator
 from aerial_rescue_dashboard_api.ports import (
@@ -276,6 +279,7 @@ MISSION: Final = "m-store-probe"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
 OCCURRED_AT: Final = "2026-08-23T12:00:00.000Z"
 PAYLOAD: Final = b'{"probe":true}'
+MISSION_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.mission.event.lifecycle"
 CORRELATION: Final = "c-store-probe"
 
 CREATE: Final = "CREATE"
@@ -332,16 +336,42 @@ class AbandonedError(Exception):
     """Raised inside a transaction to abandon it, so the rollback is the caller's own decision."""
 
 
-def _record(mission: str, kind: str) -> AuditRecord:
+def _record(mission: str, kind: str, payload: bytes = PAYLOAD) -> AuditRecord:
     """Return one synthetic audit record for this probe."""
     return AuditRecord(
         mission_id=mission,
         kind=kind,
         occurred_at=OCCURRED_AT,
-        payload=PAYLOAD,
+        payload=payload,
         correlation_id=CORRELATION,
         causation_id=None,
         traceparent=TRACEPARENT,
+    )
+
+
+def _envelope_record(mission: str) -> AuditRecord:
+    """Return the durable form ADR-0205 fixes: the canonical envelope under its own type.
+
+    Only a row read back through the snapshot path needs this. The rows this probe appends
+    to exercise ordinal allocation and lock contention are never projected, so they keep the
+    opaque payload that makes their purpose obvious.
+    """
+    envelope = Envelope(
+        id="event-store-probe-0001",
+        source="urn:aerial-rescue:mission-lifecycle:runtime-store-probe",
+        type=MISSION_LIFECYCLE_TYPE,
+        subject=mission,
+        time=OCCURRED_AT,
+        dataschema=BINDINGS[MISSION_LIFECYCLE_TYPE].dataschema,
+        sequence="000000000000007",
+        correlation_id=CORRELATION,
+        traceparent=TRACEPARENT,
+        data={"missionId": mission, "lifecycle": "SEARCHING"},
+    )
+    return _record(
+        mission,
+        MISSION_LIFECYCLE_TYPE,
+        canonical.canonical_bytes(envelope_document(envelope)),
     )
 
 
@@ -966,7 +996,7 @@ class DashboardRuntimeLiveTests(unittest.IsolatedAsyncioTestCase):
             source_sequence=7,
             payload_digest=DASHBOARD_EVENT_DIGEST,
         )
-        record = _record(current.mission_id, "MISSION_LIFECYCLE")
+        record = _envelope_record(current.mission_id)
 
         # Act
         async with transaction(store.session_factory) as session:
@@ -989,8 +1019,17 @@ class DashboardRuntimeLiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.identity, basis.current_run.identity)
         self.assertEqual(accepted.audit_ordinal, basis.audit_watermark)
         self.assertEqual(
-            ((accepted.audit_ordinal, record.kind, record.payload),),
-            tuple((item.audit_ordinal, item.kind, item.payload) for item in page),
+            ((accepted.audit_ordinal, "missionLifecycle"),),
+            tuple((item.audit_ordinal, item.kind) for item in page),
+        )
+        projected = canonical.decode(page[0].payload)
+        self.assertIsInstance(projected, Mapping)
+        self.assertEqual(
+            ("missionLifecycle", {"lifecycle": "SEARCHING"}),
+            (
+                cast("Mapping[str, object]", projected)["kind"],
+                cast("Mapping[str, object]", projected)["data"],
+            ),
         )
         self.assertEqual((), suffix)
 
