@@ -14,7 +14,7 @@ from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.digest import source_event_digest
 from aerial_rescue_contracts.envelope import Envelope, envelope_document
 from aerial_rescue_contracts.topics import Family, Topic
-from aerial_rescue_domain.mission import MissionError, MissionRefusal
+from aerial_rescue_domain.mission import MissionError, MissionRefusal, MissionState
 from aerial_rescue_recorder.capture import (
     AuditFact,
     CaptureDecision,
@@ -99,6 +99,7 @@ class _Transaction:
     inbox_facts: list[InboxFact] = field(default_factory=list)
     source_facts: list[SourceEventFact] = field(default_factory=list)
     audit_facts: list[AuditFact] = field(default_factory=list)
+    transitions: list[tuple[str, MissionState]] = field(default_factory=list)
     completions: list[tuple[InboxFact, int, str]] = field(default_factory=list)
     links: list[tuple[BrokerEvent, str, int]] = field(default_factory=list)
 
@@ -112,6 +113,11 @@ class _Transaction:
         """Record the source-event operation."""
         self.source_facts.append(fact)
         self.calls.append("record-source-event")
+
+    async def apply_mission_lifecycle(self, mission_id: str, target: MissionState, /) -> None:
+        """Record the domain-approved mission transition this event carries."""
+        self.transitions.append((mission_id, target))
+        self.calls.append("apply-mission-lifecycle")
 
     async def append_audit(self, fact: AuditFact, /) -> int:
         """Append one audit fact or inject the requested failure."""
@@ -281,6 +287,7 @@ class GuaranteedCaptureTests(unittest.IsolatedAsyncioTestCase):
                     "begin",
                     "claim-inbox",
                     "record-source-event",
+                    "apply-mission-lifecycle",
                     "append-audit",
                     "link-broker-event",
                     "complete-inbox",
@@ -379,7 +386,14 @@ class GuaranteedCaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (
                 "injected append failure",
-                ["begin", "claim-inbox", "record-source-event", "append-audit", "rollback"],
+                [
+                    "begin",
+                    "claim-inbox",
+                    "record-source-event",
+                    "apply-mission-lifecycle",
+                    "append-audit",
+                    "rollback",
+                ],
             ),
             (str(captured.value), calls),
         )
@@ -709,3 +723,35 @@ class PermanentRefusalTests(unittest.IsolatedAsyncioTestCase):
             (CaptureDecision.REFUSED, ["settle-rejected"]),
             (outcome.decision, [call for call in calls if call.startswith("settle-")]),
         )
+
+
+class MissionLifecycleTransitionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_mission_event_transitions_the_mission_before_its_audit_row(self) -> None:
+        """The recorder owns the lifecycle column, and the deployed composition never moved it."""
+        # Arrange
+        calls: list[str] = []
+        transaction = _Transaction(calls)
+        recorder = Recorder("recorder", _Transactions(transaction))
+
+        # Act
+        await recorder.capture(_notification(), _Settlement(calls))
+
+        # Assert
+        self.assertEqual([(MISSION, MissionState.SEARCHING)], transaction.transitions)
+        self.assertLess(
+            calls.index("apply-mission-lifecycle"),
+            calls.index("append-audit"),
+        )
+
+    async def test_an_event_of_another_family_transitions_no_mission(self) -> None:
+        # Arrange
+        calls: list[str] = []
+        transaction = _Transaction(calls)
+        recorder = Recorder("recorder", _Transactions(transaction))
+
+        # Act
+        await recorder.capture(_notification(Family.DRONE_TELEMETRY), None)
+
+        # Assert
+        self.assertEqual([], transaction.transitions)
+        self.assertNotIn("apply-mission-lifecycle", calls)

@@ -12,6 +12,8 @@ from aerial_rescue_store.dashboard.events import (
     EventSession,
     link_broker_event,
 )
+from aerial_rescue_store.dashboard.runs import RunSession, mission_lifecycle_for_update
+from aerial_rescue_store.dashboard.runs import transition_mission as transition_mission_row
 from aerial_rescue_store.inbox import (
     InboxIdentity,
     InboxOutcome,
@@ -49,6 +51,16 @@ class RecordingTransaction:
     async def record_source_event(self, event: StoredSourceEvent) -> SourceEventDecision:
         """Store one complete source event without overwriting immutable identity."""
         return await record_source_event(cast("SourceEventSession", self._session), event)
+
+    async def mission_lifecycle(self, mission_id: str) -> str:
+        """Read the recorder-owned lifecycle under an exclusive row lock."""
+        return await mission_lifecycle_for_update(cast("RunSession", self._session), mission_id)
+
+    async def transition_mission(self, mission_id: str, expected: str, target: str) -> None:
+        """Move the locked mission row by compare-and-set on the state that was read."""
+        await transition_mission_row(
+            cast("RunSession", self._session), mission_id, expected, target
+        )
 
     async def append_audit(self, record: AuditRecord) -> int:
         """Append one audit record at the ordinal issued in this transaction."""

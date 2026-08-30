@@ -20,6 +20,7 @@ from aerial_rescue_domain.mission import (
     MissionEvent,
     MissionRefusal,
     MissionState,
+    event_reaching,
     is_terminal,
     transition,
 )
@@ -195,6 +196,55 @@ class TerminalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(without_outbound, set(TERMINAL_STATES))
+
+
+class EventReachingTests(unittest.TestCase):
+    def test_every_state_names_the_one_event_that_reaches_it_or_none(self) -> None:
+        """A producer that observed a state needs the event that would explain it."""
+        # Arrange
+        expected = {
+            MissionState.PLANNED: None,
+            MissionState.SEARCHING: MissionEvent.START,
+            MissionState.ESCALATED: MissionEvent.ESCALATE,
+            MissionState.COMPLETED: MissionEvent.COMPLETE,
+            MissionState.EXHAUSTED: MissionEvent.EXHAUST,
+            MissionState.ABORTED: MissionEvent.ABORT,
+        }
+
+        # Act
+        observed = {state: event_reaching(state) for state in MissionState}
+
+        # Assert
+        self.assertEqual(expected, observed)
+
+    def test_the_named_event_actually_reaches_that_state_in_the_table(self) -> None:
+        """Derived from the table, so a retargeted row cannot leave this answer stale."""
+        # Arrange
+        reachable = tuple(state for state in MissionState if event_reaching(state) is not None)
+
+        # Act
+        reached = {
+            state: {
+                transition(source, event)
+                for source in MissionState
+                for event in (event_reaching(state),)
+                if event is not None and LEGAL_TRANSITIONS.get((source, event)) is not None
+            }
+            for state in reachable
+        }
+
+        # Assert
+        self.assertEqual({state: {state} for state in reachable}, reached)
+
+    def test_only_the_initial_state_has_no_inbound_event(self) -> None:
+        # Arrange
+        expected = {INITIAL_STATE}
+
+        # Act
+        unreachable = {state for state in MissionState if event_reaching(state) is None}
+
+        # Assert
+        self.assertEqual(expected, unreachable)
 
 
 class MissionErrorTests(unittest.TestCase):

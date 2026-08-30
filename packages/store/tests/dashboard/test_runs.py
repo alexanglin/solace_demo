@@ -22,6 +22,8 @@ from aerial_rescue_store.dashboard.runs import (
     current_run_for_update_statement,
     mission_lifecycle_for_update,
     mission_lifecycle_for_update_statement,
+    mission_predecessor,
+    mission_predecessor_statement,
     mission_statement,
     mission_transition_statement,
     move_current_run,
@@ -240,6 +242,62 @@ class MissionLifecycleReadTests(unittest.IsolatedAsyncioTestCase):
             [expected for _session, _value, expected in cases],
             refusals,
         )
+
+
+class MissionPredecessorReadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_predecessor_link_read_is_an_exact_unlocked_primary_key_read(self) -> None:
+        """The successor's link is read to decide the predecessor's ending, not to write it."""
+        # Arrange
+        mission_id = MISSION
+
+        # Act
+        statement = mission_predecessor_statement(mission_id)
+        rendered = _rendered(statement)
+        bound = tuple(_parameters(statement).values())
+
+        # Assert
+        self.assertEqual(
+            (True, False, (mission_id,)),
+            (
+                f"{DASHBOARD_MISSION_TABLE}.predecessor_mission_id" in rendered,
+                "FOR UPDATE" in rendered,
+                bound,
+            ),
+        )
+
+    async def test_the_predecessor_read_is_strict_and_distinguishes_absence_from_a_first_mission(
+        self,
+    ) -> None:
+        # Arrange
+        cases = (
+            (_RecordingSession(rows=[("mission-0",)]), "mission-0", None),
+            (_RecordingSession(rows=[(None,)]), None, None),
+            (
+                _RecordingSession(rows=[None]),
+                None,
+                DashboardRunRefusal.UNKNOWN_MISSION,
+            ),
+            (
+                _RecordingSession(rows=[(7,)]),
+                None,
+                DashboardRunRefusal.UNREADABLE_MISSION,
+            ),
+        )
+        observed: list[str | None] = []
+        refusals: list[DashboardRunRefusal | None] = []
+
+        # Act
+        for session, _expected, _expected_refusal in cases:
+            try:
+                observed.append(await mission_predecessor(session, MISSION))
+                refusals.append(None)
+            except DashboardRunError as error:
+                observed.append(None)
+                refusals.append(cast("DashboardRunRefusal", error.refusal))
+
+        # Assert
+        self.assertEqual([expected for _session, expected, _refusal in cases], observed)
+        self.assertEqual([expected for _session, _value, expected in cases], refusals)
 
 
 class PointerStatementTests(unittest.TestCase):
