@@ -381,9 +381,10 @@ def _reaches(current: MissionState, observed: MissionState) -> bool:
     if event is None:
         return False
     try:
-        return transition(current, event) is observed
+        transition(current, event)
     except MissionError:
         return False
+    return True
 
 
 class ObserverPort(Protocol):

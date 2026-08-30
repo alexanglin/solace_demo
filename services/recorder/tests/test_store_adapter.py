@@ -350,6 +350,7 @@ class MissionLifecycleTransitionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["read-lifecycle"], transaction.calls)
 
     async def test_a_transition_the_table_refuses_writes_nothing_and_names_the_pair(self) -> None:
+        """Nothing follows an ending, so a mission event for a settled mission is refused."""
         # Arrange
         transaction = _StoreTransaction(_CLAIMED, lifecycle="EXHAUSTED")
         adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
@@ -357,6 +358,20 @@ class MissionLifecycleTransitionAdapterTests(unittest.IsolatedAsyncioTestCase):
         # Act
         with pytest.raises(MissionError) as refused:
             await adapter.apply_mission_lifecycle(MISSION, MissionState.SEARCHING)
+
+        # Assert
+        self.assertIs(MissionRefusal.TRANSITION, refused.value.refusal)
+        self.assertEqual([], transaction.transitions)
+
+    async def test_a_state_no_event_reaches_is_refused_before_the_table_is_consulted(self) -> None:
+        """A mission is planned by being created, so no event can move one into `PLANNED`."""
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED, lifecycle="SEARCHING")
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+
+        # Act
+        with pytest.raises(MissionError) as refused:
+            await adapter.apply_mission_lifecycle(MISSION, MissionState.PLANNED)
 
         # Assert
         self.assertIs(MissionRefusal.TRANSITION, refused.value.refusal)
@@ -374,3 +389,26 @@ class MissionLifecycleTransitionAdapterTests(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertIs(MissionRefusal.TRANSITION, refused.value.refusal)
         self.assertEqual([], transaction.transitions)
+
+
+class ProvenanceLinkAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_link_passes_the_exact_broker_identity_mission_and_ordinal_through(
+        self,
+    ) -> None:
+        """This row is the join the dashboard watermark reads; a wrong ordinal folds nothing."""
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED)
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+        event = BrokerEvent(
+            source="urn:aerial-rescue:mission-lifecycle:runtime-1",
+            event_id="event-1",
+            source_sequence=1,
+            payload_digest="a" * 64,
+        )
+
+        # Act
+        await adapter.link_broker_event(event, MISSION, 7)
+
+        # Assert
+        self.assertEqual([(event, MISSION, 7)], transaction.links)
+        self.assertEqual(["link"], transaction.calls)
