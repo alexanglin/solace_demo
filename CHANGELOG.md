@@ -2062,6 +2062,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The broker authorization probe no longer leaves a queue the next suite cannot drain.** It
+  published the plain text `authorization probe`, and a permitted publish spools one. The production
+  receive path validates native trace context against the body, so a body it cannot decode becomes
+  `TRACE_REFUSED: PAYLOAD_FORM` and the message can never be settled — which is why
+  `test_guaranteed_delivery_live.py` failed in the hosted job on a queue it was trying to empty. The
+  probe now publishes canonical JSON carrying neither `specversion` nor `traceparent`, which is what
+  `trace_fields_from_payload` returns `None` for. The ACL answer the probe measures never depended on
+  the body.
+
 - **The hosted live-integration job can be green again.** It has been red on `main` reporting only the
   failing file's name; the first run that printed the failing test's own output named the cause at
   once: `401 Authorization failed` for `aerialrescuemonitor`. That is not a defect. ADR-0181 makes
