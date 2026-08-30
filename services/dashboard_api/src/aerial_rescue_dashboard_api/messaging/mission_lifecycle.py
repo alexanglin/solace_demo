@@ -26,6 +26,7 @@ from aerial_rescue_domain.mission import (
     is_terminal,
     transition,
 )
+from aerial_rescue_store import STORE_BOUNDARY_ERRORS
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
 
 from aerial_rescue_dashboard_api.boundary.errors import ApiError
@@ -203,7 +204,14 @@ _UNAVAILABLE: Final = (
     ApiError,
     ScenarioRunNotFoundError,
     ScenarioCancellationNotEstablishedError,
+    *STORE_BOUNDARY_ERRORS,
 )
+"""Every dependency failure an observation may legitimately meet and simply retry.
+
+The scenario client already redacts its own transport failures into these. The lifecycle
+transactions do not, because they are the store's own repository and driver errors, so the
+store's declared boundary tuple is included here rather than restated.
+"""
 
 
 class ObservationOutcome(Enum):
@@ -402,11 +410,23 @@ class MissionLifecycleWatch:
     readiness. Cancellation is explicit and the shutdown path waits for the task to end.
     """
 
-    def __init__(self, observer: ObserverPort, pause: Callable[[], Awaitable[None]]) -> None:
-        """Retain the observation and the scheduler seam without creating a task."""
+    def __init__(
+        self,
+        observer: ObserverPort,
+        pause: Callable[[], Awaitable[None]],
+        report: Callable[[BaseException], None],
+    ) -> None:
+        """Retain the observation, the scheduler seam, and the diagnostic sink."""
         self._observer = observer
         self._pause = pause
+        self._report = report
         self._task: asyncio.Task[None] | None = None
+        self._failures = 0
+
+    @property
+    def failures(self) -> int:
+        """Return how many observations ended in a failure this process did not expect."""
+        return self._failures
 
     async def start(self) -> None:
         """Start the one owned observer task."""
@@ -415,13 +435,7 @@ class MissionLifecycleWatch:
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
-        """Cancel and await the task, re-raising a failure that had already ended it.
-
-        `observe_once` converts every expected store and private-control failure into a
-        typed outcome, so anything that escapes it is a defect. Surfacing it here rather
-        than discarding it is the difference between a stopped observer that is reported
-        and one that is not.
-        """
+        """Cancel and await the task, surfacing a failure that had already ended it."""
         task = self._task
         self._task = None
         if task is None:
@@ -431,7 +445,27 @@ class MissionLifecycleWatch:
             await task
 
     async def _run(self) -> None:
-        """Observe, pause, and repeat until the task is cancelled."""
+        """Observe, pause, and repeat until the task is cancelled.
+
+        One failed observation must not end the loop. The first live run proved why: an
+        observation raised once, the task stopped, and the mission stayed `SEARCHING` for
+        the rest of its life while every other part of the chain worked. Nothing surfaced
+        it, because a task nobody awaits and nobody drops reports nothing.
+
+        `observe_once` already converts every expected dependency failure into a typed
+        outcome, so anything caught here is a defect worth naming. It is reported once per
+        failing episode rather than once per observation: a broken dependency at this
+        interval would otherwise become one log line every second.
+        """
+        failing = False
         while True:
-            await self._observer.observe_once()
+            try:
+                await self._observer.observe_once()
+            except Exception as unexpected:
+                self._failures += 1
+                if not failing:
+                    failing = True
+                    self._report(unexpected)
+            else:
+                failing = False
             await self._pause()

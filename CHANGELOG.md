@@ -2062,6 +2062,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **A single failed observation no longer stops mission publication for good.** The first live run
+  hit the weakness ADR-0209 had named: the observer staged `SEARCHING` one second after Start, then
+  the task ended, and the mission stayed `SEARCHING` while the fleet completed all fourteen ticks and
+  private control answered `EXHAUSTED` throughout. Nothing recorded which exception ended it, because
+  a task held in an attribute is never collected and the only `await` was at shutdown. The loop now
+  catches, counts, and reports an escaping exception and keeps observing, and the failures an
+  observation can legitimately meet are widened to the store's own boundary errors. The report names
+  the exception's class and nothing else, because a traceback here could carry a database URL
+  ([ADR-0211](docs/adr/0211-let-the-mission-lifecycle-observer-outlive-one-failure.md)).
+
 - **The deployed recorder now moves the mission lifecycle column it owns.** The transition applier
   existed only in the parallel `service.py` composition, so the container Compose runs appended a
   mission event's audit row and left `dashboard_mission.lifecycle` where it was. Nothing observed it

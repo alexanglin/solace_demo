@@ -229,6 +229,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0208](0208-publish-the-dashboard-outbox-on-the-serving-cycle.md) | Publish the dashboard application outbox on the serving cycle | Accepted |
 | [0209](0209-publish-the-mission-lifecycle-from-observed-run-status.md) | Publish the mission lifecycle from observed private run status | Accepted |
 | [0210](0210-publish-the-ending-a-reset-gives-its-predecessor.md) | Publish the ending a reset gives its predecessor | Accepted |
+| [0211](0211-let-the-mission-lifecycle-observer-outlive-one-failure.md) | Let the mission-lifecycle observer outlive one failed observation | Accepted |
 
 ## Decisions still open
 

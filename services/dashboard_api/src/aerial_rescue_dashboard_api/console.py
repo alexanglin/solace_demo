@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -83,6 +84,7 @@ _SSE_KEEPALIVE_MILLISECONDS: Final = 15_000
 _AUDIT_PAGE_SIZE: Final = 50
 _APPROVAL_TIME_TO_LIVE_MILLISECONDS: Final = 60_000
 MISSION_LIFECYCLE_POLL_MILLISECONDS: Final = 1_000
+_LOGGER: Final = logging.getLogger(__name__)
 _SOCKET_DEFAULT: Final = "/run/aerial-rescue/dashboard-api.sock"
 _SCHEMA_DEFAULT: Final = "/app/schemas"
 _SCENARIO_DEFAULT: Final = "/app/scenarios"
@@ -379,6 +381,19 @@ async def _recovery_pause() -> None:
 async def mission_lifecycle_pause() -> None:
     """Wait one observation interval between mission-lifecycle observations."""
     await asyncio.sleep(MISSION_LIFECYCLE_POLL_MILLISECONDS / 1_000)
+
+
+def report_mission_lifecycle_failure(error: BaseException) -> None:
+    """Name the class that stopped one observation without printing any value it carries.
+
+    A traceback here could carry a database URL, so only the class is named. That is
+    enough to say which dependency or invariant broke, and it cannot leak a credential.
+    """
+    _LOGGER.error(
+        "mission lifecycle observation failed: %s.%s",
+        type(error).__module__,
+        type(error).__qualname__,
+    )
 
 
 def _observed_at() -> str:

@@ -502,14 +502,22 @@ async def test_a_durable_lifecycle_outside_the_domain_states_is_not_swallowed() 
 class _Observer:
     outcomes: list[ObservationOutcome] = field(default_factory=list)
     failure: Exception | None = None
+    recovers_after: int | None = None
+    attempts: int = 0
     attempted: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def observe_once(self) -> ObservationOutcome:
+        self.attempts += 1
         self.attempted.set()
-        if self.failure is not None:
+        failing = self.recovers_after is None or self.attempts <= self.recovers_after
+        if self.failure is not None and failing:
             raise self.failure
         self.outcomes.append(ObservationOutcome.CURRENT)
         return ObservationOutcome.CURRENT
+
+
+def _ignore_failure(_error: BaseException) -> None:
+    """Discard the report where the case under test is not about reporting."""
 
 
 class _Pause:
@@ -533,7 +541,7 @@ async def test_the_watch_observes_repeatedly_until_it_is_stopped() -> None:
     # Arrange
     observer = _Observer()
     pause = _Pause(admitted=_ADMITTED_OBSERVATIONS)
-    watch = MissionLifecycleWatch(observer, pause)
+    watch = MissionLifecycleWatch(observer, pause, _ignore_failure)
 
     # Act
     await watch.start()
@@ -548,7 +556,7 @@ async def test_the_watch_observes_repeatedly_until_it_is_stopped() -> None:
 async def test_stopping_a_watch_that_never_started_is_inert_and_repeatable() -> None:
     # Arrange
     observer = _Observer()
-    watch = MissionLifecycleWatch(observer, _Pause(admitted=1))
+    watch = MissionLifecycleWatch(observer, _Pause(admitted=1), _ignore_failure)
 
     # Act
     await watch.stop()
@@ -562,7 +570,7 @@ async def test_stopping_a_watch_that_never_started_is_inert_and_repeatable() -> 
 @pytest.mark.asyncio
 async def test_starting_the_one_owned_task_twice_is_refused() -> None:
     # Arrange
-    watch = MissionLifecycleWatch(_Observer(), _Pause(admitted=1))
+    watch = MissionLifecycleWatch(_Observer(), _Pause(admitted=1), _ignore_failure)
     await watch.start()
 
     # Act
@@ -575,19 +583,41 @@ async def test_starting_the_one_owned_task_twice_is_refused() -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unexpected_failure_ends_the_task_and_surfaces_at_shutdown() -> None:
-    """Expected failures are typed outcomes, so a raise here is a defect and must not vanish."""
+async def test_an_unexpected_failure_is_reported_and_the_next_observation_still_runs() -> None:
+    """The first live run proved a silent stop: one raise and the mission never reached its end."""
     # Arrange
     unexpected = RuntimeError("durable lifecycle is not a known state")
-    observer = _Observer(failure=unexpected)
-    watch = MissionLifecycleWatch(observer, _Pause(admitted=1))
-    await watch.start()
-    await observer.attempted.wait()
-    await asyncio.sleep(0)
+    observer = _Observer(failure=unexpected, recovers_after=1)
+    pause = _Pause(admitted=_ADMITTED_OBSERVATIONS)
+    reported: list[BaseException] = []
+    watch = MissionLifecycleWatch(observer, pause, reported.append)
 
     # Act
-    with pytest.raises(RuntimeError, match="durable lifecycle is not a known state") as surfaced:
-        await watch.stop()
+    await watch.start()
+    await pause.reached.wait()
+    await watch.stop()
 
     # Assert
-    assert surfaced.value is unexpected
+    assert reported == [unexpected]
+    assert watch.failures == 1
+    assert observer.outcomes == [ObservationOutcome.CURRENT] * (_ADMITTED_OBSERVATIONS - 1)
+
+
+@pytest.mark.asyncio
+async def test_one_failing_episode_is_reported_once_however_long_it_lasts() -> None:
+    """A per-second observation must not turn one broken dependency into a per-second log."""
+    # Arrange
+    unexpected = RuntimeError("private control is unreachable")
+    observer = _Observer(failure=unexpected)
+    pause = _Pause(admitted=_ADMITTED_OBSERVATIONS)
+    reported: list[BaseException] = []
+    watch = MissionLifecycleWatch(observer, pause, reported.append)
+
+    # Act
+    await watch.start()
+    await pause.reached.wait()
+    await watch.stop()
+
+    # Assert
+    assert reported == [unexpected]
+    assert watch.failures == _ADMITTED_OBSERVATIONS
