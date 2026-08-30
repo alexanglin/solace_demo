@@ -70,6 +70,7 @@ from aerial_rescue_fleet_simulator.service import (
     Runtime,
     run,
 )
+from solace.messaging.resources.topic import Topic as SolaceTopic
 
 from tests.broker_live_support import (
     DEPLOY_ROOT as DEPLOY,
@@ -89,6 +90,8 @@ from tests.broker_live_support import (
 )
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker, pytest.mark.broker]
+
+FOREIGN_ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS: Final = 5000
 
 PROVISIONING: Final = (
     "uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh"
@@ -207,6 +210,35 @@ def _publish(payload: bytes) -> None:
         publisher.publish(_command_topic(), payload, {})
     finally:
         publisher.close()
+        service.disconnect()
+
+
+def _publish_foreign(payload: bytes) -> None:
+    """Publish one body the project's own publisher would refuse, as a foreign producer.
+
+    `SolacePublisher.publish` injects W3C trace context, and to do that it reads the
+    envelope out of the body -- so a body that is not canonical JSON is refused
+    ``TRACE_REFUSED: PAYLOAD_FORM`` before any broker I/O. That is correct: this
+    application only ever publishes canonical CloudEvents.
+
+    It also means a malformed message can only reach a project queue from a producer that
+    is not this project, so this probe stops borrowing the owned publisher and uses the SDK
+    directly. What it exercises is unchanged and now faithful to how such a message arrives.
+    """
+    service = _service(Principal.COMMAND_GATEWAY)
+    try:
+        publisher = service.create_persistent_message_publisher_builder().build()
+        publisher.start()
+        try:
+            message = service.message_builder().build(bytearray(payload))
+            publisher.publish_await_acknowledgement(
+                message,
+                SolaceTopic.of(_command_topic()),
+                FOREIGN_ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS,
+            )
+        finally:
+            publisher.terminate()
+    finally:
         service.disconnect()
 
 
@@ -385,7 +417,7 @@ class UnreadableCommandLiveTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         """Publish bytes that are not an envelope and let the simulator meet them."""
         cls.dead_before = _depth(PROBE_DEAD_MESSAGE_QUEUE)
-        _publish(b"{not canonical json")
+        _publish_foreign(b"{not canonical json")
         _settled_depth(PROBE_QUEUE, 1)
         report = run(
             Runtime(
