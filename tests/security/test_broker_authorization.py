@@ -113,12 +113,13 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     in this helper indistinguishable from a denial, and every test below asserts a denial,
     so a broad catch would turn a broken probe into ten passing security tests.
 
-    The body is ``bytes`` holding canonical JSON that carries neither ``specversion`` nor
-    ``traceparent``, which is what `trace_fields_from_payload` returns ``None`` for. Both
-    halves matter. ``bytes`` makes the SDK build a binary attachment, so
-    ``get_payload_as_bytes`` returns what was published; a ``str`` becomes a structured-data
-    string whose wire form no JSON decoder can read. And the JSON makes the decoded body a
-    non-envelope rather than a refusal.
+    The body is a ``bytearray`` holding canonical JSON that carries neither ``specversion``
+    nor ``traceparent``, which is what `trace_fields_from_payload` returns ``None`` for.
+    Both halves matter. The builder takes a ``bytearray`` or a ``str`` and never ``bytes``
+    -- the same trap `SolacePublisher.publish` documents -- and only the ``bytearray`` makes
+    a binary attachment whose ``get_payload_as_bytes`` returns what was published; a ``str``
+    becomes a structured-data string whose wire form no JSON decoder can read. And the JSON
+    makes the decoded body a non-envelope rather than a refusal.
 
     The ACL answer this probe measures does not depend on the body at all, but a permitted
     publish spools one, and the production receive path validates native trace context
@@ -133,7 +134,7 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     try:
         publisher = service.create_persistent_message_publisher_builder().build()
         publisher.start()
-        message = service.message_builder().build(PROBE_BODY)
+        message = service.message_builder().build(bytearray(PROBE_BODY))
         publisher.publish_await_acknowledgement(
             message, SolaceTopic.of(topic), ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS
         )
