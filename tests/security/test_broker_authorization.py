@@ -40,7 +40,7 @@ pytestmark = [pytest.mark.security, pytest.mark.docker, pytest.mark.broker]
 
 VPN = LOCAL_BROKER_ENDPOINT.vpn
 ACKNOWLEDGEMENT_TIMEOUT_MILLISECONDS = 5000
-PROBE_BODY = '{"probe":"authorization"}'
+PROBE_BODY = b'{"probe":"authorization"}'
 
 MISSION = "m-1"
 DRONE_COMMAND = format_topic(
@@ -113,11 +113,17 @@ def _attempt(username: str, credential: str, topic: str) -> Outcome:
     in this helper indistinguishable from a denial, and every test below asserts a denial,
     so a broad catch would turn a broken probe into ten passing security tests.
 
-    The body is canonical JSON carrying neither ``specversion`` nor ``traceparent``, which
-    is what `trace_fields_from_payload` returns ``None`` for. The ACL answer this probe
-    measures does not depend on the body at all, but a permitted publish spools one, and a
-    body the production receive path cannot decode leaves a durable queue that the next
-    file in the suite cannot drain.
+    The body is ``bytes`` holding canonical JSON that carries neither ``specversion`` nor
+    ``traceparent``, which is what `trace_fields_from_payload` returns ``None`` for. Both
+    halves matter. ``bytes`` makes the SDK build a binary attachment, so
+    ``get_payload_as_bytes`` returns what was published; a ``str`` becomes a structured-data
+    string whose wire form no JSON decoder can read. And the JSON makes the decoded body a
+    non-envelope rather than a refusal.
+
+    The ACL answer this probe measures does not depend on the body at all, but a permitted
+    publish spools one, and the production receive path validates native trace context
+    against the body before settling it -- so a body it cannot decode leaves a durable queue
+    the next file in the suite cannot drain.
     """
     service = _service(username, credential)
     try:

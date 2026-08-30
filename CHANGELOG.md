@@ -2067,9 +2067,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   receive path validates native trace context against the body, so a body it cannot decode becomes
   `TRACE_REFUSED: PAYLOAD_FORM` and the message can never be settled — which is why
   `test_guaranteed_delivery_live.py` failed in the hosted job on a queue it was trying to empty. The
-  probe now publishes canonical JSON carrying neither `specversion` nor `traceparent`, which is what
-  `trace_fields_from_payload` returns `None` for. The ACL answer the probe measures never depended on
-  the body.
+  probe now publishes `bytes` holding canonical JSON that carries neither `specversion` nor
+  `traceparent`. Both halves matter: `bytes` makes the SDK build a binary attachment so
+  `get_payload_as_bytes` returns what was published, where a `str` becomes a structured-data string
+  no JSON decoder can read, and the JSON makes the decoded body a non-envelope rather than a refusal.
+  The ACL answer the probe measures never depended on the body.
 
 - **The hosted live-integration job can be green again.** It has been red on `main` reporting only the
   failing file's name; the first run that printed the failing test's own output named the cause at
