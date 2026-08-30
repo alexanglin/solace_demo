@@ -91,32 +91,53 @@ class _Scenario:
         return _status(self.state)
 
 
+@dataclass(frozen=True)
+class _Predecessor:
+    """The exact identity pair the retained predecessor read returns."""
+
+    mission_id: str
+    run_id: str | None
+
+
 @dataclass
 class _Transaction:
+    lifecycles: dict[str, str]
     durable: str
     failure: Exception | None
+    predecessor: _Predecessor | None
     staged: list[StagedApplicationEvent]
 
-    async def mission_lifecycle(self, _mission_id: str) -> str:
+    async def mission_lifecycle(self, mission_id: str) -> str:
         if self.failure is not None:
             raise self.failure
-        return self.durable
+        return self.lifecycles.get(mission_id, self.durable)
 
     async def stage(self, event: StagedApplicationEvent) -> None:
         self.staged.append(event)
+
+    async def predecessor_run(self, _mission_id: str) -> _Predecessor | None:
+        return self.predecessor
 
 
 @dataclass
 class _Transactions:
     durable: str = "PLANNED"
     failure: Exception | None = None
+    predecessor: _Predecessor | None = None
+    lifecycles: dict[str, str] = field(default_factory=dict)
     staged: list[StagedApplicationEvent] = field(default_factory=list)
     opened: int = 0
 
     @asynccontextmanager
     async def open(self) -> AsyncIterator[_Transaction]:
         self.opened += 1
-        yield _Transaction(self.durable, self.failure, self.staged)
+        yield _Transaction(
+            self.lifecycles,
+            self.durable,
+            self.failure,
+            self.predecessor,
+            self.staged,
+        )
 
 
 def _stamp() -> MutationStamp:
@@ -338,6 +359,87 @@ async def test_repeating_the_same_observation_stages_the_same_identity_once_more
     assert {event.event_id for event in transactions.staged} == {
         lifecycle_event_id(_MISSION, MissionState.EXHAUSTED)
     }
+
+
+_PREDECESSOR_MISSION: Final = "mission-synthetic-0000"
+_PREDECESSOR_RUN: Final = "run-synthetic-0000"
+
+
+@pytest.mark.asyncio
+async def test_a_reset_predecessor_left_nonterminal_is_aborted_once() -> None:
+    """Reset ends a mission by creating a successor; the ending itself is still an event."""
+    # Arrange
+    transactions = _Transactions(
+        durable="SEARCHING",
+        predecessor=_Predecessor(_PREDECESSOR_MISSION, _PREDECESSOR_RUN),
+        lifecycles={_MISSION: "SEARCHING", _PREDECESSOR_MISSION: "SEARCHING"},
+    )
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    outcomes = [await observer.observe_once(), await observer.observe_once()]
+
+    # Assert
+    assert outcomes == [ObservationOutcome.CURRENT, ObservationOutcome.CURRENT]
+    assert {event.event_id for event in transactions.staged} == {
+        lifecycle_event_id(_PREDECESSOR_MISSION, MissionState.ABORTED)
+    }
+    assert decode_envelope(transactions.staged[0].payload).data == {
+        "missionId": _PREDECESSOR_MISSION,
+        "lifecycle": "ABORTED",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_predecessor_that_reached_its_own_ending_is_left_alone() -> None:
+    """An exhausted search was not aborted by the reset that replaced it."""
+    # Arrange
+    transactions = _Transactions(
+        durable="SEARCHING",
+        predecessor=_Predecessor(_PREDECESSOR_MISSION, _PREDECESSOR_RUN),
+        lifecycles={_MISSION: "SEARCHING", _PREDECESSOR_MISSION: "EXHAUSTED"},
+    )
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.CURRENT
+    assert transactions.staged == []
+
+
+@pytest.mark.asyncio
+async def test_a_first_mission_has_no_predecessor_to_settle() -> None:
+    # Arrange
+    transactions = _Transactions(durable="SEARCHING", predecessor=None)
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.CURRENT
+    assert transactions.staged == []
+
+
+@pytest.mark.asyncio
+async def test_a_predecessor_without_a_retained_run_identity_is_not_published() -> None:
+    """The correlation identity is the run; a replay predecessor has none."""
+    # Arrange
+    transactions = _Transactions(
+        durable="SEARCHING",
+        predecessor=_Predecessor(_PREDECESSOR_MISSION, None),
+        lifecycles={_MISSION: "SEARCHING", _PREDECESSOR_MISSION: "PLANNED"},
+    )
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.CURRENT
+    assert transactions.staged == []
 
 
 @dataclass

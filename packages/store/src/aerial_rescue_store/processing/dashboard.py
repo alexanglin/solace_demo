@@ -25,7 +25,12 @@ from aerial_rescue_store.approvals import ApprovalSession, StoredApproval
 from aerial_rescue_store.approvals import record as record_approval
 from aerial_rescue_store.audit import AuditReadSession, StoredAuditRecord
 from aerial_rescue_store.audit import read_ordered_after as read_audit_suffix
-from aerial_rescue_store.dashboard.runs import RunSession
+from aerial_rescue_store.dashboard.runs import (
+    DashboardRun,
+    RunSession,
+    mission_predecessor,
+    run_by_mission,
+)
 from aerial_rescue_store.dashboard.runs import (
     mission_lifecycle_for_update as lifecycle_for_update,
 )
@@ -134,6 +139,14 @@ class DashboardLifecycleTransaction:
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Stage exact event bytes under the same lock that decided them."""
         await stage_application(cast("ApplicationOutboxSession", self._session), event)
+
+    async def predecessor_run(self, mission_id: str) -> DashboardRun | None:
+        """Return the run a reset retained, reachable only through the mission's own link."""
+        session = cast("RunSession", self._session)
+        predecessor_id = await mission_predecessor(session, mission_id)
+        if predecessor_id is None:
+            return None
+        return await run_by_mission(session, predecessor_id)
 
 
 class DashboardMutationTransactions:
