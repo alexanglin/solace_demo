@@ -115,7 +115,7 @@ test("collects private fleet status and recorder-linked audit evidence without a
   expect(runtimeSource).toContain("FleetHttpClient");
   expect(runtimeSource).toContain("FROM dashboard_broker_event AS broker_event");
   expect(runtimeSource).toContain("JOIN audit_record AS audit");
-  expect(runtimeSource).toContain("audit.kind = 'droneTelemetry'");
+  expect(runtimeSource).toContain("audit.kind = 'aerial-rescue.v1.drone.telemetry'");
   expect(workflowSource).toContain("collectLiveMissionEvidence");
   expect(workflowSource).toContain("completedTickCount).toBe(14)");
   expect(workflowSource).toContain("telemetryPublicationCount).toBe(280)");

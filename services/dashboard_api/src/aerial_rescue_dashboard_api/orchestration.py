@@ -232,11 +232,14 @@ class OperationCoordinator:
             raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE) from unreadable
         if is_terminal(durable_state):
             return True
-        status = await self._scenario.cancel(
-            predecessor.mission_id,
-            predecessor.run_id,
-            CANCELLATION_BUDGET_SECONDS,
-        )
+        try:
+            status = await self._scenario.cancel(
+                predecessor.mission_id,
+                predecessor.run_id,
+                CANCELLATION_BUDGET_SECONDS,
+            )
+        except ScenarioRunNotFoundError:
+            status = await self._recover_forgotten(predecessor)
         _require_private_status(
             status,
             scenario_id=predecessor.scenario_id,
@@ -245,6 +248,27 @@ class OperationCoordinator:
             run_id=predecessor.run_id,
         )
         return status.state in {"ABORTED", "EXHAUSTED"}
+
+    async def _recover_forgotten(self, predecessor: CurrentRun) -> ScenarioRunStatus:
+        """Reconcile a run the private control epoch no longer remembers.
+
+        Scenario control keeps its run bindings in process memory, so recreating it leaves
+        a durable pointer naming a run it will answer `RUN_NOT_FOUND` for. Without this the
+        operator has no in-app path at all: Start conflicts on the current run and Reset
+        cannot establish cancellation, permanently.
+
+        Recovery is not an assumption that the run ended. It asks the fleet, and reports
+        `ABORTED` only for a run the fleet has also lost; a fleet still holding the run
+        answers with its real state and cancellation remains unestablished.
+        """
+        if predecessor.mission_id is None or predecessor.run_id is None:
+            raise ApiError(ErrorCode.RUN_CONFLICT)
+        return await self._scenario.recover(
+            predecessor.scenario_id,
+            predecessor.scenario_revision,
+            predecessor.mission_id,
+            predecessor.run_id,
+        )
 
     async def _complete_refusal(
         self, operation: ClaimedOperation, code: ErrorCode

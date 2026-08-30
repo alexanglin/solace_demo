@@ -199,6 +199,7 @@ class FakeScenario:
     recoveries: list[tuple[str, str]] = field(default_factory=list)
     missing_runs: set[str] = field(default_factory=set)
     cancel_state: Literal["PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"] = "ABORTED"
+    recovery_state: Literal["PLANNED", "SEARCHING", "EXHAUSTED", "ABORTED"] = "ABORTED"
     status_mission_id: str = "mission-test-0001"
     status_run_id: str | None = None
 
@@ -242,6 +243,8 @@ class FakeScenario:
     async def cancel(self, mission_id: str, run_id: str, timeout: float) -> ScenarioRunStatus:
         """Record the shared cancellation budget and establish cancellation."""
         self.cancels.append((mission_id, run_id, timeout))
+        if run_id in self.missing_runs:
+            raise ScenarioRunNotFoundError(run_id)
         return ScenarioRunStatus(
             scenario_id="wilderness-missing-person",
             scenario_revision=1,
@@ -264,7 +267,7 @@ class FakeScenario:
             scenario_revision=scenario_revision,
             mission_id=mission_id,
             run_id=run_id,
-            state="ABORTED",
+            state=self.recovery_state,
         )
 
 
