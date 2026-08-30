@@ -12,7 +12,7 @@ import hashlib
 from dataclasses import dataclass
 from enum import Enum
 from types import TracebackType
-from typing import Protocol
+from typing import Final, Protocol
 
 from aerial_rescue_broker.messaging import (
     AcknowledgingReceiver,
@@ -39,7 +39,7 @@ from aerial_rescue_contracts.topics import (
     parse_topic,
 )
 from aerial_rescue_contracts.view import DashboardEvent, ViewError, project
-from aerial_rescue_domain.mission import MissionError
+from aerial_rescue_domain.mission import MissionError, MissionState
 from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.dashboard.events import (
     BrokerEvent,
@@ -67,6 +67,12 @@ def recording_policy(family: Family) -> RecordingPolicy:
     return RecordingPolicy.RECORD
 
 
+MISSION_LIFECYCLE_TYPE: Final = "aerial-rescue.v1.mission.event.lifecycle"
+"""The one event type whose payload moves the recorder-owned mission lifecycle."""
+
+_LIFECYCLE_MEMBER: Final = "lifecycle"
+
+
 class CaptureRefusal(Enum):
     """Why an already typed ingress value cannot enter the durable recorder transaction."""
 
@@ -75,6 +81,7 @@ class CaptureRefusal(Enum):
     TOPIC_BINDING = "accepted envelope and arriving topic disagree"
     INBOX_OUTCOME = "durable inbox outcome is incomplete or malformed"
     AUDIT_ORDINAL = "durable audit append returned no positive ordinal"
+    MISSION_LIFECYCLE = "mission lifecycle event carries no state the domain names"
 
 
 class CaptureError(ValueError):
@@ -170,6 +177,7 @@ class RecordingFact:
     audit: AuditFact
     broker_event: BrokerEvent
     observed_at: str
+    mission_lifecycle: MissionState | None
 
 
 @dataclass(frozen=True)
@@ -188,6 +196,9 @@ class RecordingTransaction(Protocol):
 
     async def record_source_event(self, fact: SourceEventFact, /) -> None:
         """Persist the complete immutable source event idempotently."""
+
+    async def apply_mission_lifecycle(self, mission_id: str, target: MissionState, /) -> None:
+        """Move the recorder-owned lifecycle through the domain table, or refuse."""
 
     async def append_audit(self, fact: AuditFact, /) -> int:
         """Append the accepted fact and return its authoritative mission ordinal."""
@@ -308,7 +319,31 @@ def _recording_fact(consumer: str, notification: ReceivedNotification) -> Record
         source_sequence=int(envelope.sequence),
         payload_digest=hashlib.sha256(canonical_event).hexdigest(),
     )
-    return RecordingFact(inbox, source, audit, broker_event, notification.observed_at)
+    return RecordingFact(
+        inbox,
+        source,
+        audit,
+        broker_event,
+        notification.observed_at,
+        _observed_lifecycle(envelope),
+    )
+
+
+def _observed_lifecycle(envelope: Envelope) -> MissionState | None:
+    """Return the state a mission-lifecycle event carries, or ``None`` for every other type.
+
+    The payload has already passed its committed schema, whose ``lifecycle`` enum is a
+    subset of the domain states, so an unknown name here is a defect rather than input.
+    """
+    if envelope.type != MISSION_LIFECYCLE_TYPE:
+        return None
+    lifecycle = envelope.data.get(_LIFECYCLE_MEMBER)
+    if not isinstance(lifecycle, str):
+        raise CaptureError(CaptureRefusal.MISSION_LIFECYCLE, _LIFECYCLE_MEMBER)
+    try:
+        return MissionState[lifecycle]
+    except KeyError:
+        raise CaptureError(CaptureRefusal.MISSION_LIFECYCLE, _LIFECYCLE_MEMBER) from None
 
 
 async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> CaptureOutcome:
@@ -320,6 +355,8 @@ async def _persist(transaction: RecordingTransaction, fact: RecordingFact) -> Ca
     if claimed.audit_ordinal is not None:
         raise CaptureError(CaptureRefusal.INBOX_OUTCOME, fact.inbox.event_id)
     await transaction.record_source_event(fact.source_event)
+    if fact.mission_lifecycle is not None:
+        await transaction.apply_mission_lifecycle(fact.audit.mission_id, fact.mission_lifecycle)
     ordinal = _positive_ordinal(
         await transaction.append_audit(fact.audit), CaptureRefusal.AUDIT_ORDINAL
     )

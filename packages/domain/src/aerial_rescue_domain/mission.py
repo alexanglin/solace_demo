@@ -67,6 +67,15 @@ TERMINAL_STATES: Final[frozenset[MissionState]] = frozenset(MissionState) - {
 }
 """The three endings, derived from the table so terminality is not a second home."""
 
+_EVENT_REACHING: Final[Mapping[MissionState, MissionEvent]] = {
+    target: event for (_source, event), target in _TRANSITIONS.items()
+}
+"""The one event that reaches each reachable state, derived so it cannot go stale.
+
+Every target in the table is reached by exactly one event -- `ABORTED` has three source
+states but only `ABORT` reaches it -- so this inversion loses nothing.
+"""
+
 
 def transition(state: MissionState, event: MissionEvent) -> MissionState:
     """Return the state an event leads to, refusing every pair outside the table.
@@ -86,6 +95,23 @@ def transition(state: MissionState, event: MissionEvent) -> MissionState:
     if target is None:
         raise MissionError(MissionRefusal.TRANSITION, (state, event))
     return target
+
+
+def event_reaching(state: MissionState) -> MissionEvent | None:
+    """Return the one event that reaches ``state``, or ``None`` for the initial state.
+
+    A producer that has observed a mission in some state needs the event that would
+    explain it before it can ask whether the table admits that edge from where the mission
+    durably stands. Only :data:`INITIAL_STATE` has no inbound event: a mission is planned
+    by being created, not by an event.
+
+    Args:
+        state: The state a producer or consumer has observed.
+
+    Returns:
+        The event whose every legal application yields ``state``, or ``None``.
+    """
+    return _EVENT_REACHING.get(state)
 
 
 def is_terminal(state: MissionState) -> bool:

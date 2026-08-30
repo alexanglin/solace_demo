@@ -442,6 +442,62 @@ async def test_a_predecessor_without_a_retained_run_identity_is_not_published() 
     assert transactions.staged == []
 
 
+@pytest.mark.asyncio
+async def test_a_nonterminal_mission_and_an_unreachable_state_stages_nothing() -> None:
+    """No event reaches `PLANNED`, so a status reporting it is refused rather than published."""
+    # Arrange
+    transactions = _Transactions(durable="SEARCHING")
+    observer = _observer(_Runs(_live_run()), _Scenario("PLANNED"), transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.SETTLED
+    assert transactions.staged == []
+
+
+@pytest.mark.asyncio
+async def test_a_started_live_pointer_without_a_mission_identity_is_not_observed() -> None:
+    """A pointer this incomplete is a defect elsewhere; it must not become a publication."""
+    # Arrange
+    incomplete = CurrentRun(
+        mode=RunMode.DEGRADED_LIVE,
+        scenario_id="wilderness-missing-person",
+        scenario_revision=1,
+        mission_id=None,
+        run_id=None,
+        session_id=None,
+        started=True,
+    )
+    transactions = _Transactions()
+    scenario = _Scenario("SEARCHING")
+    observer = _observer(_Runs(incomplete), scenario, transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.NOT_APPLICABLE
+    assert scenario.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_durable_lifecycle_outside_the_domain_states_is_not_swallowed() -> None:
+    """The column's own constraint forbids this, so it is a defect, not a typed outcome."""
+    # Arrange
+    transactions = _Transactions(durable="NOT-A-STATE")
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    with pytest.raises(MissionLifecycleError) as refused:
+        await observer.observe_once()
+
+    # Assert
+    assert refused.value.refusal is LifecycleRefusal.UNPUBLISHED_STATE
+    assert transactions.staged == []
+
+
 @dataclass
 class _Observer:
     outcomes: list[ObservationOutcome] = field(default_factory=list)

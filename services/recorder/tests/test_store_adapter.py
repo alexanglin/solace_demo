@@ -6,9 +6,10 @@ import unittest
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import Final
+from typing import Final, cast
 
 import pytest
+from aerial_rescue_domain.mission import MissionError, MissionRefusal, MissionState
 from aerial_rescue_recorder.capture import (
     AuditFact,
     InboxDecision,
@@ -16,9 +17,11 @@ from aerial_rescue_recorder.capture import (
     SourceEventFact,
 )
 from aerial_rescue_recorder.store import (
+    RecordingTransactionAdapter,
     RecordingTransactionsAdapter,
     StoreAdapterError,
     StoreAdapterRefusal,
+    StoreRecordingTransaction,
 )
 from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.dashboard.events import BrokerEvent
@@ -34,6 +37,7 @@ from aerial_rescue_store.inbox import (
 from aerial_rescue_store.processing.source_events import StoredSourceEvent
 
 MISSION: Final = "mission-1"
+_CLAIMED: Final = StoreInboxOutcome(StoreInboxDecision.CLAIMED, None)
 EVENT_ID: Final = "event-1"
 OBSERVED_AT: Final = "2026-08-25T12:00:00.250Z"
 TRACEPARENT: Final = "00-4bf92f3577b34da6a3ce929d0e0e4740-b7ad6b7169203340-01"
@@ -76,6 +80,8 @@ class _StoreTransaction:
     audits: list[AuditRecord] = field(default_factory=list)
     completions: list[tuple[InboxIdentity, bytes, str]] = field(default_factory=list)
     links: list[tuple[BrokerEvent, str, int]] = field(default_factory=list)
+    lifecycle: str = "PLANNED"
+    transitions: list[tuple[str, str, str]] = field(default_factory=list)
 
     async def claim_inbox(self, identity: InboxIdentity) -> StoreInboxOutcome:
         """Return the scripted durable claim."""
@@ -88,6 +94,17 @@ class _StoreTransaction:
         self.calls.append("source")
         self.sources.append(event)
         return object()
+
+    async def mission_lifecycle(self, mission_id: str) -> str:
+        """Return the scripted recorder-owned lifecycle for the locked mission row."""
+        self.calls.append("read-lifecycle")
+        del mission_id
+        return self.lifecycle
+
+    async def transition_mission(self, mission_id: str, expected: str, target: str) -> None:
+        """Record the compare-and-set the adapter issues after the domain approves it."""
+        self.calls.append("transition")
+        self.transitions.append((mission_id, expected, target))
 
     async def append_audit(self, record: AuditRecord) -> int:
         """Record the audit input and return its authoritative ordinal."""
@@ -301,3 +318,59 @@ class RecordingStoreAdapterTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissionLifecycleTransitionAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_domain_approved_transition_is_a_compare_and_set_on_the_read_state(
+        self,
+    ) -> None:
+        """The read is the expected value, so a concurrent writer loses rather than being lost."""
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED, lifecycle="PLANNED")
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+
+        # Act
+        await adapter.apply_mission_lifecycle(MISSION, MissionState.SEARCHING)
+
+        # Assert
+        self.assertEqual([(MISSION, "PLANNED", "SEARCHING")], transaction.transitions)
+        self.assertEqual(["read-lifecycle", "transition"], transaction.calls)
+
+    async def test_a_state_the_mission_already_holds_issues_no_write(self) -> None:
+        """A redelivered event must not fail; it has simply already been applied."""
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED, lifecycle="SEARCHING")
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+
+        # Act
+        await adapter.apply_mission_lifecycle(MISSION, MissionState.SEARCHING)
+
+        # Assert
+        self.assertEqual([], transaction.transitions)
+        self.assertEqual(["read-lifecycle"], transaction.calls)
+
+    async def test_a_transition_the_table_refuses_writes_nothing_and_names_the_pair(self) -> None:
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED, lifecycle="EXHAUSTED")
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+
+        # Act
+        with pytest.raises(MissionError) as refused:
+            await adapter.apply_mission_lifecycle(MISSION, MissionState.SEARCHING)
+
+        # Assert
+        self.assertIs(MissionRefusal.TRANSITION, refused.value.refusal)
+        self.assertEqual([], transaction.transitions)
+
+    async def test_a_stored_state_outside_the_domain_is_refused_rather_than_coerced(self) -> None:
+        # Arrange
+        transaction = _StoreTransaction(_CLAIMED, lifecycle="NOT-A-STATE")
+        adapter = RecordingTransactionAdapter(cast("StoreRecordingTransaction", transaction))
+
+        # Act
+        with pytest.raises(MissionError) as refused:
+            await adapter.apply_mission_lifecycle(MISSION, MissionState.SEARCHING)
+
+        # Assert
+        self.assertIs(MissionRefusal.TRANSITION, refused.value.refusal)
+        self.assertEqual([], transaction.transitions)

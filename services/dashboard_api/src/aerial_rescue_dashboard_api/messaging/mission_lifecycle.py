@@ -21,8 +21,8 @@ from aerial_rescue_contracts.envelope import (
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
 from aerial_rescue_domain.mission import (
     MissionError,
-    MissionEvent,
     MissionState,
+    event_reaching,
     is_terminal,
     transition,
 )
@@ -198,13 +198,6 @@ class MissionLifecycleEvents:
             staged_at=stamp.occurred_at,
         )
 
-
-_EVENT_REACHING: Final[dict[MissionState, MissionEvent]] = {
-    MissionState.SEARCHING: MissionEvent.START,
-    MissionState.EXHAUSTED: MissionEvent.EXHAUST,
-    MissionState.ABORTED: MissionEvent.ABORT,
-}
-"""The one event that reaches each publishable non-initial state, per ADR-0072's table."""
 
 _UNAVAILABLE: Final = (
     ApiError,
@@ -384,7 +377,7 @@ def _state(name: str) -> MissionState:
 
 def _reaches(current: MissionState, observed: MissionState) -> bool:
     """Report whether the transition table admits an edge from ``current`` to ``observed``."""
-    event = _EVENT_REACHING.get(observed)
+    event = event_reaching(observed)
     if event is None:
         return False
     try:

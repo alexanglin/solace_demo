@@ -13,6 +13,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol, cast
 
 from aerial_rescue_contracts import canonical
+from aerial_rescue_domain.mission import (
+    MissionError,
+    MissionRefusal,
+    MissionState,
+    event_reaching,
+    transition,
+)
 from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.dashboard.events import BrokerEvent
 from aerial_rescue_store.inbox import (
@@ -66,6 +73,12 @@ class StoreRecordingTransaction(Protocol):
 
     async def record_source_event(self, event: StoredSourceEvent, /) -> object:
         """Persist one complete immutable source event."""
+
+    async def mission_lifecycle(self, mission_id: str, /) -> str:
+        """Read the recorder-owned lifecycle under an exclusive row lock."""
+
+    async def transition_mission(self, mission_id: str, expected: str, target: str, /) -> None:
+        """Move the locked mission row by compare-and-set on the state that was read."""
 
     async def append_audit(self, record: AuditRecord, /) -> int:
         """Append one audit fact and return the store-issued ordinal."""
@@ -128,6 +141,27 @@ class RecordingTransactionAdapter:
                 observed_at=fact.observed_at,
             )
         )
+
+    async def apply_mission_lifecycle(self, mission_id: str, target: MissionState, /) -> None:
+        """Apply one domain-approved transition inside the caller's recorder transaction.
+
+        The lifecycle column is the recorder's to move, and the deployed composition never
+        moved it: the transition applier lived only in the parallel service composition, so
+        a mission stayed `PLANNED` however far its fleet swept. A redelivered event finds
+        the state already applied and writes nothing, which is why this is safe to run on
+        every delivery rather than only the first.
+        """
+        current_name = await self._transaction.mission_lifecycle(mission_id)
+        try:
+            current = MissionState[current_name]
+        except KeyError as invalid:
+            raise MissionError(MissionRefusal.TRANSITION, current_name) from invalid
+        if current is target:
+            return
+        event = event_reaching(target)
+        if event is None or transition(current, event) is not target:
+            raise MissionError(MissionRefusal.TRANSITION, (current, target))
+        await self._transaction.transition_mission(mission_id, current.name, target.name)
 
     async def append_audit(self, fact: AuditFact, /) -> int:
         """Append the canonical event bytes as the authoritative audit payload."""

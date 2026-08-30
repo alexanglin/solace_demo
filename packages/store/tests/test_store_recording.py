@@ -65,6 +65,39 @@ def _factory(session: _Session) -> AsyncSession:
     return cast("AsyncSession", session)
 
 
+class RecorderMissionLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_locked_read_and_its_compare_and_set_share_the_recorder_session(self) -> None:
+        """The recorder owns this column, and its move belongs in the audit's own transaction."""
+        # Arrange
+        session = _Session()
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_store.processing.recording.mission_lifecycle_for_update",
+                AsyncMock(return_value="PLANNED"),
+            ) as locked,
+            patch(
+                "aerial_rescue_store.processing.recording.transition_mission_row", AsyncMock()
+            ) as moved,
+        ):
+            transactions = RecordingTransactions(lambda: _factory(session))
+            async with transactions.open() as transaction:
+                observed = await transaction.mission_lifecycle("mission-1")
+                await transaction.transition_mission("mission-1", "PLANNED", "SEARCHING")
+
+        # Assert
+        self.assertEqual(("PLANNED", ["commit", "close"]), (observed, session.calls))
+        self.assertEqual(
+            (session, session, ("mission-1", "PLANNED", "SEARCHING")),
+            (
+                locked.await_args_list[0].args[0],
+                moved.await_args_list[0].args[0],
+                moved.await_args_list[0].args[1:],
+            ),
+        )
+
+
 class RecordingTransactionTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_recorder_effects_share_one_session_and_commit_together(self) -> None:
         # Arrange

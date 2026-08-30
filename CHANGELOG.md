@@ -2062,6 +2062,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The deployed recorder now moves the mission lifecycle column it owns.** The transition applier
+  existed only in the parallel `service.py` composition, so the container Compose runs appended a
+  mission event's audit row and left `dashboard_mission.lifecycle` where it was. Nothing observed it
+  while nothing published mission events; the moment one did, the column would have stayed `PLANNED`
+  and no `EXHAUST` edge would ever have been legal, because ADR-0072 admits that edge only from
+  `SEARCHING`. The deployed capture path now applies the domain-approved transition inside the same
+  transaction as the audit row, before it, and by compare-and-set on the state it read. A redelivered
+  event finds the state already applied and writes nothing. The one event that reaches each state is
+  now derived from the transition table itself in `packages/domain`, so its three consumers cannot
+  disagree with the table or with each other.
+
 - **A staged dashboard publication no longer waits for unrelated inbound traffic.** `drain_once` was
   reachable only from `DashboardDataPlane.recover()`, which runs on a reconnect or once per inbound
   Guaranteed delivery, so an operator command or proposal decision staged while the session was
