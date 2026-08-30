@@ -82,7 +82,9 @@ export function buildTelemetryReceiptQuery(missionId: string, runId: string): st
     "ON live_run.mission_id = broker_event.audit_mission_id",
     `AND live_run.run_id = '${runId}'`,
     `WHERE broker_event.audit_mission_id = '${missionId}'`,
-    "AND audit.kind = 'droneTelemetry'",
+    // ADR-0205 fixes `audit_record.kind` as the committed envelope's own type. The browser
+    // sees `droneTelemetry` only after `project()` turns that envelope into an event.
+    "AND audit.kind = 'aerial-rescue.v1.drone.telemetry'",
   ].join(" ");
 }
 

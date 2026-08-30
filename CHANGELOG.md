@@ -2062,6 +2062,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Recreating the private control plane no longer strands the operator.** `ScenarioCoordinator`
+  keeps its run bindings in process memory while `dashboard_current_run` is durable, so every
+  `--force-recreate` left a pointer naming a run the scenario service answers `RUN_NOT_FOUND` for.
+  Start then refused `409 OPERATION_CONFLICT` and Reset refused `409 CANCELLATION_NOT_ESTABLISHED`,
+  both durably and exactly, so retrying reproduced them forever and the only remedy was deleting the
+  pointer row by hand. Reset now asks the `recover` route that already existed and that start already
+  used: it establishes `ABORTED` only for a run the fleet has also lost, so a fleet still holding the
+  run answers with its real state and the refusal stands
+  ([ADR-0213](docs/adr/0213-recover-a-run-the-private-control-epoch-forgot.md)).
+
 - **The mission timeline opens with the mission again, and a repeated observation writes nothing.**
   Two facts surfaced on the same browser run. ADR-0072 has no event that reaches `PLANNED`, so the
   transition rule could never produce the timeline's opening entry that the qualified production case

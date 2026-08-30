@@ -71,6 +71,7 @@ Read the owner of each concern before changing it:
 | Reset predecessor mission ending | [ADR-0210](../../docs/adr/0210-publish-the-ending-a-reset-gives-its-predecessor.md) |
 | Mission-lifecycle observer resilience | [ADR-0211](../../docs/adr/0211-let-the-mission-lifecycle-observer-outlive-one-failure.md) |
 | Mission opening entry and outbox pre-check | [ADR-0212](../../docs/adr/0212-announce-the-opening-state-and-ask-the-outbox-before-staging.md) |
+| Forgotten-run reset recovery | [ADR-0213](../../docs/adr/0213-recover-a-run-the-private-control-epoch-forgot.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,

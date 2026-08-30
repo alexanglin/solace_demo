@@ -781,6 +781,51 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(scenario.cancels))
         self.assertEqual("completed", store.operations[KEY_TWO].state.value)
 
+    async def test_a_run_the_private_epoch_forgot_is_recovered_rather_than_stranding_reset(
+        self,
+    ) -> None:
+        """Recreating scenario control loses its in-memory bindings; the pointer is durable.
+
+        Cancel then answers `RUN_NOT_FOUND` for a live predecessor, and without recovery
+        that leaves the operator with no in-app path at all: Start conflicts on the current
+        run and Reset refuses to establish cancellation, permanently.
+        """
+        # Arrange
+        store = FakeStore()
+        scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
+        predecessor = store.current
+        scenario.missing_runs.add("run-test-0001")
+
+        # Act
+        answer = await coordinator.reset(KEY_TWO, "bb" * 32)
+
+        # Assert
+        self.assertEqual(202, answer.status)
+        self.assertEqual([("mission-test-0001", "run-test-0001")], scenario.recoveries)
+        self.assertIsNot(predecessor, store.current)
+
+    async def test_a_run_the_fleet_still_holds_is_not_recovered_into_a_reset(self) -> None:
+        """Recovery reports the fleet's own answer, and a running fleet is not cancellation."""
+        # Arrange
+        store = FakeStore()
+        scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
+        coordinator = _coordinator(store, scenario)
+        await _establish_live_run(coordinator)
+        predecessor = store.current
+        scenario.missing_runs.add("run-test-0001")
+        scenario.recovery_state = "SEARCHING"
+
+        # Act
+        answer = await coordinator.reset(KEY_TWO, "bb" * 32)
+
+        # Assert
+        self.assertEqual(409, answer.status)
+        refusal = _mapping(canonical.decode(answer.body))
+        self.assertEqual("CANCELLATION_NOT_ESTABLISHED", refusal["errorCode"])
+        self.assertIs(predecessor, store.current)
+
     async def test_same_key_with_different_canonical_content_refuses_without_an_effect(
         self,
     ) -> None:
@@ -936,7 +981,10 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         recover.assert_not_awaited()
         start.assert_not_awaited()
 
-    async def test_missing_nonterminal_predecessor_completes_cancellation_refusal(self) -> None:
+    async def test_unrecoverable_nonterminal_predecessor_completes_cancellation_refusal(
+        self,
+    ) -> None:
+        """A forgotten run is recovered now; one recovery cannot establish still refuses."""
         # Arrange
         predecessor = _live_current("mission-old", "run-old", started=True)
         proposal = replace(
@@ -950,6 +998,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.claim_operation(proposal)
         scenario = FakeScenario(dashboard_fixture("scenario-catalog"))
+        scenario.recovery_state = "SEARCHING"
         coordinator = _coordinator(store, scenario)
 
         # Act
@@ -971,6 +1020,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CANCELLATION_NOT_ESTABLISHED", refusal["errorCode"])
         self.assertIs(predecessor, store.current)
         self.assertEqual(1, cancel.await_count)
+        self.assertEqual([("mission-old", "run-old")], scenario.recoveries)
         self.assertEqual(0, sum(call.startswith("prepare:") for call in store.calls))
 
     async def test_corrupt_or_conflicting_pending_representations_fail_closed(self) -> None:
