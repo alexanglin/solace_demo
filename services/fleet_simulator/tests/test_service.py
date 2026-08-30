@@ -18,9 +18,12 @@ import pytest
 from aerial_rescue_broker.messaging import (
     BrokerEndpoint,
     InboundMessage,
+    MessageSettlement,
     MessagingError,
     MessagingRefusal,
     Outcome,
+    UnsettledMessageError,
+    UnsettledMessageMetadata,
 )
 from aerial_rescue_broker.queues import drone_queue_name
 from aerial_rescue_contracts.canonical import canonical_bytes
@@ -68,6 +71,7 @@ ASSIGN_TYPE: Final = "aerial-rescue.v1.drone.command.assign-sector"
 ASSIGN_SCHEMA: Final = (
     "https://aerial-rescue.invalid/schemas/v1/payload/drone-command-assign-sector.schema.json"
 )
+DIGEST: Final = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 BUDGET: Final = SendBudget(max_sends=5)
 BOUNDS: Final = IntakeBounds(commands_per_drone_per_tick=3)
 
@@ -170,13 +174,31 @@ class FakeMessage:
         return {}
 
 
+class RefusedDelivery:
+    """One delivery the transport refuses before any service code can read its body.
+
+    ``SolacePersistentReceiver.receive`` validates the native trace context and raises
+    rather than returning the message, so a body that carries no readable envelope never
+    reaches the caller as a message at all. It reaches it as an exception holding the one
+    settlement capability bound to that delivery.
+    """
+
+    def __init__(self, message: FakeMessage) -> None:
+        """Hold the message whose delivery is refused, so its settlement can be bound."""
+        self.message = message
+
+
+ScriptedDelivery = FakeMessage | RefusedDelivery
+"""What one scripted queue arrival can be: a readable message, or a refused delivery."""
+
+
 class FakeQueueReceiver:
     """One drone's queue, answering from a script and recording every settlement."""
 
     def __init__(
         self,
         order: list[str],
-        scripted: Sequence[FakeMessage] = (),
+        scripted: Sequence[ScriptedDelivery] = (),
         refuse_settlement: bool = False,
     ) -> None:
         """Record what this queue yields and whether settling refuses."""
@@ -187,9 +209,19 @@ class FakeQueueReceiver:
         self._refusing = refuse_settlement
 
     def receive(self, timeout_milliseconds: int) -> InboundMessage | None:
-        """Return the next scripted command, or ``None`` when the script is exhausted."""
+        """Return the next scripted command, refusing the deliveries scripted as refused."""
         self.windows.append(timeout_milliseconds)
-        return self._scripted.pop(0) if self._scripted else None
+        if not self._scripted:
+            return None
+        arrival = self._scripted.pop(0)
+        if isinstance(arrival, RefusedDelivery):
+            raise UnsettledMessageError(
+                MessagingRefusal.TRACE_REFUSED,
+                "PAYLOAD_FORM",
+                MessageSettlement(self, arrival.message),
+                UnsettledMessageMetadata(source=None, family=None, raw_digest=DIGEST),
+            )
+        return arrival
 
     def settle(self, message: InboundMessage, outcome: Outcome) -> None:
         """Record one settlement, or refuse it the way the broker adapter does."""
@@ -401,7 +433,7 @@ class Given:
     publisher: FakeDirectPublisher | None = None
     scenario: FleetScenario | None = None
     asks: int = 100
-    queued: Mapping[str, Sequence[FakeMessage]] | None = None
+    queued: Mapping[str, Sequence[ScriptedDelivery]] | None = None
     refuse: Refusals = NO_REFUSALS
     stamps: StampSource | None = None
     bounds: IntakeBounds = BOUNDS
@@ -792,6 +824,60 @@ class MalformedCommandTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, report.intake.get(IntakeOutcome.UNREADABLE, 0))
+
+    def test_a_delivery_the_transport_refuses_is_rejected_rather_than_ending_the_run(self) -> None:
+        """The refusal is a property of the bytes, so redelivering it would only loop."""
+        # Arrange
+        refused = RefusedDelivery(FakeMessage(b"{not canonical", _command_topic(VISION_ID)))
+        fleet = _fleet(Given(queued={VISION_ID: (refused,)}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            ([Outcome.REJECTED], 1),
+            (
+                [outcome for _message, outcome in fleet.receivers[VISION_ID].settled],
+                report.intake.get(IntakeOutcome.UNREADABLE, 0),
+            ),
+        )
+
+    def test_a_refused_delivery_does_not_stop_the_queue_behind_it(self) -> None:
+        """One poison message must not cost the commands queued after it."""
+        # Arrange
+        refused = RefusedDelivery(FakeMessage(b"{not canonical", _command_topic(VISION_ID)))
+        fleet = _fleet(Given(queued={VISION_ID: (refused, _message())}, asks=1))
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(1, report.intake.get(IntakeOutcome.HANDLED, 0))
+
+    def test_a_settlement_the_transport_refuses_leaves_the_delivery_unsettled(self) -> None:
+        """Nothing was settled, so the count says so rather than claiming a rejection."""
+        # Arrange
+        refused = RefusedDelivery(FakeMessage(b"{not canonical", _command_topic(VISION_ID)))
+        fleet = _fleet(
+            Given(
+                queued={VISION_ID: (refused,)},
+                refuse=replace(NO_REFUSALS, settlement=True),
+                asks=1,
+            )
+        )
+
+        # Act
+        report = run(fleet.runtime)
+
+        # Assert
+        self.assertEqual(
+            (1, []),
+            (
+                report.intake.get(IntakeOutcome.SETTLEMENT_REFUSED, 0),
+                fleet.receivers[VISION_ID].settled,
+            ),
+        )
 
 
 class IdempotencyTests(unittest.TestCase):
