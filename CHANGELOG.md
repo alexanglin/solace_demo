@@ -2062,6 +2062,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The command-dispatch cleanup can now take the poison message it deliberately publishes.**
+  `_discard` exists so teardown accepts what a queue holds without decoding it, because one of these
+  runs publishes bytes that are not an envelope on purpose and those bytes reach the collateral
+  command queues too. Not decoding is not enough: the receiver validates native trace context out of
+  the body before it returns, so that message arrives as an `UnsettledMessageError` and the discard
+  loop raised on the very message it was written to survive. Teardown now accepts through the
+  settlement capability the error carries, which is the same settlement the loop performs and the only
+  way to take that message off the queue.
+
 - **A command the transport refuses no longer ends the fleet simulator's run.** The receiver validates
   native trace context before it hands a message back, so bytes that carry no readable envelope arrive
   as an `UnsettledMessageError` rather than as a message. `_drain_drone` did not catch it, so the
