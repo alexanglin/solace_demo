@@ -352,3 +352,51 @@ class DashboardLifecycleTransactionTests(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual(["rollback", "close"], session.calls)
         stage.assert_not_awaited()
+
+    async def test_the_retained_predecessor_run_a_reset_left_behind_is_readable(self) -> None:
+        """Reset moves the pointer on, so the predecessor is reachable only through the link."""
+        # Arrange
+        session = _Session()
+        retained = object()
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_store.processing.dashboard.mission_predecessor",
+                AsyncMock(return_value="mission-0"),
+            ) as link,
+            patch(
+                "aerial_rescue_store.processing.dashboard.run_by_mission",
+                AsyncMock(return_value=retained),
+            ) as run,
+        ):
+            transactions = DashboardLifecycleTransactions(lambda: _factory(session))
+            async with transactions.open() as transaction:
+                observed = await transaction.predecessor_run("mission-1")
+
+        # Assert
+        self.assertIs(retained, observed)
+        self.assertEqual(
+            ("mission-1", "mission-0"),
+            (link.await_args_list[0].args[1], run.await_args_list[0].args[1]),
+        )
+
+    async def test_a_first_mission_has_no_predecessor_and_reads_no_run(self) -> None:
+        # Arrange
+        session = _Session()
+
+        # Act
+        with (
+            patch(
+                "aerial_rescue_store.processing.dashboard.mission_predecessor",
+                AsyncMock(return_value=None),
+            ),
+            patch("aerial_rescue_store.processing.dashboard.run_by_mission", AsyncMock()) as run,
+        ):
+            transactions = DashboardLifecycleTransactions(lambda: _factory(session))
+            async with transactions.open() as transaction:
+                observed = await transaction.predecessor_run("mission-1")
+
+        # Assert
+        self.assertIsNone(observed)
+        run.assert_not_awaited()

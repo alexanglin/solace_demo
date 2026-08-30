@@ -228,6 +228,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0207](0207-drain-the-recorder-fan-in-without-a-wait-per-channel.md) | Drain the recorder fan-in without a wait per channel | Accepted |
 | [0208](0208-publish-the-dashboard-outbox-on-the-serving-cycle.md) | Publish the dashboard application outbox on the serving cycle | Accepted |
 | [0209](0209-publish-the-mission-lifecycle-from-observed-run-status.md) | Publish the mission lifecycle from observed private run status | Accepted |
+| [0210](0210-publish-the-ending-a-reset-gives-its-predecessor.md) | Publish the ending a reset gives its predecessor | Accepted |
 
 ## Decisions still open
 

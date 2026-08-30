@@ -127,8 +127,9 @@ class DashboardRecordingRun:
 
 type RunSelection = Select[tuple[object, ...]]
 type MissionSelection = Select[tuple[str]]
+type PredecessorSelection = Select[tuple[str | None]]
 type RecordingRunSelection = Select[tuple[str, str, str, int, str, bytes]]
-type RunRead = RunSelection | MissionSelection | RecordingRunSelection
+type RunRead = RunSelection | MissionSelection | PredecessorSelection | RecordingRunSelection
 type PointerTransition = Insert | Update
 
 
@@ -185,6 +186,11 @@ def mission_lifecycle_for_update_statement(mission_id: str) -> MissionSelection:
         .where(bindparam("mission_id", mission_id) == _MISSION_ID)
         .with_for_update(of=_MISSION_ROWS)
     )
+
+
+def mission_predecessor_statement(mission_id: str) -> PredecessorSelection:
+    """Select the immutable predecessor link a reset gave one mission."""
+    return select(_PREDECESSOR).where(bindparam("mission_id", mission_id) == _MISSION_ID)
 
 
 def pointer_transition_statement(
@@ -329,6 +335,17 @@ async def transition_mission(
     )
     if moved is None:
         raise DashboardRunError(DashboardRunRefusal.MISSION_MOVED, mission_id)
+
+
+async def mission_predecessor(session: RunSession, mission_id: str) -> str | None:
+    """Return the mission a reset created this one from, or ``None`` for the first."""
+    selected = await session.execute(mission_predecessor_statement(mission_id))
+    row = selected.one_or_none()
+    if row is None:
+        raise DashboardRunError(DashboardRunRefusal.UNKNOWN_MISSION, mission_id)
+    if len(row) != 1 or not isinstance(row[0], str | None):
+        raise DashboardRunError(DashboardRunRefusal.UNREADABLE_MISSION, mission_id)
+    return row[0]
 
 
 async def mission_lifecycle_for_update(session: RunSession, mission_id: str) -> str:

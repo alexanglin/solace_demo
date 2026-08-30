@@ -20,8 +20,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   reach from the durable one, and stages the successor under the same exclusive lock it read. The
   event identity is derived from the mission and the state it reached, so the outbox's own primary key
   makes restaging a durable no-op across restarts — no new table, no new idempotency kind
-  ([ADR-0209](docs/adr/0209-publish-the-mission-lifecycle-from-observed-run-status.md)). Publishing a
-  reset predecessor's `ABORTED` remains a further increment.
+  ([ADR-0209](docs/adr/0209-publish-the-mission-lifecycle-from-observed-run-status.md)). A reset
+  terminates a mission by creating a successor, and the pointer moves with it, so the same observer
+  follows the successor's immutable predecessor link and publishes the ending the reset gave — while
+  leaving a mission that reached its own ending exactly as it is
+  ([ADR-0210](docs/adr/0210-publish-the-ending-a-reset-gives-its-predecessor.md)).
 
 - **The Python the dashboard's production harness embeds as string literals is now resolved at
   commit time.** `tsc` and ESLint read an embedded probe as `string[]`, so ADR-0197's deletion of

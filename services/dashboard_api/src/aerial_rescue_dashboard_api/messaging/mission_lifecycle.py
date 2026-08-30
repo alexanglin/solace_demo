@@ -237,6 +237,18 @@ class RunStatusPort(Protocol):
         """Return the private service's authoritative representation of one run."""
 
 
+class RetainedRun(Protocol):
+    """The identity pair a retained predecessor run supplies."""
+
+    @property
+    def mission_id(self) -> str | None:
+        """Return the retained mission this run belongs to."""
+
+    @property
+    def run_id(self) -> str | None:
+        """Return the retained live run identity, absent for a replay session."""
+
+
 class LifecycleTransaction(Protocol):
     """Decide and stage under one exclusive lock on the recorder-owned lifecycle."""
 
@@ -245,6 +257,9 @@ class LifecycleTransaction(Protocol):
 
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Stage one exact publication inside the deciding transaction."""
+
+    async def predecessor_run(self, mission_id: str) -> RetainedRun | None:
+        """Return the run a reset retained, reachable only through the mission's link."""
 
 
 class LifecycleTransactions(Protocol):
@@ -300,6 +315,7 @@ class MissionLifecycleObserver:
         if identity is None:
             return ObservationOutcome.NOT_APPLICABLE
         mission_id, run_id = identity
+        await self._settle_predecessor(mission_id)
         observed = await self._settled_or_observed(mission_id, run_id)
         if isinstance(observed, ObservationOutcome):
             return observed
@@ -322,6 +338,26 @@ class MissionLifecycleObserver:
             return ObservationOutcome.SETTLED
         status = await self._scenario.status(run_id)
         return _state(status.state)
+
+    async def _settle_predecessor(self, mission_id: str) -> None:
+        """Publish the ending a reset gave the mission this one replaced.
+
+        Reset is not an edge (ADR-0072): it terminates the current mission and creates a
+        new one. The pointer moves with it, so the predecessor is reachable only through
+        the successor's immutable link, and its `ABORTED` has no other producer. A
+        predecessor that reached its own ending is left exactly as it is, because the
+        transition table admits no edge out of one.
+        """
+        async with self._transactions.open() as unit:
+            retained = await unit.predecessor_run(mission_id)
+            if retained is None or retained.mission_id is None or retained.run_id is None:
+                return
+            current = _state(await unit.mission_lifecycle(retained.mission_id))
+            if not _reaches(current, MissionState.ABORTED):
+                return
+            await unit.stage(
+                self._events.build(retained.mission_id, retained.run_id, MissionState.ABORTED)
+            )
 
     async def _runs_lifecycle(self, mission_id: str) -> str:
         """Read the durable lifecycle without holding a lock across private control."""
