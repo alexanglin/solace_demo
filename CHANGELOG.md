@@ -2062,6 +2062,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The mission timeline opens with the mission again, and a repeated observation writes nothing.**
+  Two facts surfaced on the same browser run. ADR-0072 has no event that reaches `PLANNED`, so the
+  transition rule could never produce the timeline's opening entry that the qualified production case
+  asserts; the observer now announces it, in its own observation, because the outbox drains
+  `ORDER BY staged_at, event_id` and a strictly lower audit ordinal is what orders the operator's
+  timeline. And `application_outbox.stage` *refuses* an existing identity rather than ignoring it, so
+  ADR-0209's claim that a derived identity made restaging a durable no-op was wrong one layer up —
+  that raise is what stopped the first live observer. Every derived publication is now checked against
+  the outbox's primary key before it is staged
+  ([ADR-0212](docs/adr/0212-announce-the-opening-state-and-ask-the-outbox-before-staging.md)).
+
 - **A single failed observation no longer stops mission publication for good.** The first live run
   hit the weakness ADR-0209 had named: the observer staged `SEARCHING` one second after Start, then
   the task ended, and the mission stayed `SEARCHING` while the fleet completed all fourteen ticks and

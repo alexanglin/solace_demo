@@ -105,7 +105,7 @@ class _Transaction:
     durable: str
     failure: Exception | None
     predecessor: _Predecessor | None
-    staged: list[StagedApplicationEvent]
+    rows: list[StagedApplicationEvent]
 
     async def mission_lifecycle(self, mission_id: str) -> str:
         if self.failure is not None:
@@ -113,7 +113,10 @@ class _Transaction:
         return self.lifecycles.get(mission_id, self.durable)
 
     async def stage(self, event: StagedApplicationEvent) -> None:
-        self.staged.append(event)
+        self.rows.append(event)
+
+    async def staged(self, event: StagedApplicationEvent) -> bool:
+        return any(row.event_id == event.event_id for row in self.rows)
 
     async def predecessor_run(self, _mission_id: str) -> _Predecessor | None:
         return self.predecessor
@@ -171,19 +174,19 @@ def _observer(
 
 @pytest.mark.asyncio
 async def test_a_started_run_the_fleet_reports_searching_stages_the_start_edge() -> None:
+    """The opening entry is announced first, so the START edge is the second observation."""
     # Arrange
     transactions = _Transactions(durable="PLANNED")
     observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+    await observer.observe_once()
 
     # Act
     outcome = await observer.observe_once()
 
     # Assert
     assert outcome is ObservationOutcome.STAGED
-    assert [event.event_id for event in transactions.staged] == [
-        lifecycle_event_id(_MISSION, MissionState.SEARCHING)
-    ]
-    assert decode_envelope(transactions.staged[0].payload).data == {
+    assert transactions.staged[-1].event_id == lifecycle_event_id(_MISSION, MissionState.SEARCHING)
+    assert decode_envelope(transactions.staged[-1].payload).data == {
         "missionId": _MISSION,
         "lifecycle": "SEARCHING",
     }
@@ -316,7 +319,7 @@ async def test_an_unstarted_live_run_is_not_yet_observed() -> None:
 )
 async def test_a_private_control_failure_becomes_a_typed_outcome(failure: Exception) -> None:
     # Arrange
-    transactions = _Transactions(durable="PLANNED")
+    transactions = _Transactions(durable="SEARCHING")
     observer = _observer(_Runs(_live_run()), _Scenario(failure=failure), transactions)
 
     # Act
@@ -345,17 +348,19 @@ async def test_a_store_failure_inside_the_staging_transaction_becomes_a_typed_ou
 
 
 @pytest.mark.asyncio
-async def test_repeating_the_same_observation_stages_the_same_identity_once_more() -> None:
-    """The outbox primary key is the idempotency; the observer needs no memory of its own."""
+async def test_a_restarted_process_restages_nothing_it_already_published() -> None:
+    """The outbox row is the whole idempotency; a fresh observer remembers nothing itself."""
     # Arrange
     transactions = _Transactions(durable="SEARCHING")
-    observer = _observer(_Runs(_live_run()), _Scenario("EXHAUSTED"), transactions)
+    await _observer(_Runs(_live_run()), _Scenario("EXHAUSTED"), transactions).observe_once()
 
     # Act
-    outcomes = [await observer.observe_once(), await observer.observe_once()]
+    outcome = await _observer(
+        _Runs(_live_run()), _Scenario("EXHAUSTED"), transactions
+    ).observe_once()
 
     # Assert
-    assert outcomes == [ObservationOutcome.STAGED, ObservationOutcome.STAGED]
+    assert outcome is ObservationOutcome.CURRENT
     assert {event.event_id for event in transactions.staged} == {
         lifecycle_event_id(_MISSION, MissionState.EXHAUSTED)
     }
@@ -496,6 +501,60 @@ async def test_a_durable_lifecycle_outside_the_domain_states_is_not_swallowed() 
     # Assert
     assert refused.value.refusal is LifecycleRefusal.UNPUBLISHED_STATE
     assert transactions.staged == []
+
+
+@pytest.mark.asyncio
+async def test_a_newly_created_mission_announces_its_opening_state_before_anything_else() -> None:
+    """No event reaches PLANNED, so the timeline's opening entry has no other producer."""
+    # Arrange
+    transactions = _Transactions(durable="PLANNED")
+    scenario = _Scenario("SEARCHING")
+    observer = _observer(_Runs(_live_run()), scenario, transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.STAGED
+    assert [event.event_id for event in transactions.staged] == [
+        lifecycle_event_id(_MISSION, MissionState.PLANNED)
+    ]
+    assert scenario.calls == []
+
+
+@pytest.mark.asyncio
+async def test_the_opening_entry_is_announced_once_and_the_next_edge_follows_it() -> None:
+    """Its own observation is what earns it a strictly earlier audit ordinal."""
+    # Arrange
+    transactions = _Transactions(durable="PLANNED")
+    observer = _observer(_Runs(_live_run()), _Scenario("SEARCHING"), transactions)
+
+    # Act
+    outcomes = [await observer.observe_once(), await observer.observe_once()]
+
+    # Assert
+    assert outcomes == [ObservationOutcome.STAGED, ObservationOutcome.STAGED]
+    assert [event.event_id for event in transactions.staged] == [
+        lifecycle_event_id(_MISSION, MissionState.PLANNED),
+        lifecycle_event_id(_MISSION, MissionState.SEARCHING),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_observing_an_edge_already_staged_writes_nothing_and_does_not_raise() -> None:
+    """`stage` refuses an existing identity, so the observer must ask before it writes."""
+    # Arrange
+    transactions = _Transactions(durable="SEARCHING")
+    observer = _observer(_Runs(_live_run()), _Scenario("EXHAUSTED"), transactions)
+
+    # Act
+    outcomes = [await observer.observe_once(), await observer.observe_once()]
+
+    # Assert
+    assert outcomes == [ObservationOutcome.STAGED, ObservationOutcome.CURRENT]
+    assert [event.event_id for event in transactions.staged] == [
+        lifecycle_event_id(_MISSION, MissionState.EXHAUSTED)
+    ]
 
 
 @dataclass

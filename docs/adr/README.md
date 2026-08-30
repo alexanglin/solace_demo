@@ -230,6 +230,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0209](0209-publish-the-mission-lifecycle-from-observed-run-status.md) | Publish the mission lifecycle from observed private run status | Accepted |
 | [0210](0210-publish-the-ending-a-reset-gives-its-predecessor.md) | Publish the ending a reset gives its predecessor | Accepted |
 | [0211](0211-let-the-mission-lifecycle-observer-outlive-one-failure.md) | Let the mission-lifecycle observer outlive one failed observation | Accepted |
+| [0212](0212-announce-the-opening-state-and-ask-the-outbox-before-staging.md) | Announce the mission's opening state, and ask the outbox before staging | Accepted |
 
 ## Decisions still open
 
