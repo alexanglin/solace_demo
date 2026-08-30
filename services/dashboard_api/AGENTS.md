@@ -69,6 +69,7 @@ Read the owner of each concern before changing it:
 | Serving-cycle application-outbox publication | [ADR-0208](../../docs/adr/0208-publish-the-dashboard-outbox-on-the-serving-cycle.md) |
 | Mission-lifecycle observation and publication | [ADR-0209](../../docs/adr/0209-publish-the-mission-lifecycle-from-observed-run-status.md) |
 | Reset predecessor mission ending | [ADR-0210](../../docs/adr/0210-publish-the-ending-a-reset-gives-its-predecessor.md) |
+| Mission-lifecycle observer resilience | [ADR-0211](../../docs/adr/0211-let-the-mission-lifecycle-observer-outlive-one-failure.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,

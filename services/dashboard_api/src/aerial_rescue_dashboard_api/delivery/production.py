@@ -28,6 +28,7 @@ from aerial_rescue_dashboard_api.boundary.durable_application import (
 from aerial_rescue_dashboard_api.console import (
     build_solace_runtime,
     mission_lifecycle_pause,
+    report_mission_lifecycle_failure,
 )
 from aerial_rescue_dashboard_api.console import (
     settings_from_environment as solace_settings_from_environment,
@@ -257,6 +258,7 @@ def compose(configured: DashboardConfiguration) -> ProductionRuntime:
                     events=solace.lifecycle_events,
                 ),
                 mission_lifecycle_pause,
+                report_mission_lifecycle_failure,
             ),
         ),
     )
