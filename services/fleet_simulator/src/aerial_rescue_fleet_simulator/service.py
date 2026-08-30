@@ -54,6 +54,7 @@ from aerial_rescue_broker.messaging import (
     MessagePublisher,
     MessagingError,
     Outcome,
+    UnsettledMessageError,
     inbound_payload,
 )
 from aerial_rescue_broker.queues import drone_queue_name
@@ -487,6 +488,23 @@ def _settle(receiver: AcknowledgingReceiver, message: InboundMessage, outcome: O
     return True
 
 
+def _refuse_delivery(error: UnsettledMessageError) -> IntakeOutcome:
+    """Reject a delivery the transport refused before this service could read it.
+
+    The receiver validates the native trace context and raises rather than returning the
+    message, so bytes that carry no readable envelope arrive as an exception holding the
+    one settlement capability bound to that delivery. What is wrong with them is a property
+    of the bytes and not of this delivery attempt, so it is ``UNREADABLE`` for exactly the
+    reason a body that fails ``accept`` is, and it is rejected at once rather than after the
+    queue's four arrivals.
+    """
+    try:
+        error.settlement.reject()
+    except MessagingError:
+        return IntakeOutcome.SETTLEMENT_REFUSED
+    return IntakeOutcome.UNREADABLE
+
+
 def _drain_drone(
     session: FleetSessionPort,
     runtime: Runtime,
@@ -497,7 +515,12 @@ def _drain_drone(
     """Take at most the bound's worth of commands off one drone's queue and answer them."""
     receiver = session.receivers[drone_id]
     for _taken in range(runtime.intake.commands_per_drone_per_tick):
-        message = receiver.receive(_POLL_MILLISECONDS)
+        try:
+            message = receiver.receive(_POLL_MILLISECONDS)
+        except UnsettledMessageError as error:
+            refused = _refuse_delivery(error)
+            counted[refused] = counted.get(refused, 0) + 1
+            continue
         if message is None:
             return
         outcome, settlement = _handle(session, runtime, drone_id, inbox, message)

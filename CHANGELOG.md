@@ -2062,6 +2062,30 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **A command the transport refuses no longer ends the fleet simulator's run.** The receiver validates
+  native trace context before it hands a message back, so bytes that carry no readable envelope arrive
+  as an `UnsettledMessageError` rather than as a message. `_drain_drone` did not catch it, so the
+  exception left the drain, the tick loop, and `run()` — one unreadable command on one drone's queue
+  ended the whole fleet. The message stayed on the queue unsettled, so restarting only met it again.
+  This is the defect the recorder had in `deployed-telemetry-path.md`, in the composition Compose
+  runs: the parallel `runtime.py` has caught this since it was written, and the deployed `service.py`
+  never did. The drain now rejects the delivery through the settlement capability the error carries and
+  counts it `UNREADABLE` — the outcome `_handle` already gives a body that fails `accept`, for the same
+  reason, since what is wrong with the bytes cannot change on redelivery — or `SETTLEMENT_REFUSED` when
+  the transport will not take the rejection. The next command on that queue is drained as usual.
+
+  Observed red, before the fix:
+
+      FAILED services/fleet_simulator/tests/test_service.py::MalformedCommandTests::
+        test_a_delivery_the_transport_refuses_is_rejected_rather_than_ending_the_run
+      FAILED services/fleet_simulator/tests/test_service.py::MalformedCommandTests::
+        test_a_refused_delivery_does_not_stop_the_queue_behind_it
+      FAILED services/fleet_simulator/tests/test_service.py::MalformedCommandTests::
+        test_a_settlement_the_transport_refuses_leaves_the_delivery_unsettled
+      E  aerial_rescue_broker.messaging.UnsettledMessageError:
+           native Solace trace context was refused: 'PAYLOAD_FORM'
+      3 failed, 2 passed, 35 deselected
+
 - **The broker authorization probe no longer leaves a queue the next suite cannot drain.** It
   published the plain text `authorization probe`, and a permitted publish spools one. The production
   receive path validates native trace context against the body, so a body it cannot decode becomes
