@@ -557,6 +557,29 @@ async def test_observing_an_edge_already_staged_writes_nothing_and_does_not_rais
     ]
 
 
+@pytest.mark.asyncio
+async def test_a_reset_predecessor_settles_before_the_successor_is_started() -> None:
+    """Reset already ended it; the operator should not have to start a mission to publish that."""
+    # Arrange
+    transactions = _Transactions(
+        durable="PLANNED",
+        predecessor=_Predecessor(_PREDECESSOR_MISSION, _PREDECESSOR_RUN),
+        lifecycles={_MISSION: "PLANNED", _PREDECESSOR_MISSION: "SEARCHING"},
+    )
+    scenario = _Scenario("PLANNED")
+    observer = _observer(_Runs(_live_run(started=False)), scenario, transactions)
+
+    # Act
+    outcome = await observer.observe_once()
+
+    # Assert
+    assert outcome is ObservationOutcome.NOT_APPLICABLE
+    assert [event.event_id for event in transactions.staged] == [
+        lifecycle_event_id(_PREDECESSOR_MISSION, MissionState.ABORTED)
+    ]
+    assert scenario.calls == []
+
+
 @dataclass
 class _Observer:
     outcomes: list[ObservationOutcome] = field(default_factory=list)

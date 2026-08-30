@@ -83,6 +83,31 @@ producer used to satisfy:
 expect(timeline).toMatch(/Mission · PLANNED.*Mission · SEARCHING.*Mission · EXHAUSTED/)
 ```
 
+## Run 4: the orphaned pointer and the reset predecessor's ending
+
+At the ADR-0213 commit, on the same stack. A mission was started, and `scenario-service` was restarted
+while it was still `SEARCHING` — the exact condition that used to be permanent:
+
+```text
+01:54:17 .. 01:54:54   mission-4b97b58277574fb4b6c6a982cd8da09c   lifecycle=SEARCHING
+POST /api/v1/scenarios/current/reset -> 202
+  missionId            mission-b7ece5c21e6f4ebd97f13c6d3208a699
+  predecessorMissionId mission-4b97b58277574fb4b6c6a982cd8da09c
+```
+
+Before ADR-0213 that reset was `409 CANCELLATION_NOT_ESTABLISHED`, durably and for good. The
+predecessor's ending and the successor's opening entry then published:
+
+```text
+01:56:23   predecessor SEARCHING   successor PLANNED
+01:56:27   predecessor ABORTED     successor SEARCHING
+```
+
+This is the first live observation of ADR-0210's `ABORTED` edge. It also exposed that the settle was
+gated behind a *started* successor, so the predecessor's ending waited for the operator's next Start
+rather than following the reset. ADR-0210's own wording is "each observation also settles the
+predecessor of the current mission"; the gate was an accident of placement and is removed.
+
 ## What this proves
 
 - The mission's own lifecycle now reaches the operator: the timeline opens with the mission being
@@ -106,12 +131,11 @@ expect(timeline).toMatch(/Mission · PLANNED.*Mission · SEARCHING.*Mission · E
    - `runtime-recovery.spec.ts:63` timed out at 120 s starting the recorder container, on a host that
      had been running Docker and test suites for eight hours. It is not reproduced in isolation and
      is recorded as unexplained rather than diagnosed.
-2. **The pointer had to be cleared by hand once.** Recreating the scenario service strands a durable
-   `dashboard_current_run` whose run its new process epoch does not know, and both Start and Reset
-   then refuse durably. One row was deleted with explicit authorization, backed up first; no mission,
-   run, or audit history was touched. ADR-0213 removes the dead end, and that fix has its own
-   verification obligation below.
+2. **The pointer had to be cleared by hand once, before ADR-0213 existed.** Recreating the scenario
+   service strands a durable `dashboard_current_run` whose run its new process epoch does not know,
+   and both Start and Reset then refused durably. One row was deleted with explicit authorization,
+   backed up first; no mission, run, or audit history was touched.
 3. **The approval chain, the evidence flow, the Agent Mesh chain, and the soak are untouched by this
    record.**
-4. **No reset predecessor was aborted live.** ADR-0210's `ABORTED` edge is covered deterministically
-   and has not been observed on this stack.
+4. **The soak has not been re-run.** The 61-sample soak of the qualified base is untouched by this
+   record.
