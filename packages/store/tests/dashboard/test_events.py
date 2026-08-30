@@ -24,6 +24,7 @@ from aerial_rescue_store.dashboard.events import (
     ensure_source_statement,
     event_page_statement,
     known_broker_event_statement,
+    link_broker_event,
     locked_source_statement,
     read_event_page,
     read_suffix_page,
@@ -624,3 +625,134 @@ class OrderedReadRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokerProvenanceLinkTests(unittest.IsolatedAsyncioTestCase):
+    """`link_broker_event` is the half a caller that appended its own audit row needs.
+
+    Without it `watermark_statement` never sees that ordinal and the dashboard folds
+    nothing, so every refusal here is a mission the operator would silently not see.
+    """
+
+    async def test_an_advancing_identity_advances_the_source_and_links_the_given_ordinal(
+        self,
+    ) -> None:
+        # Arrange
+        session = _RecordingSession(
+            scalar_answers=[SOURCE, EVENT_ID],
+            row_answers=[_Rows(), _Rows(one=(SEQUENCE - 1,)), _Rows()],
+        )
+
+        # Act
+        receipt = await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        combined = session.executed + session.scalars
+        self.assertEqual(
+            (BrokerEventOutcome.ACCEPTED, MISSION, ORDINAL, False, True),
+            (
+                receipt.outcome,
+                receipt.audit_mission_id,
+                receipt.audit_ordinal,
+                any(AUDIT_SEQUENCE_TABLE in statement for statement in combined),
+                any(
+                    f"INSERT INTO {DASHBOARD_BROKER_EVENT_TABLE}" in statement
+                    for statement in combined
+                ),
+            ),
+        )
+
+    async def test_a_first_source_event_links_from_an_empty_high_water(self) -> None:
+        # Arrange
+        session = _RecordingSession(
+            scalar_answers=[SOURCE, EVENT_ID],
+            row_answers=[_Rows(), _Rows(one=(None,)), _Rows()],
+        )
+
+        # Act
+        receipt = await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        self.assertEqual(
+            (BrokerEventOutcome.ACCEPTED, ORDINAL), (receipt.outcome, receipt.audit_ordinal)
+        )
+
+    async def test_an_exact_known_identity_returns_its_existing_link_without_a_write(self) -> None:
+        # Arrange
+        session = _RecordingSession(
+            row_answers=[_Rows(), _Rows(one=(SEQUENCE,)), _Rows(one=(DIGEST, MISSION, ORDINAL))]
+        )
+
+        # Act
+        receipt = await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        self.assertEqual(
+            (BrokerEventOutcome.DUPLICATE, MISSION, ORDINAL, []),
+            (receipt.outcome, receipt.audit_mission_id, receipt.audit_ordinal, session.scalars),
+        )
+
+    async def test_a_source_that_cannot_be_locked_is_refused_before_identity_lookup(self) -> None:
+        # Arrange
+        session = _RecordingSession(row_answers=[_Rows(), _Rows()])
+
+        # Act
+        with pytest.raises(DashboardEventError) as refused:
+            await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        self.assertEqual(
+            (DashboardEventRefusal.SOURCE_VANISHED, []),
+            (refused.value.refusal, session.scalars),
+        )
+
+    async def test_a_reused_or_stale_source_sequence_is_refused_before_any_link(self) -> None:
+        # Arrange
+        cases = (
+            (_Rows(one=(SEQUENCE,)), DashboardEventRefusal.SEQUENCE_REUSED),
+            (_Rows(one=(SEQUENCE + 1,)), DashboardEventRefusal.STALE_SEQUENCE),
+        )
+        refusals: list[DashboardEventRefusal] = []
+        writes: list[list[str]] = []
+
+        # Act
+        for high_water, _expected in cases:
+            session = _RecordingSession(row_answers=[_Rows(), high_water, _Rows()])
+            with pytest.raises(DashboardEventError) as refused:
+                await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+            refusals.append(cast("DashboardEventRefusal", refused.value.refusal))
+            writes.append(session.scalars)
+
+        # Assert
+        self.assertEqual([expected for _rows, expected in cases], refusals)
+        self.assertEqual([[], []], writes)
+
+    async def test_a_source_that_moved_after_its_domain_decision_is_refused_before_the_link(
+        self,
+    ) -> None:
+        # Arrange
+        session = _RecordingSession(
+            scalar_answers=[None],
+            row_answers=[_Rows(), _Rows(one=(SEQUENCE - 1,)), _Rows()],
+        )
+
+        # Act
+        with pytest.raises(DashboardEventError) as refused:
+            await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        self.assertIs(DashboardEventRefusal.SOURCE_MOVED, refused.value.refusal)
+
+    async def test_a_refused_link_write_is_a_permanent_refusal_naming_the_event(self) -> None:
+        # Arrange
+        session = _RecordingSession(
+            scalar_answers=[SOURCE, None],
+            row_answers=[_Rows(), _Rows(one=(SEQUENCE - 1,)), _Rows()],
+        )
+
+        # Act
+        with pytest.raises(DashboardEventError) as refused:
+            await link_broker_event(session, BROKER_EVENT, MISSION, ORDINAL)
+
+        # Assert
+        self.assertIs(DashboardEventRefusal.EVENT_WRITE_REJECTED, refused.value.refusal)

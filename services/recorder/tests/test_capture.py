@@ -755,3 +755,42 @@ class MissionLifecycleTransitionTests(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual([], transaction.transitions)
         self.assertNotIn("apply-mission-lifecycle", calls)
+
+
+class MissionLifecyclePayloadRefusalTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_lifecycle_member_that_is_not_text_is_refused_before_any_effect(self) -> None:
+        """The committed schema forbids this, so reaching it means a validator was bypassed."""
+        # Arrange
+        calls: list[str] = []
+        transaction = _Transaction(calls)
+        recorder = Recorder("recorder", _Transactions(transaction))
+        notification = _lifecycle_notification({"missionId": MISSION, "lifecycle": 7})
+
+        # Act
+        with pytest.raises(CaptureError) as refused:
+            await recorder.capture(notification, _Settlement(calls))
+
+        # Assert
+        self.assertIs(CaptureRefusal.MISSION_LIFECYCLE, refused.value.refusal)
+        self.assertEqual([], transaction.transitions)
+
+    async def test_a_lifecycle_name_the_domain_does_not_hold_is_refused(self) -> None:
+        # Arrange
+        calls: list[str] = []
+        transaction = _Transaction(calls)
+        recorder = Recorder("recorder", _Transactions(transaction))
+        notification = _lifecycle_notification({"missionId": MISSION, "lifecycle": "SWEEPING"})
+
+        # Act
+        with pytest.raises(CaptureError) as refused:
+            await recorder.capture(notification, _Settlement(calls))
+
+        # Assert
+        self.assertIs(CaptureRefusal.MISSION_LIFECYCLE, refused.value.refusal)
+        self.assertEqual([], transaction.transitions)
+
+
+def _lifecycle_notification(data: dict[str, object]) -> ReceivedNotification:
+    """Return one mission-lifecycle notification carrying an out-of-contract payload."""
+    accepted = _notification()
+    return replace(accepted, envelope=replace(accepted.envelope, data=data))

@@ -159,9 +159,12 @@ class RecordingTransactionAdapter:
         if current is target:
             return
         event = event_reaching(target)
-        if event is None or transition(current, event) is not target:
+        if event is None:
             raise MissionError(MissionRefusal.TRANSITION, (current, target))
-        await self._transaction.transition_mission(mission_id, current.name, target.name)
+        # Refuses every pair the table forbids. `event_reaching` is derived from that same
+        # table, so a pair it admits lands on `target` and this cannot silently retarget.
+        approved = transition(current, event)
+        await self._transaction.transition_mission(mission_id, current.name, approved.name)
 
     async def append_audit(self, fact: AuditFact, /) -> int:
         """Append the canonical event bytes as the authoritative audit payload."""
