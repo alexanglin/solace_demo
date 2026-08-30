@@ -31,6 +31,7 @@ from aerial_rescue_dashboard_api.delivery.production import (
     RecorderLeaseReadiness,
     configuration,
 )
+from aerial_rescue_dashboard_api.messaging.mission_lifecycle import MissionLifecycleWatch
 from aerial_rescue_dashboard_api.ports import (
     ScenarioCancellationNotEstablishedError,
     ScenarioRunNotFoundError,
@@ -712,6 +713,7 @@ class ReplayAndCleanupTests(unittest.IsolatedAsyncioTestCase):
         injected = create_application.call_args.args[1]
         self.assertIs(composed_broker, injected.broker)
         self.assertIs(composed_mutations, injected.mutations)
+        self.assertIsInstance(injected.lifecycle_watch, MissionLifecycleWatch)
         self.assertEqual(Path(environment["DASHBOARD_SOCKET"]), runtime.socket_path)
         entrypoint.assert_called_once_with()
 

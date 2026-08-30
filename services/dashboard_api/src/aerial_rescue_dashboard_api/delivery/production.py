@@ -27,6 +27,7 @@ from aerial_rescue_dashboard_api.boundary.durable_application import (
 )
 from aerial_rescue_dashboard_api.console import (
     build_solace_runtime,
+    mission_lifecycle_pause,
 )
 from aerial_rescue_dashboard_api.console import (
     settings_from_environment as solace_settings_from_environment,
@@ -35,6 +36,10 @@ from aerial_rescue_dashboard_api.delivery.assets import load_built_dashboard
 from aerial_rescue_dashboard_api.delivery.server import DASHBOARD_SOCKET, run_unix_socket
 from aerial_rescue_dashboard_api.lifecycle import RunMode as LifecycleRunMode
 from aerial_rescue_dashboard_api.lifecycle import RuntimeReadiness
+from aerial_rescue_dashboard_api.messaging.mission_lifecycle import (
+    MissionLifecycleObserver,
+    MissionLifecycleWatch,
+)
 from aerial_rescue_dashboard_api.replay import ReplayFilePort
 from aerial_rescue_dashboard_api.scenario_client import ScenarioHttpClient
 from aerial_rescue_dashboard_api.store_adapter import SqlStore
@@ -244,6 +249,15 @@ def compose(configured: DashboardConfiguration) -> ProductionRuntime:
             mutations=solace.mutations,
             broker=solace.broker,
             projection=solace.hub,
+            lifecycle_watch=MissionLifecycleWatch(
+                MissionLifecycleObserver(
+                    runs=store,
+                    scenario=scenario,
+                    transactions=solace.store.lifecycle,
+                    events=solace.lifecycle_events,
+                ),
+                mission_lifecycle_pause,
+            ),
         ),
     )
     return ProductionRuntime(application, resources, configured.socket_path)

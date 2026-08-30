@@ -51,6 +51,7 @@ from aerial_rescue_store.processing.broker_refusals import BrokerRefusalRecorder
 from aerial_rescue_store.processing.dashboard import (
     DashboardAuditReader,
     DashboardInboxTransactions,
+    DashboardLifecycleTransactions,
     DashboardMutationTransactions,
     DashboardOutboxTransactions,
 )
@@ -59,6 +60,7 @@ from aerial_rescue_store.settings import CONTAINER_HOST, database_settings
 
 from aerial_rescue_dashboard_api.lifecycle import RuntimeReadiness
 from aerial_rescue_dashboard_api.messaging.broker_runtime import DashboardDataPlane, DataPlanePorts
+from aerial_rescue_dashboard_api.messaging.mission_lifecycle import MissionLifecycleEvents
 from aerial_rescue_dashboard_api.messaging.mutations import DashboardMutationService, MutationStamp
 from aerial_rescue_dashboard_api.messaging.outbox import DashboardOutboxPublisher
 from aerial_rescue_dashboard_api.messaging.projection import (
@@ -80,6 +82,7 @@ _MAXIMUM_SSE_CLIENTS: Final = 8
 _SSE_KEEPALIVE_MILLISECONDS: Final = 15_000
 _AUDIT_PAGE_SIZE: Final = 50
 _APPROVAL_TIME_TO_LIVE_MILLISECONDS: Final = 60_000
+MISSION_LIFECYCLE_POLL_MILLISECONDS: Final = 1_000
 _SOCKET_DEFAULT: Final = "/run/aerial-rescue/dashboard-api.sock"
 _SCHEMA_DEFAULT: Final = "/app/schemas"
 _SCENARIO_DEFAULT: Final = "/app/scenarios"
@@ -141,6 +144,7 @@ class _StoreResources:
     mutations: DashboardMutationTransactions
     inboxes: DashboardInboxTransactions
     outbox: DashboardOutboxTransactions
+    lifecycle: DashboardLifecycleTransactions
     audit: DashboardAuditReader
     refusals: BrokerRefusalRecorder
     closed: bool = False
@@ -161,6 +165,7 @@ class DashboardSolaceRuntime:
     mutations: DashboardMutationService
     hub: DashboardProjectionHub
     store: _StoreResources
+    lifecycle_events: MissionLifecycleEvents
 
 
 class _StampSource:
@@ -294,14 +299,20 @@ def build_solace_runtime(
         ),
         settings=SupervisorSettings(RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS),
     )
+    stamps = _StampSource().next
     mutations = DashboardMutationService(
         transactions=store.mutations,
         runtime_id=runtime_id,
-        stamps=_StampSource().next,
+        stamps=stamps,
         schemas=schemas,
         approval_time_to_live_milliseconds=_APPROVAL_TIME_TO_LIVE_MILLISECONDS,
     )
-    return DashboardSolaceRuntime(supervisor, mutations, hub, store)
+    lifecycle_events = MissionLifecycleEvents(
+        runtime_id=runtime_id,
+        stamps=stamps,
+        schemas=schemas,
+    )
+    return DashboardSolaceRuntime(supervisor, mutations, hub, store, lifecycle_events)
 
 
 def _plane_factory(
@@ -344,6 +355,7 @@ def _compose_store(settings: RuntimeSettings) -> _StoreResources:
         DashboardMutationTransactions(sessions),
         DashboardInboxTransactions(sessions),
         DashboardOutboxTransactions(sessions),
+        DashboardLifecycleTransactions(sessions),
         DashboardAuditReader(sessions),
         BrokerRefusalRecorder(sessions, _observed_at),
     )
@@ -362,6 +374,11 @@ def _cursor_issuer(bearer: str) -> Callable[[int, str | None], str]:
 
 async def _recovery_pause() -> None:
     await asyncio.sleep(RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS / 1_000)
+
+
+async def mission_lifecycle_pause() -> None:
+    """Wait one observation interval between mission-lifecycle observations."""
+    await asyncio.sleep(MISSION_LIFECYCLE_POLL_MILLISECONDS / 1_000)
 
 
 def _observed_at() -> str:

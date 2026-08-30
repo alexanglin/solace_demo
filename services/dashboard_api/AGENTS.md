@@ -67,6 +67,7 @@ Read the owner of each concern before changing it:
 | Complete ordered dashboard projection | [ADR-0175](../../docs/adr/0175-project-every-recorded-event-into-the-dashboard.md) |
 | SSE admission and keepalive bounds | [ADR-0176](../../docs/adr/0176-bound-dashboard-sse-clients-and-keepalives.md) |
 | Serving-cycle application-outbox publication | [ADR-0208](../../docs/adr/0208-publish-the-dashboard-outbox-on-the-serving-cycle.md) |
+| Mission-lifecycle observation and publication | [ADR-0209](../../docs/adr/0209-publish-the-mission-lifecycle-from-observed-run-status.md) |
 
 An Accepted architecture decision record (ADR) governs if implementation, tests, deployment, or prose
 disagrees. Do not settle a request or response shape, status code, credential-delivery channel,

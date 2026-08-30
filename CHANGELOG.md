@@ -10,6 +10,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The mission's own lifecycle now reaches the operator.** ADR-0189 gives the dashboard API
+  mission-event publication and every consumer already existed — the envelope binding, the payload
+  schema, the `missionLifecycle` projection, the `DASHBOARD_API` publish grant, the recorder's
+  combined lifecycle queue, and the recorder's application of ADR-0072's transition table — but
+  nothing produced one, so a deployed run's mission read `PLANNED` from beginning to end while the
+  fleet swept every sector and reached `EXHAUSTED` on its own control surface. A bounded observer now
+  reads the run state private control already reports, refuses any state the transition table cannot
+  reach from the durable one, and stages the successor under the same exclusive lock it read. The
+  event identity is derived from the mission and the state it reached, so the outbox's own primary key
+  makes restaging a durable no-op across restarts — no new table, no new idempotency kind
+  ([ADR-0209](docs/adr/0209-publish-the-mission-lifecycle-from-observed-run-status.md)). Publishing a
+  reset predecessor's `ABORTED` remains a further increment.
+
 - **The Python the dashboard's production harness embeds as string literals is now resolved at
   commit time.** `tsc` and ESLint read an embedded probe as `string[]`, so ADR-0197's deletion of
   the scenario service's `fleet_client` and `main` modules left every reference in the fleet-status

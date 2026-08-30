@@ -135,6 +135,18 @@ class ApplicationMutationPort(Protocol):
         ...
 
 
+class LifecycleWatchPort(Protocol):
+    """The one background mission-lifecycle observer the live graph owns."""
+
+    async def start(self) -> None:
+        """Begin bounded observation once the broker session is serving."""
+        ...
+
+    async def stop(self) -> None:
+        """End observation and surface a failure that had already stopped it."""
+        ...
+
+
 class BrokerApplicationPort(Protocol):
     """The mixed Solace session lifecycle required by degraded-live operation."""
 
@@ -168,6 +180,16 @@ class ProjectionSeedPort(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class LiveGraphPorts:
+    """The optional degraded-live dependencies the lifespan starts and stops in order."""
+
+    broker: BrokerApplicationPort | None = None
+    store: StorePort | None = None
+    projection: ProjectionSeedPort | None = None
+    lifecycle_watch: LifecycleWatchPort | None = None
+
+
 @dataclass(frozen=True)
 class ApplicationPorts:
     """Every side-effecting dependency required by the dashboard application."""
@@ -181,6 +203,7 @@ class ApplicationPorts:
     mutations: ApplicationMutationPort | None = None
     broker: BrokerApplicationPort | None = None
     projection: ProjectionSeedPort | None = None
+    lifecycle_watch: LifecycleWatchPort | None = None
 
 
 @dataclass(frozen=True)
@@ -245,9 +268,12 @@ def create_app(settings: RuntimeSettings, ports: ApplicationPorts) -> FastAPI:
         lifespan=_lifespan(
             coordinator,
             ports.resources,
-            broker=ports.broker,
-            store=ports.store,
-            projection=ports.projection,
+            LiveGraphPorts(
+                broker=ports.broker,
+                store=ports.store,
+                projection=ports.projection,
+                lifecycle_watch=ports.lifecycle_watch,
+            ),
         ),
     )
     routes = _DashboardRoutes(settings, ports, coordinator, streams)
@@ -266,40 +292,59 @@ def create_app(settings: RuntimeSettings, ports: ApplicationPorts) -> FastAPI:
 def _lifespan(
     coordinator: OperationCoordinator,
     resources: ResourcePort | None,
-    *,
-    broker: BrokerApplicationPort | None = None,
-    store: StorePort | None = None,
-    projection: ProjectionSeedPort | None = None,
+    live: LiveGraphPorts | None = None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     """Return a lifespan context that reconciles durable pending work before readiness."""
+    graph = LiveGraphPorts() if live is None else live
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
         try:
             await coordinator.reconcile_pending()
-            if broker is not None:
-                if store is None:
-                    message = "broker lifecycle requires the durable dashboard store"
-                    raise RuntimeError(message)
-                await broker.startup()
-                selected = await store.current_run()
-                if (
-                    selected is not None
-                    and selected.mode is RunMode.DEGRADED_LIVE
-                    and selected.mission_id is not None
-                ):
-                    await _seed_projection(store, projection, selected.mission_id)
-                    await broker.activate_mission(selected.mission_id)
+            await _start_live_graph(graph)
             yield
         finally:
             try:
-                if broker is not None:
-                    await broker.shutdown()
+                if graph.lifecycle_watch is not None:
+                    await graph.lifecycle_watch.stop()
             finally:
-                if resources is not None:
-                    await resources.close()
+                await _shut_down_broker(graph.broker, resources)
 
     return lifespan
+
+
+async def _start_live_graph(graph: LiveGraphPorts) -> None:
+    """Recover the broker's mission checkpoint, then begin mission-lifecycle observation."""
+    broker = graph.broker
+    if broker is not None:
+        store = graph.store
+        if store is None:
+            message = "broker lifecycle requires the durable dashboard store"
+            raise RuntimeError(message)
+        await broker.startup()
+        selected = await store.current_run()
+        if (
+            selected is not None
+            and selected.mode is RunMode.DEGRADED_LIVE
+            and selected.mission_id is not None
+        ):
+            await _seed_projection(store, graph.projection, selected.mission_id)
+            await broker.activate_mission(selected.mission_id)
+    if graph.lifecycle_watch is not None:
+        await graph.lifecycle_watch.start()
+
+
+async def _shut_down_broker(
+    broker: BrokerApplicationPort | None,
+    resources: ResourcePort | None,
+) -> None:
+    """Close the broker session before the resources whose pool it borrows."""
+    try:
+        if broker is not None:
+            await broker.shutdown()
+    finally:
+        if resources is not None:
+            await resources.close()
 
 
 def _register_exception_handlers(app: FastAPI) -> None:

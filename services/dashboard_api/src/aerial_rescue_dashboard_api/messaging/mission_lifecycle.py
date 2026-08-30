@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, suppress
 from enum import Enum
 from typing import Final, Protocol
 
@@ -68,6 +69,7 @@ class LifecycleRefusal(Enum):
 
     UNPUBLISHED_STATE = "the mission state has no committed lifecycle value"
     SEQUENCE = "the dashboard producer sequence is outside the envelope profile"
+    ALREADY_WATCHING = "this process already owns a mission-lifecycle observer task"
 
 
 class MissionLifecycleError(ValueError):
@@ -353,3 +355,53 @@ def _reaches(current: MissionState, observed: MissionState) -> bool:
         return transition(current, event) is observed
     except MissionError:
         return False
+
+
+class ObserverPort(Protocol):
+    """The one bounded observation the watch schedules."""
+
+    async def observe_once(self) -> ObservationOutcome:
+        """Observe one run and stage at most one legal successor."""
+
+
+class MissionLifecycleWatch:
+    """Own this process's one bounded mission-lifecycle observer task.
+
+    The task stages rows; the serving loop publishes them ([ADR-0208]). It holds no broker
+    session, so it neither competes with the supervisor's one owned session nor needs its
+    readiness. Cancellation is explicit and the shutdown path waits for the task to end.
+    """
+
+    def __init__(self, observer: ObserverPort, pause: Callable[[], Awaitable[None]]) -> None:
+        """Retain the observation and the scheduler seam without creating a task."""
+        self._observer = observer
+        self._pause = pause
+        self._task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """Start the one owned observer task."""
+        if self._task is not None:
+            raise MissionLifecycleError(LifecycleRefusal.ALREADY_WATCHING)
+        self._task = asyncio.create_task(self._run())
+
+    async def stop(self) -> None:
+        """Cancel and await the task, re-raising a failure that had already ended it.
+
+        `observe_once` converts every expected store and private-control failure into a
+        typed outcome, so anything that escapes it is a defect. Surfacing it here rather
+        than discarding it is the difference between a stopped observer that is reported
+        and one that is not.
+        """
+        task = self._task
+        self._task = None
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _run(self) -> None:
+        """Observe, pause, and repeat until the task is cancelled."""
+        while True:
+            await self._observer.observe_once()
+            await self._pause()

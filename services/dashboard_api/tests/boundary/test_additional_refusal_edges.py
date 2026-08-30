@@ -18,6 +18,7 @@ from aerial_rescue_dashboard_api.boundary.documents import (
     validated_document,
 )
 from aerial_rescue_dashboard_api.boundary.durable_application import (
+    LiveGraphPorts,
     _activate_answer_mission,
     _depth,
     _lifespan,
@@ -168,6 +169,21 @@ class _Broker:
         self.ready = False
 
 
+@dataclass
+class _Watch:
+    """One lifecycle watch double that records its ordering against the broker's."""
+
+    calls: list[str]
+
+    async def start(self) -> None:
+        """Record that observation began."""
+        self.calls.append("watch-start")
+
+    async def stop(self) -> None:
+        """Record that observation ended."""
+        self.calls.append("watch-stop")
+
+
 class ApplicationRefusalEdgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_lifespan_supports_resource_free_composition_and_closes_owned_resources(
         self,
@@ -209,14 +225,13 @@ class ApplicationRefusalEdgeTests(unittest.IsolatedAsyncioTestCase):
             async with _lifespan(
                 _coordinator(FakeStore()),
                 None,
-                broker=missing_store_broker,
+                LiveGraphPorts(broker=missing_store_broker),
             )(FastAPI()):
                 self.fail("store-free broker lifespan must not yield")
         async with _lifespan(
             _coordinator(replay_store),
             None,
-            broker=replay_broker,
-            store=replay_store,
+            LiveGraphPorts(broker=replay_broker, store=replay_store),
         )(FastAPI()):
             pass
 
@@ -224,6 +239,51 @@ class ApplicationRefusalEdgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["shutdown"], missing_store_broker.calls)
         self.assertEqual(["startup", "shutdown"], replay_broker.calls)
         self.assertEqual(["pending", "current"], replay_store.calls)
+
+    async def test_the_lifecycle_watch_starts_after_the_broker_and_stops_before_it(self) -> None:
+        """Rows staged by the watch are published by the serving loop, so it must not outlive it."""
+        # Arrange
+        broker = _Broker([])
+        store = FakeStore(
+            current=CurrentRun(
+                RunMode.DEGRADED_LIVE,
+                "wilderness-missing-person",
+                1,
+                "mission-test-0001",
+                "run-test-0001",
+                None,
+                started=True,
+            )
+        )
+        watch = _Watch(broker.calls)
+
+        # Act
+        async with _lifespan(
+            _coordinator(store),
+            None,
+            LiveGraphPorts(broker=broker, store=store, lifecycle_watch=watch),
+        )(FastAPI()):
+            pass
+
+        # Assert
+        self.assertEqual(
+            ["startup", "activate:mission-test-0001", "watch-start", "watch-stop", "shutdown"],
+            broker.calls,
+        )
+
+    async def test_a_composition_without_a_lifecycle_watch_still_completes(self) -> None:
+        # Arrange
+        broker = _Broker([])
+        store = FakeStore()
+
+        # Act
+        async with _lifespan(_coordinator(store), None, LiveGraphPorts(broker=broker, store=store))(
+            FastAPI()
+        ):
+            pass
+
+        # Assert
+        self.assertEqual(["startup", "shutdown"], broker.calls)
 
     async def test_answer_activation_accepts_only_a_live_response_with_a_mission(self) -> None:
         # Arrange
