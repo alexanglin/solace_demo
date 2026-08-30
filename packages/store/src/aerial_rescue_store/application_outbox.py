@@ -31,6 +31,7 @@ APPLICATION_OUTBOX_BATCH_SIZE: Final = 50
 STORED_MEMBER_COUNT: Final = 13
 
 type PendingSelection = Select[tuple[object, ...]]
+type StagedSelection = Select[tuple[str]]
 
 
 class ApplicationOutboxRefusal(Enum):
@@ -94,6 +95,14 @@ def stage_statement(event: StagedApplicationEvent) -> Insert:
     return staged.returning(APPLICATION_OUTBOX.c.event_id)
 
 
+def staged_statement(identity: ApplicationEventIdentity) -> StagedSelection:
+    """Return an exact primary-key read asking whether one identity is already staged."""
+    return select(APPLICATION_OUTBOX.c.event_id).where(
+        APPLICATION_OUTBOX.c.producer == identity.producer,
+        APPLICATION_OUTBOX.c.event_id == identity.event_id,
+    )
+
+
 def _selection_statement(producer: str, state: OutboxState) -> PendingSelection:
     """Return at most fifty oldest rows in one exact publication state."""
     statement = (
@@ -151,8 +160,8 @@ class ApplicationOutboxSession(Protocol):
     async def scalar(self, statement: Insert | Update, /) -> object:
         """Return one affected event identity, or ``None``."""
 
-    async def execute(self, statement: PendingSelection, /) -> PendingRows:
-        """Return one bounded ordered batch."""
+    async def execute(self, statement: PendingSelection | StagedSelection, /) -> PendingRows:
+        """Return one bounded ordered batch, or one existence answer."""
 
 
 async def stage(session: ApplicationOutboxSession, event: StagedApplicationEvent) -> None:
@@ -160,6 +169,17 @@ async def stage(session: ApplicationOutboxSession, event: StagedApplicationEvent
     staged = await session.scalar(stage_statement(event))
     if staged is None:
         raise ApplicationOutboxError(ApplicationOutboxRefusal.ALREADY_STAGED, event.event_id)
+
+
+async def is_staged(session: ApplicationOutboxSession, identity: ApplicationEventIdentity) -> bool:
+    """Report whether one producer already holds that event identity in the outbox.
+
+    ``stage`` refuses an existing identity rather than ignoring it, so a producer whose
+    event identity is derived rather than generated must ask before it stages. Rows are
+    never deleted, so a true answer is permanent and survives a process restart.
+    """
+    selected = await session.execute(staged_statement(identity))
+    return len(selected.all()) > 0
 
 
 async def pending(

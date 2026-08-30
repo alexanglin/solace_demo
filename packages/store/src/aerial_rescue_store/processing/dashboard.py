@@ -11,6 +11,7 @@ from aerial_rescue_store.application_outbox import (
     ApplicationEventIdentity,
     ApplicationOutboxSession,
     StagedApplicationEvent,
+    is_staged,
     record_publication,
 )
 from aerial_rescue_store.application_outbox import pending as pending_application
@@ -139,6 +140,17 @@ class DashboardLifecycleTransaction:
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Stage exact event bytes under the same lock that decided them."""
         await stage_application(cast("ApplicationOutboxSession", self._session), event)
+
+    async def staged(self, event: StagedApplicationEvent) -> bool:
+        """Report whether that exact producer and event identity is already staged.
+
+        ``stage`` refuses an existing identity, so a producer whose event identity is
+        derived from what it observed rather than generated must ask before it writes.
+        """
+        return await is_staged(
+            cast("ApplicationOutboxSession", self._session),
+            ApplicationEventIdentity(event.producer, event.event_id),
+        )
 
     async def predecessor_run(self, mission_id: str) -> DashboardRun | None:
         """Return the run a reset retained, reachable only through the mission's own link."""

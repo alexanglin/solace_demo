@@ -15,6 +15,7 @@ from aerial_rescue_store.application_outbox import (
     ApplicationOutboxError,
     ApplicationOutboxRefusal,
     StagedApplicationEvent,
+    is_staged,
     pending,
     pending_statement,
     reconciliation,
@@ -22,6 +23,7 @@ from aerial_rescue_store.application_outbox import (
     record_publication,
     stage,
     stage_statement,
+    staged_statement,
 )
 from aerial_rescue_store.migration import APPLICATION_OUTBOX_TABLE
 from aerial_rescue_store.settings import DRIVER
@@ -85,7 +87,7 @@ class _Session:
         self.statements.append(_rendered(statement))
         return self.scalars.pop(0) if self.scalars else None
 
-    async def execute(self, statement: Select[tuple[object, ...]], /) -> _Rows:
+    async def execute(self, statement: Select[tuple[object, ...]] | Select[tuple[str]], /) -> _Rows:
         """Record and return the scripted rows."""
         self.statements.append(_rendered(statement))
         return _Rows(self.rows)
@@ -324,3 +326,43 @@ class PublicationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StagedIdentityTests(unittest.IsolatedAsyncioTestCase):
+    """A producer whose event identity is derived needs to ask before it stages.
+
+    `stage` refuses an existing identity rather than ignoring it, so a producer that
+    restages the same derived identity raises. Asking first is what makes a repeated
+    observation a no-op instead of a defect.
+    """
+
+    def test_the_existence_read_is_an_exact_unlocked_primary_key_read(self) -> None:
+        # Arrange
+        identity = IDENTITY
+
+        # Act
+        statement = staged_statement(identity)
+        rendered = _rendered(statement)
+        bound = tuple(_parameters(statement).values())
+
+        # Assert
+        self.assertEqual(
+            (True, False, (identity.producer, identity.event_id)),
+            (
+                f"FROM {APPLICATION_OUTBOX_TABLE}" in rendered,
+                "FOR UPDATE" in rendered,
+                bound,
+            ),
+        )
+
+    async def test_a_present_and_an_absent_identity_are_distinguished(self) -> None:
+        # Arrange
+        cases = ((_Session(rows=[(EVENT.event_id,)]), True), (_Session(rows=[]), False))
+        observed: list[bool] = []
+
+        # Act
+        for session, _expected in cases:
+            observed.append(await is_staged(session, IDENTITY))
+
+        # Assert
+        self.assertEqual([expected for _session, expected in cases], observed)

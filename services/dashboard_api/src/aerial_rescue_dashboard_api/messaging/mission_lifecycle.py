@@ -20,6 +20,7 @@ from aerial_rescue_contracts.envelope import (
 )
 from aerial_rescue_contracts.topics import Family, Topic, event_type, format_topic
 from aerial_rescue_domain.mission import (
+    INITIAL_STATE,
     MissionError,
     MissionState,
     event_reaching,
@@ -259,6 +260,9 @@ class LifecycleTransaction(Protocol):
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Stage one exact publication inside the deciding transaction."""
 
+    async def staged(self, event: StagedApplicationEvent) -> bool:
+        """Report whether that exact derived event identity is already staged."""
+
     async def predecessor_run(self, mission_id: str) -> RetainedRun | None:
         """Return the run a reset retained, reachable only through the mission's link."""
 
@@ -317,28 +321,42 @@ class MissionLifecycleObserver:
             return ObservationOutcome.NOT_APPLICABLE
         mission_id, run_id = identity
         await self._settle_predecessor(mission_id)
-        observed = await self._settled_or_observed(mission_id, run_id)
-        if isinstance(observed, ObservationOutcome):
-            return observed
+        opening = await self._settled_or_announced(mission_id, run_id)
+        if opening is not None:
+            return opening
+        observed = _state((await self._scenario.status(run_id)).state)
         async with self._transactions.open() as unit:
             current = _state(await unit.mission_lifecycle(mission_id))
             if current is observed:
                 return ObservationOutcome.CURRENT
             if not _reaches(current, observed):
                 return ObservationOutcome.SETTLED
-            await unit.stage(self._events.build(mission_id, run_id, observed))
-        return ObservationOutcome.STAGED
+            return await _stage_once(unit, self._events.build(mission_id, run_id, observed))
 
-    async def _settled_or_observed(
+    async def _settled_or_announced(
         self,
         mission_id: str,
         run_id: str,
-    ) -> MissionState | ObservationOutcome:
-        """Read private control only while the mission can still reach a new state."""
-        if is_terminal(_state(await self._runs_lifecycle(mission_id))):
-            return ObservationOutcome.SETTLED
-        status = await self._scenario.status(run_id)
-        return _state(status.state)
+    ) -> ObservationOutcome | None:
+        """Answer a settled or newly created mission without asking private control.
+
+        A mission is planned by being created, so no event reaches `PLANNED` and the
+        transition table can never produce the timeline's opening entry. It is announced
+        here instead, and in its own observation: the outbox drains oldest-first and breaks
+        a same-instant tie on the event identity, so the opening entry earns a strictly
+        earlier audit ordinal only by being staged in an earlier observation.
+        """
+        async with self._transactions.open() as unit:
+            current = _state(await unit.mission_lifecycle(mission_id))
+            if is_terminal(current):
+                return ObservationOutcome.SETTLED
+            if current is not INITIAL_STATE:
+                return None
+            opening = self._events.build(mission_id, run_id, INITIAL_STATE)
+            if await unit.staged(opening):
+                return None
+            await unit.stage(opening)
+            return ObservationOutcome.STAGED
 
     async def _settle_predecessor(self, mission_id: str) -> None:
         """Publish the ending a reset gave the mission this one replaced.
@@ -356,14 +374,24 @@ class MissionLifecycleObserver:
             current = _state(await unit.mission_lifecycle(retained.mission_id))
             if not _reaches(current, MissionState.ABORTED):
                 return
-            await unit.stage(
-                self._events.build(retained.mission_id, retained.run_id, MissionState.ABORTED)
-            )
+            ending = self._events.build(retained.mission_id, retained.run_id, MissionState.ABORTED)
+            await _stage_once(unit, ending)
 
-    async def _runs_lifecycle(self, mission_id: str) -> str:
-        """Read the durable lifecycle without holding a lock across private control."""
-        async with self._transactions.open() as unit:
-            return await unit.mission_lifecycle(mission_id)
+
+async def _stage_once(
+    unit: LifecycleTransaction,
+    event: StagedApplicationEvent,
+) -> ObservationOutcome:
+    """Stage one derived identity, or report that a prior observation already did.
+
+    `stage` refuses an existing identity rather than ignoring it, so asking first is what
+    makes a repeated observation a no-op. It is also what keeps the outbox's primary key
+    the whole idempotency: nothing here remembers what it has published.
+    """
+    if await unit.staged(event):
+        return ObservationOutcome.CURRENT
+    await unit.stage(event)
+    return ObservationOutcome.STAGED
 
 
 def _operational_identity(selected: CurrentRun | None) -> tuple[str, str] | None:
