@@ -316,11 +316,16 @@ class MissionLifecycleObserver:
     async def _observe(self) -> ObservationOutcome:
         """Run one observation, converting only the transition table's own refusal."""
         selected = await self._runs.current_run()
+        live_mission = _live_mission(selected)
+        if live_mission is None:
+            return ObservationOutcome.NOT_APPLICABLE
+        # Reset has already ended the predecessor; publishing that must not wait for the
+        # operator to start the successor, so this runs before the started-run gate.
+        await self._settle_predecessor(live_mission)
         identity = _operational_identity(selected)
         if identity is None:
             return ObservationOutcome.NOT_APPLICABLE
         mission_id, run_id = identity
-        await self._settle_predecessor(mission_id)
         opening = await self._settled_or_announced(mission_id, run_id)
         if opening is not None:
             return opening
@@ -392,6 +397,13 @@ async def _stage_once(
         return ObservationOutcome.CURRENT
     await unit.stage(event)
     return ObservationOutcome.STAGED
+
+
+def _live_mission(selected: CurrentRun | None) -> str | None:
+    """Return the mission of a live pointer whether or not its run has started."""
+    if selected is None or selected.mode is not RunMode.DEGRADED_LIVE:
+        return None
+    return selected.mission_id
 
 
 def _operational_identity(selected: CurrentRun | None) -> tuple[str, str] | None:
