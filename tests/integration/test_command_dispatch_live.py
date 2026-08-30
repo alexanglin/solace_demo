@@ -48,6 +48,7 @@ from aerial_rescue_broker.messaging import (
     Outcome,
     SolacePersistentReceiver,
     SolacePublisher,
+    UnsettledMessageError,
     open_fleet_session,
 )
 from aerial_rescue_broker.queues import (
@@ -292,13 +293,23 @@ def _discard(role: Principal, queue: str) -> None:
     Deliberately not :func:`_drain`. One of these runs publishes bytes that are not an
     envelope on purpose, and those bytes reach the collateral command queues too, so a
     cleanup that decoded what it took would fail on the very message the test is about.
+
+    Not reading the body is not enough: the receiver validates native trace context out of
+    the body before it returns, so that message arrives as an exception carrying the one
+    settlement capability bound to it. Accepting through the capability is the same
+    settlement as the loop's, and it is the only way to take that message off the queue.
     """
     service = _service(role)
     receiver = SolacePersistentReceiver(service, queue)
     window = RECEIVE_WINDOW_MILLISECONDS
     try:
         while True:
-            message = receiver.receive(window)
+            try:
+                message = receiver.receive(window)
+            except UnsettledMessageError as refused:
+                refused.settlement.accept()
+                window = DRAIN_WINDOW_MILLISECONDS
+                continue
             if message is None:
                 return
             window = DRAIN_WINDOW_MILLISECONDS
