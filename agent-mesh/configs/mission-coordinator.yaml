@@ -23,7 +23,7 @@ apps:
         # report the `tools` capability. Ollama reports `completion` alone for llama3:8b, and
         # every completion under it failed `does not support tools`
         # (docs/adr/0200-give-the-coordinator-a-tool-capable-model.md).
-        model: ollama_chat/qwen3:4b
+        model: ollama_chat/mistral:7b
         api_base: ${OLLAMA_HOST}
       # The structured answer is two integers, so the agent needs no artifact tools; without this
       # the framework injects eight of them and instructs the model to use them, which is what

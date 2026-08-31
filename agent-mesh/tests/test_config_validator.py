@@ -375,7 +375,7 @@ LOCKED_REASON = "A reason long enough to satisfy the twenty-character minimum."
 
 
 def _lock(
-    identifier: str = "ollama_chat/qwen3:4b",
+    identifier: str = "ollama_chat/mistral:7b",
     digest: str = LOCKED_DIGEST,
     reason: str = LOCKED_REASON,
     entries: int = 1,
@@ -392,7 +392,7 @@ def _lock(
     return "format = 1\n" + entry * entries
 
 
-def _local_agent(identifier: str = "ollama_chat/qwen3:4b", **model: object) -> str:
+def _local_agent(identifier: str = "ollama_chat/mistral:7b", **model: object) -> str:
     """Return an agent document whose model is ``identifier`` with the given model fields."""
     document = _agent_document()
     _app_config(document)["model"] = {"model": identifier, **model}
@@ -464,7 +464,7 @@ class ModelLockTests(unittest.TestCase):
 
     def test_a_lock_without_a_list_of_models_is_refused(self) -> None:
         # Arrange
-        candidates = ("format = 1\n", 'format = 1\nmodels = "ollama_chat/qwen3:4b"\n')
+        candidates = ("format = 1\n", 'format = 1\nmodels = "ollama_chat/mistral:7b"\n')
 
         # Act
         results = tuple(_validate_against_lock(candidate) for candidate in candidates)
@@ -489,9 +489,9 @@ class ModelLockTests(unittest.TestCase):
     def test_a_lock_entry_is_refused_on_identifier_digest_or_reason(self) -> None:
         # Arrange
         candidates = (
-            _lock(identifier="ollama/qwen3:4b"),
-            _lock(identifier="ollama_chat/qwen3:latest"),
-            _lock().replace('identifier = "ollama_chat/qwen3:4b"', "identifier = 4"),
+            _lock(identifier="ollama/mistral:7b"),
+            _lock(identifier="ollama_chat/mistral:latest"),
+            _lock().replace('identifier = "ollama_chat/mistral:7b"', "identifier = 4"),
             _lock(digest=LOCKED_DIGEST.upper()),
             _lock(digest="sha256:abc"),
             _lock(digest=LOCKED_DIGEST.removeprefix("sha256:")),
