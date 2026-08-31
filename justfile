@@ -3,7 +3,10 @@
 # Hooks and CI call the scripts under scripts/ directly, NOT these recipes, so
 # neither depends on `just` being installed. These are the human-facing names.
 
-reference_drone_arguments := "--drone drone-sim-01 --drone drone-sim-02 --drone drone-sim-03 --drone drone-sim-04 --drone drone-sim-05 --drone drone-sim-06 --drone drone-sim-07 --drone drone-sim-08 --drone drone-sim-09 --drone drone-sim-10 --drone drone-sim-11 --drone drone-sim-12 --drone drone-sim-13 --drone drone-sim-14 --drone drone-sim-15 --drone drone-sim-16 --drone drone-sim-17 --drone drone-sim-18 --drone drone-sim-19 --drone drone-sim-20 --drone drone-vision-01 --drone drone-navigation-02 --drone drone-comms-03"
+# The executable members only. A declared-only member has no process, consumer, or credential,
+# so a command queue for one is an endpoint that implies an execution path the product denies
+# (docs/adr/0118-provision-command-queues-only-for-executable-members.md).
+reference_drone_arguments := "--drone drone-sim-01 --drone drone-sim-02 --drone drone-sim-03 --drone drone-sim-04 --drone drone-sim-05 --drone drone-sim-06 --drone drone-sim-07 --drone drone-sim-08 --drone drone-sim-09 --drone drone-sim-10 --drone drone-sim-11 --drone drone-sim-12 --drone drone-sim-13 --drone drone-sim-14 --drone drone-sim-15 --drone drone-sim-16 --drone drone-sim-17 --drone drone-sim-18 --drone drone-sim-19 --drone drone-sim-20"
 mission_control_services := "broker-event-monitor migration fleet-simulator scenario-service recorder replay-validator dashboard-api caddy"
 mission_control_long_running_services := "broker-event-monitor fleet-simulator scenario-service recorder dashboard-api caddy"
 

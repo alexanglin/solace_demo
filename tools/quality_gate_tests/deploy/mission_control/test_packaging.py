@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from collections.abc import Mapping
@@ -16,6 +17,9 @@ DOCKERFILE_PATH: Final = REPOSITORY_ROOT / "deploy" / "application" / "Dockerfil
 CADDYFILE_PATH: Final = REPOSITORY_ROOT / "deploy" / "caddy" / "Caddyfile"
 JUSTFILE_PATH: Final = REPOSITORY_ROOT / "justfile"
 ENV_EXAMPLE_PATH: Final = REPOSITORY_ROOT / ".env.example"
+SCENARIO_PATH: Final = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
+EXECUTABLE_PARTICIPATION: Final = "SIMULATED_DRONE"
+"""The projection ADR-0118 makes the sole reason a member receives a command queue."""
 
 SHARED_BASE_SERVICES: Final = ("broker", "postgres")
 MISSION_CONTROL_SERVICES: Final = (
@@ -645,10 +649,22 @@ class MissionControlRecipeTests(QualityGateTestCase):
         self.assertNotIn("AERIAL_RESCUE_POSTGRES_HOST_PORT", environment)
         self.assertNotIn("AERIAL_RESCUE_MISSION_CONTROL_PROJECT", environment)
 
-    def test_startup_provisions_the_complete_reference_fleet_without_a_projection(self) -> None:
+    def test_startup_provisions_the_executable_fleet_without_a_projection(self) -> None:
+        """ADR-0118: the recipe passes only the members a process actually executes."""
         # Arrange
         text = JUSTFILE_PATH.read_text(encoding="utf-8")
         body = _recipe(text, "mission-control-up")
+        members = json.loads(SCENARIO_PATH.read_text(encoding="utf-8"))["members"]
+        executable = tuple(
+            member["identifier"]
+            for member in members
+            if member["participation"] == EXECUTABLE_PARTICIPATION
+        )
+        declared_only = frozenset(
+            member["identifier"]
+            for member in members
+            if member["participation"] != EXECUTABLE_PARTICIPATION
+        )
 
         # Act
         assignment = re.search(r'(?m)^reference_drone_arguments := "([^"]+)"$', text)
@@ -661,8 +677,9 @@ class MissionControlRecipeTests(QualityGateTestCase):
         projections = tuple(re.findall(r"--queue-projection ([a-z-]+)", body))
 
         # Assert
-        self.assertEqual(23, len(provisioned))
-        self.assertEqual(23, len(set(provisioned)))
+        self.assertEqual(executable, provisioned)
+        self.assertEqual(len(executable), len(set(provisioned)))
+        self.assertEqual(frozenset(), declared_only & frozenset(provisioned))
         self.assertEqual((), projections)
         self.assertIn("{{reference_drone_arguments}}", body)
 

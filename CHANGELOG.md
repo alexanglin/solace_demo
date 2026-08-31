@@ -2082,6 +2082,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **Provisioning names only the members a process executes.** ADR-0118 decided that a per-drone
+  command queue exists only for a member projected into the executable `FleetScenario`, and that the
+  provisioning recipe passes only the twenty simulated identifiers. The recipe passed all
+  twenty-three, so the broker carried command queues and paired dead-message queues for the three
+  `DECLARED_ONLY` edge agents — endpoints with no process, consumer, or credential, implying an
+  execution path the product denies. Both recipe conformance tests now derive the executable
+  identifiers from the scenario's `participation` projection rather than asserting the roster count,
+  which is what ADR-0118 said tests would do. The simulated fleet is unchanged at twenty members;
+  what changes is that three non-executable members stop receiving broker endpoints
+  ([ADR-0118](docs/adr/0118-provision-command-queues-only-for-executable-members.md)).
+
 - **The command-dispatch cleanup can now take the poison message it deliberately publishes.**
   `_discard` exists so teardown accepts what a queue holds without decoding it, because one of these
   runs publishes bytes that are not an envelope on purpose and those bytes reach the collateral
