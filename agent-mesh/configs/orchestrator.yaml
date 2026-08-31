@@ -32,7 +32,7 @@ apps:
       agent_name: Orchestrator
       display_name: Orchestrator
       model:
-        model: ollama_chat/mistral:7b
+        model: ollama_chat/llama3.1:8b
         api_base: ${OLLAMA_HOST}
       # The same two constraints ADR-0198 applied to the MissionCoordinator, which were never
       # applied here. Without them the framework injects an eight-tool `artifact_management` group
@@ -64,7 +64,7 @@ apps:
       # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
-        description: Plans a search-and-rescue exercise and delegates to specialised agents.
+        description: Plans a search-and-rescue exercise and delegates to specialised agents. Runs llama3.1:8b on Ollama.
         defaultInputModes: [text]
         defaultOutputModes: [text]
         skills:

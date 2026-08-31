@@ -11,8 +11,8 @@
 format = 1
 
 [[models]]
-identifier = "ollama_chat/mistral:7b"
-digest = "sha256:6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf"
-recorded_on = "2026-08-30"
+identifier = "ollama_chat/llama3.1:8b"
+digest = "sha256:46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e"
+recorded_on = "2026-08-31"
 recorded_by = "Alex Anglin"
-reason = "Conversational commanding needs an answer the operator can wait for. qwen3:4b reports the thinking capability and spends it: the same sector-planning question measured 104.9 s and 4,623 evaluated tokens against 9.4 s and 566 for mistral:7b on the same host, warm. Reports completion and tools from GET /api/show, which ADR-0200 requires of a tool-bearing agent."
+reason = "Every agent carries a tool -- _notify_artifact_save loads unconditionally -- so a completion-only model cannot serve one. llama3:8b reports ['completion'] alone and was refused for that reason; llama3.1:8b is the same family and size and reports ['completion', 'tools'] from GET /api/show, which ADR-0200 requires. It replaces mistral:7b, on which the MissionResponse workflow completed about once in twelve attempts."

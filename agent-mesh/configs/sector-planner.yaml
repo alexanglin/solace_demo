@@ -31,7 +31,7 @@ apps:
         # The already-locked model, so this agent adds no model-lock.toml entry and needs no
         # new measured digest. It is also the only locked model reporting the `tools`
         # capability, which docs/adr/0200 requires of any agent the framework gives a tool.
-        model: ollama_chat/mistral:7b
+        model: ollama_chat/llama3.1:8b
         api_base: ${OLLAMA_HOST}
       auto_inject_artifact_tools: false
       # `enable_embed_resolution: false` was tried here and reverted. It does remove the
@@ -109,7 +109,7 @@ apps:
       # to a peer by artifact reference fails with "Artifact ... not found".
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
-        description: Divides a wilderness search area into ranked sectors for one report.
+        description: Divides a wilderness search area into ranked sectors for one report. Runs llama3.1:8b on Ollama.
         defaultInputModes: [text]
         defaultOutputModes: [text]
         skills:

@@ -6,6 +6,7 @@ import importlib
 import io
 import json
 import os
+import re
 import runpy
 import socket
 import sys
@@ -515,14 +516,21 @@ class ModelLockTests(unittest.TestCase):
         self.assertEqual({"MODEL_LOCK"}, _rules(result))
 
     def test_the_committed_lock_admits_the_model_it_records(self) -> None:
+        """Read the identifier from the lock rather than repeating it here.
+
+        The agent fixture's default is a convenience for the synthetic cases; hard-coding
+        it in this test made a model change look like a validator regression.
+        """
         # Arrange
         committed = MODEL_LOCK.read_text(encoding="utf-8")
+        recorded = re.findall(r'identifier = "([^"]+)"', committed)
 
         # Act
-        result = _validate_against_lock(committed, _local_agent())
+        results = [_validate_against_lock(committed, _local_agent(name)) for name in recorded]
 
         # Assert
-        self.assertTrue(result.valid, result.issues)
+        self.assertTrue(recorded, "the committed lock records no model identifier")
+        self.assertTrue(all(result.valid for result in results), results)
 
 
 class LocalModelPolicyTests(unittest.TestCase):

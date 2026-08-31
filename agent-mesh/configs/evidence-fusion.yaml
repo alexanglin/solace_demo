@@ -23,7 +23,7 @@ apps:
       agent_name: EvidenceFusion
       display_name: Evidence Fusion
       model:
-        model: ollama_chat/mistral:7b
+        model: ollama_chat/llama3.1:8b
         api_base: ${OLLAMA_HOST}
       auto_inject_artifact_tools: false
       # `enable_embed_resolution: false` was tried here and reverted. It does remove the
@@ -92,7 +92,7 @@ apps:
       session_service: {type: memory}
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
-        description: Correlates a sector assessment into one non-authoritative evidence summary.
+        description: Correlates a sector assessment into one non-authoritative evidence summary. Runs llama3.1:8b on Ollama.
         defaultInputModes: [text]
         defaultOutputModes: [text]
         skills:
