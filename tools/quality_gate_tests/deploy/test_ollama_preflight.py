@@ -23,9 +23,9 @@ from typing import override
 from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCase
 
 SCRIPT = REPOSITORY_ROOT / "scripts" / "preflight-ollama.sh"
-IDENTIFIER = "ollama_chat/qwen3:4b"
-NAME = "qwen3:4b"
-DIGEST = "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
+IDENTIFIER = "ollama_chat/mistral:7b"
+NAME = "mistral:7b"
+DIGEST = "6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf"
 OTHER_DIGEST = "0000000000000000000000000000000000000000000000000000000000000000"
 UNUSED_PORT = 1
 """Port 1 is privileged and unbound, so a request to it fails without leaving the host."""

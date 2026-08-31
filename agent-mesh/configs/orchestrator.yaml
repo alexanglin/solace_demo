@@ -32,11 +32,25 @@ apps:
       agent_name: Orchestrator
       display_name: Orchestrator
       model:
-        model: ollama_chat/qwen3:4b
+        model: ollama_chat/mistral:7b
         api_base: ${OLLAMA_HOST}
+      # The same two constraints ADR-0198 applied to the MissionCoordinator, which were never
+      # applied here. Without them the framework injects an eight-tool `artifact_management` group
+      # and instructs the model to use it, and `max_llm_calls_per_task` defaults to 20. A
+      # 4-billion-parameter model given eight tools and an instruction to use them loops, which is
+      # what a measured 338 s operator question ran through
+      # (docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md).
+      auto_inject_artifact_tools: false
+      max_llm_calls_per_task: 4
       instruction: |
         You coordinate a wilderness search-and-rescue exercise. Break an operator request into
         steps and delegate sector questions to the MissionCoordinator agent.
+
+        You do not assess sectors yourself. For any question about which sector to search, how to
+        divide a search area, or where to send a drone, you must first call the MissionCoordinator
+        peer agent and wait for its reply, then report what it told you. Answering a sector question
+        from your own knowledge, without calling MissionCoordinator, is wrong even if your answer
+        would be reasonable.
 
         You may only propose. You cannot dispatch a command, approve an action, or escalate a
         rescue; a deterministic command gateway outside your control is the sole publisher of

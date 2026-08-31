@@ -11,8 +11,8 @@
 format = 1
 
 [[models]]
-identifier = "ollama_chat/qwen3:4b"
-digest = "sha256:359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7"
-recorded_on = "2026-08-21"
+identifier = "ollama_chat/mistral:7b"
+digest = "sha256:6577803aa9a036369e481d648a2baebb381ebc6e897f2bb9a766a2aa7bfbc1cf"
+recorded_on = "2026-08-30"
 recorded_by = "Alex Anglin"
-reason = "Phase 0 orchestration spike for the general and planning roles. Tool-capable at 2.50 GB, reported by Ollama as completion, tools, and thinking. Provisional: the roles are pinned by the Phase 4 model selection."
+reason = "Conversational commanding needs an answer the operator can wait for. qwen3:4b reports the thinking capability and spends it: the same sector-planning question measured 104.9 s and 4,623 evaluated tokens against 9.4 s and 566 for mistral:7b on the same host, warm. Reports completion and tools from GET /api/show, which ADR-0200 requires of a tool-bearing agent."
