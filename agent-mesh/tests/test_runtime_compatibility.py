@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import inspect
+import re
 import signal
 import threading
 import unittest
@@ -59,6 +60,74 @@ SENSITIVE_FAILURE: Final = "tenant-secret-must-not-escape"
 EXPECTED_SETTLE_SECONDS: Final = 15.0
 TEST_SETTLE_SECONDS: Final = 1.0
 SURVIVING_THREADS: Final = 3
+
+
+SOLACE_AGENT_MESH_ROOT: Final = Path(upstream_agent_component.__file__).resolve().parents[2]
+"""The installed distribution, located from a module rather than from a hard-coded path."""
+
+NAMESPACE_INTERPOLATION: Final = re.compile(
+    r"\{[A-Za-z_][A-Za-z0-9_.\[\]'\"]*namespace\}|\{namespace\}"
+)
+CODE_MARKERS: Final = ('f"', "f'", '= "', "= '")
+"""What separates an interpolation in code from one quoted in a docstring or comment."""
+
+GLUED_NAMESPACE_MODULES: Final = (
+    "agent/adk/models/dynamic_model_provider.py",
+    "agent/adk/models/dynamic_model_provider_topics.py",
+    "gateway/http_sse/component.py",
+    "gateway/http_sse/services/scheduler/result_handler.py",
+    "gateway/http_sse/services/scheduler/scheduler_service.py",
+    "services/platform/component.py",
+)
+"""Sites that concatenate with no separator, which the terminated namespace repairs."""
+
+SEPARATED_NAMESPACE_MODULES: Final = (
+    "agent/sac/component.py",
+    "evaluation/subscriber.py",
+    "gateway/base/component.py",
+)
+"""Sites that add their own separator, which the terminated namespace gives an empty level."""
+
+MODEL_CONFIG_TOPIC_MODULE: Final = "agent/adk/models/dynamic_model_provider_topics.py"
+TOPIC_CONSTANTS: Final = (
+    "BOOTSTRAP_SUBSCRIBE_TOPIC",
+    "BOOTSTRAP_REQUEST_TOPIC",
+    "BOOTSTRAP_RESPONSE_TOPIC",
+    "MODEL_CONFIG_UPDATE_TOPIC",
+)
+DEREGISTRATION_TOPIC: Final = "/a2a/events/agent/deregistered"
+
+
+def _upstream_source(relative: str) -> str:
+    """Return one installed module's source, read rather than imported."""
+    return (SOLACE_AGENT_MESH_ROOT / relative).read_text(encoding="utf-8")
+
+
+def _namespace_interpolation_sites() -> tuple[frozenset[str], frozenset[str]]:
+    """Return the modules interpolating the namespace, split by whether they add a separator."""
+    glued: set[str] = set()
+    separated: set[str] = set()
+    for path in sorted(SOLACE_AGENT_MESH_ROOT.rglob("*.py")):
+        relative = path.relative_to(SOLACE_AGENT_MESH_ROOT).as_posix()
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not any(marker in line for marker in CODE_MARKERS):
+                continue
+            for match in NAMESPACE_INTERPOLATION.finditer(line):
+                following = line[match.end() : match.end() + 1]
+                if following == "/":
+                    separated.add(relative)
+                elif following not in ('"', "'", ""):
+                    glued.add(relative)
+    return frozenset(glued), frozenset(separated)
+
+
+def _modules_mentioning(fragment: str) -> tuple[str, ...]:
+    """Return every installed module whose source carries a topic fragment."""
+    return tuple(
+        path.relative_to(SOLACE_AGENT_MESH_ROOT).as_posix()
+        for path in sorted(SOLACE_AGENT_MESH_ROOT.rglob("*.py"))
+        if fragment in path.read_text(encoding="utf-8", errors="replace")
+    )
 
 
 class _InterruptionListener(Protocol):
@@ -964,6 +1033,57 @@ class DeploymentCompatibilityTests(unittest.TestCase):
             'ENTRYPOINT ["/opt/venv/bin/python", "-m", "aerial_rescue_runtime_compat"]',
             normalized,
         )
+
+
+class NamespaceInterpolationTests(unittest.TestCase):
+    """Which pinned-runtime sites build a topic from the namespace, and how.
+
+    ``docs/adr/0221`` terminates the namespace every committed app declares, because two upstream
+    families concatenate it against the next level with no separator and would otherwise fall
+    outside the granted namespace. That decision rests on a claim about the whole wheel rather than
+    about one module: that the sites interpolating the namespace are exactly these, that the ones
+    gaining an empty level carry no traffic, and that no other family is disturbed.
+
+    An upgrade is where that claim would quietly stop being true, so it is pinned here rather than
+    reasoned about again. The set is measured from the installed distribution, not asserted from
+    memory; a new site in either direction fails and asks for the review ``docs/adr/0221`` names.
+    """
+
+    def test_the_wheel_interpolates_the_namespace_only_at_the_reviewed_sites(self) -> None:
+        # Arrange
+        expected = (
+            frozenset(GLUED_NAMESPACE_MODULES),
+            frozenset(SEPARATED_NAMESPACE_MODULES),
+        )
+
+        # Act
+        glued, separated = _namespace_interpolation_sites()
+
+        # Assert
+        self.assertEqual(expected, (glued, separated))
+
+    def test_the_model_configuration_family_is_the_reason_the_separator_is_needed(self) -> None:
+        # Arrange
+        module = _upstream_source(MODEL_CONFIG_TOPIC_MODULE)
+
+        # Act
+        glued = tuple(line for line in module.splitlines() if line.startswith(TOPIC_CONSTANTS))
+
+        # Assert
+        self.assertEqual(len(TOPIC_CONSTANTS), len(glued))
+        for declaration in glued:
+            with self.subTest(declaration=declaration):
+                self.assertIn('"{namespace}configuration/', declaration)
+
+    def test_the_published_separated_topic_has_no_subscriber_in_the_wheel(self) -> None:
+        # Arrange
+        expected = ("agent/sac/component.py",)
+
+        # Act
+        mentions = _modules_mentioning(DEREGISTRATION_TOPIC)
+
+        # Assert
+        self.assertEqual(expected, mentions)
 
 
 if __name__ == "__main__":

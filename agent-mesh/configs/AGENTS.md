@@ -55,9 +55,14 @@ live proof rather than treating it as a file-only edit.
 - Keep exactly one process-level `management_server` declaration. The current conformance test fixes it
   to `orchestrator.yaml`, and the Compose healthcheck depends on its readiness endpoint. Connector merge
   semantics replace non-list values, so a second declaration is not an independent second server.
-- Keep `${NAMESPACE}` consistent across every app. ADR-0064 and the committed `.env.example` own its
-  fixed value; pass that exact value explicitly to broker provisioning. An offline configuration pass
-  does not prove that the running container and broker use the same namespace.
+- Keep `${NAMESPACE}` consistent across every app, and keep it terminated as `${NAMESPACE}/`. Two
+  upstream topic families concatenate this value against the next level with no separator, so an
+  unterminated declaration puts them outside the granted namespace, where the broker refuses them
+  silently (ADR-0221). Every normalising helper strips the separator before adding its own, so the
+  terminator changes no A2A topic that carries traffic. ADR-0064 and the committed `.env.example` own
+  the fixed value itself, which stays unterminated; pass that exact value explicitly to broker
+  provisioning. An offline configuration pass does not prove that the running container and broker use
+  the same namespace.
 - All current apps use the same filesystem artifact location because structured cross-app invocation
   cannot exchange per-app memory artifacts. Preserve agreement across the complete set. The recorded
   live run established this for its pinned revision and runtime, not for the current checkout or another

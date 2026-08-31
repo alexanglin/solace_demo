@@ -1784,6 +1784,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Changed
 
+- **Every Agent Mesh app declares a terminated namespace.** Most of the pinned runtime's topics come
+  from helpers that strip a trailing separator and add their own, but the model-configuration family
+  and the Web UI's scheduler topics concatenate the namespace directly against the next level. With an
+  unterminated value their first topic level was the namespace glued to a word, which falls outside
+  the `a2a_subscription()` grant ADR-0061's matrix writes, so the broker would have refused every one
+  of those messages silently. The committed apps now declare `${NAMESPACE}/`; the environment value,
+  the provisioning argument, and the authorization matrix are unchanged, and no A2A topic that carries
+  traffic moves
+  ([ADR-0221](docs/adr/0221-terminate-the-agent-mesh-namespace-with-a-separator.md)).
+
 - **The Mission Coordinator answers the gateway's structured request instead of writing artifacts.**
   It runs `ollama_chat/llama3:8b`, keeps only the read-only Event Mesh Tool the configuration
   declares (`auto_inject_artifact_tools: false`), and is bounded to four model calls per task, so a
