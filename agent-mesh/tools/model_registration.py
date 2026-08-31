@@ -42,6 +42,9 @@ DEFAULT_LOCK: Final = "model-lock.toml"
 MODELS_PATH: Final = "/api/v1/platform/models"
 PROVIDER_SEPARATOR: Final = "/"
 PERMITTED_SCHEMES: Final = frozenset(("http", "https"))
+SUCCESS_LOWEST: Final = 200
+SUCCESS_BELOW: Final = 300
+"""``http.client`` raises nothing for a rejected request, so the status is checked here."""
 """The registry is named by an argument, so a `file:` or custom scheme is refused, not opened."""
 TIMEOUT_SECONDS: Final = 15.0
 
@@ -56,6 +59,7 @@ class RegistrationRefusal(Enum):
     )
     REGISTRY_UNREACHABLE = "the Platform registry did not answer"
     MALFORMED_REGISTRY = "the Platform registry answered with something other than a model list"
+    REJECTED = "the Platform registry rejected the request"
     UNSUPPORTED_SCHEME = "the Platform registry must be named over http or https"
     ABSENT_ALIAS = "the Platform registry holds no such alias"
 
@@ -110,11 +114,19 @@ def _send(registry: str, path: str, *, method: str, body: object | None = None) 
     try:
         connection.request(method, path, body=payload, headers=headers)
         with connection.getresponse() as response:
-            return json.loads(response.read() or b"null")
-    except (OSError, ValueError) as failure:
+            status, raw = response.status, response.read()
+    except OSError as failure:
         raise RegistrationError(RegistrationRefusal.REGISTRY_UNREACHABLE, registry) from failure
     finally:
         connection.close()
+    # Outside the block above on purpose: RegistrationError is a ValueError, so raising it inside
+    # a clause that catches ValueError would relabel a rejection as an unreachable registry.
+    if not SUCCESS_LOWEST <= status < SUCCESS_BELOW:
+        raise RegistrationError(RegistrationRefusal.REJECTED, f"{method} {path} answered {status}")
+    try:
+        return json.loads(raw or b"null")
+    except ValueError as failure:
+        raise RegistrationError(RegistrationRefusal.MALFORMED_REGISTRY, registry) from failure
 
 
 def registered_aliases(registry: str) -> dict[str, str]:

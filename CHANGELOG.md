@@ -2140,6 +2140,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **A rejected registry write is no longer reported as a registration.** `http.client` raises
+  nothing for a 4xx or 5xx, and the registration step read each response body without inspecting
+  its status, so a Platform registry answering `500` to every `PATCH` still produced a
+  `registered:` summary and a zero exit. The status is checked now, and the check sits outside the
+  clause that catches transport failures, because `RegistrationError` is a `ValueError` and would
+  otherwise have been relabelled as an unreachable registry. This closes the gap
+  [ADR-0224](docs/adr/0224-register-the-locked-model-through-the-platform-api.md) records as open.
+
 - **Provisioning names only the members a process executes.** ADR-0118 decided that a per-drone
   command queue exists only for a member projected into the executable `FleetScenario`, and that the
   provisioning recipe passes only the twenty simulated identifiers. The recipe passed all
