@@ -158,7 +158,7 @@ services:
       SOLACE_BROKER_VPN: ${SOLACE_BROKER_VPN}
       SEMP_MONITOR_HOST: broker
       SEMP_MONITOR_PORT: "1943"
-      FLEET_DRONE_IDS: drone-sim-01,drone-sim-02,drone-sim-03,drone-sim-04,drone-sim-05,drone-sim-06,drone-sim-07,drone-sim-08,drone-sim-09,drone-sim-10,drone-sim-11,drone-sim-12,drone-sim-13,drone-sim-14,drone-sim-15,drone-sim-16,drone-sim-17,drone-sim-18,drone-sim-19,drone-sim-20,drone-vision-01,drone-navigation-02,drone-comms-03
+      FLEET_DRONE_IDS: drone-sim-01,drone-sim-02,drone-sim-03,drone-sim-04,drone-sim-05,drone-sim-06,drone-sim-07,drone-sim-08,drone-sim-09,drone-sim-10,drone-sim-11,drone-sim-12,drone-sim-13,drone-sim-14,drone-sim-15,drone-sim-16,drone-sim-17,drone-sim-18,drone-sim-19,drone-sim-20
       PYTHONDONTWRITEBYTECODE: "1"
     secrets:
       - semp-monitor-password
@@ -380,7 +380,7 @@ services:
       <<: [*broker-environment, *store-environment]
       FLEET_CONTROL_HOST: fleet-simulator:8082
       FLEET_CONTROL_BEARER_FILE: /run/secrets/fleet-control-bearer
-      FLEET_DRONE_IDS: drone-sim-01,drone-sim-02,drone-sim-03,drone-sim-04,drone-sim-05,drone-sim-06,drone-sim-07,drone-sim-08,drone-sim-09,drone-sim-10,drone-sim-11,drone-sim-12,drone-sim-13,drone-sim-14,drone-sim-15,drone-sim-16,drone-sim-17,drone-sim-18,drone-sim-19,drone-sim-20,drone-vision-01,drone-navigation-02,drone-comms-03
+      FLEET_DRONE_IDS: drone-sim-01,drone-sim-02,drone-sim-03,drone-sim-04,drone-sim-05,drone-sim-06,drone-sim-07,drone-sim-08,drone-sim-09,drone-sim-10,drone-sim-11,drone-sim-12,drone-sim-13,drone-sim-14,drone-sim-15,drone-sim-16,drone-sim-17,drone-sim-18,drone-sim-19,drone-sim-20
     secrets:
       - postgres-password
       - broker-fleet-simulator-password
