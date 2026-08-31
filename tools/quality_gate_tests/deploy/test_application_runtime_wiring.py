@@ -15,6 +15,8 @@ DOCKERFILE = REPOSITORY_ROOT / "deploy" / "application" / "Dockerfile"
 ENVIRONMENT_TEMPLATE = REPOSITORY_ROOT / ".env.example"
 CADDYFILE = REPOSITORY_ROOT / "deploy" / "caddy" / "Caddyfile"
 SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
+EXECUTABLE_PARTICIPATION = "SIMULATED_DRONE"
+"""The projection ADR-0118 makes the sole reason a member is executed or given a queue."""
 
 APPLICATION_COMMANDS = {
     "dashboard-api": [
@@ -190,18 +192,31 @@ class ApplicationRuntimeWiringTests(unittest.TestCase):
         self.assertTrue(all(not name.startswith("SOLACE_") for name in environment))
         self.assertTrue(all(not name.startswith("POSTGRES_") for name in environment))
 
-    def test_fleet_owns_the_exact_twenty_plus_three_provisioned_queue_roster(self) -> None:
+    def test_fleet_runs_only_the_executable_members_and_no_declared_only_member(self) -> None:
+        """ADR-0118: a declared-only member receives no process, queue, or live state."""
         # Arrange
         scenario = cast("dict[str, object]", json.loads(SCENARIO.read_text(encoding="utf-8")))
         members = cast("list[dict[str, object]]", scenario["members"])
-        expected = ",".join(cast("str", member["identifier"]) for member in members)
+        executable = tuple(
+            cast("str", member["identifier"])
+            for member in members
+            if member["participation"] == EXECUTABLE_PARTICIPATION
+        )
+        declared_only = frozenset(
+            cast("str", member["identifier"])
+            for member in members
+            if member["participation"] != EXECUTABLE_PARTICIPATION
+        )
         service = _services()["fleet-simulator"]
 
         # Act
         environment = cast("dict[str, object]", service.get("environment", {}))
+        declared = tuple(cast("str", environment.get("FLEET_DRONE_IDS", "")).split(","))
 
         # Assert
-        self.assertEqual(expected, environment.get("FLEET_DRONE_IDS"))
+        self.assertEqual(executable, declared)
+        self.assertEqual(frozenset(), declared_only & frozenset(declared))
+        self.assertNotEqual(frozenset(), declared_only, "the scenario declares no such member")
         self.assertEqual("fleet-simulator:8082", environment.get("FLEET_CONTROL_HOST"))
         self.assertEqual(
             "/run/secrets/fleet-control-bearer",

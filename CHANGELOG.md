@@ -2111,6 +2111,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
   what changes is that three non-executable members stop receiving broker endpoints
   ([ADR-0118](docs/adr/0118-provision-command-queues-only-for-executable-members.md)).
 
+- **The fleet simulator runs only the members a process executes.** `FLEET_DRONE_IDS` named all
+  twenty-three roster members, so the simulator opened a consumer on each declared-only member's
+  command queue — the execution path ADR-0118 denies those members, and one the contracts layer
+  already refuses live state for (`declared-only member cannot own live state`). Those binds were
+  also what made the six endpoints ADR-0118 removes from desired state impossible to retire. The
+  twenty simulated drones are unchanged
+  ([ADR-0118](docs/adr/0118-provision-command-queues-only-for-executable-members.md)).
+
 - **The command-dispatch cleanup can now take the poison message it deliberately publishes.**
   `_discard` exists so teardown accepts what a queue holds without decoding it, because one of these
   runs publishes bytes that are not an envelope on purpose and those bytes reach the collateral
