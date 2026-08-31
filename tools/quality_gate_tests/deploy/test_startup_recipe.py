@@ -30,6 +30,7 @@ BROKER_SERVICE = "broker"
 DATABASE_SERVICE = "postgres"
 PROVISION_MODULE = "aerial_rescue_broker"
 PREFLIGHT = "scripts/preflight-ollama.sh"
+PLATFORM_DATABASE = "scripts/create-platform-database.sh"
 NAMESPACE_FLAG = "--namespace"
 SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
 REFERENCE_DRONE_ARGUMENTS = "reference_drone_arguments"
@@ -132,6 +133,18 @@ class StartupRecipeTests(QualityGateTestCase):
 
         # Assert
         self.assertLess(preflight, len(body) - 1)
+
+    def test_the_platform_database_is_created_after_the_database_and_before_the_mesh(self) -> None:
+        # Arrange
+        body = _recipe("up")
+
+        # Act
+        creation = next(index for index, line in enumerate(body) if PLATFORM_DATABASE in line)
+
+        # Assert
+        started = [index for index, line in enumerate(body) if "up --detach" in line]
+        self.assertLess(started[0], creation)
+        self.assertLess(creation, started[-1])
 
     def test_compose_flags_reach_the_up_subcommand(self) -> None:
         # Arrange

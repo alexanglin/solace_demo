@@ -10,6 +10,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Agent Mesh Platform service gets its own database, created before the mesh starts.** The
+  service that will hold the registered model configurations runs its own Alembic history at boot,
+  and that history's version table carries Alembic's default name, so it cannot share a database with
+  the application's eleven revisions. PostgreSQL creates only `POSTGRES_DB`, and only on a first
+  initialisation of an empty volume, so `just up` now creates `aerial_rescue_platform` between the
+  database becoming healthy and the mesh being started. The statement runs over the container's local
+  socket, so no credential is read or logged, and both identifiers are held to an unquoted-identifier
+  shape because they reach PostgreSQL inside a statement rather than as parameters
+  ([ADR-0222](docs/adr/0222-register-the-mesh-s-local-model-in-the-platform-service.md)).
+
 - **The mission's own lifecycle now reaches the operator.** ADR-0189 gives the dashboard API
   mission-event publication and every consumer already existed — the envelope binding, the payload
   schema, the `missionLifecycle` projection, the `DASHBOARD_API` publish grant, the recorder's
