@@ -184,6 +184,11 @@ class PreparedFleetExecutionTests(unittest.TestCase):
             for event in lifecycle
             if event.type == "aerial-rescue.v1.sector.event.lifecycle"
         ]
+        salient = [
+            event.data
+            for event in lifecycle
+            if event.type == "aerial-rescue.v1.drone.event.salient"
+        ]
 
         # Assert
         self.assertEqual(14, report.state.tick)
@@ -200,7 +205,8 @@ class PreparedFleetExecutionTests(unittest.TestCase):
         )
         self.assertEqual(20, sum(item["state"] == "ASSIGNED" for item in sectors) - 1)
         self.assertEqual(20, sum(item["state"] == "SEARCHED" for item in sectors))
-        self.assertEqual(45, len(session.results.published))
+        self.assertEqual(["drone-sim-07"], [item["droneId"] for item in salient])
+        self.assertEqual(46, len(session.results.published))
 
     def test_lifecycle_sources_and_sequences_are_bound_to_the_stable_run(self) -> None:
         # Arrange
