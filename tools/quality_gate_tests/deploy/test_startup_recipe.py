@@ -31,6 +31,7 @@ DATABASE_SERVICE = "postgres"
 PROVISION_MODULE = "aerial_rescue_broker"
 PREFLIGHT = "scripts/preflight-ollama.sh"
 PLATFORM_DATABASE = "scripts/create-platform-database.sh"
+MODEL_REGISTRATION = "tools.model_registration"
 NAMESPACE_FLAG = "--namespace"
 SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
 REFERENCE_DRONE_ARGUMENTS = "reference_drone_arguments"
@@ -97,7 +98,8 @@ class StartupRecipeTests(QualityGateTestCase):
 
         # Assert
         started = [index for index, line in enumerate(body) if "up --detach" in line]
-        self.assertEqual([0, len(body) - 1], started)
+        self.assertEqual(2, len(started))
+        self.assertEqual(0, started[0])
         self.assertLess(provision, started[-1])
 
     def test_provisioning_states_the_namespace_the_template_fixes(self) -> None:
@@ -162,16 +164,28 @@ class StartupRecipeTests(QualityGateTestCase):
         self.assertLess(started[0], creation)
         self.assertLess(creation, started[-1])
 
+    def test_the_model_is_registered_after_the_mesh_that_serves_the_registry(self) -> None:
+        """The registry lives in the mesh process, so registration cannot precede its start."""
+        # Arrange
+        body = _recipe("up")
+
+        # Act
+        registration = next(index for index, line in enumerate(body) if MODEL_REGISTRATION in line)
+
+        # Assert
+        started = [index for index, line in enumerate(body) if "up --detach" in line]
+        self.assertLess(started[-1], registration)
+
     def test_compose_flags_reach_the_up_subcommand(self) -> None:
         # Arrange
         body = _recipe("up")
 
         # Act
-        final = body[-1]
+        started = [line for line in body if "up --detach" in line]
 
         # Assert
-        self.assertIn("up --detach", final)
-        self.assertLess(final.index("up --detach"), final.index("{{ARGS}}"))
+        self.assertIn("{{ARGS}}", started[-1])
+        self.assertLess(started[-1].index("up --detach"), started[-1].index("{{ARGS}}"))
 
     def test_the_showcase_still_starts_only_the_broker_and_database(self) -> None:
         # Arrange

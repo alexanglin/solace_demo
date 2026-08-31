@@ -110,6 +110,7 @@ up *ARGS:
     uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh {{reference_drone_arguments}}
     scripts/preflight-ollama.sh
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait {{ARGS}}
+    cd agent-mesh && uv run --frozen python -m tools.model_registration
 
 # Start the dashboard extension inside the existing aerial-rescue-mesh project. Broker and
 # PostgreSQL are shared stack services and must already be healthy; --no-deps prevents this
