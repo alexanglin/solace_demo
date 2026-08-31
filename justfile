@@ -169,6 +169,13 @@ mission-control-ps:
 provision *ARGS:
     uv run --frozen python -m aerial_rescue_broker {{ARGS}}
 
+# Delete the application queues the desired state no longer names. Separate from `provision`
+# because converging never deletes: ADR-0154 makes retirement an operator-invoked readback and
+# ADR-0157 permits deletion only through it. Refuses any queue that still holds a message or a
+# consumer, and refuses a run that names no fleet, which would make every drone queue stale.
+retire-stale-queues *ARGS:
+    uv run --frozen python -m aerial_rescue_broker.retire --namespace aerial-rescue-mesh {{reference_drone_arguments}} {{ARGS}}
+
 # Stop the stack; volumes are kept.
 down:
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml down

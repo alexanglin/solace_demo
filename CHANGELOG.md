@@ -10,6 +10,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **Retiring a departed queue is now a command an operator can run.** `provisioning.apply`
+  converges by writing desired state and never deletes, so a queue the matrix stops naming
+  survived it; the two-step plan-then-readback that ADR-0145 and ADR-0154 specify was implemented
+  and fully tested but had no production consumer at all. `just retire-stale-queues` is that
+  consumer. It stays a separate command rather than a step inside `provision`, because ADR-0154
+  makes retirement an operator-invoked readback and ADR-0157 permits deletion "only through" it.
+  It owns no safety rule of its own — the refusals for a non-empty, bound, foreign, still-desired,
+  or reappearing queue all remain in `packages/broker`'s existing two-step plan — and it adds one
+  guard of its own: a run that names no fleet is refused before a socket is opened, since the plan
+  is inventory minus desired state and an empty roster would make every per-drone command queue
+  stale. Measured live: 89 durable queues fell to 83.
+
 - **The Agent Mesh Platform service is a supported, validated configuration.** The registry that
   holds model configurations now runs as an eighth app in the mesh connector process, on the existing
   `agent-mesh-agent` identity and its own database. The offline validator gained a Platform arm
