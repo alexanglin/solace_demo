@@ -130,7 +130,7 @@ apps:
             name: Assess search sectors
             description: Divide a search area into sectors and rank them by search priority.
             tags: [search, sectors]
-      agent_card_publishing: {interval_seconds: 30}
+      agent_card_publishing: {interval_seconds: 10}
       agent_discovery: {enabled: true}
       inter_agent_communication:
         allow_list: []

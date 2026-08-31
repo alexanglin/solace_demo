@@ -2,9 +2,9 @@
 
 This is the ingress half of the Phase 0 Event Mesh spike. Everything before it was evidence
 about configuration: the offline validator proves a file's shape, and
-``tools/quality_gate_tests/deploy/test_agent_mesh_gateway_config.py`` proves the committed file
-stays inside the grants ``docs/adr/0061`` gives its role. Neither is evidence that a message
-moves.
+``quality_gate_tests/deploy/agent_mesh/test_agent_mesh_gateway_config.py`` proves the
+committed file stays inside the grants ``docs/adr/0061`` gives its role. Neither is
+evidence that a message moves.
 
 The event these publish is validated by the contract rather than hand-written: it is built as an
 ``Envelope``, emitted through ``envelope_document``, checked against the topic it will be sent

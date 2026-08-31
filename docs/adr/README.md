@@ -234,6 +234,10 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0213](0213-recover-a-run-the-private-control-epoch-forgot.md) | Recover a run the private control epoch forgot, rather than stranding reset | Accepted |
 | [0214](0214-keep-the-operator-provisioned-semp-identity-out-of-the-hosted-suite.md) | Keep the operator-provisioned SEMP identity out of the hosted suite | Accepted |
 | [0215](0215-end-a-broker-data-plane-that-cannot-recover.md) | End a broker data plane that cannot recover, and report the one that dies | Accepted |
+| [0216](0216-drain-agent-mesh-temporaries-before-a-recreate-binds.md) | Drain Agent Mesh temporaries before a recreate binds | Accepted |
+| [0217](0217-raise-the-agent-mesh-identity-ceilings-for-the-phase-5-agent-set.md) | Raise the Agent Mesh identity ceilings for the Phase 5 agent set | Accepted |
+| [0218](0218-make-a-workflow-node-s-agent-save-its-own-output-artifact.md) | Make a workflow node's agent save its own output artifact | Accepted |
+| [0219](0219-publish-agent-cards-inside-the-registry-ttl.md) | Publish agent cards inside the registry TTL | Accepted |
 
 ## Decisions still open
 

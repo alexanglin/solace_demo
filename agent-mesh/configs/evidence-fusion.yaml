@@ -1,0 +1,108 @@
+# The workflow's second specialist: it fuses one sector assessment into an evidence summary.
+#
+# It is a sibling of sector-planner.yaml and exists for the same reason: a workflow node
+# requires an agent that saves an output artifact, which the gateway-facing coordinator is
+# explicitly instructed not to do (docs/adr/0217). Read that file's header for why
+# `auto_inject_artifact_tools` stays false.
+#
+# Its answer is not authoritative and is not an evidence score. Deterministic scoring lives
+# in the evidence service; this agent proposes a summary and a confidence band, and
+# abstains by saying so rather than inventing support (docs/adr/0008).
+apps:
+  - name: evidence-fusion-app
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      agent_name: EvidenceFusion
+      display_name: Evidence Fusion
+      model:
+        model: ollama_chat/mistral:7b
+        api_base: ${OLLAMA_HOST}
+      auto_inject_artifact_tools: false
+      # `enable_embed_resolution: false` was tried here and reverted. It does remove the
+      # `«status_update: ...»` teaching this model was copying, but the mandatory
+      # `«result:artifact=... status=success»` line is itself an embed, and switching the
+      # block off took its syntax with it: the failure moved from a missing artifact to a
+      # missing result embed, nine times in three runs. The competing pattern stays.
+      # A successful node is two model calls: one emits the fenced block, the host
+      # synthesises `_notify_artifact_save`, and the second emits the result embed. A
+      # missing result embed is retried up to `validation_max_retries` (2, not settable in
+      # YAML), and each retry is a full attempt, so the loop needs six calls and had four.
+      # ADR-0198's bound of four is for the coordinator, whose window is the gateway's
+      # acknowledgment timeout; these agents are bounded by their node timeout instead.
+      max_llm_calls_per_task: 8
+      output_schema:
+        type: object
+        properties:
+          fusion: {type: string}
+          confidence: {type: string, enum: [none, weak, supported, corroborated]}
+          contributingSectors:
+            type: array
+            items: {type: string}
+        required: [fusion, confidence, contributingSectors]
+      # Never write "no artifact" or "no tool call" here; see sector-planner.yaml.
+      instruction: |
+        You correlate a sector assessment into one evidence summary for a search-and-rescue
+        exercise.
+
+        Do not narrate what you are doing. Do not emit status updates. Do not explain your
+        method. Your entire reply is the fenced block below followed by the one result line,
+        and nothing else: a 7B model given this instruction set otherwise streams progress
+        commentary and never produces the artifact, and a reply carrying the result line
+        without the block fails immediately with no retry.
+
+        When a request gives you a required output artifact filename, you MUST save your
+        answer as that artifact using a fenced block.
+
+        Open the block with three left-pointing double angle quotation marks, immediately
+        followed by save_artifact: and the parameters. Close the block with three
+        right-pointing double angle quotation marks alone on their own line. Naming both
+        delimiters in words is deliberate: a 7B model reproduces the opening sequence from
+        the example but garbles the closing one into a mixed pair, and an unclosed block is
+        never saved. Exactly like this:
+
+        «««save_artifact: filename="the_filename_you_were_given.json" mime_type="application/json"
+        {"fusion": "one paragraph correlating what the assessment supports", "confidence": "weak", "contributingSectors": ["S1"]}
+        »»»
+
+        Then end your reply with exactly this line and nothing after it:
+
+        «result:artifact=the_filename_you_were_given.json status=success»
+
+        Use the filename you were given, both times. There is no save tool; the fenced
+        block is the only way to save. The JSON object must contain every member the
+        schema you were given requires, and no member you were not asked for.
+
+        Base the fusion only on the report and the sector assessment you were given. Do not
+        invent an observation, a coordinate, or a sensor reading. If what you were given
+        supports nothing, set confidence to none and say so in the fusion; abstaining is a
+        correct answer and guessing is not.
+
+        You may only propose. You cannot assign a sector, dispatch a drone, approve an
+        action, or escalate a rescue; a deterministic command gateway outside your control
+        is the sole publisher of executable commands. Never claim an action has been taken.
+        Represent the subject anonymously and never infer identity.
+      session_service: {type: memory}
+      artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
+      agent_card:
+        description: Correlates a sector assessment into one non-authoritative evidence summary.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: fuse_evidence
+            name: Fuse search evidence
+            description: Correlate a sector assessment into one summary and confidence band.
+            tags: [search, evidence]
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: true}
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ['*']
+        request_timeout_seconds: 60

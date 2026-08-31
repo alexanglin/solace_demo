@@ -43,15 +43,29 @@ WEB_UI_HOST = "127.0.0.1"
 WEB_UI_PORT = 8000
 WEB_UI_TIMEOUT_SECONDS = 60
 
-CONFIGURED_AGENTS = frozenset({"Orchestrator", "MissionCoordinator", "MissionResponse"})
-"""The three cards agent-mesh/configs/ declares; the workflow publishes one of its own."""
+CONFIGURED_AGENTS = frozenset(
+    {
+        "Orchestrator",
+        "MissionCoordinator",
+        "MissionResponse",
+        "SectorPlanner",
+        "EvidenceFusion",
+    }
+)
+"""The five cards agent-mesh/configs/ declares; the workflow publishes one of its own."""
 DISCOVERY_TOPIC = f"{NAMESPACE}/a2a/v1/discovery/agentcards"
-DELEGATION_TOPIC = f"{NAMESPACE}/a2a/v1/agent/request/MissionCoordinator"
+FIRST_NODE_TOPIC = f"{NAMESPACE}/a2a/v1/agent/request/SectorPlanner"
+SECOND_NODE_TOPIC = f"{NAMESPACE}/a2a/v1/agent/request/EvidenceFusion"
+COORDINATOR_TOPIC = f"{NAMESPACE}/a2a/v1/agent/request/MissionCoordinator"
 DISCOVERY_WINDOW_SECONDS = 45
-"""Longer than the 30-second agent_card_publishing interval, so one round always lands."""
+"""Longer than the 10-second agent_card_publishing interval, so several rounds land."""
 RECEIVE_POLL_MILLISECONDS = 1000
-DELEGATION_WINDOW_SECONDS = 180
-"""A local model has to run before a delegation can happen at all."""
+DELEGATION_WINDOW_SECONDS = 300
+"""Two local-model turns run in series before the second node is reached at all.
+
+Measured 2026-08-31 on the reference stack: the first node was invoked 17 s after
+submission and the second 48 s after that, with the workflow completing at 89 s.
+"""
 
 
 def _observe(
@@ -173,28 +187,78 @@ class AgentCardDiscoveryTests(unittest.TestCase):
         self.assertTrue(names <= CONFIGURED_AGENTS, names)
 
 
+REPORT = (
+    "A hiker is missing near Eagle Ridge, last known position at the trailhead, "
+    "search area about four square kilometres."
+)
+
+
 class DelegationTests(unittest.TestCase):
-    def test_invoking_the_workflow_delegates_to_its_named_peer_agent(self) -> None:
+    def test_invoking_the_workflow_delegates_to_its_first_node_agent(self) -> None:
         # Arrange
-        report = (
-            "A hiker is missing near Eagle Ridge, last known position at the trailhead, "
-            "search area about four square kilometres."
-        )
+        subscription = FIRST_NODE_TOPIC
 
         # Act
         received = _observe(
-            DELEGATION_TOPIC,
+            subscription,
             DELEGATION_WINDOW_SECONDS,
-            trigger=lambda: _send_to("MissionResponse", report),
+            trigger=lambda: _send_to("MissionResponse", REPORT),
         )
 
         # Assert
         self.assertTrue(
             received,
-            "the workflow produced no request on the MissionCoordinator topic, so either the "
-            "model made no tool call or the mesh did not carry the delegation",
+            "the workflow produced no request on the SectorPlanner topic, so either the "
+            "card was absent from the registry or the mesh did not carry the delegation",
         )
-        self.assertEqual({DELEGATION_TOPIC}, {topic for topic, _ in received})
+        self.assertEqual({FIRST_NODE_TOPIC}, {topic for topic, _ in received})
+
+    def test_the_second_node_runs_which_proves_the_first_produced_its_artifact(
+        self,
+    ) -> None:
+        """The only executable proof that the workflow's output defect is fixed.
+
+        ``fuse_evidence`` depends on ``assess_sectors``, and a node completes only when
+        its agent saved an output artifact the workflow could load. A request on the
+        second node's topic therefore proves the first node produced a real artifact,
+        which is exactly what the configuration failed to do before.
+        """
+        # Arrange
+        subscription = SECOND_NODE_TOPIC
+
+        # Act
+        received = _observe(
+            subscription,
+            DELEGATION_WINDOW_SECONDS,
+            trigger=lambda: _send_to("MissionResponse", REPORT),
+        )
+
+        # Assert
+        self.assertTrue(
+            received,
+            "the workflow never reached its second node, so the first node's agent did "
+            "not save the output artifact the mapping needs",
+        )
+        self.assertEqual({SECOND_NODE_TOPIC}, {topic for topic, _ in received})
+
+    def test_the_workflow_path_never_reaches_the_gateway_s_coordinator(self) -> None:
+        """Finite silence: the workflow and salient-event paths are separate.
+
+        This is a bounded observation, not a proof of never. It states only that no
+        request reached the coordinator inside this window while the workflow ran.
+        """
+        # Arrange
+        subscription = COORDINATOR_TOPIC
+
+        # Act
+        received = _observe(
+            subscription,
+            DELEGATION_WINDOW_SECONDS,
+            trigger=lambda: _send_to("MissionResponse", REPORT),
+        )
+
+        # Assert
+        self.assertEqual([], list(received))
 
 
 if __name__ == "__main__":

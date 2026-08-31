@@ -41,15 +41,18 @@ MESH_IDENTITIES: Final[tuple[Principal, ...]] = tuple(
 DRAIN_POLL_INTERVAL_SECONDS: Final = 2.0
 """Pause between polls, well under the read pacing the routine monitor reserves."""
 
-DRAIN_DEADLINE_SECONDS: Final = 60.0
+DRAIN_DEADLINE_SECONDS: Final = 120.0
 """Bound on the whole wait, measured from the first poll.
 
 ``docker compose stop`` has already waited out the service's stop grace before this runs,
-so what remains is the broker's own reap of a closed session's temporaries. Measured once
-on 2026-08-31 against the reference stack: ``stop`` returned after 12.7 s, and all eight
-temporaries were released together 37.2 s after the first poll -- one sweep rather than a
-gradual reap. This bound is that measurement with room for another sweep; it is one
-sample, not a distribution.
+so what remains is the broker's own reap of a closed session's temporaries, which arrives
+as one sweep rather than a gradual release.
+
+Five waits measured on 2026-08-31 against the reference stack took 37.2, 48.1, 49.2, 48.3,
+and 59.0 seconds. The first of those alone suggested a 60 s bound; the fifth came within a
+second of it. This bound is twice the observed maximum, because the cost of waiting too
+long is a slower recreate and the cost of waiting too little is the endpoint race this
+module exists to prevent.
 """
 
 

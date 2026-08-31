@@ -1,8 +1,13 @@
-# The minimal versioned Mission Response workflow. Phase 0 needs one structured invocation
-# with typed input and output, not the full mission sequence; the sequence arrives in Phase 5.
+# The Mission Response workflow: the repeatable mission-start-to-summary path, in versioned
+# Agent Mesh YAML. Phase 0 carried one node as a feasibility probe; this is the sequence.
 #
 # The workflow declares no model of its own: every model-bearing step runs on the agent it
 # names, so there is one place per model and one lock entry behind it (docs/adr/0063).
+#
+# Both nodes target agents that save their own output artifact. They deliberately do not
+# target MissionCoordinator: that agent answers the Event Mesh Gateway's structured
+# invocation, which wants two integers and no artifact, and a node pointed at it fails with
+# "Artifact ... not found (no versions available)" (docs/adr/0217).
 apps:
   - name: mission-response-workflow-app
     app_module: solace_agent_mesh.workflow.app
@@ -16,37 +21,160 @@ apps:
     app_config:
       namespace: ${NAMESPACE}
       name: MissionResponse
+      # Stated as well as per node: a malformed per-node value falls back to this silently.
+      default_node_timeout_seconds: 180
       workflow:
-        version: 1.0.0
-        description: Assess the search sectors for one wilderness missing-person report.
+        # Two, not one: the node set and the declared output shape both changed, so a
+        # consumer reading the Phase 0 shape breaks and this is what says so.
+        version: 2.0.0
+        description: Rank the search sectors for one wilderness missing-person report and
+          fuse the result into one non-authoritative evidence summary.
+        # The DAG is two deep and invokes no sub-workflow. This is the only recursion bound
+        # the workflow app enforces; the default of 10 is five times the real depth.
+        maxCallDepth: 2
+        # A fusion must not run on a sector assessment that failed. Explicit rather than
+        # defaulted, so it reads as a decision instead of an accident.
+        failFast: true
+        # Two accepted shapes, because there are two ways in. A structured caller sends
+        # `report`. The Web UI's chat mode ignores this schema entirely and always delivers
+        # the message as `text` (upstream `_extract_workflow_input`, mode 3), so requiring
+        # `report` alone would declare a contract no interactive caller can satisfy.
         inputSchema:
           type: object
           properties:
             report: {type: string}
-          required: [report]
+            text: {type: string}
+          anyOf:
+            - required: [report]
+            - required: [text]
         outputSchema:
           type: object
           properties:
             assessment: {type: string}
-          required: [assessment]
+            sectors:
+              type: array
+              items:
+                type: object
+                properties:
+                  sectorId: {type: string}
+                  priority: {type: integer}
+                  rationale: {type: string}
+            fusion: {type: string}
+            confidence: {type: string}
+            contributingSectors:
+              type: array
+              items: {type: string}
+          required: [assessment, sectors, fusion, confidence, contributingSectors]
         nodes:
           - id: assess_sectors
             type: agent
-            agent_name: MissionCoordinator
-            instruction: Assess and rank the search sectors described in the report.
+            agent_name: SectorPlanner
+            timeout: 180s
+            instruction: Rank the search sectors described in the report.
+            # `coalesce` over both accepted shapes. An absent workflow input resolves to
+            # null rather than raising, which is precisely what this operator exists for;
+            # without it a chat-mode submission puts null into a TextPart and the node dies
+            # before the model is ever called.
             input:
-              text: '{{workflow.input.report}}'
+              text:
+                coalesce:
+                  - '{{workflow.input.report}}'
+                  - '{{workflow.input.text}}'
+            # A single `text` member is the one input shape the caller sends as a plain text
+            # part instead of writing an input artifact and passing it by reference. The
+            # same override is what the receiving agent validates its input against, so the
+            # two sides agree by construction rather than by being kept in step.
+            input_schema_override:
+              type: object
+              properties:
+                text: {type: string}
+              required: [text]
+            output_schema_override:
+              type: object
+              properties:
+                assessment: {type: string}
+                sectors:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sectorId: {type: string}
+                      priority: {type: integer, minimum: 1, maximum: 5}
+                      rationale: {type: string}
+                    required: [sectorId, priority, rationale]
+              required: [assessment, sectors]
+          - id: fuse_evidence
+            type: agent
+            agent_name: EvidenceFusion
+            depends_on: [assess_sectors]
+            timeout: 180s
+            instruction: Fuse the sector assessment into one evidence summary.
+            # `concat` rather than implicit inference: inference handles zero or one
+            # dependency and would hand the whole previous output over as an artifact,
+            # which is the path this workflow avoids.
+            input:
+              text:
+                concat:
+                  - 'Missing-person report: '
+                  - coalesce:
+                      - '{{workflow.input.report}}'
+                      - '{{workflow.input.text}}'
+                  - '
+
+                    Sector assessment: '
+                  - '{{assess_sectors.output.assessment}}'
+                  # The ranked sectors themselves, not just the prose about them. Without
+                  # this the fusion agent is asked for `contributingSectors` having never
+                  # seen a sector identifier, and an observed run answered with invented
+                  # names ("Ridge area", "Wooded valley") that match nothing this workflow
+                  # produced. `concat` renders through Python `str()`, so this arrives as a
+                  # list of mappings rather than JSON, which the model reads correctly.
+                  - '
+
+                    Ranked sectors: '
+                  - '{{assess_sectors.output.sectors}}'
+            input_schema_override:
+              type: object
+              properties:
+                text: {type: string}
+              required: [text]
+            output_schema_override:
+              type: object
+              properties:
+                fusion: {type: string}
+                confidence: {type: string, enum: [none, weak, supported, corroborated]}
+                contributingSectors:
+                  type: array
+                  items: {type: string}
+              required: [fusion, confidence, contributingSectors]
+        # Every key here navigates the parsed output artifact of the node it names, so each
+        # member must be one that node's schema requires. The Phase 0 mapping read
+        # `assess_sectors.output.result`, and no node ever produced a `result` member.
+        # Every member each node's schema requires is carried, so nothing a node produced
+        # is discarded at this boundary. `sectors` is the ranked work product, and
+        # `contributingSectors` is what makes the fusion checkable against it.
         outputMapping:
-          assessment: '{{assess_sectors.output.result}}'
+          assessment: '{{assess_sectors.output.assessment}}'
+          sectors: '{{assess_sectors.output.sectors}}'
+          fusion: '{{fuse_evidence.output.fusion}}'
+          confidence: '{{fuse_evidence.output.confidence}}'
+          contributingSectors: '{{fuse_evidence.output.contributingSectors}}'
         skills:
-          - id: assess_sectors
-            name: Assess search sectors
-            description: Assess the search sectors for one missing-person report.
-            tags: [search, sectors]
+          - id: assess_and_fuse
+            name: Rank sectors and fuse evidence
+            description: Rank the search sectors for one report and fuse the result.
+            tags: [search, sectors, evidence]
       session_service: {type: memory}
-      # Filesystem rather than memory, and one path for all four apps. A memory artifact
-      # service is per-app even inside one connector process, so a workflow node that hands
-      # its input to a peer agent by artifact reference fails with "Artifact ... not found".
-      # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
+      # Filesystem rather than memory, and one path for all apps. A memory artifact service
+      # is per-app even inside one connector process, so a workflow node handing its input
+      # to a peer by artifact reference fails with "Artifact ... not found".
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
-      agent_card_publishing: {interval_seconds: 30}
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: true}
+      # Absent, this defaults to every agent. A node whose card the registry never admitted
+      # fails with "Agent ... not found in registry", so this list is load-bearing: it must
+      # name exactly the agents the nodes above target.
+      inter_agent_communication:
+        allow_list: [SectorPlanner, EvidenceFusion]
+        deny_list: []
+        request_timeout_seconds: 60
