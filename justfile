@@ -98,8 +98,12 @@ rotate-secrets:
 # connects, because until it is, the factory `default` username is still enabled and any
 # identity may publish any topic (docs/adr/0061). Compose flags pass through:
 # `just up --force-recreate`. Add a profile with `COMPOSE_PROFILES=services just up`.
+# The Agent Mesh Platform service migrates its own database at boot but cannot create it, and
+# the image creates only POSTGRES_DB on a first initialisation, so that database is created
+# here once PostgreSQL is healthy and before the mesh starts (docs/adr/0222).
 up *ARGS:
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait broker postgres
+    scripts/create-platform-database.sh
     uv run --frozen python -m aerial_rescue_broker --namespace aerial-rescue-mesh {{reference_drone_arguments}}
     scripts/preflight-ollama.sh
     docker compose --env-file .env --env-file deploy/secrets/.env.roles -f deploy/compose.yaml up --detach --wait {{ARGS}}

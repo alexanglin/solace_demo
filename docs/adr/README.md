@@ -240,6 +240,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0219](0219-publish-agent-cards-inside-the-registry-ttl.md) | Publish agent cards inside the registry TTL | Accepted |
 | [0220](0220-run-the-mesh-agents-on-a-tool-capable-llama.md) | Run the mesh agents on a tool-capable Llama | Accepted |
 | [0221](0221-terminate-the-agent-mesh-namespace-with-a-separator.md) | Terminate the Agent Mesh namespace with a separator | Accepted |
+| [0222](0222-register-the-mesh-s-local-model-in-the-platform-service.md) | Register the mesh's local model in the Platform service | Accepted |
 
 ## Decisions still open
 
