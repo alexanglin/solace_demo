@@ -233,6 +233,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0212](0212-announce-the-opening-state-and-ask-the-outbox-before-staging.md) | Announce the mission's opening state, and ask the outbox before staging | Accepted |
 | [0213](0213-recover-a-run-the-private-control-epoch-forgot.md) | Recover a run the private control epoch forgot, rather than stranding reset | Accepted |
 | [0214](0214-keep-the-operator-provisioned-semp-identity-out-of-the-hosted-suite.md) | Keep the operator-provisioned SEMP identity out of the hosted suite | Accepted |
+| [0215](0215-end-a-broker-data-plane-that-cannot-recover.md) | End a broker data plane that cannot recover, and report the one that dies | Accepted |
 
 ## Decisions still open
 
