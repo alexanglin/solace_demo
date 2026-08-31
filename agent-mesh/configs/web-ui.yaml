@@ -20,7 +20,10 @@ apps:
       broker_vpn: ${SOLACE_BROKER_VPN}
       temporary_queue: true
     app_config:
-      namespace: ${NAMESPACE}
+      # Terminated deliberately: two upstream topic families concatenate this value with no
+      # separator, so an unterminated namespace lands them outside the granted namespace, and
+      # every normalising helper strips the separator before adding its own (docs/adr/0221).
+      namespace: ${NAMESPACE}/
       gateway_id: aerial-rescue-web-ui
       session_secret_key: ${SESSION_SECRET_KEY}
       # Filesystem rather than memory, and one path for all four apps. A memory artifact

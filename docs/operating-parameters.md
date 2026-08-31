@@ -320,7 +320,7 @@ carries only the values.
 
 | Parameter | Value | Instrument |
 | --- | --- | --- |
-| A2A namespace | `aerial-rescue-mesh`, one level, no trailing slash | `NAMESPACE` in `.env.example`; a gate test holds it equal to the subscription `a2a_subscription()` renders |
+| A2A namespace | `aerial-rescue-mesh`, one level, no trailing slash, and declared by every Agent Mesh app as the terminated `${NAMESPACE}/` ([ADR-0221](adr/0221-terminate-the-agent-mesh-namespace-with-a-separator.md)) | `NAMESPACE` in `.env.example`; one gate test holds the fixed value equal to the subscription `a2a_subscription()` renders, a second holds every committed app's declaration terminated and every model-configuration topic inside that subscription, and a third pins the sites where the pinned runtime interpolates the namespace |
 | A2A topic exceptions after the grant | 47, up from 41 while the namespace was blank | the provisioner's own report, recorded in [`release-evidence/phase-0/mesh-first-run.md`](../release-evidence/phase-0/mesh-first-run.md) |
 | Management server port and readiness path | 8080 and `/readyz`, declared in exactly one configuration file | the `agent-mesh` healthcheck in `deploy/compose.yaml`; a test asserts the single declaration |
 | Agent card publishing interval | 10 s per agent | `agent_card_publishing.interval_seconds` in each agent configuration. Derived from the pinned runtime's 60 s registry TTL: at 30 s a single missed publication expired a card, which a workflow node turns into a hard failure ([ADR-0219](adr/0219-publish-agent-cards-inside-the-registry-ttl.md)) |

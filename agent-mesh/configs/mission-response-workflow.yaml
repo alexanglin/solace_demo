@@ -19,7 +19,10 @@ apps:
       broker_vpn: ${SOLACE_BROKER_VPN}
       temporary_queue: true
     app_config:
-      namespace: ${NAMESPACE}
+      # Terminated deliberately: two upstream topic families concatenate this value with no
+      # separator, so an unterminated namespace lands them outside the granted namespace, and
+      # every normalising helper strips the separator before adding its own (docs/adr/0221).
+      namespace: ${NAMESPACE}/
       name: MissionResponse
       # Stated as well as per node: a malformed per-node value falls back to this silently.
       default_node_timeout_seconds: 180
