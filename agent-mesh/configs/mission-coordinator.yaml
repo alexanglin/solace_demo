@@ -23,7 +23,7 @@ apps:
         # report the `tools` capability. Ollama reports `completion` alone for llama3:8b, and
         # every completion under it failed `does not support tools`
         # (docs/adr/0200-give-the-coordinator-a-tool-capable-model.md).
-        model: ollama_chat/mistral:7b
+        model: ollama_chat/llama3.1:8b
         api_base: ${OLLAMA_HOST}
       # The structured answer is two integers, so the agent needs no artifact tools; without this
       # the framework injects eight of them and instructs the model to use them, which is what
@@ -122,7 +122,7 @@ apps:
       # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
       agent_card:
-        description: Assesses and prioritises search sectors for a wilderness search area.
+        description: Assesses and prioritises search sectors for a wilderness search area. Runs llama3.1:8b on Ollama.
         defaultInputModes: [text]
         defaultOutputModes: [text]
         skills:

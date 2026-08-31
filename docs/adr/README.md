@@ -238,6 +238,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0217](0217-raise-the-agent-mesh-identity-ceilings-for-the-phase-5-agent-set.md) | Raise the Agent Mesh identity ceilings for the Phase 5 agent set | Accepted |
 | [0218](0218-make-a-workflow-node-s-agent-save-its-own-output-artifact.md) | Make a workflow node's agent save its own output artifact | Accepted |
 | [0219](0219-publish-agent-cards-inside-the-registry-ttl.md) | Publish agent cards inside the registry TTL | Accepted |
+| [0220](0220-run-the-mesh-agents-on-a-tool-capable-llama.md) | Run the mesh agents on a tool-capable Llama | Accepted |
 
 ## Decisions still open
 
