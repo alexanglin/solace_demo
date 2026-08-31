@@ -343,6 +343,18 @@ grant tables, so nothing else needs naming on the command line:
 just provision --namespace aerial-rescue-mesh --drone drone-vision-01 --drone drone-thermal-02
 ```
 
+Converging never deletes, so a queue the desired state stops naming survives `just provision`
+untouched. Removing one is `just retire-stale-queues`, a separate command because deleting a queue
+is not convergence: [ADR-0154](docs/adr/0154-isolate-dead-messages-and-monitor-queues-without-enumeration.md)
+makes retirement an operator-invoked readback and
+[ADR-0157](docs/adr/0157-pace-and-coalesce-read-only-semp-monitoring.md) permits deletion only
+through it. It plans without deleting, then re-reads each exact candidate and deletes it only while
+it is still absent from desired state, still empty, and still unbound, verifying each deletion
+before continuing. A queue that still holds a message or a consumer is refused rather than forced,
+and the run fails non-zero; re-running it is the recovery, because completed deletions stay
+complete. It refuses a run that names no fleet, since that would make every per-drone command queue
+stale and plan its deletion.
+
 `just up` starts the default profile, which now includes the Agent Mesh
 ([ADR-0102](docs/adr/0102-start-the-agent-mesh-with-the-default-profile.md)). It runs four phases in
 order: broker and Postgres to healthy, the authorization matrix, the Ollama preflight, then the rest.

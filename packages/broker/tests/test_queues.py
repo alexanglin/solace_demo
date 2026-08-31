@@ -63,6 +63,8 @@ DRONE = "drone-vision-01"
 OTHER_DRONE = "drone-thermal-02"
 DRONES = (DRONE, OTHER_DRONE)
 REFERENCE_DRONES = tuple(f"drone-{ordinal:02d}" for ordinal in range(1, 24))
+EXECUTABLE_REFERENCE_DRONES = tuple(f"drone-sim-{ordinal:02d}" for ordinal in range(1, 21))
+"""The roster ADR-0118 provisions: the declared-only members receive no command queue."""
 
 
 class EndpointTableTests(unittest.TestCase):
@@ -406,6 +408,20 @@ class DesiredSetTests(unittest.TestCase):
 
         # Act
         queues = desired_queues(REFERENCE_DRONES)
+        inventory = (len(queues), len(queues) * MAX_SPOOL_MEGABYTES)
+
+        # Assert
+        self.assertEqual(expected, inventory)
+
+    def test_the_executable_reference_fleet_reserves_eighty_three_queues_and_830_megabytes(
+        self,
+    ) -> None:
+        """ADR-0118 provisions twenty per-drone queues, not the full twenty-three-member roster."""
+        # Arrange
+        expected = (83, 830)
+
+        # Act
+        queues = desired_queues(EXECUTABLE_REFERENCE_DRONES)
         inventory = (len(queues), len(queues) * MAX_SPOOL_MEGABYTES)
 
         # Assert
