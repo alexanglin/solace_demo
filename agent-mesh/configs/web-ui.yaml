@@ -31,6 +31,15 @@ apps:
       # its input to a peer agent by artifact reference fails with "Artifact ... not found".
       # Proven live on 2026-08-21; see release-evidence/phase-0/mesh-first-run.md.
       artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
+      # Where the browser fetches the model registry. The gateway publishes this to the page as
+      # `frontend_platform_server_url` and the frontend concatenates it verbatim onto
+      # `/api/v1/platform/...`, so it carries no trailing slash and no path. It is dereferenced by
+      # the browser rather than by this container, so it names the published loopback port rather
+      # than a container-internal host, even though both apps share one process. Left unset the
+      # fetch silently becomes a same-origin request the gateway mounts no router for
+      # (docs/adr/0222).
+      platform_service:
+        url: ${PLATFORM_SERVICE_URL}
       fastapi_host: 0.0.0.0
       fastapi_port: 8000
       cors_allowed_origins:

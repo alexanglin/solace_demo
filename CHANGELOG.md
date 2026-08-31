@@ -10,6 +10,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Web UI's Models tab reaches the model registry.** The gateway publishes
+  `app_config.platform_service.url` to the browser as `frontend_platform_server_url`, and the
+  frontend concatenates it verbatim onto `/api/v1/platform/...`. It was never declared, so the tab
+  fetched same-origin against a router the gateway does not mount and reported a load error. It is
+  declared now, and because the *browser* dereferences it, it names the published loopback port
+  rather than a container-internal host even though both apps share one process. The Platform's
+  allowed origins were its own port, which a browser never sends for an API it only fetches from;
+  they are the Web UI's origin now. A gate binds the three values, which live in two files and
+  drifted silently ([ADR-0222](docs/adr/0222-register-the-mesh-s-local-model-in-the-platform-service.md)).
+
+- **The Agent Mesh identity ceilings are sixteen connections and nine endpoints.** ADR-0217's seven
+  endpoints were exactly what six apps used, so the Platform service's two could not be admitted and
+  the container restart-looped. Measured the way ADR-0217 measured its own: probe generously, bring
+  the process to healthy, read the identity back over SEMP, provision what was observed. A cold start
+  at the provisioned figures reached healthy in twenty seconds with zero restarts
+  ([ADR-0223](docs/adr/0223-raise-the-agent-mesh-identity-ceilings-for-the-platform-service.md)).
+
 - **Retiring a departed queue is now a command an operator can run.** `provisioning.apply`
   converges by writing desired state and never deletes, so a queue the matrix stops naming
   survived it; the two-step plan-then-readback that ADR-0145 and ADR-0154 specify was implemented
