@@ -580,7 +580,7 @@ class CommittedScenarioTests(unittest.TestCase):
             all(member.execution_label == "DECLARED ONLY — NOT EXECUTED" for member in declared)
         )
         self.assertEqual(
-            (1000, 12), (projected.tick_interval_milliseconds, projected.ticks_to_sweep)
+            (3000, 12), (projected.tick_interval_milliseconds, projected.ticks_to_sweep)
         )
         self.assertEqual(
             [("drone-sim-07", tick) for tick in range(2, 8)],

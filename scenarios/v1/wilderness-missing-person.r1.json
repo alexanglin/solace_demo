@@ -361,7 +361,7 @@
       "executionLabel": "DECLARED ONLY — NOT EXECUTED"
     }
   ],
-  "tickIntervalMilliseconds": 1000,
+  "tickIntervalMilliseconds": 3000,
   "connectivityThresholds": {
     "missesToDegraded": 3,
     "missesToOffline": 6,
