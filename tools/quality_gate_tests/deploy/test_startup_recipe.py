@@ -34,6 +34,8 @@ PLATFORM_DATABASE = "scripts/create-platform-database.sh"
 NAMESPACE_FLAG = "--namespace"
 SCENARIO = REPOSITORY_ROOT / "scenarios" / "v1" / "wilderness-missing-person.r1.json"
 REFERENCE_DRONE_ARGUMENTS = "reference_drone_arguments"
+EXECUTABLE_PARTICIPATION = "SIMULATED_DRONE"
+"""The projection ADR-0118 makes the sole reason a member receives a command queue."""
 
 
 def _recipe(name: str) -> list[str]:
@@ -108,11 +110,21 @@ class StartupRecipeTests(QualityGateTestCase):
         # Assert
         self.assertIn(f"{NAMESPACE_FLAG} {_declared_namespace()}", provision)
 
-    def test_provisioning_names_every_twenty_plus_three_command_queue_owner(self) -> None:
+    def test_provisioning_names_the_executable_members_and_no_declared_only_member(self) -> None:
+        """ADR-0118: a command queue for a member no process executes is a fictional endpoint."""
         # Arrange
         body = _recipe("up")
-        scenario = json.loads(SCENARIO.read_text(encoding="utf-8"))
-        expected = tuple(member["identifier"] for member in scenario["members"])
+        members = json.loads(SCENARIO.read_text(encoding="utf-8"))["members"]
+        executable = tuple(
+            member["identifier"]
+            for member in members
+            if member["participation"] == EXECUTABLE_PARTICIPATION
+        )
+        declared_only = frozenset(
+            member["identifier"]
+            for member in members
+            if member["participation"] != EXECUTABLE_PARTICIPATION
+        )
 
         # Act
         provision = next(line for line in body if PROVISION_MODULE in line)
@@ -121,7 +133,11 @@ class StartupRecipeTests(QualityGateTestCase):
         )
 
         # Assert
-        self.assertEqual(expected, declared)
+        self.assertEqual(executable, declared)
+        self.assertEqual(frozenset(), declared_only & frozenset(declared))
+        self.assertNotEqual(
+            frozenset(), declared_only, "the scenario declares no non-executable member"
+        )
         self.assertIn(f"{{{{{REFERENCE_DRONE_ARGUMENTS}}}}}", provision)
 
     def test_the_ollama_preflight_runs_before_the_mesh_is_started(self) -> None:
