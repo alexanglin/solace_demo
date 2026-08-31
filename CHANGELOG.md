@@ -10,6 +10,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The locked local model is registered, and the Models tab shows it.** The Platform service seeds
+  `general` and `planning` as placeholders the tab renders as "Not configured". They are now pointed
+  at the model `model-lock.toml` already pins, derived from the lock rather than typed into the
+  browser, so ADR-0063's digest-locked identifier stays the one place a model is chosen. The
+  identifier is written verbatim because the registry prepends `ollama/` to a name containing no
+  slash, and `ollama/…` is the completion route with no tool support — the rewrite ADR-0200 and
+  ADR-0220 exist about — so an identifier that would lose its prefix is refused rather than
+  rewritten. The endpoint recorded is the container's view of Ollama, since the service dereferences
+  it from inside. `just up` registers after the mesh that serves the registry has started
+  ([ADR-0222](docs/adr/0222-register-the-mesh-s-local-model-in-the-platform-service.md)).
+
 - **The Web UI's Models tab reaches the model registry.** The gateway publishes
   `app_config.platform_service.url` to the browser as `frontend_platform_server_url`, and the
   frontend concatenates it verbatim onto `/api/v1/platform/...`. It was never declared, so the tab

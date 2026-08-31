@@ -242,6 +242,7 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0221](0221-terminate-the-agent-mesh-namespace-with-a-separator.md) | Terminate the Agent Mesh namespace with a separator | Accepted |
 | [0222](0222-register-the-mesh-s-local-model-in-the-platform-service.md) | Register the mesh's local model in the Platform service | Accepted |
 | [0223](0223-raise-the-agent-mesh-identity-ceilings-for-the-platform-service.md) | Raise the Agent Mesh identity ceilings for the Platform service | Accepted |
+| [0224](0224-register-the-locked-model-through-the-platform-api.md) | Register the locked model through the Platform API after the mesh starts | Accepted |
 
 ## Decisions still open
 
