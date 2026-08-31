@@ -266,6 +266,17 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OLLAMA_HOST: ${OLLAMA_HOST}
+      # The Platform service's database. Its URL is assembled by the owned entrypoint inside the
+      # container, from these non-secret values and the mounted secret below, because the service
+      # takes one connection string with the credential inside it and this repository is public
+      # (docs/adr/0222).
+      POSTGRES_USER: ${POSTGRES_USER}
+      PLATFORM_DATABASE_HOST: ${PLATFORM_DATABASE_HOST}
+      PLATFORM_DATABASE_PORT: ${PLATFORM_DATABASE_PORT}
+      PLATFORM_DATABASE_NAME: ${PLATFORM_DATABASE_NAME}
+      PLATFORM_DATABASE_PASSWORD_FILE: /run/secrets/postgres-password
+    secrets:
+      - postgres-password
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -273,11 +284,17 @@ services:
       - *trust-store
     ports:
       - "127.0.0.1:8000:8000"
+      # The Platform service's own API. It can re-point every agent's model, so it is published
+      # on loopback only, like the Web UI beside it (docs/adr/0222).
+      - "127.0.0.1:8001:8001"
     networks:
       - event-mesh
       - model-egress
+      - store
     depends_on:
       broker:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]

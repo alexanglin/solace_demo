@@ -34,6 +34,8 @@ GATEWAY_COMPONENT_MODULE = "aerial_rescue_event_mesh_gateway.component"
 GATEWAY_COMPONENT_CLASS = "AerialRescueEventMeshGatewayComponent"
 WEBUI_MODULE = "solace_agent_mesh.gateway.http_sse.app"
 WEBUI_CLASS = "WebUIBackendApp"
+PLATFORM_MODULE = "solace_agent_mesh.services.platform.app"
+PLATFORM_CLASS = "PlatformServiceApp"
 LOOPBACK_HOSTS = frozenset(("127.0.0.1", "localhost", "::1"))
 TOOL_MODULE = "sam_event_mesh_tool.tools"
 TOOL_CLASS = "EventMeshTool"
@@ -43,9 +45,12 @@ ALTERNATE_TOOL_LOADER_FIELDS = (
     "init_function",
     "cleanup_function",
 )
-SUPPORTED_MODULES = frozenset((AGENT_MODULE, WORKFLOW_MODULE, GATEWAY_MODULE, WEBUI_MODULE))
+SUPPORTED_MODULES = frozenset(
+    (AGENT_MODULE, WORKFLOW_MODULE, GATEWAY_MODULE, WEBUI_MODULE, PLATFORM_MODULE)
+)
 BROKER_FIELDS = ("broker_url", "broker_username", "broker_password", "broker_vpn")
-ENV_REFERENCE_FIELD_NAMES = frozenset(BROKER_FIELDS)
+DATABASE_URL_FIELD = "database_url"
+ENV_REFERENCE_FIELD_NAMES = frozenset((*BROKER_FIELDS, DATABASE_URL_FIELD))
 INCLUDE_PATTERN = re.compile(
     r'^[ \t]*!include\s+(["\']?[^"\s\']+)["\']?',
     re.MULTILINE,
@@ -251,6 +256,7 @@ class _Runtime:
     workflow_model: object
     gateway_schema: tuple[dict[str, object], ...]
     webui_schema: tuple[dict[str, object], ...]
+    platform_app: object
 
 
 class _RuntimeBoundaryError(RuntimeError):
@@ -571,6 +577,11 @@ def _load_runtime() -> _Runtime:
         ),
         gateway_schema=_gateway_schema(),
         webui_schema=_webui_schema(),
+        platform_app=_distribution_attribute(
+            "solace-agent-mesh",
+            PLATFORM_MODULE,
+            PLATFORM_CLASS,
+        ),
     )
 
 
@@ -1240,6 +1251,48 @@ def _webui_issues(
     return tuple(issues)
 
 
+def _platform_issues(
+    path: Path,
+    app_config: Mapping[str, object],
+    location: str,
+    lock: frozenset[str],
+) -> tuple[ValidationIssue, ...]:
+    """Return the Platform service's credential, exposure, and model diagnostics (docs/adr/0222).
+
+    There is no schema arm here because there is no schema to validate against: the upstream app
+    declares its parameters on ``SPECIFIC_APP_SCHEMA_PARAMS``, which only the gateway base converts
+    into an enforced ``app_schema``, so the connector validates nothing for this module. What is
+    proved instead is the part that is local and consequential: that the URL is declared at all,
+    since an absent one kills the process inside ``make_url``; that its browser exposure is
+    loopback-only; and that it takes no model of its own, ``model_provider`` being inert here. The
+    URL's credential safety is not repeated here -- ``database_url`` joins the field names the
+    shared secret rule already holds to whole environment indirection.
+    """
+    issues = list(
+        _model_policy_issues(path, app_config, location, _ModelPolicy(lock, required=False))
+    )
+    if not isinstance(app_config.get(DATABASE_URL_FIELD), str):
+        issues.append(
+            _issue(
+                path,
+                f"{location}.{DATABASE_URL_FIELD}",
+                "PLATFORM_DATABASE",
+                "database_url must be declared",
+            )
+        )
+    origins = app_config.get("cors_allowed_origins")
+    if not isinstance(origins, list) or not origins or not all(map(_loopback_origin, origins)):
+        issues.append(
+            _issue(
+                path,
+                f"{location}.cors_allowed_origins",
+                "PLATFORM_EXPOSURE",
+                "platform origins must be a nonempty loopback-only list",
+            )
+        )
+    return tuple(issues)
+
+
 def _gateway_issues(
     path: Path,
     app_config: Mapping[str, object],
@@ -1640,6 +1693,8 @@ def _app_issues(
         )
     elif module == WEBUI_MODULE:
         issues.extend(_webui_issues(path, typed_config, runtime, f"{location}.app_config", lock))
+    elif module == PLATFORM_MODULE:
+        issues.extend(_platform_issues(path, typed_config, f"{location}.app_config", lock))
     else:
         issues.extend(_gateway_issues(path, typed_config, runtime, f"{location}.app_config"))
     return tuple(issues)
