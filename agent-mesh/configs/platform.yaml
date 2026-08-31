@@ -42,6 +42,10 @@ apps:
       max_message_size_bytes: 10000000
       fastapi_host: 0.0.0.0
       fastapi_port: 8001
+      # The Web UI's origin, because this API is fetched from that page and never loaded as one:
+      # a browser sends the page's origin, so the API's own can never appear here. The upstream
+      # auto-trusted fallback does not cover it either, since this container sets FASTAPI_HOST to
+      # all interfaces and the fallback then builds an origin no browser sends (docs/adr/0222).
       cors_allowed_origins:
-        - http://127.0.0.1:8001
-        - http://localhost:8001
+        - http://127.0.0.1:8000
+        - http://localhost:8000

@@ -275,6 +275,7 @@ services:
       PLATFORM_DATABASE_PORT: ${PLATFORM_DATABASE_PORT}
       PLATFORM_DATABASE_NAME: ${PLATFORM_DATABASE_NAME}
       PLATFORM_DATABASE_PASSWORD_FILE: /run/secrets/postgres-password
+      PLATFORM_SERVICE_URL: ${PLATFORM_SERVICE_URL}
     secrets:
       - postgres-password
     extra_hosts:
