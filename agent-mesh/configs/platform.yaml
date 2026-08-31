@@ -1,0 +1,47 @@
+# The Platform service, which owns the registered model configurations and answers the agents'
+# model-configuration bootstrap over the broker (docs/adr/0222).
+#
+# It is an eighth app in the same connector process rather than a service of its own, so it runs
+# on the agent-mesh-agent identity like the Orchestrator, the coordinator, the two specialists,
+# the workflow, and the Web UI. A shared process is not permission to collapse the Event Mesh
+# Gateway's or the Event Mesh Tool's identities, which remain their own (docs/adr/0061).
+#
+# `database_url` is a whole environment reference and the value is never written to a file. The
+# image's owned entrypoint assembles it inside the container from POSTGRES_USER, the host and
+# port, PLATFORM_DATABASE_NAME, and the mounted postgres-password secret. The service runs its
+# own Alembic history at boot against that database, which is why the database is separate and
+# why `just up` creates it before this container starts.
+#
+# `frontend_use_authorization` is deliberately absent. The upstream default is false, which is
+# the community mode this deployment runs in; stating it would either write a literal under a
+# key the credential-name rule holds, or route it through the environment, where any non-empty
+# string is truthy and would enable a token check against an auth service that does not exist.
+#
+# `fastapi_host` is 0.0.0.0 because it binds inside the container. Loopback is enforced by the
+# published port `127.0.0.1:8001` in deploy/compose.yaml, which the compose policy gate holds.
+# This surface can re-point every agent's model, so its origins are stated explicitly rather
+# than left to the upstream default of ["*"].
+apps:
+  - name: platform-app
+    app_module: solace_agent_mesh.services.platform.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      # Terminated deliberately: two upstream topic families concatenate this value with no
+      # separator, so an unterminated namespace lands them outside the granted namespace, and
+      # every normalising helper strips the separator before adding its own (docs/adr/0221).
+      namespace: ${NAMESPACE}/
+      database_url: ${PLATFORM_DATABASE_URL}
+      # Required by SamComponentBase, which raises when neither this nor the gateway spelling
+      # is set. The value matches the upstream default rather than tuning anything.
+      max_message_size_bytes: 10000000
+      fastapi_host: 0.0.0.0
+      fastapi_port: 8001
+      cors_allowed_origins:
+        - http://127.0.0.1:8001
+        - http://localhost:8001

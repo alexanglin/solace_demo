@@ -10,6 +10,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **The Agent Mesh Platform service is a supported, validated configuration.** The registry that
+  holds model configurations now runs as an eighth app in the mesh connector process, on the existing
+  `agent-mesh-agent` identity and its own database. The offline validator gained a Platform arm
+  rather than a relaxed refusal: it holds `database_url` to the shared environment-indirection rule,
+  requires it to be declared at all, keeps the browser origins loopback-only, and still refuses
+  `model_provider`, which is inert on this component. The image's owned entrypoint assembles the
+  connection string inside the container from the mounted `postgres-password` secret, so the one
+  credential the service needs is never written to Compose, to YAML, or to a log
+  ([ADR-0222](docs/adr/0222-register-the-mesh-s-local-model-in-the-platform-service.md)).
+
+  **Not yet operational.** Deploying it exceeds the broker's endpoint budget: the running stack
+  refuses the twelfth non-durable endpoint, the baseline needs ten and the Platform service needs
+  twelve, and every per-identity ceiling was ruled out by raising them far beyond need. The service
+  itself was observed working — it connects, runs its own Alembic to head, creates its schema, seeds
+  the default aliases, and binds its bootstrap queue — before the Web UI's visualization flow fails
+  behind it. Until the endpoint budget is resolved, `just up` will not bring the mesh to healthy with
+  this configuration present.
+
 - **The Agent Mesh Platform service gets its own database, created before the mesh starts.** The
   service that will hold the registered model configurations runs its own Alembic history at boot,
   and that history's version table carries Alembic's default name, so it cannot share a database with

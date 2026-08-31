@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import threading
 from collections.abc import Sequence
@@ -16,6 +17,7 @@ from solace_ai_connector.common.logging_config import configure_from_file
 from solace_ai_connector.main import load_config, merge_config
 from solace_ai_connector.solace_ai_connector import SolaceAiConnector
 
+from aerial_rescue_runtime_compat.database import export_platform_database_url
 from aerial_rescue_runtime_compat.lifecycle import (
     ConnectorRuntime,
     run_connector,
@@ -112,6 +114,9 @@ def _parser() -> argparse.ArgumentParser:
 def _startup(arguments: Sequence[str] | None) -> tuple[dict[str, object], list[str]]:
     """Validate the runtime and produce the merged Connector configuration."""
     require_supported_runtime()
+    # Before any configuration is loaded, because loading substitutes environment references
+    # and the Platform service's `database_url` is one of them (docs/adr/0222).
+    export_platform_database_url(os.environ)
     configure_from_file()
     initialize()
     files = _configuration_files(_parser().parse_args(arguments).paths)

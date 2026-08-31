@@ -314,6 +314,27 @@ def _web_ui_document() -> dict[str, object]:
     }
 
 
+def _platform_document() -> dict[str, object]:
+    """Return a minimal valid Platform service document (docs/adr/0222)."""
+    return {
+        "apps": [
+            {
+                "name": "validation-platform-app",
+                "app_module": "solace_agent_mesh.services.platform.app",
+                "broker": _broker(),
+                "app_config": {
+                    "namespace": "aerial-rescue-mesh/validation",
+                    "database_url": "${PLATFORM_DATABASE_URL}",
+                    "max_message_size_bytes": 10000000,
+                    "fastapi_host": ".".join(("0", "0", "0", "0")),
+                    "fastapi_port": 8001,
+                    "cors_allowed_origins": ["http://127.0.0.1:8000"],
+                },
+            }
+        ]
+    }
+
+
 def _mapping(value: object) -> dict[str, object]:
     """Narrow one test document node to a string-keyed mapping."""
     return cast(dict[str, object], value)
@@ -632,16 +653,97 @@ class WebUiPolicyTests(unittest.TestCase):
         self.assertIn("SECRET_LITERAL", _rules(secret_result))
         self.assertIn("MODEL_LOCK_REQUIRED", _rules(model_result))
 
-    def test_the_platform_service_module_is_still_refused(self) -> None:
+
+class PlatformPolicyTests(unittest.TestCase):
+    """The Platform service is a supported module with its own rules (docs/adr/0222).
+
+    It was refused outright until the registered model configurations needed a home. Admitting a
+    module is not relaxing a refusal: what the arm proves is that the one credential it carries
+    stays an environment reference, that its browser exposure is loopback-only, and that it takes
+    no model of its own, since ``model_provider`` is inert on this component.
+    """
+
+    def test_the_committed_shape_of_the_platform_service_validates(self) -> None:
         # Arrange
-        document = _web_ui_document()
-        _only_app(document)["app_module"] = "solace_agent_mesh.services.platform.app"
+        document = _platform_document()
 
         # Act
         result = _validate_text(_render(document))
 
         # Assert
-        self.assertIn("APP_MODULE", _rules(result))
+        self.assertTrue(result.valid, result.issues)
+
+    def test_an_undeclared_database_url_is_refused(self) -> None:
+        # Arrange
+        document = _platform_document()
+        del _app_config(document)["database_url"]
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("PLATFORM_DATABASE", _rules(result))
+
+    def test_a_literal_database_url_is_held_to_the_shared_environment_indirection_rule(
+        self,
+    ) -> None:
+        # Arrange
+        document = _platform_document()
+        _app_config(document)["database_url"] = "postgresql+psycopg2://postgres:5432/platform"
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("SECRET_LITERAL", _rules(result))
+
+    def test_a_database_url_carrying_a_credential_is_refused_before_the_arm_is_reached(
+        self,
+    ) -> None:
+        # Arrange
+        document = _platform_document()
+        _app_config(document)["database_url"] = "postgresql://sam:pw@postgres:5432/platform"
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("URL_USERINFO", _rules(result))
+
+    def test_a_platform_service_beyond_the_loopback_browser_origin_is_refused(self) -> None:
+        # Arrange
+        document = _platform_document()
+        _app_config(document)["cors_allowed_origins"] = ["https://mesh.example.invalid"]
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("PLATFORM_EXPOSURE", _rules(result))
+
+    def test_the_platform_service_takes_no_model_provider_of_its_own(self) -> None:
+        # Arrange
+        document = _platform_document()
+        _app_config(document)["model_provider"] = ["aerial-rescue-local"]
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("MODEL_PROVIDER", _rules(result))
+
+    def test_a_literal_credential_in_the_platform_service_is_still_refused(self) -> None:
+        # Arrange
+        document = _platform_document()
+        _app_config(document)["database_url"] = "-".join(("fixture", "platform", "password"))
+        broker = _mapping(_only_app(document)["broker"])
+        broker["broker_password"] = "-".join(("fixture", "broker", "secret"))
+
+        # Act
+        result = _validate_text(_render(document))
+
+        # Assert
+        self.assertIn("SECRET_LITERAL", _rules(result))
 
 
 class CommittedConfigurationTests(unittest.TestCase):
@@ -660,7 +762,7 @@ class CommittedConfigurationTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(7, len(results))
+        self.assertEqual(8, len(results))
         self.assertTrue(all(result.valid for result in results), results)
 
     def test_exactly_one_committed_file_serves_the_readiness_probe(self) -> None:
@@ -1916,6 +2018,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             workflow_model=object(),
             gateway_schema=(),
             webui_schema=(),
+            platform_app=object(),
         )
 
         # Act
@@ -2065,6 +2168,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             workflow_model=object(),
             gateway_schema=(),
             webui_schema=(),
+            platform_app=object(),
         )
         missing_validator_runtime = validator._Runtime(
             load_config=lambda _path: _agent_document(),
@@ -2077,6 +2181,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             workflow_model=object(),
             gateway_schema=(),
             webui_schema=(),
+            platform_app=object(),
         )
         gateway_classes = (
             SimpleNamespace(app_schema=None),
