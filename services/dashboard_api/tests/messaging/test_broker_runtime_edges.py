@@ -9,7 +9,11 @@ from typing import Final, cast
 
 import pytest
 from aerial_rescue_broker.ingress import PayloadSchemaExecutor
-from aerial_rescue_broker.messaging import BrokerLifecycle, InboundMessage
+from aerial_rescue_broker.messaging import (
+    BrokerLifecycle,
+    BrokerLifecycleState,
+    InboundMessage,
+)
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import BINDINGS, Envelope, envelope_document
 from aerial_rescue_dashboard_api.messaging import broker_runtime as broker_module
@@ -529,6 +533,33 @@ def _running_for(cycles: int) -> Callable[[], bool]:
         return result
 
     return running
+
+
+@pytest.mark.asyncio
+async def test_a_transport_stalled_past_its_reconnection_budget_becomes_terminal() -> None:
+    """An orphaned RECOVERING state must end the plane rather than pause for the process life."""
+    # Arrange
+    session = _Session()
+    session.readiness.reconnecting(1_000)
+    plane = _ServingPlane()
+    signals: list[bool] = []
+
+    # Act
+    report = await broker_module.serve(
+        cast("broker_module.DashboardServingSession", session),
+        cast("broker_module.DashboardDataPlane", plane),
+        broker_module.ServePorts(
+            _running_for(broker_module.STALLED_RECOVERY_CYCLES + 2),
+            signals.append,
+            lambda: None,
+            0,
+        ),
+    )
+
+    # Assert
+    assert report.exit_status == 1
+    assert session.readiness.state is BrokerLifecycleState.EXHAUSTED
+    assert plane.publish_calls == 0
 
 
 @pytest.mark.asyncio

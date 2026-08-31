@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Final, Protocol
 
 from aerial_rescue_broker.ingress import (
     PayloadSchemaExecutor,
@@ -17,6 +17,7 @@ from aerial_rescue_broker.ingress import (
     validate_notification,
 )
 from aerial_rescue_broker.messaging import (
+    RECONNECTION_ATTEMPTS,
     BrokerLifecycle,
     BrokerLifecycleState,
     InboundMessage,
@@ -38,6 +39,18 @@ from aerial_rescue_dashboard_api.messaging.outbox import (
 )
 
 CONSUMER = "dashboard-api"
+
+STALLED_RECOVERY_CYCLES: Final = RECONNECTION_ATTEMPTS + 10
+"""How many paused cycles an unrecoverable transport state may hold before it is terminal.
+
+`RECOVERING` is left by exactly one SDK callback, and the lifecycle's monotonic guard drops
+a restoration whose stamp trails its own attempt. When that happens the state is never left
+again: the loop pauses one second per cycle for the life of the process, never calls
+`recover()`, never publishes a staged row, and reports nothing. Sixty attempts one second
+apart is the transport's own budget (ADR-0192); past it, plus a margin, the SDK has either
+restored the session or interrupted it, so a still-paused plane is orphaned rather than
+recovering. Ending it lets the supervisor report it and the restart policy build a new one.
+"""
 
 
 class DeliveryDecision(Enum):
@@ -217,6 +230,7 @@ class DashboardDataPlane:
         self._audit_page_size = audit_page_size
         self._mission_id: str | None = None
         self._refusal_count = 0
+        self._recovering = asyncio.Lock()
 
     @property
     def refusal_count(self) -> int:
@@ -231,14 +245,24 @@ class DashboardDataPlane:
         self._session.readiness.recovery_required()
 
     async def recover(self) -> bool:
-        """Fold all committed audit pages, drain outbox, and restore readiness in that order."""
-        mission_id = self._mission_id
-        if mission_id is not None:
-            await self._recover_audit(mission_id)
-        if not await self._drain_outbox():
-            return False
-        self._session.rebind_complete()
-        return True
+        """Fold all committed audit pages, drain outbox, and restore readiness in that order.
+
+        Two callers reach this concurrently on every live start. The lifespan activates the
+        mission and recovers it, while the serving loop -- already running, and made unready
+        by that same activation -- recovers it too. `latest_audit_ordinal` is read outside any
+        transaction, so an unguarded pair folds the identical page twice and the loser raises
+        `ORDINAL_REGRESSION`, which is not caught anywhere between here and the task. The lock
+        keeps one fold at a time; the second caller then reads the advanced checkpoint, folds
+        nothing, and returns the same answer.
+        """
+        async with self._recovering:
+            mission_id = self._mission_id
+            if mission_id is not None:
+                await self._recover_audit(mission_id)
+            if not await self._drain_outbox():
+                return False
+            self._session.rebind_complete()
+            return True
 
     async def _recover_audit(self, mission_id: str) -> None:
         """Fold and durably mark every currently committed recorder page."""
@@ -402,12 +426,17 @@ async def serve(
     if type(timeout) is not int or timeout < 0:
         raise DataPlaneError(DataPlaneRefusal.CONFIGURATION)
     channel_index = 0
+    stalled = 0
     while ports.running():
         lifecycle = session.readiness
         if lifecycle.is_terminal():
             ports.readiness(False)
             break
         ports.readiness(lifecycle.is_ready())
+        stalled = _stalled_cycles(lifecycle, stalled)
+        if stalled > STALLED_RECOVERY_CYCLES:
+            lifecycle.exhausted()
+            continue
         if await _recover_if_needed(lifecycle, plane, ports):
             continue
         await plane.publish_staged()
@@ -416,6 +445,16 @@ async def serve(
     if terminal is not BrokerLifecycleState.EXHAUSTED:
         ports.readiness(session.readiness.is_ready())
     return ServeReport(int(terminal is BrokerLifecycleState.EXHAUSTED))
+
+
+def _stalled_cycles(lifecycle: BrokerLifecycle, stalled: int) -> int:
+    """Count consecutive cycles in a state the serving loop can only pause on."""
+    if lifecycle.state in {
+        BrokerLifecycleState.CONNECTED,
+        BrokerLifecycleState.RECOVERY_PENDING,
+    }:
+        return 0
+    return stalled + 1
 
 
 async def _recover_if_needed(

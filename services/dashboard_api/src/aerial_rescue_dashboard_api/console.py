@@ -298,6 +298,7 @@ def build_solace_runtime(
             readiness=readiness,
             close_store=store.close,
             pause=_recovery_pause,
+            report=report_data_plane_failure,
         ),
         settings=SupervisorSettings(RECONNECTION_ATTEMPTS_WAIT_MILLISECONDS),
     )
@@ -391,6 +392,21 @@ def report_mission_lifecycle_failure(error: BaseException) -> None:
     """
     _LOGGER.error(
         "mission lifecycle observation failed: %s.%s",
+        type(error).__module__,
+        type(error).__qualname__,
+    )
+
+
+def report_data_plane_failure(error: BaseException) -> None:
+    """Name the class that ended the broker data plane without printing what it carries.
+
+    The serving task is created and never awaited, so a task that dies keeps its exception
+    to itself and the process serves HTTP with a mute data plane: staged rows never reach
+    the broker and the mission timeline stops advancing. Only the class is named, because a
+    traceback here could carry a database URL or a topic body.
+    """
+    _LOGGER.error(
+        "broker data plane ended: %s.%s",
         type(error).__module__,
         type(error).__qualname__,
     )

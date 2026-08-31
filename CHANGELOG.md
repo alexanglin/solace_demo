@@ -2095,6 +2095,41 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
            native Solace trace context was refused: 'PAYLOAD_FORM'
       3 failed, 2 passed, 35 deselected
 
+- **A dashboard data plane that cannot recover now ends loudly instead of pausing for the life of the
+  process.** The first composed live run carried a mission correctly — 280 telemetry, 42 sector, 3
+  connectivity, 328 audit records, every one provenance-linked — and then stopped publishing.
+  Readiness read `broker-delivery-unavailable` for more than ten minutes, the two mission-lifecycle
+  rows ADR-0209 staged stayed `staged`, and the operator's timeline never left `PLANNED`. Restarting
+  the container published the backlog and advanced the mission one state, then stranded on the next
+  row; two restarts were needed to reach `EXHAUSTED`, and nothing was logged. Two defects combine to
+  produce that. `_recover_if_needed` pauses without calling `recover()` for any state outside
+  `{CONNECTED, RECOVERY_PENDING}`, and the only edge out of `RECOVERING` is a `reconnected` callback
+  the lifecycle's monotonic guard drops when its stamp trails its own final attempt — proven directly
+  against the class, where `reconnecting(2000)` then `reconnected(1000)` leaves `recovering`
+  permanently. Meanwhile `_run` had no exception handling and `serve()`'s terminal report was stored
+  and never read, so the task died holding its own exception while uvicorn kept serving. `serve()` now
+  counts consecutive unactionable cycles and makes the session terminal past the transport's own
+  ADR-0192 budget, and the supervisor reports both a terminal report and an unexpected exception —
+  naming only the exception's module and class, since a traceback here could carry a database URL.
+  Shutdown still re-raises the task failure exactly as before
+  ([ADR-0215](docs/adr/0215-end-a-broker-data-plane-that-cannot-recover.md)).
+
+  Observed red, before the fix:
+
+      FAILED services/dashboard_api/tests/messaging/test_supervisor_edges.py::
+        test_a_serving_task_that_raises_is_reported_rather_than_silently_dropped
+      TypeError: SupervisorPorts.__init__() got an unexpected keyword argument 'report'
+
+      FAILED services/dashboard_api/tests/messaging/test_broker_runtime_edges.py::
+        test_a_transport_stalled_past_its_reconnection_budget_becomes_terminal
+      AttributeError: module 'aerial_rescue_dashboard_api.messaging.broker_runtime'
+        has no attribute 'STALLED_RECOVERY_CYCLES'
+
+  The originating incident was not reproduced: two runs after the fix, one warm and one against a
+  cold process, completed cleanly. The mechanism is established from the code and a direct probe of
+  `BrokerLifecycle`, not from a second live failure. What changed is that a recurrence ends bounded
+  and named rather than silent and permanent.
+
 - **The broker authorization probe no longer leaves a queue the next suite cannot drain.** It
   published the plain text `authorization probe`, and a permitted publish spools one. The production
   receive path validates native trace context against the body, so a body it cannot decode becomes

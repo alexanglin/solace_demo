@@ -74,6 +74,57 @@ def _supervisor(
     )
 
 
+@dataclass
+class _RaisingPlane:
+    """A plane whose startup recovery succeeds and whose serving cycle then fails."""
+
+    session: _Session
+
+    async def recover(self) -> bool:
+        self.session.rebind_complete()
+        return True
+
+    def activate_mission(self, mission_id: str) -> None:
+        del mission_id
+        self.session.readiness.recovery_required()
+
+    async def publish_staged(self) -> None:
+        message = "outbox drain refused"
+        raise RuntimeError(message)
+
+
+@pytest.mark.asyncio
+async def test_a_serving_task_that_raises_is_reported_rather_than_silently_dropped() -> None:
+    """A data plane that dies must name what ended it; nobody awaits this task."""
+    # Arrange
+    session = _Session()
+    plane = _RaisingPlane(session)
+    reported: list[BaseException] = []
+    supervisor = supervisor_module.DashboardBrokerSupervisor(
+        ports=supervisor_module.SupervisorPorts(
+            open_session=lambda: cast("supervisor_module.OwnedDashboardSession", session),
+            plane=lambda _session: cast("supervisor_module.ManagedDashboardPlane", plane),
+            readiness=RuntimeReadiness(RunMode.DEGRADED_LIVE),
+            close_store=_no_store,
+            pause=lambda: asyncio.sleep(0),
+            report=reported.append,
+        ),
+        settings=supervisor_module.SupervisorSettings(0),
+    )
+
+    # Act
+    await supervisor.startup()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    # Assert
+    assert [type(failure).__name__ for failure in reported] == ["RuntimeError"]
+
+
+async def _no_store() -> None:
+    return None
+
+
 @pytest.mark.parametrize("timeout", [-1, True])
 def test_supervisor_settings_refuse_negative_or_boolean_receive_windows(timeout: int) -> None:
     # Arrange

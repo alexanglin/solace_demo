@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Final, cast
 
 import pytest
@@ -13,6 +14,7 @@ from aerial_rescue_broker.messaging import BrokerLifecycle
 from aerial_rescue_contracts import canonical
 from aerial_rescue_contracts.envelope import BINDINGS, Envelope, envelope_document
 from aerial_rescue_dashboard_api.messaging.broker_runtime import (
+    AuditPort,
     DashboardDataPlane,
     DashboardServingSession,
     DataPlanePorts,
@@ -226,6 +228,7 @@ def _plane(
     active: bool = True,
     outbox: _Outbox | None = None,
     publisher: _Publisher | None = None,
+    audit: AuditPort | None = None,
 ) -> tuple[DashboardDataPlane, _Session, _Hub]:
     session = _Session()
     hub = _Hub()
@@ -233,7 +236,7 @@ def _plane(
         session=cast("RecoverySession", session),
         ports=DataPlanePorts(
             hub=cast("ProjectionPort", hub),
-            audit=_Audit(records),
+            audit=_Audit(records) if audit is None else audit,
             inboxes=_Inboxes(),
             outbox=_Outbox() if outbox is None else outbox,
             publisher=_Publisher() if publisher is None else publisher,
@@ -422,6 +425,34 @@ def _staged() -> StagedApplicationEvent:
         causation_id=None,
         staged_at=envelope.time,
     )
+
+
+@dataclass
+class _YieldingAudit:
+    """An audit reader that yields inside a page so two folds can interleave."""
+
+    records: tuple[StoredAuditRecord, ...]
+
+    async def read_after(
+        self, _mission_id: str, after_ordinal: int, limit: int
+    ) -> tuple[StoredAuditRecord, ...]:
+        await asyncio.sleep(0)
+        return tuple(record for record in self.records if record.ordinal > after_ordinal)[:limit]
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_recoveries_fold_each_audit_record_exactly_once() -> None:
+    """Lifespan activation and the serving loop both recover; neither may refold a record."""
+    # Arrange
+    base = _record()
+    records = tuple(replace(base, ordinal=ordinal) for ordinal in range(1, 6))
+    plane, _session, hub = _plane((), audit=_YieldingAudit(records))
+
+    # Act
+    await asyncio.gather(plane.recover(), plane.recover())
+
+    # Assert
+    assert [record.ordinal for record in hub.applied] == [1, 2, 3, 4, 5]
 
 
 @pytest.mark.asyncio

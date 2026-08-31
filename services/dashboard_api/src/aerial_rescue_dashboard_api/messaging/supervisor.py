@@ -23,6 +23,7 @@ class SupervisorRefusal(Enum):
     CONFIGURATION = "dashboard broker supervisor settings are invalid"
     RECOVERY = "dashboard durable recovery did not complete"
     NOT_STARTED = "dashboard broker supervisor is not started"
+    DATA_PLANE_ENDED = "dashboard broker data plane ended and cannot serve"
 
 
 class DashboardSupervisorError(RuntimeError):
@@ -53,6 +54,10 @@ class ManagedDashboardPlane(Protocol):
         """Select one recorder-authoritative mission and remove readiness."""
         ...
 
+    async def publish_staged(self) -> None:
+        """Publish one bounded staged batch on a ready serving cycle."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class SupervisorSettings:
@@ -69,6 +74,11 @@ class SupervisorSettings:
             raise DashboardSupervisorError(SupervisorRefusal.CONFIGURATION)
 
 
+def _unreported(error: BaseException) -> None:
+    """Drop a serving-task failure where no console has supplied a reporter."""
+    del error
+
+
 @dataclass(frozen=True, slots=True)
 class SupervisorPorts:
     """Lazy external capabilities owned for exactly one supervisor epoch."""
@@ -78,6 +88,7 @@ class SupervisorPorts:
     readiness: RuntimeReadiness
     close_store: Callable[[], Awaitable[None]]
     pause: Callable[[], Awaitable[None] | None]
+    report: Callable[[BaseException], None] = _unreported
 
 
 class DashboardBrokerSupervisor:
@@ -95,6 +106,7 @@ class DashboardBrokerSupervisor:
         self._readiness = ports.readiness
         self._close_store = ports.close_store
         self._pause = ports.pause
+        self._report = ports.report
         self._settings = settings
         self._session: OwnedDashboardSession | None = None
         self._plane: ManagedDashboardPlane | None = None
@@ -184,19 +196,28 @@ class DashboardBrokerSupervisor:
         session: OwnedDashboardSession,
         plane: ManagedDashboardPlane,
     ) -> None:
-        report = await serve(
-            session,
-            cast("DashboardDataPlane", plane),
-            ServePorts(
-                running=lambda: self._running,
-                readiness=self._broker_readiness,
-                pause=self._pause,
-                receive_timeout_milliseconds=self._settings.receive_timeout_milliseconds,
-            ),
-        )
+        try:
+            report = await serve(
+                session,
+                cast("DashboardDataPlane", plane),
+                ServePorts(
+                    running=lambda: self._running,
+                    readiness=self._broker_readiness,
+                    pause=self._pause,
+                    receive_timeout_milliseconds=self._settings.receive_timeout_milliseconds,
+                ),
+            )
+        except asyncio.CancelledError:
+            raise
+        except BaseException as unexpected:
+            self._exit_status = 1
+            self._readiness.set_dependency(Dependency.BROKER_DELIVERY, ready=False)
+            self._report(unexpected)
+            raise
         self._exit_status = report.exit_status
         if report.exit_status:
             self._readiness.set_dependency(Dependency.BROKER_DELIVERY, ready=False)
+            self._report(DashboardSupervisorError(SupervisorRefusal.DATA_PLANE_ENDED))
 
     def _broker_readiness(self, ready: bool) -> None:
         self._readiness.set_dependency(Dependency.BROKER_DELIVERY, ready=ready)
