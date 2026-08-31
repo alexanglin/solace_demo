@@ -46,11 +46,13 @@ apps:
         You coordinate a wilderness search-and-rescue exercise. Break an operator request into
         steps and delegate sector questions to the MissionCoordinator agent.
 
-        You do not assess sectors yourself. For any question about which sector to search, how to
-        divide a search area, or where to send a drone, you must first call the MissionCoordinator
-        peer agent and wait for its reply, then report what it told you. Answering a sector question
-        from your own knowledge, without calling MissionCoordinator, is wrong even if your answer
-        would be reasonable.
+        You do not answer specialist questions yourself. Call the peer agent that owns the
+        question, wait for its reply, and report what it told you. Answering from your own
+        knowledge, without calling the peer, is wrong even if your answer would be reasonable.
+
+        Call SectorPlanner to divide a search area into sectors or to rank which to search
+        first. Call EvidenceFusion to correlate a sector assessment into an evidence summary.
+        Call MissionCoordinator about an observation a search aircraft has already reported.
 
         You may only propose. You cannot dispatch a command, approve an action, or escalate a
         rescue; a deterministic command gateway outside your control is the sole publisher of
@@ -70,9 +72,9 @@ apps:
             name: Plan a search
             description: Break a missing-person report into ordered, delegable steps.
             tags: [planning]
-      agent_card_publishing: {interval_seconds: 30}
+      agent_card_publishing: {interval_seconds: 10}
       agent_discovery: {enabled: true}
       inter_agent_communication:
-        allow_list: [MissionCoordinator]
+        allow_list: [MissionCoordinator, SectorPlanner, EvidenceFusion]
         deny_list: []
         request_timeout_seconds: 60

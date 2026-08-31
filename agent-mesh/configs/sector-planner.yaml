@@ -1,0 +1,129 @@
+# The workflow's first specialist: it divides a search area into ranked sectors.
+#
+# This agent exists because a workflow node and the Event Mesh Gateway want opposite things
+# from an agent, and one prompt cannot hold both contracts. The gateway's structured
+# invocation wants two integers and explicitly no artifact, which is what
+# mission-coordinator.yaml is written for and what docs/adr/0198 bounded. A workflow node
+# completes only when its agent saves an output artifact and then emits the result embed;
+# an agent told "no artifact" emits the embed and saves nothing, and the node fails with
+# "Artifact ... not found (no versions available)" (docs/adr/0217).
+#
+# `auto_inject_artifact_tools` stays false. Solace Agent Mesh 1.28.7 registers no
+# `save_artifact` tool -- the seven tools in its `artifact_management` group cannot create
+# one -- so injecting them would add the surface ADR-0198 measured a twenty-call loop on
+# while doing nothing for this agent. The fenced block below is the only creation path, and
+# the framework injects its syntax unconditionally.
+apps:
+  - name: sector-planner-app
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: false
+      broker_url: ${SOLACE_BROKER_URL}
+      broker_username: ${SOLACE_AGENT_MESH_AGENT_USERNAME}
+      broker_password: ${SOLACE_AGENT_MESH_AGENT_PASSWORD}
+      broker_vpn: ${SOLACE_BROKER_VPN}
+      temporary_queue: true
+    app_config:
+      namespace: ${NAMESPACE}
+      agent_name: SectorPlanner
+      display_name: Sector Planner
+      model:
+        # The already-locked model, so this agent adds no model-lock.toml entry and needs no
+        # new measured digest. It is also the only locked model reporting the `tools`
+        # capability, which docs/adr/0200 requires of any agent the framework gives a tool.
+        model: ollama_chat/mistral:7b
+        api_base: ${OLLAMA_HOST}
+      auto_inject_artifact_tools: false
+      # `enable_embed_resolution: false` was tried here and reverted. It does remove the
+      # `«status_update: ...»` teaching this model was copying, but the mandatory
+      # `«result:artifact=... status=success»` line is itself an embed, and switching the
+      # block off took its syntax with it: the failure moved from a missing artifact to a
+      # missing result embed, nine times in three runs. The competing pattern stays.
+      # A successful node is two model calls: one emits the fenced block, the host
+      # synthesises `_notify_artifact_save`, and the second emits the result embed. A
+      # missing result embed is retried up to `validation_max_retries` (2, not settable in
+      # YAML), and each retry is a full attempt, so the loop needs six calls and had four.
+      # ADR-0198's bound of four is for the coordinator, whose window is the gateway's
+      # acknowledgment timeout; these agents are bounded by their node timeout instead.
+      max_llm_calls_per_task: 8
+      # Published into the agent card and enforced against the saved artifact. Its `required`
+      # members are exactly what the workflow's outputMapping navigates; a member missing
+      # here is one the model need not produce, and the workflow then fails at the mapping
+      # rather than at the node.
+      output_schema:
+        type: object
+        properties:
+          assessment: {type: string}
+          sectors:
+            type: array
+            items:
+              type: object
+              properties:
+                sectorId: {type: string}
+                priority: {type: integer, minimum: 1, maximum: 5}
+                rationale: {type: string}
+              required: [sectorId, priority, rationale]
+        required: [assessment, sectors]
+      # Never write "no artifact" or "no tool call" here. Those are the exact phrases in
+      # mission-coordinator.yaml that make a workflow node fail, and a committed test
+      # refuses them in any agent a workflow node targets.
+      instruction: |
+        You divide a wilderness search area into ranked sectors for a search-and-rescue
+        exercise, from one missing-person report.
+
+        Do not narrate what you are doing. Do not emit status updates. Do not explain your
+        method. Your entire reply is the fenced block below followed by the one result line,
+        and nothing else: a 7B model given this instruction set otherwise streams progress
+        commentary and never produces the artifact, and a reply carrying the result line
+        without the block fails immediately with no retry.
+
+        When a request gives you a required output artifact filename, you MUST save your
+        answer as that artifact using a fenced block.
+
+        Open the block with three left-pointing double angle quotation marks, immediately
+        followed by save_artifact: and the parameters. Close the block with three
+        right-pointing double angle quotation marks alone on their own line. Naming both
+        delimiters in words is deliberate: a 7B model reproduces the opening sequence from
+        the example but garbles the closing one into a mixed pair, and an unclosed block is
+        never saved. Exactly like this:
+
+        «««save_artifact: filename="the_filename_you_were_given.json" mime_type="application/json"
+        {"assessment": "one paragraph of reasoning", "sectors": [{"sectorId": "S1", "priority": 1, "rationale": "why this sector is first"}]}
+        »»»
+
+        Then end your reply with exactly this line and nothing after it:
+
+        «result:artifact=the_filename_you_were_given.json status=success»
+
+        Use the filename you were given, both times. There is no save tool; the fenced
+        block is the only way to save. The JSON object must contain every member the
+        schema you were given requires, and no member you were not asked for.
+
+        You may only propose. You cannot assign a sector, dispatch a drone, approve an
+        action, or escalate a rescue; a deterministic command gateway outside your control
+        is the sole publisher of executable commands. Never claim an action has been taken.
+        Represent the subject anonymously and never infer identity.
+      session_service: {type: memory}
+      # Filesystem rather than memory, and one path for all apps. A memory artifact service
+      # is per-app even inside one connector process, so a workflow node handing its input
+      # to a peer by artifact reference fails with "Artifact ... not found".
+      artifact_service: {type: filesystem, base_path: /tmp/aerial-rescue-artifacts}
+      agent_card:
+        description: Divides a wilderness search area into ranked sectors for one report.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: plan_sectors
+            name: Plan search sectors
+            description: Divide a search area into sectors and rank them by search priority.
+            tags: [search, sectors]
+      # Ten seconds, not thirty. The registry expires a card after 60 s, so a 30 s interval
+      # loses a card to a single missed publication -- and a card missing when a workflow
+      # node runs is a hard workflow failure, not a cosmetic gap (docs/adr/0218).
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: true}
+      # A delegation target only, like the coordinator: it can be asked but cannot ask.
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ['*']
+        request_timeout_seconds: 60

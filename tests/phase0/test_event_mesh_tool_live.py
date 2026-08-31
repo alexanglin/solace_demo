@@ -3,7 +3,8 @@
 This is the egress half of the Phase 0 Event Mesh spike, and the other half of what
 ``test_event_mesh_gateway_live.py`` began. Everything before it is evidence about
 configuration: the offline validator proves a file's shape and
-``tools/quality_gate_tests/deploy/test_agent_mesh_tool_config.py`` proves the committed file
+``quality_gate_tests/deploy/agent_mesh/test_agent_mesh_tool_config.py``
+proves the committed file
 stays inside the grants ``docs/adr/0061`` and ``docs/adr/0070`` give its role. Neither is
 evidence that a request is answered.
 

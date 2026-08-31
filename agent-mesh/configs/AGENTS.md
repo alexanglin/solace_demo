@@ -27,7 +27,7 @@ An Accepted ADR governs if configuration comments, tests, historical evidence, o
 with it. Do not turn an old measured count or Phase 0 observation into a current invariant without a
 current instrument and canonical owner.
 
-## 2. Five files, five responsibilities
+## 2. Seven files, seven responsibilities
 
 The connector loads and merges all owned YAML. Each current file contains one app, except that the
 Orchestrator file also owns the process-level management server and the Mission Coordinator embeds the
@@ -35,9 +35,11 @@ Event Mesh Tool.
 
 | File | Local responsibility |
 | --- | --- |
-| `orchestrator.yaml` | The sole management-server declaration, the Orchestrator card and locked local model, and the only current agent allowed to delegate to `MissionCoordinator` |
+| `orchestrator.yaml` | The sole management-server declaration, the Orchestrator card and locked local model, and the only current agent allowed to delegate, to all three specialists |
 | `mission-coordinator.yaml` | The proposal-only sector agent, its locked local model and card, deny-by-default outbound A2A posture, and the embedded read-only Event Mesh Tool |
-| `mission-response-workflow.yaml` | The minimal versioned, typed Phase 0 workflow that invokes `MissionCoordinator`; it is not the complete later-phase mission sequence |
+| `mission-response-workflow.yaml` | The versioned, typed mission sequence: a two-node DAG whose nodes invoke `SectorPlanner` then `EvidenceFusion`, never `MissionCoordinator` |
+| `sector-planner.yaml` | The workflow's first node agent: ranks search sectors and saves its own output artifact |
+| `evidence-fusion.yaml` | The workflow's second node agent: correlates the sector assessment and saves its own output artifact |
 | `web-ui.yaml` | The local engineering HTTP/SSE surface, session-secret indirection, shared artifacts, and explicit loopback-only browser origins; it does not add the Platform service |
 | `event-mesh-gateway.yaml` | Salient-event ingress, structured A2A invocation/output, deferred rejection, trusted source-context forwarding, and closed non-authoritative candidate or abstention output |
 
@@ -214,8 +216,8 @@ tests, then run the complete wrapper list in the parent guide's required-verific
 ```sh
 uv sync --all-packages --frozen
 uv run --frozen pytest -q \
-  tools/quality_gate_tests/deploy/test_agent_mesh_gateway_config.py \
-  tools/quality_gate_tests/deploy/test_agent_mesh_tool_config.py \
+  tools/quality_gate_tests/deploy/agent_mesh/test_agent_mesh_gateway_config.py \
+  tools/quality_gate_tests/deploy/agent_mesh/test_agent_mesh_tool_config.py \
   tools/quality_gate_tests/deploy/test_broker_identity_wiring.py
 ```
 
