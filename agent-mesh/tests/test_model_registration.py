@@ -50,9 +50,10 @@ class _Registry(BaseHTTPRequestHandler):
     """A Platform registry holding the two aliases its seeder always creates."""
 
     patched: ClassVar[list[tuple[str, dict[str, object]]]] = []
+    reject_writes: ClassVar[bool] = False
 
-    def _respond(self, body: bytes) -> None:
-        self.send_response(200)
+    def _respond(self, body: bytes, code: int = 200) -> None:
+        self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -69,6 +70,9 @@ class _Registry(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         type(self).patched.append((self.path, body))
+        if type(self).reject_writes:
+            self._respond(b'{"detail":"refused"}', 500)
+            return
         self._respond(b'{"data":{}}')
 
     @override
@@ -77,10 +81,12 @@ class _Registry(BaseHTTPRequestHandler):
 
 
 class ModelRegistrationTests(unittest.TestCase):
-    def serve(self) -> tuple[str, list[tuple[str, dict[str, object]]]]:
+    def serve(
+        self, *, reject_writes: bool = False
+    ) -> tuple[str, list[tuple[str, dict[str, object]]]]:
         """Serve a registry on loopback for the test and return its URL and its writes."""
         patched: list[tuple[str, dict[str, object]]] = []
-        handler = type("_Bound", (_Registry,), {"patched": patched})
+        handler = type("_Bound", (_Registry,), {"patched": patched, "reject_writes": reject_writes})
         server = HTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -163,6 +169,19 @@ class ModelRegistrationTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, status)
         self.assertTrue(error.startswith("FAILED:"), error)
+
+    def test_a_rejected_write_is_not_reported_as_a_registration(self) -> None:
+        """http.client raises nothing on 5xx, so an unchecked status reports success falsely."""
+        # Arrange
+        registry, patched = self.serve(reject_writes=True)
+
+        # Act
+        status, out, error = self.register(self.lock_path(IDENTIFIER), registry)
+
+        # Assert
+        self.assertEqual((1, ""), (status, out))
+        self.assertTrue(error.startswith("FAILED:"), error)
+        self.assertEqual(1, len(patched), "it stops at the first rejected write")
 
     def test_registering_twice_leaves_the_same_registered_model(self) -> None:
         # Arrange
