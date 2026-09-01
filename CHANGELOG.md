@@ -2140,6 +2140,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Fixed
 
+- **The drain console tests no longer depend on generated deployment material.** Both cases called
+  the console with the default deploy directory, so `endpoint` read whichever certificate and admin
+  credential the developer happened to have generated and refused before the injected monitor was
+  ever consulted. They passed wherever `just secrets` had run and failed everywhere else, which is
+  why they were green locally and red in CI. They now write the two files the console reads into a
+  temporary directory, the way the sibling deployment console suite already did. No assertion
+  changed.
+
 - **A rejected registry write is no longer reported as a registration.** `http.client` raises
   nothing for a 4xx or 5xx, and the registration step read each response body without inspecting
   its status, so a Platform registry answering `500` to every `PATCH` still produced a

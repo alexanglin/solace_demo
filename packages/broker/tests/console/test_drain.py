@@ -15,10 +15,13 @@ can build is able to mutate the broker.
 from __future__ import annotations
 
 import io
+import tempfile
 import unittest
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import pytest
+from aerial_rescue_broker.deployment import ADMIN_CREDENTIAL, CERTIFICATE_AUTHORITY
 from aerial_rescue_broker.drain import (
     DRAIN_DEADLINE_SECONDS,
     MESH_IDENTITIES,
@@ -146,15 +149,33 @@ class WaitForDrainTests(unittest.TestCase):
         )
 
 
+def _material(case: unittest.TestCase) -> Path:
+    """Write the two files the console reads before it reaches the injected monitor.
+
+    ``main`` builds its endpoint from the deploy directory, so a case that leaves the default in
+    place reads whichever material the developer happens to have generated. That made these two
+    cases pass locally and fail wherever ``just secrets`` has not run, with the endpoint refusing
+    before the injected monitor was ever consulted. The material is a placeholder because no case
+    here opens a connection with it.
+    """
+    deploy = Path(case.enterContext(tempfile.TemporaryDirectory())) / "deploy"
+    (deploy / "certs").mkdir(parents=True)
+    (deploy / "secrets").mkdir(parents=True)
+    (deploy / CERTIFICATE_AUTHORITY).write_text("placeholder authority", encoding="utf-8")
+    (deploy / ADMIN_CREDENTIAL).write_text("placeholder-credential", encoding="utf-8")
+    return deploy
+
+
 class ConsoleTests(unittest.TestCase):
     def test_a_drained_broker_reports_success_without_naming_a_credential(self) -> None:
         # Arrange
         out, error = io.StringIO(), io.StringIO()
         monitor = RecordingMonitor([_drained()])
+        deploy = _material(self)
 
         # Act
         status = main(
-            ["--vpn", VPN],
+            ["--vpn", VPN, "--deploy-directory", str(deploy)],
             monitor=lambda _: monitor,
             wait=lambda transport, vpn: wait_for_drain(
                 transport, vpn, sleep=lambda _: None, now=lambda: 0.0
@@ -171,10 +192,11 @@ class ConsoleTests(unittest.TestCase):
         out, error = io.StringIO(), io.StringIO()
         monitor = RecordingMonitor([_holding(event_mesh_gateway=2)])
         instants = iter([0.0, 0.0, DRAIN_DEADLINE_SECONDS + 1.0])
+        deploy = _material(self)
 
         # Act
         status = main(
-            ["--vpn", VPN],
+            ["--vpn", VPN, "--deploy-directory", str(deploy)],
             monitor=lambda _: monitor,
             wait=lambda transport, vpn: wait_for_drain(
                 transport, vpn, sleep=lambda _: None, now=lambda: next(instants)
