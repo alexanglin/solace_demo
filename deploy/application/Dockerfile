@@ -25,7 +25,7 @@ RUN pnpm build \
 # the Agent Mesh project out of it. Compose selects one concrete long-running console per
 # service; the image also carries the closed schemas and production scenario catalog those
 # processes validate at startup.
-FROM python:3.14.7-slim-trixie@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS builder
+FROM python:3.14.7-slim-trixie@sha256:656d12e70054d5fda18a045e2494c96701e9792dd1445f95b3d038df954f57e9 AS builder
 COPY deploy/application/uv-requirements.txt /tmp/uv-requirements.txt
 RUN pip install --no-cache-dir --require-hashes --requirement /tmp/uv-requirements.txt
 WORKDIR /app
@@ -39,7 +39,7 @@ COPY schemas ./schemas
 COPY scenarios ./scenarios
 RUN uv sync --frozen --all-packages --no-dev
 
-FROM python:3.14.7-slim-trixie@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5
+FROM python:3.14.7-slim-trixie@sha256:656d12e70054d5fda18a045e2494c96701e9792dd1445f95b3d038df954f57e9
 RUN groupadd --system --gid 10001 aerial \
     && useradd --system --uid 10001 --gid 10001 --create-home aerial \
     && install --directory --owner=10001 --group=10001 --mode=0770 \
