@@ -12,9 +12,11 @@ import { DASHBOARD_SCHEMA_IDS, createDashboardSchemaRegistry } from "./schema-re
 
 const expectedDashboardSchemaIds = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
@@ -79,7 +81,7 @@ test("builds the dashboard schema registry and resolves every reference without 
   );
 
   // Assert
-  expect(results).toHaveLength(13);
+  expect(results).toHaveLength(15);
   expect(results.every((result) => result.ok)).toBe(true);
   expect(fetchSpy).not.toHaveBeenCalled();
 });

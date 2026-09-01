@@ -13,6 +13,9 @@ _IDENTIFIER = re.compile(r"^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$")
 _AGENT_NAME = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 _LOWERCASE_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MODEL_OUTPUT_MEMBERS: Final = frozenset({"latitudeMicrodegrees", "longitudeMicrodegrees"})
+_MAXIMUM_MODEL_REPLY_BYTES: Final = 4096
+"""The answer is two integers; anything approaching this is prose, and is not parsed."""
+_FENCED_REPLY = re.compile(r"\A```(?:[a-z]+)?\s*\n(?P<body>.*?)\n?```\Z", re.DOTALL)
 _FORWARDED_IDENTITY_MEMBERS: Final = (
     "missionId",
     "eventMissionId",
@@ -142,6 +145,38 @@ def _candidate_coordinates(structured_output: object) -> tuple[int, int] | None:
     if latitude is None or longitude is None:
         return None
     return latitude, longitude
+
+
+def parsed_model_output(reply: object) -> object | None:
+    """Return the one JSON document an agent replied with, or ``None`` for anything else.
+
+    A plain invocation hands the answer back as text, so the owned boundary reads it here
+    rather than loading an artifact the model had to name correctly twice (docs/adr/0225).
+    The function is total and interprets nothing: the exact-member and range checks stay in
+    ``_candidate_coordinates``, and an unparsable reply becomes one redacted
+    ``invalid-output`` abstention like every other malformed model output.
+
+    Args:
+        reply: The agent's untrusted reply text, or whatever the upstream payload held.
+
+    Returns:
+        The parsed document, or ``None`` when the reply is not a string, is longer than a
+        two-integer answer can be, or carries no JSON object that parses.
+    """
+    if not isinstance(reply, str) or len(reply.encode("utf-8")) > _MAXIMUM_MODEL_REPLY_BYTES:
+        return None
+    body = reply.strip()
+    fenced = _FENCED_REPLY.match(body)
+    if fenced is not None:
+        body = fenced.group("body").strip()
+    opening = body.find("{")
+    if opening < 0:
+        return None
+    try:
+        document: object = json.JSONDecoder().raw_decode(body, opening)[0]
+    except ValueError:
+        return None
+    return document
 
 
 def build_agent_response(

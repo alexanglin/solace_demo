@@ -6,9 +6,11 @@
 export type DashboardStandaloneValidator = (candidate: unknown) => boolean;
 
 export declare const validateBootstrap: DashboardStandaloneValidator;
+export declare const validateCommandResponse: DashboardStandaloneValidator;
 export declare const validateDashboardEventFrame: DashboardStandaloneValidator;
 export declare const validateDashboardSnapshot: DashboardStandaloneValidator;
 export declare const validateError: DashboardStandaloneValidator;
+export declare const validateOperatorCommandRequest: DashboardStandaloneValidator;
 export declare const validateProposalDecisionRequest: DashboardStandaloneValidator;
 export declare const validateProposalDecisionResponse: DashboardStandaloneValidator;
 export declare const validateReadiness: DashboardStandaloneValidator;

@@ -185,9 +185,11 @@ const dashboardSchemas = [
 
 const browserBoundarySchemaFiles = new Set<(typeof dashboardSchemas)[number]["fileName"]>([
   "bootstrap",
+  "command-response",
   "dashboard-event-frame",
   "dashboard-snapshot",
   "error",
+  "operator-command-request",
   "proposal-decision-request",
   "proposal-decision-response",
   "readiness",

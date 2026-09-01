@@ -243,6 +243,11 @@ Set the status to `Accepted` when the decision is in force, `Proposed` when it i
 | [0222](0222-register-the-mesh-s-local-model-in-the-platform-service.md) | Register the mesh's local model in the Platform service | Accepted |
 | [0223](0223-raise-the-agent-mesh-identity-ceilings-for-the-platform-service.md) | Raise the Agent Mesh identity ceilings for the Platform service | Accepted |
 | [0224](0224-register-the-locked-model-through-the-platform-api.md) | Register the locked model through the Platform API after the mesh starts | Accepted |
+| [0225](0225-invoke-the-gateway-s-agent-plainly-and-parse-its-reply.md) | Invoke the gateway's agent plainly and parse its reply | Accepted |
+| [0226](0226-make-the-recorder-the-single-writer-of-audit-rows.md) | Make the recorder the single writer of audit rows | Accepted |
+| [0227](0227-give-the-operator-a-rescue-escalation-control.md) | Give the operator a rescue-escalation control | Accepted |
+| [0228](0228-keep-an-exhausted-mission-decidable.md) | Keep an exhausted mission decidable | Accepted |
+| [0229](0229-raise-the-production-dashboard-asset-budget.md) | Raise the production dashboard asset budget to 1,550,000 bytes | Accepted |
 
 ## Decisions still open
 

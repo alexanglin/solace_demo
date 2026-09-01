@@ -40,6 +40,8 @@ FENCE_PHRASES = ("«««save_artifact:", "«result:artifact=")
 """The literal sequences a workflow-node agent must be shown, not paraphrased."""
 FORBIDDEN_PHRASES = ("no artifact", "no tool call")
 """The coordinator's wording, which makes a node fail if copied onto a node agent."""
+BARE_JSON_PHRASE = "exactly one JSON object"
+"""The gateway's target answers in text, so its prompt must ask for the document itself."""
 
 
 def _app_config(basename: str) -> dict[str, object]:
@@ -217,6 +219,68 @@ class NodeAgentInstructionTests(QualityGateTestCase):
 
         # Assert
         self.assertEqual({name: [] for name in carrying}, carrying)
+
+
+class GatewayInvocationTests(QualityGateTestCase):
+    """The gateway invokes its agent plainly, and its agent answers plainly.
+
+    A ``structured_invocation`` handler attaches the accepted object as a FilePart URI and
+    builds no text part, so the target is asked to assess coordinates it was never shown, and
+    it reads the answer only from an output artifact whose random filename the model has to
+    reproduce twice. Both halves were measured live on 2026-09-01: every candidate returned
+    was an invented digit run, and the mandatory result embed appeared in about half of runs
+    (docs/adr/0225).
+
+    The plain contract removes both. These cases hold the two files to it together, which the
+    offline validator cannot do -- it proves each file's shape, never one file against
+    another (docs/adr/0029). The validator owns the refusal on the gateway side; what lives
+    here is the agreement between that handler and the prompt of the agent it names.
+    """
+
+    def test_the_gateway_invokes_its_agent_without_a_structured_invocation(self) -> None:
+        # Arrange
+        gateway = _app_config(GATEWAY_CONFIG.name)
+
+        # Act
+        handler = cast(list[dict[str, object]], gateway["event_handlers"])[0]
+
+        # Assert
+        self.assertNotIn("structured_invocation", handler)
+
+    def test_the_gateway_s_target_agent_is_asked_for_the_json_document_itself(self) -> None:
+        # Arrange
+        instruction = str(_agents()[GATEWAY_AGENT]["instruction"])
+
+        # Act
+        asks_for_the_document = BARE_JSON_PHRASE in instruction
+
+        # Assert
+        self.assertTrue(asks_for_the_document)
+
+    def test_the_gateway_s_target_agent_is_not_taught_to_save_an_artifact(self) -> None:
+        """A fence in this prompt would be answering a protocol the handler no longer speaks.
+
+        The two workflow-node agents must carry the fence and this one must not, so the
+        sequences cannot simply be copied between the three prompts when one is edited.
+        """
+        # Arrange
+        instruction = str(_agents()[GATEWAY_AGENT]["instruction"])
+
+        # Act
+        taught = [phrase for phrase in FENCE_PHRASES if phrase in instruction]
+
+        # Assert
+        self.assertEqual([], taught)
+
+    def test_the_gateway_s_target_agent_carries_no_artifact_tool_surface(self) -> None:
+        # Arrange
+        agent = _agents()[GATEWAY_AGENT]
+
+        # Act
+        injected = agent["auto_inject_artifact_tools"]
+
+        # Assert
+        self.assertIs(False, injected)
 
 
 if __name__ == "__main__":

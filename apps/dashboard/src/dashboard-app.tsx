@@ -26,7 +26,12 @@ import {
   createProposalDecisionSubmitter,
   type ProposalDecisionSubmitter,
 } from "./operator/mutation-client";
+import {
+  createOperatorCommandSubmitter,
+  type OperatorCommandSubmitter,
+} from "./operator/command-client";
 import { currentProposalBinding } from "./operator/proposal-binding";
+import { RescueEscalationPanel } from "./operator/rescue-escalation-panel";
 import {
   ProposalDecisionPanel,
   type DashboardSourceState as ProposalDecisionSourceState,
@@ -50,6 +55,7 @@ const registry = createDashboardSchemaRegistry();
 
 export interface DashboardApplicationProps {
   readonly productionBootstrap?: DashboardSourceInput;
+  readonly operatorCommandSubmitterFactory?: (bearer: string) => OperatorCommandSubmitter;
   readonly proposalDecisionSubmitterFactory?: (bearer: string) => ProposalDecisionSubmitter;
   readonly productionRuntimeFactory?: (
     options: ProductionDashboardRuntimeOptions,
@@ -64,6 +70,14 @@ function defaultProductionRuntime(
 
 function defaultProposalDecisionSubmitter(bearer: string): ProposalDecisionSubmitter {
   return createProposalDecisionSubmitter({
+    bearer,
+    fetcher: globalThis.fetch.bind(globalThis),
+    newIdempotencyKey: () => globalThis.crypto.randomUUID(),
+  });
+}
+
+function defaultOperatorCommandSubmitter(bearer: string): OperatorCommandSubmitter {
+  return createOperatorCommandSubmitter({
     bearer,
     fetcher: globalThis.fetch.bind(globalThis),
     newIdempotencyKey: () => globalThis.crypto.randomUUID(),
@@ -331,9 +345,10 @@ function connectionLabel(source: DashboardSourceSessionState, replayReady: boole
 
 function proposalDecisionSourceState(
   source: DashboardSourceSessionState,
-  lifecycle: NonNullable<DashboardReducedState["currentMission"]>["lifecycle"] | undefined,
 ): ProposalDecisionSourceState {
-  if (lifecycle === "EXHAUSTED") return "exhausted";
+  // The mission lifecycle no longer short-circuits this. It used to answer `exhausted` for an
+  // exhausted mission whatever the stream was doing, which both closed the gate on every real
+  // candidate and would have kept it open over a dead stream (docs/adr/0228).
   switch (source.server.status) {
     case "connected":
       return "connected";
@@ -474,6 +489,7 @@ function ResetDialog({
 
 export function DashboardApplication({
   productionBootstrap,
+  operatorCommandSubmitterFactory = defaultOperatorCommandSubmitter,
   proposalDecisionSubmitterFactory = defaultProposalDecisionSubmitter,
   productionRuntimeFactory = defaultProductionRuntime,
 }: DashboardApplicationProps = {}): React.JSX.Element {
@@ -713,6 +729,13 @@ export function DashboardApplication({
         : undefined,
     [proposalBearer, proposalDecisionSubmitterFactory, server.readiness?.mode],
   );
+  const operatorCommandSubmitter = useMemo(
+    () =>
+      server.readiness?.mode === "degradedLive" && proposalBearer !== null
+        ? operatorCommandSubmitterFactory(proposalBearer)
+        : undefined,
+    [operatorCommandSubmitterFactory, proposalBearer, server.readiness?.mode],
+  );
 
   useEffect(() => {
     if (mode === "replay") return;
@@ -884,7 +907,7 @@ export function DashboardApplication({
       .matches ?? false;
   const productionMode = productionBootstrap !== undefined;
   const proposalBinding = currentProposalBinding(timeline);
-  const decisionSourceState = proposalDecisionSourceState(source, state.currentMission?.lifecycle);
+  const decisionSourceState = proposalDecisionSourceState(source);
 
   function selectProductionMode(selectedMode: "degradedLive" | "replay"): void {
     if (!productionMode) return;
@@ -1256,6 +1279,18 @@ export function DashboardApplication({
               {...(proposalDecisionSubmitter === undefined
                 ? {}
                 : { submit: proposalDecisionSubmitter })}
+            />
+          )}
+          {proposalBinding?.approval === undefined ? null : (
+            <RescueEscalationPanel
+              approval={proposalBinding.approval}
+              evidence={proposalBinding.evidence}
+              mode={mode}
+              proposal={proposalBinding.proposal}
+              sourceState={decisionSourceState}
+              {...(operatorCommandSubmitter === undefined
+                ? {}
+                : { submit: operatorCommandSubmitter })}
             />
           )}
         </div>

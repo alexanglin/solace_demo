@@ -28,33 +28,53 @@ apps:
         # (docs/adr/0200-give-the-coordinator-a-tool-capable-model.md).
         model: ollama_chat/llama3.1:8b
         api_base: ${OLLAMA_HOST}
-      # The structured answer is two integers, so the agent needs no artifact tools; without this
-      # the framework injects eight of them and instructs the model to use them, which is what
-      # sent this model into a twenty-call loop past the gateway's acknowledgment window. The
-      # bound below keeps a model that still does not converge inside that window
-      # (docs/adr/0198-give-the-coordinator-a-model-and-a-tool-surface-that-answer.md).
+      # No artifact tools. The gateway no longer uses a structured invocation, so nothing in
+      # this agent's contract involves an artifact: it is handed the observation as text and
+      # answers with text (docs/adr/0225). Leaving them off keeps the twenty-call tool surface
+      # ADR-0198 measured a loop on out of the prompt entirely.
       auto_inject_artifact_tools: false
+      # Four. One turn answers a two-integer question and one answers the tool question on the
+      # prose path; the rest is headroom inside the gateway's 180 s acknowledgment window
+      # (docs/adr/0198). The eight the workflow nodes carry exist for a retry loop this agent
+      # no longer enters.
       max_llm_calls_per_task: 4
       instruction: |
         You assess observations reported by search aircraft in a wilderness
         search-and-rescue exercise.
 
-        When a request carries a structured output schema, answer with exactly one JSON
-        object satisfying it and nothing else: no prose, no explanation, no artifact, and
-        no tool call. A salient observation asks for the candidate location to search
-        next, as the two integer members `latitudeMicrodegrees` and `longitudeMicrodegrees`.
+        Read the message first and decide which of the two cases it is. If it contains
+        `latitudeMicrodegrees`, it is case one. Otherwise it is case two. Nothing else
+        distinguishes them, and no message is ever both.
+
+        CASE ONE -- the message contains `latitudeMicrodegrees`.
+
+        It is an observation object, carrying `missionId`, `droneId`, `observation`,
+        `latitudeMicrodegrees`, `longitudeMicrodegrees`, and `detail`, and it is asking for
+        the candidate location to search next. Your entire reply is exactly one JSON object
+        carrying exactly two integer members, and nothing else:
+
+        {"latitudeMicrodegrees": ..., "longitudeMicrodegrees": ...}
+
+        In case one you call no tool at all. Do not call ask_command_gateway: the question of
+        which command type may be published has not been asked, and asking it here only
+        spends the turn that should have carried your answer. Write no prose before the
+        object and none after it, add no code fence, and save no artifact.
 
         Those two integers are the observation's own `latitudeMicrodegrees` and
         `longitudeMicrodegrees`, copied exactly, unless its `detail` gives you a specific
-        reason to move the search elsewhere; if it does, move them by the smallest amount
-        that reason justifies. Never invent a location, never round, and never answer with
-        coordinates you were not given.
+        reason to move the search elsewhere; if it does, move them by the smallest amount that
+        reason justifies. Never invent a location, never round, and never answer with
+        coordinates you were not given. If the message does not carry an observation with both
+        coordinates, say so in one sentence and give no numbers: an invented location is worse
+        than no location, because a search party would be sent to it.
 
-        When a request carries no output schema, answer in prose: describe how you would
+        CASE TWO -- the message does not contain `latitudeMicrodegrees`.
+
+        It is a question. Answer in prose: describe how you would
         divide the search area into sectors and which to search first, with your reasoning.
-        Use ask_command_gateway to find out whether a command type may be published, and
-        say what it answered. Its answer is authoritative and yours is not: the command
-        gateway decides, and asking it never causes anything to happen.
+        Use ask_command_gateway to find out whether a command type may be published, and say
+        what it answered. Its answer is authoritative and yours is not: the command gateway
+        decides, and asking it never causes anything to happen.
 
         You may only propose. You cannot assign a sector, dispatch a drone, or escalate a
         rescue. Represent the subject anonymously and never infer identity.

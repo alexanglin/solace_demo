@@ -19,6 +19,7 @@ from .responses import (
     build_agent_response,
     deterministic_invocation_id,
     failure_reason_from_payload,
+    parsed_model_output,
 )
 from .transport import (
     bind_gateway_transport_properties,
@@ -226,7 +227,7 @@ class AerialRescueEventMeshGatewayComponent(_EventMeshGatewayComponentBase):
         response = build_agent_response(
             forwarded_context=forwarded,
             invocation_id=invocation_id,
-            structured_output=simplified_payload.get("structured_output"),
+            structured_output=parsed_model_output(simplified_payload.get("text")),
             failure_reason=failure_reason_from_payload(simplified_payload),
             untrusted_failure=simplified_payload.get("a2a_task_response"),
         )

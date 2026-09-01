@@ -73,59 +73,16 @@ apps:
           # template. `detail` is free text a drone reported, so it is untrusted input; keeping
           # it a JSON string value means it cannot break out of the structure around it.
           input_expression: input.payload:data
-          # Declaring both schemas uses the official plugin's structured invocation protocol:
-          # the accepted data object becomes an artifact and the response is read only from the
-          # schema-validated output artifact. The agent owns only two bounded coordinates. Every
-          # identity and source binding is added later by the owned gateway component from trusted
-          # forward context; the model cannot select or override one.
-          structured_invocation:
-            input_schema:
-              type: object
-              required:
-                - missionId
-                - droneId
-                - observation
-                - latitudeMicrodegrees
-                - longitudeMicrodegrees
-                - detail
-              additionalProperties: false
-              properties:
-                missionId:
-                  type: string
-                  pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
-                droneId:
-                  type: string
-                  pattern: '^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$'
-                observation:
-                  type: string
-                  pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
-                  maxLength: 32
-                latitudeMicrodegrees:
-                  type: integer
-                  minimum: -90000000
-                  maximum: 90000000
-                longitudeMicrodegrees:
-                  type: integer
-                  minimum: -180000000
-                  maximum: 180000000
-                detail:
-                  type: string
-                  maxLength: 4096
-            output_schema:
-              type: object
-              required:
-                - latitudeMicrodegrees
-                - longitudeMicrodegrees
-              additionalProperties: false
-              properties:
-                latitudeMicrodegrees:
-                  type: integer
-                  minimum: -90000000
-                  maximum: 90000000
-                longitudeMicrodegrees:
-                  type: integer
-                  minimum: -180000000
-                  maximum: 180000000
+          # No structured invocation, and this is the decision rather than an omission
+          # (docs/adr/0225). That mode attaches the accepted object as a FilePart URI and
+          # builds no text part, so the model is asked to assess coordinates it was never
+          # shown; measured live on 2026-09-01, every candidate it returned was an invented
+          # digit run. It also reads the answer only from an output artifact whose random
+          # filename the model must reproduce twice, which succeeded in about half of runs.
+          # A plain invocation puts the observation in the message and takes the answer back
+          # as text, and the owned component parses it: the model still owns only two bounded
+          # coordinates, and the identity and source bindings are still added afterwards from
+          # trusted forward context, where the model cannot select or override one.
           target_agent_name: MissionCoordinator
           on_success: salient-event-assessment
           on_error: salient-event-failure

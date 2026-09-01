@@ -127,15 +127,6 @@ _LONGITUDE_SCHEMA: Mapping[str, object] = {
     "minimum": -180_000_000,
     "maximum": 180_000_000,
 }
-AGENT_MODEL_OUTPUT_SCHEMA: Mapping[str, object] = {
-    "type": "object",
-    "required": ["latitudeMicrodegrees", "longitudeMicrodegrees"],
-    "additionalProperties": False,
-    "properties": {
-        "latitudeMicrodegrees": _LATITUDE_SCHEMA,
-        "longitudeMicrodegrees": _LONGITUDE_SCHEMA,
-    },
-}
 _COMMON_AGENT_RESPONSE_PROPERTIES: Mapping[str, object] = {
     "agentResponseVersion": {"const": 1},
     "missionId": _IDENTIFIER_SCHEMA,
@@ -1182,8 +1173,12 @@ def _closed_agent_response_boundary(app_config: Mapping[str, object]) -> bool:
     handler = handlers[0]
     if not isinstance(handler, dict):
         return False
-    structured = handler.get("structured_invocation")
-    if not isinstance(structured, dict) or not isinstance(structured.get("input_schema"), dict):
+    # No structured invocation. That mode attaches the observation as a FilePart URI and
+    # builds no text part, so the model is asked to assess coordinates it was never shown and
+    # answers with invented ones; it also makes the reply depend on an artifact the model has
+    # to name correctly twice. Both were measured live on 2026-09-01 (docs/adr/0225). The
+    # refusal is here rather than in a comment because the block is one line to re-add.
+    if "structured_invocation" in handler:
         return False
     if (
         handler.get("subscriptions")
@@ -1192,7 +1187,6 @@ def _closed_agent_response_boundary(app_config: Mapping[str, object]) -> bool:
         or handler.get("payload_format", "json") != "json"
         or handler.get("input_expression") != "input.payload:data"
         or handler.get("target_agent_name") != "MissionCoordinator"
-        or structured.get("output_schema") != AGENT_MODEL_OUTPUT_SCHEMA
         or handler.get("forward_context") != AGENT_RESPONSE_FORWARD_CONTEXT
     ):
         return False

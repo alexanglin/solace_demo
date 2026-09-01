@@ -10,7 +10,7 @@ from tools.quality_gate_tests.support import REPOSITORY_ROOT, QualityGateTestCas
 NODE_VERSION = "26.7.0"
 PNPM_VERSION = "11.23.0"
 CHROMIUM_REVISION = "1234"
-EXPECTED_TESTS = 64
+EXPECTED_TESTS = 66
 SYNTHETIC_BEARER_SENTINEL = "synthetic-browser-bearer-do-not-persist"
 
 
@@ -242,7 +242,9 @@ exit 64
         result = self.run_hook("dashboard-playwright-full.sh", repository, environment=environment)
 
         # Assert
-        self.assert_hook_failed(result, "expected 64 tests, discovered 63")
+        self.assert_hook_failed(
+            result, f"expected {EXPECTED_TESTS} tests, discovered {EXPECTED_TESTS - 1}"
+        )
         self.assertNotIn("run test:e2e", arguments.read_text(encoding="utf-8"))
 
     def test_a_passing_suite_fails_when_test_results_retain_the_sentinel(self) -> None:

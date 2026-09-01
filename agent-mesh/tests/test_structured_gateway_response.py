@@ -25,6 +25,7 @@ from aerial_rescue_event_mesh_gateway.responses import (
     build_agent_response,
     deterministic_invocation_id,
     failure_reason_from_payload,
+    parsed_model_output,
 )
 from aerial_rescue_event_mesh_gateway.transport import (
     GatewayTransportContextError,
@@ -492,7 +493,7 @@ class OfficialGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
             official,
         ):
             await component._transform_validate_and_publish(
-                simplified_payload={"structured_output": _candidate_output()},
+                simplified_payload={"text": json.dumps(_candidate_output())},
                 external_request_context=context,
                 output_handler_name="salient-event-assessment",
                 handler_config={"payload_expression": "task_response:agent_response"},
@@ -530,7 +531,7 @@ class OfficialGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
         ):
             await component._transform_validate_and_publish(
                 simplified_payload={
-                    "structured_output": _candidate_output(),
+                    "text": json.dumps(_candidate_output()),
                     "agent_response": {"missionId": "model-selected-mission"},
                 },
                 external_request_context={
@@ -645,7 +646,7 @@ class OfficialGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
             official_publish,
         ):
             await component._transform_validate_and_publish(
-                simplified_payload={"structured_output": _candidate_output()},
+                simplified_payload={"text": json.dumps(_candidate_output())},
                 external_request_context={"forwarded_context": _context()},
                 output_handler_name="salient-event-assessment",
                 handler_config={"payload_expression": "task_response:agent_response"},
@@ -654,7 +655,7 @@ class OfficialGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
             with pytest.raises(AgentResponseContextError):
                 await component._transform_validate_and_publish(
-                    simplified_payload={"structured_output": _candidate_output()},
+                    simplified_payload={"text": json.dumps(_candidate_output())},
                     external_request_context={"forwarded_context": "invalid"},
                     output_handler_name="salient-event-assessment",
                     handler_config={"payload_expression": "task_response:agent_response"},
@@ -734,8 +735,105 @@ class OfficialGatewayIntegrationTests(unittest.IsolatedAsyncioTestCase):
         handler.assert_called_once_with(task_id)
 
 
+class ModelReplyParsingTests(unittest.TestCase):
+    """The agent answers in text now, so the owned boundary reads its reply itself.
+
+    A ``structured_invocation`` handler attaches its input as a FilePart URI and builds no
+    text part, so the observation never reaches the token stream and the model answers from
+    nothing: measured live on 2026-09-01, every candidate it produced was an invented digit
+    run rather than the coordinates it was asked to assess (docs/adr/0225). A plain
+    invocation puts the observation in the message and takes the answer back as text, which
+    makes reading that text the owned boundary's job.
+
+    Every case here is untrusted model output. The function is total: anything that is not
+    one parseable JSON document yields ``None``, which ``build_agent_response`` already turns
+    into a redacted ``invalid-output`` abstention. Nothing here interprets the parsed value;
+    the exact-member and range checks stay where they are.
+    """
+
+    def test_one_json_object_in_the_reply_becomes_the_model_output(self) -> None:
+        # Arrange
+        reply = '  {"latitudeMicrodegrees": 44476180, "longitudeMicrodegrees": -79225500}\n'
+
+        # Act
+        parsed = parsed_model_output(reply)
+
+        # Assert
+        self.assertEqual(
+            {"latitudeMicrodegrees": 44476180, "longitudeMicrodegrees": -79225500}, parsed
+        )
+
+    def test_a_fenced_reply_is_unwrapped_before_parsing(self) -> None:
+        # Arrange
+        fenced = '```json\n{"latitudeMicrodegrees": 1, "longitudeMicrodegrees": 2}\n```'
+        bare = '```\n{"latitudeMicrodegrees": 1, "longitudeMicrodegrees": 2}\n```'
+
+        # Act
+        parsed = (parsed_model_output(fenced), parsed_model_output(bare))
+
+        # Assert
+        expected = {"latitudeMicrodegrees": 1, "longitudeMicrodegrees": 2}
+        self.assertEqual((expected, expected), parsed)
+
+    def test_a_json_document_surrounded_by_prose_is_still_read(self) -> None:
+        """Small models narrate, and the exact-member check is what actually guards the value.
+
+        Measured live on 2026-09-01: the model returned the correct seventy-byte object and
+        the answer was still refused, because the reply did not consist solely of it. Reading
+        the document out of the surrounding text costs nothing in safety -- whatever is found
+        still has to be exactly the two members, in range, before it becomes a candidate --
+        and it is the difference between a usable answer and an abstention.
+        """
+        # Arrange
+        narrated = (
+            "Here is the candidate location.\n"
+            '{"latitudeMicrodegrees": 44476180, "longitudeMicrodegrees": -79225500}\n'
+            "Let me know if you need anything else."
+        )
+
+        # Act
+        parsed = parsed_model_output(narrated)
+
+        # Assert
+        self.assertEqual(
+            {"latitudeMicrodegrees": 44476180, "longitudeMicrodegrees": -79225500}, parsed
+        )
+
+    def test_a_reply_that_is_not_one_json_document_yields_no_model_output(self) -> None:
+        # Arrange
+        hostile = "raw-model-body-MUST-NOT-ESCAPE"
+        replies: tuple[object, ...] = (None, 17, b"{}", "", hostile, "{unquoted: 1}", "{")
+
+        # Act
+        parsed = tuple(parsed_model_output(reply) for reply in replies)
+
+        # Assert
+        self.assertEqual(tuple(None for _ in replies), parsed)
+
+    def test_an_oversized_reply_is_refused_before_it_is_parsed(self) -> None:
+        # Arrange
+        padded = '{"latitudeMicrodegrees": 1, "longitudeMicrodegrees": 2, "pad": "%s"}' % (
+            "p" * 5000
+        )
+
+        # Act
+        parsed = parsed_model_output(padded)
+
+        # Assert
+        self.assertIsNone(parsed)
+
+
 class OfficialConfigurationTests(unittest.TestCase):
-    def test_committed_gateway_uses_structured_schemas_and_trusted_forward_context(self) -> None:
+    def test_committed_gateway_invokes_plainly_with_trusted_forward_context(self) -> None:
+        """The handler declares no ``structured_invocation``, and that is the decision.
+
+        Re-adding the block is one line, and it silently changes two things at once: the
+        observation stops reaching the token stream, because that mode attaches it as a
+        FilePart URI and builds no text part, and the answer starts coming from an output
+        artifact the model must name correctly twice. Measured live on 2026-09-01, the first
+        produced invented coordinates on every run and the second succeeded about half the
+        time (docs/adr/0225).
+        """
         # Arrange
         document = _mapping(load_config(str(CONFIG)))
         app = _mapping(_sequence(document["apps"])[0])
@@ -745,9 +843,9 @@ class OfficialConfigurationTests(unittest.TestCase):
 
         # Act
         forwarded = _mapping(event_handler["forward_context"])
-        structured = _mapping(event_handler["structured_invocation"])
 
         # Assert
+        self.assertNotIn("structured_invocation", event_handler)
         self.assertEqual(
             {
                 "agentName",
@@ -766,7 +864,6 @@ class OfficialConfigurationTests(unittest.TestCase):
             "input.user_properties:aerial-rescue-source-event-digest",
             forwarded["sourceEventDigest"],
         )
-        self.assertEqual(False, _mapping(structured["output_schema"])["additionalProperties"])
         self.assertTrue(
             all(
                 output["payload_expression"] == "task_response:agent_response" for output in outputs

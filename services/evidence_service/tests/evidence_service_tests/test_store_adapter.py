@@ -266,7 +266,6 @@ class StoreEvidenceUnitOfWorkTests(unittest.IsolatedAsyncioTestCase):
             source = await transaction.source_for(BOUND_MISSION, SOURCE_EVENT)
             await transaction.record_item(ITEM)
             await transaction.record_decision(DECISION)
-            ordinal = await transaction.append_audit(AUDIT)
             await transaction.stage(EVENT)
             await transaction.complete(IDENTITY, DECISION.payload, DECISION.decided_at)
         refusal = await work.refuse(REFUSAL)
@@ -279,7 +278,6 @@ class StoreEvidenceUnitOfWorkTests(unittest.IsolatedAsyncioTestCase):
                 stored_proposal(),
                 SOURCE_TOPIC,
                 "evidence-item-sensor-0001",
-                11,
                 ["begin", "commit"],
                 [
                     "claim",
@@ -287,7 +285,6 @@ class StoreEvidenceUnitOfWorkTests(unittest.IsolatedAsyncioTestCase):
                     "load-source",
                     "record-item",
                     "record-decision",
-                    "append-audit",
                     "stage",
                     "complete",
                 ],
@@ -299,7 +296,6 @@ class StoreEvidenceUnitOfWorkTests(unittest.IsolatedAsyncioTestCase):
                 proposal,
                 source.topic,
                 source.observations[0].evidence_item_id,
-                ordinal,
                 lifecycle,
                 stored.calls,
                 refusal.decision,

@@ -123,7 +123,7 @@ test("disables both decisions while one exact rejection remains pending", async 
   );
 });
 
-test.each(["offline", "retrying", "exhausted"] as const)(
+test.each(["offline", "retrying"] as const)(
   "keeps the exact binding visible but disables mutation while the source is %s",
   async (sourceState) => {
     // Arrange
@@ -151,6 +151,33 @@ test.each(["offline", "retrying", "exhausted"] as const)(
     expect(submit).not.toHaveBeenCalled();
   },
 );
+
+test("keeps an exhausted mission decidable, because that is when the lead arrives", async () => {
+  // Arrange
+  // The salient observation fires as the last drone completes its sweep, so the mission
+  // reaches EXHAUSTED and the agent answers about thirty-five seconds later. A proposal is
+  // therefore always post-exhaustion, and refusing a decision then would close the gate on
+  // every real candidate. An exhausted mission is not a degraded stream.
+  const submit = vi.fn<ProposalDecisionSubmitter>();
+
+  // Act
+  render(
+    <ProposalDecisionPanel
+      decisionRecorded={false}
+      evidence={evidence()}
+      mode="degradedLive"
+      proposal={proposal()}
+      sourceState="exhausted"
+      submit={submit}
+    />,
+  );
+  const approve = await screen.findByRole("button", { name: "Approve exact rescue proposal" });
+
+  // Assert
+  await waitFor(() => {
+    expect((approve as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 
 test("renders recorded proposal facts in replay without constructing action controls", () => {
   // Arrange

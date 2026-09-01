@@ -82,7 +82,10 @@ function outcomeLabel(evidence: EvidenceEvent): string {
 }
 
 function sourceAllowsDecision(sourceState: DashboardSourceState): boolean {
-  return sourceState === "connected" || sourceState === "recovered";
+  // `exhausted` describes the mission, not the stream, and the agent's candidate always
+  // arrives after the sweep completes. Grouping it with `offline` and `retrying` closed the
+  // gate on every real proposal (docs/adr/0228).
+  return sourceState === "connected" || sourceState === "exhausted" || sourceState === "recovered";
 }
 
 function preparationFor(

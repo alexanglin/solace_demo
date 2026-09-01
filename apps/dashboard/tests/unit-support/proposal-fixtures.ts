@@ -82,3 +82,40 @@ export function evidenceFixture(options: ProposalFixtureOptions = {}): EvidenceE
     },
   };
 }
+
+interface ApprovalFixtureOptions extends ProposalFixtureOptions {
+  readonly decision?: ApprovalEvent["data"]["decision"];
+}
+
+export function approvalFixture(options: ApprovalFixtureOptions = {}): ApprovalEvent {
+  const proposal = proposalFixture(options).data;
+  const action = {
+    commandType: "escalate-rescue",
+    droneId: proposal.droneId,
+    latitudeMicrodegrees: proposal.latitudeMicrodegrees,
+    longitudeMicrodegrees: proposal.longitudeMicrodegrees,
+  } as const;
+  const common = {
+    operatorApprovalVersion: 1,
+    approvalId: "approval-synthetic-0001",
+    operatorId: "operator-synthetic-0001",
+    issuedAt: "2026-08-25T12:05:00.000Z",
+    proposalId: proposal.proposalId,
+    proposalDigest: proposal.proposalDigest,
+    proposalVersion: 1,
+    evidenceDecisionId: "decision-synthetic-0001",
+    evidenceDecisionDigest: EVIDENCE_DIGEST,
+    evidenceDecisionVersion: 1,
+    action,
+  } as const;
+  return {
+    kind: "operatorApproval",
+    eventClass: "APPROVAL",
+    mission: "mission-synthetic-0001",
+    time: "2026-08-25T12:05:00.000Z",
+    data:
+      options.decision === "reject"
+        ? { ...common, decision: "reject" }
+        : { ...common, decision: "approve", expiresAt: "2026-08-25T12:10:00.000Z" },
+  };
+}
