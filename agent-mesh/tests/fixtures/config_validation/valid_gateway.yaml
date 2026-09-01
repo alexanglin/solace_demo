@@ -35,21 +35,6 @@ apps:
           input_expression: input.payload:data
           payload_encoding: utf-8
           payload_format: json
-          structured_invocation:
-            input_schema: {type: object}
-            output_schema:
-              type: object
-              required: [latitudeMicrodegrees, longitudeMicrodegrees]
-              additionalProperties: false
-              properties:
-                latitudeMicrodegrees:
-                  type: integer
-                  minimum: -90000000
-                  maximum: 90000000
-                longitudeMicrodegrees:
-                  type: integer
-                  minimum: -180000000
-                  maximum: 180000000
           target_agent_name: MissionCoordinator
           on_success: validation-response
           on_error: validation-failure

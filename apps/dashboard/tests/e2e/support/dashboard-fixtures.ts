@@ -1389,3 +1389,129 @@ export function resilienceFaultInputs(fault: ResilienceFault): readonly Dashboar
   const hypotheticalState = { ...nextState, latestAuditOrdinal: invalidOrdinal };
   return [orderedEventFrameInput(invalidEvent, replayStateDigest(hypotheticalState))];
 }
+
+const rescueMission = "mission-synthetic-0001";
+const rescueProposalDigest = "4b8c2f1d6a3e9057c8d1b4a7e2f5c093a6d8b1e4f7092c5a8d3b6e1f4a7c0925";
+const rescueSourceEventDigest = "7d1e4a9c2f5b8036d9a2c5f8b1e4079a3c6f9d2b5e8a1c4f70d3a6b9e2c5f801";
+const rescueDroneId = "drone-sim-07";
+const rescueLatitudeMicrodegrees = 44_482_960;
+const rescueLongitudeMicrodegrees = -79_235_500;
+
+function rescueProposalEvent(auditOrdinal: number): OrderedDashboardEventFixture {
+  return event(
+    auditOrdinal,
+    "agentProposal",
+    "EVIDENCE",
+    {
+      agentName: "MissionCoordinator",
+      canonicalizationVersion: 1,
+      commandType: "escalate-rescue",
+      droneId: rescueDroneId,
+      latitudeMicrodegrees: rescueLatitudeMicrodegrees,
+      longitudeMicrodegrees: rescueLongitudeMicrodegrees,
+      proposalDigest: rescueProposalDigest,
+      proposalId: "proposal-synthetic-escalation",
+      proposalType: "candidate-location",
+      proposalVersion: 1,
+      sourceEventDigest: rescueSourceEventDigest,
+      sourceEventId: "0190a1b2-3c4d-7e8f-9a0b-1c2d3e4f5a6c",
+      sourceInvocationId: "invocation-synthetic-escalation",
+    },
+    rescueMission,
+  );
+}
+
+function rescueEvidenceEvent(auditOrdinal: number): OrderedDashboardEventFixture {
+  return event(
+    auditOrdinal,
+    "evidenceDecision",
+    "EVIDENCE",
+    {
+      band: "corroborated",
+      canonicalizationVersion: 1,
+      contributors: [
+        {
+          evidenceItemId: "evidence-item-sensor-escalation",
+          origin: "live-sensor",
+          provenanceDigest: "3".repeat(64),
+          sourceId: rescueDroneId,
+          weight: 40,
+        },
+        {
+          evidenceItemId: "evidence-item-model-escalation",
+          origin: "live-model",
+          provenanceDigest: "5".repeat(64),
+          sourceId: "invocation-synthetic-escalation",
+          weight: 35,
+        },
+      ],
+      evidenceDecisionId: "decision-synthetic-escalation",
+      evidenceDecisionVersion: 1,
+      outcome: "contributing",
+      proposalDigest: rescueProposalDigest,
+      proposalId: "proposal-synthetic-escalation",
+      proposalVersion: 1,
+      score: 75,
+      scoreVersion: 1,
+    },
+    rescueMission,
+  );
+}
+
+function rescueApprovalEvent(auditOrdinal: number): OrderedDashboardEventFixture {
+  return event(
+    auditOrdinal,
+    "operatorApproval",
+    "APPROVAL",
+    {
+      action: {
+        commandType: "escalate-rescue",
+        droneId: rescueDroneId,
+        latitudeMicrodegrees: rescueLatitudeMicrodegrees,
+        longitudeMicrodegrees: rescueLongitudeMicrodegrees,
+      },
+      approvalId: "approval-synthetic-escalation",
+      decision: "approve",
+      evidenceDecisionDigest: "9".repeat(64),
+      evidenceDecisionId: "decision-synthetic-escalation",
+      evidenceDecisionVersion: 1,
+      expiresAt: "2026-08-24T12:10:00.000Z",
+      issuedAt: "2026-08-24T12:05:00.000Z",
+      operatorApprovalVersion: 1,
+      operatorId: "operator-synthetic-0001",
+      proposalDigest: rescueProposalDigest,
+      proposalId: "proposal-synthetic-escalation",
+      proposalVersion: 1,
+    },
+    rescueMission,
+  );
+}
+
+/** The live scene at the point a corroborated candidate awaits a human decision. */
+export function rescueProposalFixture(): DashboardSourceScript {
+  const base = liveState();
+  const running = snapshot(base, liveTimeline(), latestOrderedEvent(liveAuditEvents()));
+  const proposal = rescueProposalEvent(base.latestAuditOrdinal + 1);
+  const afterProposal = applyOrderedEventForOracle(base, proposal);
+  const evidence = rescueEvidenceEvent(base.latestAuditOrdinal + 2);
+  const afterEvidence = applyOrderedEventForOracle(afterProposal, evidence);
+  return script([
+    bootstrap(),
+    readiness(),
+    scenarioCatalog(),
+    running,
+    orderedEventInput(proposal, afterProposal),
+    orderedEventInput(evidence, afterEvidence),
+  ]);
+}
+
+/** The approval the broker returns once the operator has approved that candidate. */
+export function rescueApprovalInputs(): readonly DashboardSourceInput[] {
+  const base = liveState();
+  const afterEvidence = [
+    rescueProposalEvent(base.latestAuditOrdinal + 1),
+    rescueEvidenceEvent(base.latestAuditOrdinal + 2),
+  ].reduce(applyOrderedEventForOracle, base);
+  const approval = rescueApprovalEvent(base.latestAuditOrdinal + 3);
+  return [orderedEventInput(approval, applyOrderedEventForOracle(afterEvidence, approval))];
+}

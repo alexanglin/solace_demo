@@ -9,7 +9,7 @@
     "pnpm": "11.23.0"
   },
   "config": {
-    "playwrightExpectedTests": 64
+    "playwrightExpectedTests": 66
   },
   "scripts": {
     "build": "vite build",

@@ -10,6 +10,43 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 
 ### Added
 
+- **A salient observation now reaches an operator as an approvable rescue escalation.** The
+  dashboard renders the agent's candidate and its evidence decision, offers approval or rejection,
+  and — once an approval is recorded — offers one rescue escalation. The escalation is a request:
+  the deterministic command gateway consumes the single-use approval and remains the only publisher
+  of the executable command. Measured live in a browser on 2026-09-01 against the running stack:
+  the candidate arrived at `44482960`/`-79235500`, `drone-sim-07`'s own reported position, the
+  evidence decision was `contributing` at 75 in band `corroborated` on two distinct live sources,
+  and the escalation left one `escalate-rescue` row in `command_outbox` in state `confirmed`. That
+  is one run on one host and not a qualification
+  ([ADR-0227](docs/adr/0227-give-the-operator-a-rescue-escalation-control.md)).
+
+  Three defects had to be closed first, each hidden behind the one before it, and none of them
+  visible until a proposal existed at all.
+
+  **The agent could not see what it was asked to assess.** A structured invocation attaches its
+  input as a FilePart URI and builds no text part, so the model was asked for coordinates it had
+  never been shown and invented them: `12345678`/`-87654321`, then `12345678`/`-98765432`, then a
+  longitude of `-987654321` that only the output-schema range check caught. Two of those were in
+  range and would have reached an operator as a rescue location. The gateway now invokes its agent
+  plainly and the owned extension parses the reply, which also removes the mandatory result embed
+  that had been appearing in about half of runs
+  ([ADR-0225](docs/adr/0225-invoke-the-gateway-s-agent-plainly-and-parse-its-reply.md)).
+
+  **The first proposal killed the dashboard.** The evidence service both appended its audit row and
+  staged the same audit event, so the recorder wrote it twice; the direct append consumed an ordinal
+  with no `dashboard_broker_event` link, and the reducer refused the next event as `ORDINAL_GAP`.
+  The stream then answered `DEPENDENCY_UNAVAILABLE` for the rest of the epoch. The recorder is now
+  the only writer of `audit_record`
+  ([ADR-0226](docs/adr/0226-make-the-recorder-the-single-writer-of-audit-rows.md)).
+
+  **The approval gate could never open.** Its fold expected the proposal before its evidence, and
+  the two families reach the recorder on separate queues — observed live, the evidence decision
+  landed at audit ordinal 329 and the proposal it scores at 331. The fold now matches by proposal
+  identity. Separately, an `EXHAUSTED` mission disabled the controls, and every real candidate
+  arrives after the sweep exhausts, so the gate is now decidable whenever the stream is healthy
+  ([ADR-0228](docs/adr/0228-keep-an-exhausted-mission-decidable.md)).
+
 - **The locked local model is registered, and the Models tab shows it.** The Platform service seeds
   `general` and `planning` as placeholders the tab renders as "Not configured". They are now pointed
   at the model `model-lock.toml` already pins, derived from the lock rather than typed into the
@@ -1851,6 +1888,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention.
 - An editable Graphviz architecture overview with its generated PNG and integrity sidecar.
 
 ### Changed
+
+- **The production dashboard asset ceiling is 1,550,000 bytes.** Registering the operator-command
+  request and response schemas in the browser's Ajv registry adds 27,063 bytes, and the measured
+  bundle was 1,486,623 against a 1,500,000 ceiling — 13,377 bytes of headroom, which would have
+  refused the next browser boundary of any size. MapLibre still dominates the chunk and splitting it
+  remains the real lever
+  ([ADR-0229](docs/adr/0229-raise-the-production-dashboard-asset-budget.md)).
 
 - **Every Agent Mesh app declares a terminated namespace.** Most of the pinned runtime's topics come
   from helpers that strip a trailing separator and add their own, but the model-configuration family

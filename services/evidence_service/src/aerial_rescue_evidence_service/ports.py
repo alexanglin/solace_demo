@@ -9,7 +9,6 @@ from typing import Protocol
 
 from aerial_rescue_domain.scoring import ObservationOrigin
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
-from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate, BrokerRefusalOutcome
 from aerial_rescue_store.evidence import StoredEvidenceDecision, StoredEvidenceItem
 from aerial_rescue_store.inbox import InboxIdentity, InboxOutcome
@@ -88,9 +87,6 @@ class EvidenceTransaction(ProvenancePort, Protocol):
 
     async def record_decision(self, decision: StoredEvidenceDecision) -> None:
         """Persist one append-only evidence decision."""
-
-    async def append_audit(self, record: AuditRecord) -> int:
-        """Append one authoritative mission-ordered audit row."""
 
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Stage one exact application publication."""

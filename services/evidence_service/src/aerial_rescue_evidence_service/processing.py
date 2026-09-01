@@ -177,7 +177,6 @@ async def _persist(
     for item in artifacts.items:
         await transaction.record_item(item)
     await transaction.record_decision(artifacts.decision)
-    await transaction.append_audit(artifacts.audit_record)
     await transaction.stage(artifacts.decision_event)
     await transaction.stage(artifacts.audit_event)
     await transaction.complete(

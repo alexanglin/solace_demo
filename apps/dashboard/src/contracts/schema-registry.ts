@@ -3,9 +3,11 @@ import * as validators from "./generated/runtime/validators.mjs";
 
 export const DASHBOARD_SCHEMA_IDS = [
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json",
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json",
   "https://aerial-rescue.invalid/schemas/v1/dashboard/readiness.schema.json",
@@ -44,11 +46,15 @@ export interface DashboardSchemaRegistry {
 const validatorBySchemaId = {
   "https://aerial-rescue.invalid/schemas/v1/dashboard/bootstrap.schema.json":
     validators.validateBootstrap,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/command-response.schema.json":
+    validators.validateCommandResponse,
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-event-frame.schema.json":
     validators.validateDashboardEventFrame,
   "https://aerial-rescue.invalid/schemas/v1/dashboard/dashboard-snapshot.schema.json":
     validators.validateDashboardSnapshot,
   "https://aerial-rescue.invalid/schemas/v1/dashboard/error.schema.json": validators.validateError,
+  "https://aerial-rescue.invalid/schemas/v1/dashboard/operator-command-request.schema.json":
+    validators.validateOperatorCommandRequest,
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-request.schema.json":
     validators.validateProposalDecisionRequest,
   "https://aerial-rescue.invalid/schemas/v1/dashboard/proposal-decision-response.schema.json":

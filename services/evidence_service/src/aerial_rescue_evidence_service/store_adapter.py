@@ -6,7 +6,6 @@ from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
-from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.broker_refusals import BrokerRefusalCandidate, BrokerRefusalOutcome
 from aerial_rescue_store.evidence import StoredEvidenceDecision, StoredEvidenceItem
 from aerial_rescue_store.inbox import InboxIdentity, InboxOutcome
@@ -60,10 +59,6 @@ class StoreEvidenceTransaction:
     async def record_decision(self, decision: StoredEvidenceDecision) -> None:
         """Delegate append-only decision persistence to the store."""
         await self._transaction.record_decision(decision)
-
-    async def append_audit(self, record: AuditRecord) -> int:
-        """Delegate authoritative mission-ordering to the store."""
-        return await self._transaction.append_audit(record)
 
     async def stage(self, event: StagedApplicationEvent) -> None:
         """Delegate exact application-outbox staging to the store."""

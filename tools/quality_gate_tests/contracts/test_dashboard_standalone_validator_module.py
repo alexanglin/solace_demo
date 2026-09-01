@@ -21,9 +21,11 @@ class DashboardStandaloneValidatorModuleTests(QualityGateTestCase):
         module_path = declaration_path.with_name("validators.mjs")
         expected_exports = (
             "validateBootstrap",
+            "validateCommandResponse",
             "validateDashboardEventFrame",
             "validateDashboardSnapshot",
             "validateError",
+            "validateOperatorCommandRequest",
             "validateProposalDecisionRequest",
             "validateProposalDecisionResponse",
             "validateReadiness",

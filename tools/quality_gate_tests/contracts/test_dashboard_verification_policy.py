@@ -27,7 +27,7 @@ class DashboardVerificationPolicyTests(QualityGateTestCase):
                     f"--coverage.thresholds.{dimension}=95",
                     scripts["test:coverage"],
                 )
-        self.assertEqual(64, manifest["config"]["playwrightExpectedTests"])
+        self.assertEqual(66, manifest["config"]["playwrightExpectedTests"])
 
     def test_the_base_vitest_configuration_emits_inventory_adjudication_evidence(self) -> None:
         # Arrange

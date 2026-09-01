@@ -53,7 +53,7 @@ test("blocks production output as soon as the shared byte budget is exceeded", (
   // Arrange
   const overBudget = {
     files: [
-      { bytes: 1_450_000, fileName: "assets/application.js", kind: "javascript" as const },
+      { bytes: 1_500_000, fileName: "assets/application.js", kind: "javascript" as const },
       { bytes: 50_001, fileName: "assets/application.css", kind: "css" as const },
     ],
     totalBytes: PRODUCTION_SCRIPT_AND_STYLE_BUDGET_BYTES + 1,
@@ -66,7 +66,7 @@ test("blocks production output as soon as the shared byte budget is exceeded", (
 
   // Assert
   expect(enforce).toThrow(
-    "Production JavaScript and CSS total 1500001 bytes exceeds 1500000 bytes",
+    "Production JavaScript and CSS total 1550001 bytes exceeds 1550000 bytes",
   );
 });
 

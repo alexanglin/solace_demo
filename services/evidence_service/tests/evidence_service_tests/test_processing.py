@@ -279,20 +279,20 @@ class DurableContributingTests(unittest.IsolatedAsyncioTestCase):
         decision_band = (
             decision_payload.get("band") if isinstance(decision_payload, Mapping) else None
         )
-        audit = transaction.audits[0]
+        staged_audit = transaction.events[1]
         self.assertEqual(
             (
                 ProcessingOutcome.COMMITTED,
                 75,
                 EvidenceBand.CORROBORATED,
                 2,
-                1,
+                0,
                 2,
                 True,
                 [BOUND_PROPOSAL_EVENT],
                 "corroborated",
                 [(BOUND_MISSION, SOURCE_EVENT)],
-                (True, "aerial-rescue.v1.audit.evidence-decision", STAMP.decision_event_id),
+                ("audit", STAMP.decision_event_id),
                 ["complete", "commit", "settle"],
             ),
             (
@@ -306,11 +306,7 @@ class DurableContributingTests(unittest.IsolatedAsyncioTestCase):
                 settlement.accepted,
                 decision_band,
                 transaction.source_queries,
-                (
-                    audit.payload == transaction.events[1].payload,
-                    audit.kind,
-                    audit.causation_id,
-                ),
+                (staged_audit.family, staged_audit.causation_id),
                 transaction.order[-3:],
             ),
         )

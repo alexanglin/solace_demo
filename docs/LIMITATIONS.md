@@ -37,8 +37,14 @@ document reads as a stronger claim than this page allows, this page governs.
   and roster. Weather and time-since-contact are neither requested nor accepted because no implemented
   current-slice decision consumes them. A future contract may add either only with a tested operational
   consumer.
-- **The dashboard is mission visibility, reset, and replay—not the complete rescue workflow.** It has no
-  approval, command, evidence, model, rescue, escalation, or executable edge-agent control.
+- **The dashboard carries the approval boundary, and not the rest of the workflow.** It renders the
+  agent proposal and its evidence decision, offers the operator an approval or rejection, and offers a
+  rescue escalation once an approval is recorded; the escalation is a request that the deterministic
+  command gateway consumes, and the browser supplies no authority the approval did not already carry
+  ([ADR-0227](adr/0227-give-the-operator-a-rescue-escalation-control.md)). It still has no model,
+  general operator-command, or executable edge-agent control. One live browser run on 2026-09-01
+  carried a proposal through approval to a `confirmed` `escalate-rescue` command; that is one run on
+  one host, not qualification.
 
 ## Command, control, and the approval gate
 

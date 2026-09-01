@@ -131,15 +131,6 @@ def _gateway_document() -> dict[str, object]:
         "minimum": -180_000_000,
         "maximum": 180_000_000,
     }
-    coordinate_schema = {
-        "type": "object",
-        "required": ["latitudeMicrodegrees", "longitudeMicrodegrees"],
-        "additionalProperties": False,
-        "properties": {
-            "latitudeMicrodegrees": latitude_schema,
-            "longitudeMicrodegrees": longitude_schema,
-        },
-    }
     identifier = {
         "type": "string",
         "pattern": r"^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,62}[a-z0-9])$",
@@ -251,10 +242,6 @@ def _gateway_document() -> dict[str, object]:
                             ],
                             "input_expression": "input.payload:data",
                             "target_agent_name": "MissionCoordinator",
-                            "structured_invocation": {
-                                "input_schema": {"type": "object"},
-                                "output_schema": coordinate_schema,
-                            },
                             "on_success": "candidate-response",
                             "on_error": "failure-response",
                             "forward_context": {
@@ -1846,10 +1833,9 @@ class PluginPolicyTests(unittest.TestCase):
         missing_context = _gateway_document()
         handler = _mapping(_sequence(_app_config(missing_context)["event_handlers"])[0])
         del _mapping(handler["forward_context"])["sourceEventDigest"]
-        open_model_output = _gateway_document()
-        handler = _mapping(_sequence(_app_config(open_model_output)["event_handlers"])[0])
-        structured = _mapping(handler["structured_invocation"])
-        _mapping(structured["output_schema"])["additionalProperties"] = True
+        structured_invocation = _gateway_document()
+        handler = _mapping(_sequence(_app_config(structured_invocation)["event_handlers"])[0])
+        handler["structured_invocation"] = {"output_schema": {"type": "object"}}
         open_agent_response = _gateway_document()
         output = _mapping(_sequence(_app_config(open_agent_response)["output_handlers"])[0])
         candidate = _mapping(_sequence(_mapping(output["output_schema"])["anyOf"])[0])
@@ -1860,7 +1846,7 @@ class PluginPolicyTests(unittest.TestCase):
         invalid = (
             raw_text,
             missing_context,
-            open_model_output,
+            structured_invocation,
             open_agent_response,
             validation_logs_only,
         )
@@ -1875,14 +1861,12 @@ class PluginPolicyTests(unittest.TestCase):
 
     def test_gateway_agent_response_boundary_requires_schema_and_distinct_outputs(self) -> None:
         # Arrange
-        missing_structured_invocation = _gateway_document()
-        handler = _mapping(
-            _sequence(_app_config(missing_structured_invocation)["event_handlers"])[0]
-        )
-        del handler["structured_invocation"]
-        invalid_input_schema = _gateway_document()
-        handler = _mapping(_sequence(_app_config(invalid_input_schema)["event_handlers"])[0])
-        _mapping(handler["structured_invocation"])["input_schema"] = "raw"
+        input_schema_only = _gateway_document()
+        handler = _mapping(_sequence(_app_config(input_schema_only)["event_handlers"])[0])
+        handler["structured_invocation"] = {"input_schema": {"type": "object"}}
+        missing_input_expression = _gateway_document()
+        handler = _mapping(_sequence(_app_config(missing_input_expression)["event_handlers"])[0])
+        del handler["input_expression"]
         missing_output_reference = _gateway_document()
         handler = _mapping(_sequence(_app_config(missing_output_reference)["event_handlers"])[0])
         del handler["on_success"]
@@ -1890,8 +1874,8 @@ class PluginPolicyTests(unittest.TestCase):
         handler = _mapping(_sequence(_app_config(shared_output_reference)["event_handlers"])[0])
         handler["on_error"] = handler["on_success"]
         invalid = (
-            missing_structured_invocation,
-            invalid_input_schema,
+            input_schema_only,
+            missing_input_expression,
             missing_output_reference,
             shared_output_reference,
         )

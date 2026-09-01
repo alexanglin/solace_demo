@@ -11,7 +11,6 @@ from aerial_rescue_contracts.digest import evidence_decision_digest
 from aerial_rescue_contracts.envelope import check_topic_binding, parse_envelope, sequence_text
 from aerial_rescue_contracts.topics import Family, Topic, format_topic
 from aerial_rescue_store.application_outbox import StagedApplicationEvent
-from aerial_rescue_store.audit import AuditRecord
 from aerial_rescue_store.evidence import StoredEvidenceDecision, StoredEvidenceItem
 
 from aerial_rescue_evidence_service.evaluation import Evaluation
@@ -45,7 +44,6 @@ class DecisionArtifacts:
 
     decision: StoredEvidenceDecision
     items: tuple[StoredEvidenceItem, ...]
-    audit_record: AuditRecord
     decision_event: StagedApplicationEvent
     audit_event: StagedApplicationEvent
 
@@ -104,7 +102,6 @@ def build_artifacts(
     return DecisionArtifacts(
         decision=_stored_decision(proposal, evaluation, stamp, decision_payload),
         items=evaluation.items,
-        audit_record=_audit_record(proposal, stamp, audit_event),
         decision_event=_staged(decision_event, Family.EVIDENCE_DECISION),
         audit_event=_staged(audit_event, Family.AUDIT),
     )
@@ -236,27 +233,6 @@ def _staged(payload: bytes, family: Family) -> StagedApplicationEvent:
         correlation_id=envelope.correlation_id,
         causation_id=envelope.causation_id,
         staged_at=envelope.time,
-    )
-
-
-def _audit_record(
-    proposal: AcceptedProposal,
-    stamp: DecisionStamp,
-    audit_event: bytes,
-) -> AuditRecord:
-    """Map the exact published audit event into the authoritative mission timeline.
-
-    ADR-0205 fixes ``audit_record.kind`` as the committed envelope's own type, so it is read
-    from the event rather than restated; a literal here cannot bind to its canonical envelope.
-    """
-    return AuditRecord(
-        mission_id=proposal.payload.mission_id,
-        kind=parse_envelope(canonical.decode(audit_event)).type,
-        occurred_at=stamp.decided_at,
-        payload=audit_event,
-        correlation_id=proposal.envelope.correlation_id,
-        causation_id=stamp.decision_event_id,
-        traceparent=stamp.traceparent,
     )
 
 

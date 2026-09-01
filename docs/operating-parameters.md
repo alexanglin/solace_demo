@@ -30,7 +30,7 @@ integer arithmetic; display rounding never changes a verdict.
 | TypeScript type errors | Zero, whole project | `tsc --noEmit` through `scripts/hooks/dashboard/dashboard-typecheck-full.sh` |
 | TypeScript lint findings | Zero at any severity | `eslint --max-warnings 0` through `scripts/hooks/dashboard/dashboard-quality-full.sh` |
 | TypeScript compiler options | Every option [ADR-0057](adr/0057-typescript-strictness-baseline-before-the-dashboard.md) names, at the value it names | `tools/typescript_policy_gate.py` |
-| Production dashboard script and style output | At most 1,500,000 uncompressed bytes after minification, aggregated over every emitted JavaScript chunk and CSS asset | `production-asset-budget` Vite `generateBundle` plugin plus `apps/dashboard/src/production-policy/asset-budget.integration.test.ts` ([ADR-0122](adr/0122-bound-production-dashboard-script-and-style-bytes.md)) |
+| Production dashboard script and style output | At most 1,550,000 uncompressed bytes after minification, aggregated over every emitted JavaScript chunk and CSS asset. Measured 2026-09-01: 1,486,623 bytes before the operator-command browser boundary and 1,513,686 after it, which is what raised the figure from 1,500,000 ([ADR-0229](adr/0229-raise-the-production-dashboard-asset-budget.md)) | `production-asset-budget` Vite `generateBundle` plugin plus `apps/dashboard/src/production-policy/asset-budget.integration.test.ts` ([ADR-0122](adr/0122-bound-production-dashboard-script-and-style-bytes.md)) |
 | Cyclomatic complexity | At most 8 per function | Ruff `C901` |
 | Cognitive complexity | At most 15 per function | Complexipy 7.0.1 |
 | Function arguments | At most 5 | Ruff `PLR0913` and `PLR0917` |
