@@ -21,13 +21,20 @@ from __future__ import annotations
 import io
 import runpy
 import sys
+import tempfile
 import unittest
 from collections.abc import Mapping, Sequence
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from aerial_rescue_broker import retire as retire_module
+from aerial_rescue_broker.deployment import (
+    ADMIN_CREDENTIAL,
+    CERTIFICATE_AUTHORITY,
+    credential_path,
+)
 from aerial_rescue_broker.provisioning import (
     DesiredState,
     MonitorRow,
@@ -39,6 +46,7 @@ from aerial_rescue_broker.provisioning import (
 )
 from aerial_rescue_broker.retire import main
 from aerial_rescue_broker.semp import SempEndpoint
+from aerial_rescue_domain.principals import Principal
 
 VPN = "default"
 NAMESPACE = "aerial-rescue-mesh"
@@ -87,6 +95,24 @@ def _plan(*primaries: str) -> QueueRetirementPlan:
     )
 
 
+def _material(case: unittest.TestCase) -> Path:
+    """Write the generated deploy directory the console reads before it reaches the broker.
+
+    ``main`` builds its desired state and its endpoint from this directory, so a case that leaves
+    the default in place reads whichever material the developer happens to have generated and
+    refuses with ``MISSING_MATERIAL`` wherever ``just secrets`` has not run. The placeholders are
+    never used to open a connection, because the transport is injected.
+    """
+    deploy = Path(case.enterContext(tempfile.TemporaryDirectory())) / "deploy"
+    (deploy / "certs").mkdir(parents=True)
+    (deploy / "secrets").mkdir(parents=True)
+    (deploy / CERTIFICATE_AUTHORITY).write_text("placeholder authority", encoding="utf-8")
+    (deploy / ADMIN_CREDENTIAL).write_text("placeholder-credential", encoding="utf-8")
+    for role in Principal:
+        credential_path(deploy, role).write_text(f"placeholder-{role.value}", encoding="utf-8")
+    return deploy
+
+
 class RetirementConsoleTests(unittest.TestCase):
     def run_console(
         self,
@@ -112,7 +138,13 @@ class RetirementConsoleTests(unittest.TestCase):
             retired.append(applied)
             return applied
 
-        status = main(list(arguments), session=session, retire=retirer, out=out, error=error)
+        status = main(
+            [*arguments, "--deploy-directory", str(_material(self))],
+            session=session,
+            retire=retirer,
+            out=out,
+            error=error,
+        )
         return status, out.getvalue(), error.getvalue(), opened, retired
 
     def test_a_converged_broker_retires_nothing_and_reports_it(self) -> None:
